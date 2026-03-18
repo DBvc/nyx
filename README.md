@@ -18,10 +18,36 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 
 ## 当前仓库状态
 
-仓库目前处于“文档和技术决策先行”的阶段，还没有开始应用层脚手架初始化。
+仓库已经完成第一轮项目初始化，目前具备这些基础骨架：
+
+- `Electron + electron-vite` 基础结构
+- `main / preload / renderer / shared` 分层目录
+- `React + React Router` 的 renderer 入口
+- `Tailwind CSS v4` 基础样式入口
+- `TypeScript Native Preview` 与 `TypeScript 6.0 RC` 双轨类型检查脚本
+- `Oxlint` / `Oxfmt` / `Vitest` 脚本
+- `Lefthook` 提交前检查
+- `SQLite + better-sqlite3 + Drizzle` 依赖基线
 
 - 产品需求文档：[PRD.md](./PRD.md)
 - v0 技术基线：[docs/v0-technical-baseline.md](./docs/v0-technical-baseline.md)
+
+## 常用命令
+
+- `pnpm dev`
+- `pnpm build`
+- `pnpm typecheck`
+- `pnpm typecheck:compat`
+- `pnpm lint`
+- `pnpm format:check`
+
+开发时直接运行 `pnpm dev`。`electron-vite` 会先构建 `out/main/index.js` 和 `out/preload/index.cjs`，再启动 Electron，所以 `package.json` 里的 `main` 入口会指向 `out/main/index.js`。
+
+执行 `pnpm install` 后会自动运行 `pnpm prepare`，把 `Lefthook` 同步到 `.git/hooks`。当前约定是：
+
+- `pre-commit`：格式化 + lint
+
+`typecheck` 当前仍然作为显式开发命令保留，等后续 CI 接进来后再决定是否放回 push 阶段。
 
 ## 当前原则
 
@@ -32,4 +58,4 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 
 ## 下一步
 
-下一阶段是在这份技术基线的基础上，开始初始化真正的 Electron 应用骨架。
+下一阶段是在这套骨架之上，开始实现第一条真正的聊天垂直切片：IPC、数据库 schema、provider adapter、会话与消息模型。

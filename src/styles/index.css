@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --color-nyx-canvas: #f7efe3;
+  --color-nyx-panel: #fefaf4;
+  --color-nyx-panel-strong: #f4e8d7;
+  --color-nyx-line: #d6c7b6;
+  --color-nyx-ink: #251a10;
+  --color-nyx-muted: #6a5848;
+  --color-nyx-accent: #bf5a3f;
+  --font-sans: "IBM Plex Sans", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+:root {
+  color-scheme: light;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top, rgba(191, 90, 63, 0.12), transparent 36%),
+    linear-gradient(180deg, #fbf5eb 0%, #f7efe3 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--color-nyx-ink);
+}

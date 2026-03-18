@@ -14,29 +14,29 @@
 
 ## 2. 当前已确定的技术方案
 
-| 领域 | 方案 |
-| --- | --- |
-| 桌面壳 | `Electron` |
-| Electron 集成 | `electron-vite` |
-| 构建工具 | `Vite 8` |
-| 包管理 | `pnpm` |
-| 运行时 | `Node 24` |
-| 语言主编译器 | `TypeScript Native Preview` |
-| 兼容回退线 | `TypeScript 6.0 RC` |
-| 前端框架 | `React` |
-| 路由 | `React Router` |
-| 样式 | `Tailwind CSS v4` |
-| 设计系统方向 | 基于 token 的小型 design system |
-| UI 状态 | 组件本地 state 优先，必要时使用 `Zustand` |
-| 校验与 schema | `zod` |
-| 数据库 | `SQLite` |
-| SQLite 驱动 | `better-sqlite3` |
-| 数据访问层 | `Drizzle ORM` |
-| IPC 方案 | 自定义 typed IPC |
-| Provider 接入 | 自己维护 adapter 层 |
-| Lint | `Oxlint` |
-| Format | `Oxfmt` |
-| 测试 | `Vitest`，初期只聚焦核心单测 |
+| 领域          | 方案                                      |
+| ------------- | ----------------------------------------- |
+| 桌面壳        | `Electron`                                |
+| Electron 集成 | `electron-vite`                           |
+| 构建工具      | `Vite 8`                                  |
+| 包管理        | `pnpm`                                    |
+| 运行时        | `Node 24`                                 |
+| 语言主编译器  | `TypeScript Native Preview`               |
+| 兼容回退线    | `TypeScript 6.0 RC`                       |
+| 前端框架      | `React`                                   |
+| 路由          | `React Router`                            |
+| 样式          | `Tailwind CSS v4`                         |
+| 设计系统方向  | 基于 token 的小型 design system           |
+| UI 状态       | 组件本地 state 优先，必要时使用 `Zustand` |
+| 校验与 schema | `zod`                                     |
+| 数据库        | `SQLite`                                  |
+| SQLite 驱动   | `better-sqlite3`                          |
+| 数据访问层    | `Drizzle ORM`                             |
+| IPC 方案      | 自定义 typed IPC                          |
+| Provider 接入 | 自己维护 adapter 层                       |
+| Lint          | `Oxlint`                                  |
+| Format        | `Oxfmt`                                   |
+| 测试          | `Vitest`，初期只聚焦核心单测              |
 
 ## 3. 为什么这样选
 
@@ -83,6 +83,17 @@
 
 - `v0` 要的是更强的 Vite 核心
 - 不是更大的前端工具链整合面
+
+当前初始化阶段的实际验证结果：
+
+- `Vite 8` 已经被用于当前项目骨架
+- 当前版本组合下，`electron-vite` 和 `@tailwindcss/vite` 仍然会给出 peer warning
+- 但初始化后的类型检查与构建已经实际跑通
+
+这意味着当前策略是：
+
+- 继续使用 `Vite 8`
+- 把上游 peer 跟进情况作为后续升级观察点
 
 ### 3.4 TypeScript Native Preview 作为主编译器
 

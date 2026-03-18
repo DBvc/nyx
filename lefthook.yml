@@ -1,0 +1,12 @@
+pre-commit:
+  jobs:
+    - name: format
+      glob:
+        - "*.{ts,tsx,js,jsx,mts,cts,json,md,html,css,yml,yaml}"
+      run: pnpm exec oxfmt {staged_files}
+      stage_fixed: true
+
+    - name: lint
+      glob:
+        - "*.{ts,tsx,js,jsx,mts,cts}"
+      run: pnpm exec oxlint {staged_files}
