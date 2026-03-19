@@ -11,12 +11,8 @@ const api: NyxDesktopApi = {
   },
 };
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld("nyx", api);
-  } catch (error) {
-    console.error("Failed to expose Nyx preload API.", error);
-  }
-} else {
-  (globalThis as typeof globalThis & { nyx: NyxDesktopApi }).nyx = api;
+if (!process.contextIsolated) {
+  throw new Error("Nyx preload requires contextIsolation=true.");
 }
+
+contextBridge.exposeInMainWorld("nyx", api);
