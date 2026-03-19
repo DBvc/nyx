@@ -89,6 +89,7 @@
 - `Vite 8` 已经被用于当前项目骨架
 - 当前版本组合下，`electron-vite` 和 `@tailwindcss/vite` 仍然会给出 peer warning
 - 但初始化后的类型检查与构建已经实际跑通
+- 核心 bootstrap 工具链版本已经固定到当前验证通过的组合，以减少后续依赖漂移
 
 这意味着当前策略是：
 
@@ -217,6 +218,13 @@
 - 明确定义 IPC contract
 - 围绕 contract 实现薄的 typed IPC
 - renderer 只访问白名单能力
+
+当前已经落实的 preload / renderer 边界约束：
+
+- preload 构建产物固定为 `cjs`，避免 Electron sandbox 场景下的格式问题
+- `BrowserWindow` 保持 `sandbox + contextIsolation=true`
+- preload 不再维护非隔离模式 fallback
+- renderer 在 bridge 缺失时显示显式 startup error，而不是伪造降级数据
 
 ### 3.11 自己维护 Provider adapter 层
 
@@ -350,7 +358,8 @@ Provider 接入从第一版开始就要放在项目自己维护的 adapter 层�
 
 护栏：
 
-- 一旦进入真正脚手架阶段，尽早验证安装与打包链路
+- 初始化阶段已经完成安装、类型检查和构建验证
+- 在进入数据库与打包阶段后，尽早补上更完整的 native module 验证
 
 ### 6.3 新基建叠加过多的风险
 
@@ -364,16 +373,23 @@ Provider 接入从第一版开始就要放在项目自己维护的 adapter 层�
 护栏：
 
 - 应用架构本身保持简单
+- 核心 bootstrap 工具链版本固定到当前已验证组合
 - 在第一个聊天闭环跑通前，不再继续叠加高不确定性基础设施
 
-## 7. 进入脚手架阶段后的第一批任务
+## 7. 初始化阶段当前进度与下一步
 
-当项目从“文档阶段”进入“真正初始化阶段”后，第一批落地建议是：
+当前已经完成：
 
 1. 建立 `renderer`、`main`、`preload`、`shared` 的目录边界
-2. 先定义 typed IPC contract
-3. 建立 conversations、messages、settings 的数据库 schema
-4. 写出最小 provider adapter 接口
-5. 先搭一层基于 Tailwind 的 design token
+2. 跑通 Electron shell、preload bridge 与 renderer 基础路由
+3. 整理 TypeScript、lint、format、pre-commit hook 与 ignore 基线
+4. 把 preload 边界收敛到单一的 `sandbox + contextIsolation` 运行模型
+5. 固定当前验证通过的核心 bootstrap 工具链版本
 
-第一轮目标应该是跑通一条垂直切片，而不是先堆抽象框架。
+下一步应该进入第一条真正的聊天垂直切片，而不是继续停留在基建阶段：
+
+1. 定义 conversation / message 的最小 domain model
+2. 建立 conversations、messages、settings 的数据库 schema
+3. 定义 typed IPC contract 并接上基础 repository
+4. 写出最小 provider adapter 接口
+5. 用真实会话列表与消息读取替换当前 bootstrap 占位 UI

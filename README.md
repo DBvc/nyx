@@ -28,6 +28,8 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 - `Oxlint` / `Oxfmt` / `Vitest` 脚本
 - `Lefthook` 提交前检查
 - `SQLite + better-sqlite3 + Drizzle` 依赖基线
+- preload bridge 已经收敛到 `sandbox + contextIsolation` 的单一运行模型
+- 核心 bootstrap 工具链版本已经固定到当前验证通过的组合
 
 - 产品需求文档：[PRD.md](./PRD.md)
 - v0 技术基线：[docs/v0-technical-baseline.md](./docs/v0-technical-baseline.md)
@@ -58,4 +60,4 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 
 ## 下一步
 
-下一阶段是在这套骨架之上，开始实现第一条真正的聊天垂直切片：IPC、数据库 schema、provider adapter、会话与消息模型。
+下一阶段是在这套骨架之上，开始实现第一条真正的聊天垂直切片：会话与消息模型、数据库 schema、typed IPC、provider adapter，以及第一版真实会话列表读取。
