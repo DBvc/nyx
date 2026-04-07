@@ -24,6 +24,7 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 - `main / preload / renderer / shared` 分层目录
 - `React + React Router` 的 renderer 入口
 - `Tailwind CSS v4` 基础样式入口
+- `Radix UI` 作为底层交互 primitive 的明确选型
 - `TypeScript Native Preview` 与 `TypeScript 6.0 RC` 双轨类型检查脚本
 - `Oxlint` / `Oxfmt` / `Vitest` 脚本
 - `Lefthook` 提交前检查

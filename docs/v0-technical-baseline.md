@@ -26,6 +26,7 @@
 | 前端框架      | `React`                                   |
 | 路由          | `React Router`                            |
 | 样式          | `Tailwind CSS v4`                         |
+| UI primitive  | `Radix UI`                                |
 | 设计系统方向  | 基于 token 的小型 design system           |
 | UI 状态       | 组件本地 state 优先，必要时使用 `Zustand` |
 | 校验与 schema | `zod`                                     |
@@ -154,7 +155,38 @@
 
 也就是说，`Tailwind` 是实现手段，不是设计系统本身。`Nyx v0` 应该尽早形成一套很小但清晰的 design system。
 
-### 3.7 组件本地 state 优先，必要时再用 Zustand
+### 3.7 Radix UI 作为 primitive 层，而不是 shadcn 或全量自写
+
+`Nyx v0` 的 UI 组件策略已经明确：
+
+- 使用 `Radix UI` 承接底层交互 primitive
+- 视觉样式、布局语言和产品组件由项目自己维护
+- `shadcn/ui` 可以作为实现参考，但不作为项目的主组件体系
+
+这样选的原因：
+
+- 桌面聊天工具会很快碰到 `Dialog`、`Popover`、`DropdownMenu`、`ContextMenu`、`Select` 这一类交互细节
+- 这些交互在焦点管理、键盘导航和可访问性上很容易出错，不值得在 `v0` 阶段从零重造
+- 但 `Nyx` 也不应该长成通用后台模板，所以不适合直接把 `shadcn/ui` 当成整套视觉系统照搬
+
+当前的边界原则是：
+
+- 用 `Radix UI` 解决行为正确性和可访问性基础
+- 用 `Tailwind` + design token 解决外观与品牌气质
+- 业务层组件自己定义，例如 `Sidebar`、`ConversationList`、`ChatMessage`、`Composer`、`SettingsSection`
+
+第一批优先引入的 `Radix UI` primitive 建议是：
+
+- `Dialog`
+- `Popover`
+- `DropdownMenu`
+- `ContextMenu`
+- `Tooltip`
+- `Select`
+- `Tabs`
+- `ScrollArea`
+
+### 3.8 组件本地 state 优先，必要时再用 Zustand
 
 当前不做“全局状态先行”。
 
@@ -165,7 +197,7 @@
 
 这样做可以避免 `v0` 过早变成 store 驱动的大型前端应用，同时保留共享状态的空间。
 
-### 3.8 zod
+### 3.9 zod
 
 `zod` 负责 schema 与运行时校验，主要用于：
 
@@ -176,7 +208,7 @@
 
 它的价值不只是“校验数据”，更是让边界契约保持显式。
 
-### 3.9 SQLite + better-sqlite3 + Drizzle
+### 3.10 SQLite + better-sqlite3 + Drizzle
 
 这是当前 `v0` 的持久化方案。
 
@@ -203,7 +235,7 @@
 - `better-sqlite3` 是 native module
 - 后续在安装、rebuild、打包时必须尽早验证链路
 
-### 3.10 自定义 typed IPC，而不是 tRPC
+### 3.11 自定义 typed IPC，而不是 tRPC
 
 当前不引入 `tRPC`。
 
@@ -226,7 +258,7 @@
 - preload 不再维护非隔离模式 fallback
 - renderer 在 bridge 缺失时显示显式 startup error，而不是伪造降级数据
 
-### 3.11 自己维护 Provider adapter 层
+### 3.12 自己维护 Provider adapter 层
 
 Provider 接入从第一版开始就要放在项目自己维护的 adapter 层后面。
 
@@ -245,7 +277,7 @@ Provider 接入从第一版开始就要放在项目自己维护的 adapter 层�
 
 先不要把 tool、agent、复杂协议提前塞进去。
 
-### 3.12 Oxlint 与 Oxfmt
+### 3.13 Oxlint 与 Oxfmt
 
 当前 lint / format 方向也偏向更新的 Rust 基建。
 
@@ -259,7 +291,7 @@ Provider 接入从第一版开始就要放在项目自己维护的 adapter 层�
 
 - 如果某些格式化边角问题明显拖慢开发效率，可以重新评估 formatter 方案
 
-### 3.13 Vitest，但初期只做核心单测
+### 3.14 Vitest，但初期只做核心单测
 
 测试仍然重要，但当前阶段不把测试面铺太大。
 
@@ -272,7 +304,7 @@ Provider 接入从第一版开始就要放在项目自己维护的 adapter 层�
 
 等第一个聊天闭环跑通之后，再扩展到集成测试和 E2E。
 
-### 3.14 Node 24，而不是 Bun 作为主线运行时
+### 3.15 Node 24，而不是 Bun 作为主线运行时
 
 当前运行时选择 `Node 24`，不把 `Bun` 纳入 `v0` 主线。
 
