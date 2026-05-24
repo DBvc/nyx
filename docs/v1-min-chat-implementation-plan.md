@@ -19,9 +19,9 @@
 
 当前要实现的不是一个平台，而是一条最小但真实可用的聊天垂直切片：
 
-- 单页面桌面聊天 UI
+- 单页面桌面聊天 UI，采用轻量左侧辅助栏和右侧聊天主区
 - 真实模型接入，必须是真流式，不允许假流式
-- 单栏布局，不做侧边栏，不做多区域工作台
+- 基本形态参考常见桌面聊天产品，但不做多区域工作台
 - 只支持纯文本消息
 - 支持临时多轮对话，但只存在于当前应用会话内
 - 支持 `Stop`
@@ -77,7 +77,7 @@
 这几个决策直接锁定，不继续发散：
 
 - 范围以最新 `v1 min chat` 文档为准，不按旧的 `v0` 范围继续扩
-- 先做单聊天页，不保留左侧会话栏
+- 保留轻量左侧辅助栏，但不做真实历史列表、设置区或多工作区
 - renderer 只维护内存态，不提前引入数据库或持久化
 - `main` process 负责读取环境变量、发起网络请求、持有取消句柄
 - 对 provider 保持一层很薄的 adapter，但不为了“未来平台化”做重抽象
@@ -178,7 +178,7 @@
 
 ### Phase 3: Preload Bridge and Renderer Chat Screen
 
-目标：把当前展示性质的 bootstrap 页面替换成真实的单页聊天界面。
+目标：把当前展示性质的 bootstrap 页面替换成真实的桌面聊天界面。
 
 任务：
 
@@ -187,11 +187,11 @@
   - 发起请求的方法
   - 取消的方法
   - 订阅流式事件的方法
-- 在 [src/ui/App.tsx](/Users/sy/Code/github/nyx/src/ui/App.tsx) 中替换现有双栏 bootstrap 布局
-- 实现单栏结构：
-  - 轻标题区
-  - 消息列表
-  - 输入区
+- 在 [src/ui/App.tsx](/Users/sy/Code/github/nyx/src/ui/App.tsx) 中替换现有 bootstrap 布局
+- 实现基础桌面聊天壳：
+  - 左侧轻量辅助栏
+  - 右侧主聊天区
+  - 主聊天区内的轻标题区、消息列表、输入区
 - 用内存 reducer 管理当前临时会话
 - 发送后立刻插入 user message 和 assistant 占位 message
 - 收到 delta 时持续追加到 assistant message
@@ -204,6 +204,12 @@
 - `src/ui/chat/chat-reducer.ts`
 - `src/ui/chat/use-chat-session.ts`
 - `src/ui/chat/chat-types.ts`
+
+设计要求补充：
+
+- 基本形态参考 ChatGPT / Codex 这类普通桌面聊天产品
+- 但左侧辅助栏不能假装已经有真实历史或设置系统
+- 聊天主区保持朴素、安静、可长期阅读，不做花哨视觉
 
 完成标准：
 

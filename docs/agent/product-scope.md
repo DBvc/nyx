@@ -15,7 +15,7 @@ If those documents disagree, follow the min-chat implementation plan.
 
 ## In Scope Right Now
 
-- Single-page desktop chat UI
+- Single-page desktop chat UI with a lightweight sidebar shell
 - Plain-text messages only
 - Real model traffic through an OpenAI-compatible relay
 - Real streaming output

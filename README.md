@@ -2,23 +2,41 @@
 
 Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 
-当前阶段聚焦 `v0`：先把通用聊天这条最核心的闭环做扎实，而不是一开始就做成大而全的平台。
+长期方向上，Nyx 会继续朝更完整的桌面 AI 客户端演进；但当前正在实现的范围已经收敛到 `v1 min chat`，优先把最小但真实可用的聊天闭环做稳。
 
-## v0 范围
+## 当前范围 Source of Truth
 
-`v0` 只聚焦这些基础能力：
+当前执行范围以 [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md) 为准。
 
-- 单轮与多轮纯文本聊天
+如果 [PRD.md](./PRD.md) 或旧版 `v0` 文档与这份实现计划冲突，以 `v1 min chat` 计划为准。
+
+这一轮当前只做：
+
+- 单页桌面聊天 UI，带轻量侧边栏与聊天主区
+- 真实模型接入与真流式输出
+- 纯文本消息
+- 临时多轮对话
+- `Stop`
+- 失败后的 `Retry`
+- `New chat`
+
+这一轮明确不做：
+
 - Markdown 与代码块渲染
 - 会话历史
 - 模型选择
 - 本地持久化
-
-当前不把 Agent、Tool、插件、云同步、多模态等能力放进第一版。
+- 设置页
+- Agent、Tool、插件、云同步、多模态
 
 ## 当前仓库状态
 
-仓库已经完成第一轮项目初始化，目前具备这些基础骨架：
+仓库当前同时包含两层内容：
+
+- 已落好的工程骨架
+- 正在实现中的 `v1 min chat` 聊天垂直切片
+
+当前基础骨架包括：
 
 - `Electron + electron-vite` 基础结构
 - `main / preload / renderer / shared` 分层目录
@@ -32,13 +50,20 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 - preload bridge 已经收敛到 `sandbox + contextIsolation` 的单一运行模型
 - 核心 bootstrap 工具链版本已经固定到当前验证通过的组合
 
-- 产品需求文档：[PRD.md](./PRD.md)
-- v0 技术基线：[docs/v0-technical-baseline.md](./docs/v0-technical-baseline.md)
+当前聊天切片的目标状态见：
+
+- [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md)
+
+背景文档见：
+
+- [PRD.md](./PRD.md)
+- [docs/v0-technical-baseline.md](./docs/v0-technical-baseline.md)
 
 ## 常用命令
 
 - `pnpm dev`
 - `pnpm build`
+- `pnpm format`
 - `pnpm typecheck`
 - `pnpm typecheck:compat`
 - `pnpm lint`
@@ -49,16 +74,22 @@ Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
 执行 `pnpm install` 后会自动运行 `pnpm prepare`，把 `Lefthook` 同步到 `.git/hooks`。当前约定是：
 
 - `pre-commit`：格式化 + lint
-
-`typecheck` 当前仍然作为显式开发命令保留，等后续 CI 接进来后再决定是否放回 push 阶段。
+- `pre-push`：`pnpm typecheck` + `pnpm typecheck:compat`
 
 ## 当前原则
 
-- 保持 `v0` scope 克制，把聊天体验做顺
+- 保持当前 scope 克制，先把聊天体验做顺
 - 核心逻辑尽量纯，边界层务实处理副作用
 - 尽量使用显式、严格、可测试的类型与契约
 - 为未来扩展留路，但不为了未来过度抽象
 
-## 下一步
+## 长期方向
 
-下一阶段是在这套骨架之上，开始实现第一条真正的聊天垂直切片：会话与消息模型、数据库 schema、typed IPC、provider adapter，以及第一版真实会话列表读取。
+更完整的产品能力仍然在长期方向里，包括但不限于：
+
+- Markdown 与更好的消息渲染
+- 会话历史与本地持久化
+- 模型选择与设置
+- 更丰富的工作流、工具与扩展能力
+
+但这些都不是当前这轮实现的 in-scope。

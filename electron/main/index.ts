@@ -1,11 +1,29 @@
-import { app, BrowserWindow } from "electron";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-const moduleDir = dirname(fileURLToPath(import.meta.url));
-const rendererDistPath = join(moduleDir, "../renderer");
-const preloadPath = join(moduleDir, "../preload/index.cjs");
-const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
+import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/chat/types'
+import { NyxChatSessionManager } from './chat/session'
+
+const moduleDir = dirname(fileURLToPath(import.meta.url))
+const rendererDistPath = join(moduleDir, '../renderer')
+const preloadPath = join(moduleDir, '../preload/index.cjs')
+const devServerUrl = process.env.VITE_DEV_SERVER_URL
+const chatSessionManager = new NyxChatSessionManager()
+
+function registerIpcHandlers() {
+  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
+  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
+
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
+    chatSessionManager.start(event.sender, request)
+  })
+
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: NyxChatCancellationRequest) => {
+    chatSessionManager.cancel(request)
+  })
+}
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -13,38 +31,39 @@ function createMainWindow() {
     height: 920,
     minWidth: 1080,
     minHeight: 720,
-    title: "Nyx",
-    backgroundColor: "#f7efe3",
+    title: 'Nyx',
+    backgroundColor: '#ffffff',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
     },
-  });
+  })
 
   if (devServerUrl) {
-    void window.loadURL(devServerUrl);
-    window.webContents.openDevTools({ mode: "detach" });
-    return window;
+    void window.loadURL(devServerUrl)
+    window.webContents.openDevTools({ mode: 'detach' })
+    return window
   }
 
-  void window.loadFile(join(rendererDistPath, "index.html"));
-  return window;
+  void window.loadFile(join(rendererDistPath, 'index.html'))
+  return window
 }
 
 app.whenReady().then(() => {
-  createMainWindow();
+  registerIpcHandlers()
+  createMainWindow()
 
-  app.on("activate", () => {
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      createMainWindow()
     }
-  });
-});
+  })
+})
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
   }
-});
+})

@@ -1,23 +1,26 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --color-nyx-canvas: #f7efe3;
-  --color-nyx-panel: #fefaf4;
-  --color-nyx-panel-strong: #f4e8d7;
-  --color-nyx-line: #d6c7b6;
-  --color-nyx-ink: #251a10;
-  --color-nyx-muted: #6a5848;
-  --color-nyx-accent: #bf5a3f;
-  --font-sans: "IBM Plex Sans", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+  --color-nyx-canvas: #ffffff;
+  --color-nyx-sidebar: #f7f7f4;
+  --color-nyx-panel: #f1f1ee;
+  --color-nyx-panel-strong: #ececea;
+  --color-nyx-composer: #ffffff;
+  --color-nyx-hover: #ededeb;
+  --color-nyx-line: #dededb;
+  --color-nyx-line-soft: #ebebe8;
+  --color-nyx-ink: #20201d;
+  --color-nyx-muted: #6f6f69;
+  --color-nyx-subtle: #9a9a94;
+  --color-nyx-accent: #111111;
+  --font-sans: 'IBM Plex Sans', 'PingFang SC', 'Helvetica Neue', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
 }
 
 :root {
   color-scheme: light;
   font-family: var(--font-sans);
-  background:
-    radial-gradient(circle at top, rgba(191, 90, 63, 0.12), transparent 36%),
-    linear-gradient(180deg, #fbf5eb 0%, #f7efe3 100%);
+  background-color: var(--color-nyx-canvas);
 }
 
 * {
@@ -27,10 +30,52 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
   margin: 0;
 }
 
 body {
+  background-color: var(--color-nyx-canvas);
   color: var(--color-nyx-ink);
+  overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+textarea::placeholder {
+  color: #b8b8b3;
+}
+
+::selection {
+  background: #d8d8d3;
+}
+
+:focus-visible {
+  outline: 2px solid #8f8f88;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  textarea {
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      opacity 140ms ease;
+  }
 }

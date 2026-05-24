@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 
-import type { NyxDesktopApi } from "../shared/contracts/desktop";
+import type { NyxDesktopApi } from '../shared/contracts/desktop'
 
 declare global {
   interface Window {
-    nyx?: NyxDesktopApi;
+    nyx?: NyxDesktopApi
   }
 }
 
-export {};
+export {}

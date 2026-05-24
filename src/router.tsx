@@ -1,10 +1,10 @@
-import { createHashRouter } from "react-router-dom";
+import { createHashRouter } from 'react-router-dom'
 
-import { App } from "./ui/App";
+import { App } from './ui/App'
 
 export const router = createHashRouter([
   {
-    path: "/",
+    path: '/',
     element: <App />,
   },
-]);
+])
