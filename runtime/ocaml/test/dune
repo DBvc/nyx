@@ -1,0 +1,3 @@
+(test
+ (name runtime_test)
+ (libraries nyx_runtime alcotest))

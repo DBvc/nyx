@@ -7,13 +7,17 @@
   "scripts": {
     "prepare": "lefthook install",
     "dev": "mise run desktop:dev",
-    "build": "mise run desktop:build",
-    "check": "mise run desktop:check",
-    "format": "mise run desktop:format",
-    "format:check": "mise run desktop:format-check",
+    "build": "mise run build",
+    "check": "mise run check",
+    "format": "mise run format",
+    "format:check": "mise run format-check",
     "lint": "mise run desktop:lint",
     "typecheck": "mise run desktop:typecheck",
-    "typecheck:compat": "mise run desktop:typecheck:compat"
+    "typecheck:compat": "mise run desktop:typecheck:compat",
+    "runtime:setup": "mise run runtime:setup",
+    "runtime:build": "mise run runtime:build",
+    "runtime:test": "mise run runtime:test",
+    "runtime:ping": "mise run runtime:ping"
   },
   "devDependencies": {
     "lefthook": "^2.1.9",

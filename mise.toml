@@ -48,3 +48,81 @@ pnpm --dir apps/desktop typecheck:compat
 pnpm --dir apps/desktop lint
 pnpm --dir apps/desktop build
 """
+
+[tasks."runtime:setup"]
+description = "Create the OCaml local switch and install runtime dependencies"
+run = """
+set -eu
+cd runtime/ocaml
+
+opam update
+
+if [ ! -d _opam ]; then
+  opam switch create . 5.5.0 --yes
+fi
+
+opam install . --deps-only --with-test --with-doc --yes
+opam install alcotest ocamlformat.0.29.0 odoc --yes
+"""
+
+[tasks."runtime:build"]
+description = "Build the OCaml runtime"
+run = "cd runtime/ocaml && opam exec -- dune build"
+
+[tasks."runtime:test"]
+description = "Test the OCaml runtime"
+run = "cd runtime/ocaml && opam exec -- dune runtest"
+
+[tasks."runtime:format"]
+description = "Format the OCaml runtime"
+run = """
+cd runtime/ocaml
+opam exec -- dune fmt || opam exec -- dune fmt
+"""
+
+[tasks."runtime:format-check"]
+description = "Check OCaml runtime formatting"
+run = "cd runtime/ocaml && opam exec -- dune build @fmt"
+
+[tasks."runtime:ping"]
+description = "Run the OCaml runtime ping command"
+run = "cd runtime/ocaml && opam exec -- dune exec nyx-runtime -- ping"
+
+[tasks."runtime:check"]
+description = "Run all OCaml runtime checks"
+run = """
+cd runtime/ocaml
+opam exec -- dune build
+opam exec -- dune runtest
+opam exec -- dune build @fmt
+"""
+
+[tasks.format]
+description = "Format all workspace code"
+run = """
+mise run desktop:format
+mise run runtime:format
+"""
+
+[tasks."format-check"]
+description = "Check formatting for all workspace code"
+run = """
+mise run desktop:format-check
+mise run runtime:format-check
+"""
+
+[tasks.check]
+description = "Run all workspace checks"
+run = """
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run runtime:check
+"""
+
+[tasks.build]
+description = "Build all workspace projects"
+run = """
+mise run runtime:build
+mise run desktop:build
+"""

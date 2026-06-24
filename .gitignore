@@ -8,3 +8,9 @@ coverage
 *.tsbuildinfo
 .DS_Store
 .gstack/
+
+# OCaml
+_build
+_opam
+runtime/ocaml/_build
+runtime/ocaml/_opam

@@ -6,6 +6,12 @@ pre-commit:
       run: pnpm exec oxfmt --config apps/desktop/.oxfmtrc.json {staged_files}
       stage_fixed: true
 
+    - name: ocaml-format
+      glob:
+        - 'runtime/ocaml/**/*.{ml,mli}'
+      run: mise run runtime:format
+      stage_fixed: true
+
     - name: lint
       glob:
         - '*.{ts,tsx,js,jsx,mts,cts}'
@@ -14,4 +20,4 @@ pre-commit:
 pre-push:
   jobs:
     - name: check
-      run: mise run desktop:check
+      run: mise run check

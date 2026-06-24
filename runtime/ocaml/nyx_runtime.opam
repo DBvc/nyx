@@ -1,0 +1,18 @@
+opam-version: "2.0"
+synopsis: "Nyx OCaml runtime core"
+description: "Typed runtime core for Nyx agent experiments."
+maintainer: "Yang.S"
+authors: "Yang.S"
+license: "MIT"
+
+depends: [
+  "ocaml" {>= "5.5.0" & < "5.6"}
+  "dune" {>= "3.23"}
+  "yojson"
+  "alcotest" {with-test}
+  "odoc" {with-doc}
+]
+
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
