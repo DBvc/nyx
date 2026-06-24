@@ -1,95 +1,176 @@
 # Nyx
 
-Nyx 是一个先为自己使用而构建的桌面 AI 聊天工具。
+Nyx is a personal desktop AI chat client.
 
-长期方向上，Nyx 会继续朝更完整的桌面 AI 客户端演进；但当前正在实现的范围已经收敛到 `v1 min chat`，优先把最小但真实可用的聊天闭环做稳。
+The repository is now organized as a workspace, but the current product scope remains intentionally narrow: `v1 min chat`. The goal of this phase is still a minimal, real, streaming desktop chat loop, not a general AI workbench.
 
-## 当前范围 Source of Truth
+## Workspace
 
-当前执行范围以 [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md) 为准。
+Nyx is split into two first-class subprojects:
 
-如果 [PRD.md](./PRD.md) 或旧版 `v0` 文档与这份实现计划冲突，以 `v1 min chat` 计划为准。
+- `apps/desktop`: the current Electron desktop app.
+- `runtime/ocaml`: an independent OCaml runtime core skeleton.
 
-这一轮当前只做：
+The desktop app is the only user-facing product surface right now. The OCaml runtime exists as a foundation for later typed Agent/runtime work, but it is not connected to Electron yet.
 
-- 单页桌面聊天 UI，带轻量侧边栏与聊天主区
-- 真实模型接入与真流式输出
-- 纯文本消息
-- 临时多轮对话
+Current architecture notes:
+
+- [docs/architecture/workspace-boundary.md](./docs/architecture/workspace-boundary.md)
+- [docs/architecture/runtime-protocol.md](./docs/architecture/runtime-protocol.md)
+
+## Current Product Scope
+
+The active source of truth is [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md).
+
+If [PRD.md](./PRD.md), [DESIGN.md](./DESIGN.md), or older background docs disagree with the min-chat plan, follow the min-chat plan.
+
+In scope:
+
+- single-page desktop chat UI
+- plain text messages
+- real model traffic through the Electron main process
+- real streaming output
+- temporary in-memory multi-turn conversation
 - `Stop`
-- 失败后的 `Retry`
+- `Retry`
 - `New chat`
+- environment-based provider configuration
+- provider secrets kept in Electron main only
 
-这一轮明确不做：
+Out of scope for this phase:
 
-- Markdown 与代码块渲染
-- 会话历史
-- 模型选择
-- 本地持久化
-- 设置页
-- Agent、Tool、插件、云同步、多模态
+- persistent conversation history
+- settings UI
+- model picker UI
+- Markdown or code highlighting
+- tools
+- agents
+- plugins
+- artifacts
+- cloud sync
+- multimodal features
 
-## 当前仓库状态
+## Boundaries
 
-仓库当前同时包含两层内容：
+`apps/desktop` owns:
 
-- 已落好的工程骨架
-- 正在实现中的 `v1 min chat` 聊天垂直切片
+- Electron main, preload, and renderer
+- desktop UI
+- current provider integration
+- environment variables and provider credentials
+- OS-facing side effects
+- current `v1 min chat` behavior
 
-当前基础骨架包括：
+`runtime/ocaml` owns:
 
-- `Electron + electron-vite` 基础结构
-- `main / preload / renderer / shared` 分层目录
-- `React + React Router` 的 renderer 入口
-- `Tailwind CSS v4` 基础样式入口
-- `Radix UI` 作为底层交互 primitive 的明确选型
-- `TypeScript Native Preview` 与 `TypeScript 6.0 RC` 双轨类型检查脚本
-- `Oxlint` / `Oxfmt` / `Vitest` 脚本
-- `Lefthook` 提交前检查
-- `SQLite + better-sqlite3 + Drizzle` 依赖基线
-- preload bridge 已经收敛到 `sandbox + contextIsolation` 的单一运行模型
-- 核心 bootstrap 工具链版本已经固定到当前验证通过的组合
+- runtime domain types
+- runtime event model
+- future state transitions
+- future tool scheduling semantics
+- future policy and capability model
+- replayable runtime tests
 
-当前聊天切片的目标状态见：
+Electron and OCaml do not communicate yet. When that work starts later, Electron main is expected to own the OCaml child process lifecycle over stdio/NDJSON. The renderer must never talk to the OCaml runtime directly.
 
-- [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md)
+## Tooling
 
-背景文档见：
+Root tooling is managed through `mise` tasks. `mise` currently manages Node for the workspace; `pnpm` and `opam` are expected to be available on the machine.
 
-- [PRD.md](./PRD.md)
-- [docs/v0-technical-baseline.md](./docs/v0-technical-baseline.md)
+Initial setup:
 
-## 常用命令
+```bash
+mise install
+pnpm install
+mise run runtime:setup
+```
 
-- `pnpm dev`
-- `pnpm build`
-- `pnpm format`
-- `pnpm typecheck`
-- `pnpm typecheck:compat`
-- `pnpm lint`
-- `pnpm format:check`
+The runtime setup creates a local opam switch under:
 
-开发时直接运行 `pnpm dev`。`electron-vite` 会先构建 `out/main/index.js` 和 `out/preload/index.cjs`，再启动 Electron，所以 `package.json` 里的 `main` 入口会指向 `out/main/index.js`。
+```text
+runtime/ocaml/_opam
+```
 
-执行 `pnpm install` 后会自动运行 `pnpm prepare`，把 `Lefthook` 同步到 `.git/hooks`。当前约定是：
+Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
 
-- `pre-commit`：格式化 + lint
-- `pre-push`：`pnpm typecheck` + `pnpm typecheck:compat`
+## Common Commands
 
-## 当前原则
+Workspace:
 
-- 保持当前 scope 克制，先把聊天体验做顺
-- 核心逻辑尽量纯，边界层务实处理副作用
-- 尽量使用显式、严格、可测试的类型与契约
-- 为未来扩展留路，但不为了未来过度抽象
+```bash
+mise run check
+mise run build
+mise run format
+mise run format-check
+```
 
-## 长期方向
+Desktop:
 
-更完整的产品能力仍然在长期方向里，包括但不限于：
+```bash
+mise run desktop:dev
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format
+mise run desktop:format-check
+mise run desktop:check
+```
 
-- Markdown 与更好的消息渲染
-- 会话历史与本地持久化
-- 模型选择与设置
-- 更丰富的工作流、工具与扩展能力
+OCaml runtime:
 
-但这些都不是当前这轮实现的 in-scope。
+```bash
+mise run runtime:setup
+mise run runtime:build
+mise run runtime:test
+mise run runtime:format
+mise run runtime:format-check
+mise run runtime:ping
+mise run runtime:check
+```
+
+Root `pnpm` scripts are compatibility aliases for the same `mise` tasks:
+
+```bash
+pnpm dev
+pnpm build
+pnpm check
+pnpm format
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm typecheck:compat
+```
+
+## Verification
+
+For desktop-only changes:
+
+```bash
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+```
+
+For runtime-only changes:
+
+```bash
+mise run runtime:build
+mise run runtime:test
+mise run runtime:format-check
+```
+
+For cross-boundary, tooling, or structural changes:
+
+```bash
+mise run check
+mise run build
+```
+
+## Development Rules
+
+- Keep the product inside `v1 min chat` unless a task explicitly changes scope.
+- Do not implement Electron <-> OCaml communication as part of structural docs or setup work.
+- Renderer code must not read environment variables or provider credentials.
+- Provider calls and cancellation handles belong in Electron main.
+- Runtime code should stay pure and tiny until a concrete runtime behavior requires more.
+- Do not add tools, agents, plugin UI, persistence, or settings UI during this phase.
