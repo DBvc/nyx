@@ -1,0 +1,50 @@
+[tools]
+node = "24"
+
+[settings]
+lockfile = true
+
+[tasks.bootstrap]
+description = "Install workspace dependencies"
+run = "pnpm install"
+
+[tasks."desktop:dev"]
+description = "Run the Electron desktop app"
+run = "pnpm --dir apps/desktop dev"
+
+[tasks."desktop:build"]
+description = "Build the Electron desktop app"
+run = "pnpm --dir apps/desktop build"
+
+[tasks."desktop:preview"]
+description = "Preview the Electron desktop app"
+run = "pnpm --dir apps/desktop preview"
+
+[tasks."desktop:typecheck"]
+description = "Typecheck the desktop app with TypeScript native preview"
+run = "pnpm --dir apps/desktop typecheck"
+
+[tasks."desktop:typecheck:compat"]
+description = "Typecheck the desktop app with tsc"
+run = "pnpm --dir apps/desktop typecheck:compat"
+
+[tasks."desktop:lint"]
+description = "Lint the desktop app"
+run = "pnpm --dir apps/desktop lint"
+
+[tasks."desktop:format"]
+description = "Format the desktop app"
+run = "pnpm --dir apps/desktop format"
+
+[tasks."desktop:format-check"]
+description = "Check desktop formatting"
+run = "pnpm --dir apps/desktop format:check"
+
+[tasks."desktop:check"]
+description = "Run all desktop checks"
+run = """
+pnpm --dir apps/desktop typecheck
+pnpm --dir apps/desktop typecheck:compat
+pnpm --dir apps/desktop lint
+pnpm --dir apps/desktop build
+"""

@@ -1,5 +1,16 @@
+packages:
+  - 'apps/*'
+
 onlyBuiltDependencies:
   - better-sqlite3
   - electron
   - esbuild
   - lefthook
+
+overrides:
+  '@types/better-sqlite3>@types/node': '^24.13.2'
+
+packageExtensions:
+  'electron-vite@*':
+    peerDependencies:
+      electron: '*'

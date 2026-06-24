@@ -3,7 +3,7 @@ pre-commit:
     - name: format
       glob:
         - '*.{ts,tsx,js,jsx,mts,cts,json,md,html,css,yml,yaml}'
-      run: pnpm exec oxfmt {staged_files}
+      run: pnpm exec oxfmt --config apps/desktop/.oxfmtrc.json {staged_files}
       stage_fixed: true
 
     - name: lint
@@ -13,8 +13,5 @@ pre-commit:
 
 pre-push:
   jobs:
-    - name: typecheck
-      run: pnpm typecheck
-
-    - name: typecheck-compat
-      run: pnpm typecheck:compat
+    - name: check
+      run: mise run desktop:check

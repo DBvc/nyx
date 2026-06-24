@@ -1,0 +1,46 @@
+{
+  "name": "@nyx/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A personal desktop AI chat tool.",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsgo --noEmit -p tsconfig.app.json && tsgo --noEmit -p tsconfig.node.json",
+    "typecheck:compat": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "drizzle-orm": "^0.45.2",
+    "electron": "^41.7.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.17.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@typescript/native-preview": "^7.0.0-dev.20260612.1",
+    "@vitejs/plugin-react": "^6.0.2",
+    "drizzle-kit": "^0.31.10",
+    "electron-vite": "^5.0.0",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.69.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
+  }
+}
