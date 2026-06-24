@@ -1,39 +1,152 @@
 # AGENTS.md
 
-Nyx is currently a minimal desktop AI chat client, not a general AI workbench.
+Nyx is a workspace for a personal AI client and a planned typed runtime core.
 
-## Start Here
+Current product scope is still `v1 min chat`. Do not expand the product into a general AI workbench during structural or runtime migration work.
 
-- Current feature scope is defined by [docs/v1-min-chat-implementation-plan.md](/Users/sy/Code/github/nyx/docs/v1-min-chat-implementation-plan.md).
-- If [README.md](/Users/sy/Code/github/nyx/README.md) or [PRD.md](/Users/sy/Code/github/nyx/PRD.md) conflicts with the min-chat plan, follow the min-chat plan.
-- The most important rules are in this file. Task-specific detail lives under [docs/agent/](/Users/sy/Code/github/nyx/docs/agent/).
+## Project Layout
+
+- `apps/desktop`: Electron desktop app.
+- `runtime/ocaml`: planned OCaml runtime core. Do not assume it exists until the runtime skeleton task creates it.
+- `docs/architecture`: planned architecture notes and runtime boundary documents. Do not assume these docs exist until the runtime docs task creates them.
+- `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
+
+## Source of Truth
+
+When product scope conflicts appear, follow this order:
+
+1. `docs/v1-min-chat-implementation-plan.md`
+2. `docs/architecture/*.md` when present
+3. `README.md`
+4. `PRD.md`
+5. `DESIGN.md`
+
+The current desktop product remains a minimal single-page chat client:
+
+- plain text messages
+- real streaming
+- temporary in-memory conversation
+- stop
+- retry
+- new chat
+
+Still out of scope:
+
+- persistent history
+- settings UI
+- model picker UI
+- markdown rendering
+- tools
+- agents
+- plugins
+- artifacts
+- cloud sync
+- multimodal features
+
+## Workspace Boundary
+
+`apps/desktop` owns:
+
+- Electron main, preload, renderer
+- desktop UI
+- current provider integration
+- environment variables
+- provider credentials
+- OS side effects
+- current v1 min chat behavior
+
+`runtime/ocaml`, once created, owns:
+
+- typed runtime domain model
+- runtime event model
+- future agent state machine
+- future tool scheduling semantics
+- future policy and capability model
+- replayable runtime tests
 
 ## Hard Rules
 
-- Keep the app inside the current min-chat scope: single page, plain text, real streaming, no history, no persistence, no settings UI.
-- Secrets and provider credentials must stay in `electron/main/` only.
-- Renderer code must not read environment variables or call the provider directly.
-- When changing bridge or IPC behavior, define or update the shared contract under `shared/` first.
-- Run `pnpm format` after code edits. If formatter and personal style disagree, formatter wins.
-- Do not add `husky` or `lint-staged` unless the team explicitly decides to replace `lefthook`.
+- Do not change product behavior while doing structural migration.
+- Do not implement Electron <-> OCaml communication unless the task explicitly asks for it.
+- Do not introduce FFI.
+- Do not let renderer read environment variables.
+- Do not let renderer access provider credentials.
+- Do not move provider tokens into OCaml.
+- Do not add Rust, Swift, Tauri, mobile, or server projects in this phase.
+- Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
+- Prefer `git mv` for file moves.
+- Use relative documentation links. Do not write local absolute paths such as `/Users/...`.
 
-## Commands
+## Tooling
 
-- `pnpm install`
-- `pnpm dev`
-- `pnpm build`
-- `pnpm format`
-- `pnpm lint`
-- `pnpm typecheck`
-- `pnpm typecheck:compat`
+Root tooling is managed by `mise`.
 
-## Task Routing
+Use:
 
-- Before changing product scope or deciding whether something belongs in this phase, read [docs/agent/product-scope.md](/Users/sy/Code/github/nyx/docs/agent/product-scope.md).
-- Before changing `shared/`, `electron/main/`, `electron/preload/`, or provider/IPC flow, read [docs/agent/architecture.md](/Users/sy/Code/github/nyx/docs/agent/architecture.md).
-- Before changing hooks, checks, or deciding what to run after edits, read [docs/agent/verification.md](/Users/sy/Code/github/nyx/docs/agent/verification.md).
+```bash
+mise install
+pnpm install
+```
 
-## Automation
+OCaml compiler, opam setup, and runtime tasks are introduced only after `runtime/ocaml` exists.
 
-- `pre-commit` formats staged files and runs `oxlint` on staged JS/TS files.
-- `pre-push` runs `pnpm typecheck` and `pnpm typecheck:compat`.
+## Common Commands
+
+Desktop:
+
+```bash
+mise run desktop:dev
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format
+mise run desktop:format-check
+```
+
+Root npm scripts are compatibility aliases for the current desktop checks. Prefer `mise run desktop:*` commands in new docs until workspace-level runtime tasks exist.
+
+## Verification Rules
+
+For desktop-only changes, run:
+
+```bash
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+```
+
+For future runtime-only or cross-boundary changes, first confirm the relevant `runtime:*` or workspace-level `mise` tasks exist.
+
+## Subproject Instructions
+
+Before editing `apps/desktop`, read:
+
+```text
+apps/desktop/AGENTS.md
+```
+
+Before editing `runtime/ocaml` after it exists, read:
+
+```text
+runtime/ocaml/AGENTS.md
+```
+
+## Commit Discipline
+
+Each commit should do one thing:
+
+- move project structure
+- add tooling
+- add runtime skeleton
+- update docs
+- add protocol
+- wire communication
+
+Do not mix structural moves with behavior changes.
+
+After every meaningful step:
+
+1. run the relevant verification commands
+2. inspect `git diff`
+3. commit only verified changes
