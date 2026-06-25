@@ -20,6 +20,10 @@ run = "pnpm --dir apps/desktop build"
 description = "Preview the Electron desktop app"
 run = "pnpm --dir apps/desktop preview"
 
+[tasks."desktop:test"]
+description = "Run desktop unit tests"
+run = "pnpm --dir apps/desktop test"
+
 [tasks."desktop:typecheck"]
 description = "Typecheck the desktop app with TypeScript native preview"
 run = "pnpm --dir apps/desktop typecheck"
@@ -43,6 +47,7 @@ run = "pnpm --dir apps/desktop format:check"
 [tasks."desktop:check"]
 description = "Run all desktop checks"
 run = """
+pnpm --dir apps/desktop test
 pnpm --dir apps/desktop typecheck
 pnpm --dir apps/desktop typecheck:compat
 pnpm --dir apps/desktop lint
