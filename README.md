@@ -18,6 +18,26 @@ Current architecture notes:
 - [docs/architecture/workspace-boundary.md](./docs/architecture/workspace-boundary.md)
 - [docs/architecture/runtime-protocol.md](./docs/architecture/runtime-protocol.md)
 
+## Desktop Chat Milestone
+
+The current desktop milestone has a real, manually verified `v1 min chat` loop:
+
+- redacted provider setup status in the renderer
+- OpenAI-compatible provider streaming through Electron main
+- plain-text in-memory chat with `Stop`, `Retry`, and `New chat`
+- unit coverage for chat reducer lifecycle, provider status parsing, provider
+  streaming helpers, and chat presenter helpers
+- real provider runthrough recorded in
+  [docs/next/llm-chat-runthrough.md](./docs/next/llm-chat-runthrough.md)
+
+Milestone details and code entry points are recorded in
+[docs/next/desktop-chat-milestone.md](./docs/next/desktop-chat-milestone.md).
+
+Important boundary: the renderer still does not read environment variables,
+provider tokens, full provider URLs, or raw provider configs. Provider calls and
+cancellation handles stay in Electron main. The OCaml runtime is still
+independent and is not connected to the desktop chat path.
+
 ## Current Product Scope
 
 The active source of truth is [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md).
