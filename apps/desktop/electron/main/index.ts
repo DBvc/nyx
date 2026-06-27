@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/chat/types'
+import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
+import { readNyxProviderStatus } from './chat/env'
 import { NyxChatSessionManager } from './chat/session'
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
@@ -15,6 +17,7 @@ const chatSessionManager = new NyxChatSessionManager()
 function registerIpcHandlers() {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
+  ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
     chatSessionManager.start(event.sender, request)
@@ -23,6 +26,8 @@ function registerIpcHandlers() {
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: NyxChatCancellationRequest) => {
     chatSessionManager.cancel(request)
   })
+
+  ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => readNyxProviderStatus())
 }
 
 function createMainWindow() {

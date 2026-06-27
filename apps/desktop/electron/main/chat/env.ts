@@ -1,3 +1,4 @@
+import type { NyxProviderMissingEnv, NyxProviderStatus } from '../../../shared/provider/types'
 import { createNyxChatBridgeError } from './errors'
 
 export interface NyxChatRuntimeConfig {
@@ -38,6 +39,36 @@ function normalizeBaseUrl(rawBaseUrl: string) {
   }
 
   return url.toString()
+}
+
+export function readNyxProviderStatus(): NyxProviderStatus {
+  const rawBaseUrl = process.env.NYX_API_BASE_URL?.trim()
+  const token = process.env.NYX_API_TOKEN?.trim()
+  const missingEnv: NyxProviderMissingEnv[] = []
+  let baseUrlHost: string | null = null
+  let hasValidBaseUrl = false
+
+  if (!rawBaseUrl) {
+    missingEnv.push('NYX_API_BASE_URL')
+  } else {
+    try {
+      baseUrlHost = new URL(rawBaseUrl).hostname
+      hasValidBaseUrl = true
+    } catch {
+      hasValidBaseUrl = false
+    }
+  }
+
+  if (!token) {
+    missingEnv.push('NYX_API_TOKEN')
+  }
+
+  return {
+    configured: hasValidBaseUrl && Boolean(token),
+    model: process.env.NYX_MODEL?.trim() || null,
+    baseUrlHost,
+    missingEnv,
+  }
 }
 
 export function readNyxChatRuntimeConfig(): NyxChatRuntimeConfig {

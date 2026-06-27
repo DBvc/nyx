@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { NyxChatEvent } from '../../shared/chat/events'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import type { NyxDesktopApi } from '../../shared/contracts/desktop'
+import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
+import type { NyxProviderStatus } from '../../shared/provider/types'
 
 const api: NyxDesktopApi = {
   platform: process.platform,
@@ -27,6 +29,10 @@ const api: NyxDesktopApi = {
         ipcRenderer.removeListener(NYX_CHAT_IPC_CHANNELS.event, subscription)
       }
     },
+  },
+  provider: {
+    getStatus: () =>
+      ipcRenderer.invoke(NYX_PROVIDER_IPC_CHANNELS.status) as Promise<NyxProviderStatus>,
   },
 }
 
