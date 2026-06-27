@@ -1,0 +1,100 @@
+import type { FormEvent, KeyboardEvent } from 'react'
+
+interface ChatComposerProps {
+  input: string
+  isBusy: boolean
+  canSend: boolean
+  onInputChange: (value: string) => void
+  onSend: () => void | Promise<void>
+  onStop: () => void | Promise<void>
+}
+
+function SendIcon() {
+  return (
+    <svg
+      aria-hidden='true'
+      className='h-4 w-4'
+      fill='none'
+      viewBox='0 0 16 16'
+      xmlns='http://www.w3.org/2000/svg'
+    >
+      <path
+        d='M8 12.5V3.5M8 3.5L4.75 6.75M8 3.5L11.25 6.75'
+        stroke='currentColor'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        strokeWidth='1.7'
+      />
+    </svg>
+  )
+}
+
+export function ChatComposer({
+  input,
+  isBusy,
+  canSend,
+  onInputChange,
+  onSend,
+  onStop,
+}: ChatComposerProps) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void onSend()
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) {
+      return
+    }
+
+    event.preventDefault()
+    void onSend()
+  }
+
+  return (
+    <footer className='shrink-0 bg-nyx-canvas px-4 pb-6 pt-2'>
+      <form className='mx-auto w-full max-w-[44rem]' onSubmit={handleSubmit}>
+        <div className='rounded-[1.35rem] border border-nyx-line bg-nyx-composer px-4 py-3 shadow-[0_8px_28px_rgba(0,0,0,0.08)] focus-within:border-[#c7c7c2]'>
+          <textarea
+            aria-label='Message Nyx'
+            className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[14px] leading-6 text-nyx-ink outline-none'
+            onChange={(event) => {
+              onInputChange(event.target.value)
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder='Ask for follow-up changes'
+            spellCheck={false}
+            value={input}
+          />
+
+          <div className='mt-2 flex h-8 items-center justify-end gap-2'>
+            {isBusy ? (
+              <button
+                className='h-8 rounded-full border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover'
+                onClick={() => {
+                  void onStop()
+                }}
+                type='button'
+              >
+                Stop
+              </button>
+            ) : null}
+
+            <button
+              aria-label='Send message'
+              className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                canSend
+                  ? 'bg-nyx-accent text-white hover:opacity-90'
+                  : 'bg-nyx-panel text-nyx-subtle'
+              }`}
+              disabled={!canSend}
+              type='submit'
+            >
+              <SendIcon />
+            </button>
+          </div>
+        </div>
+      </form>
+    </footer>
+  )
+}
