@@ -1,6 +1,7 @@
 import { threadPreview, threadTitle } from '../chat-presenters'
 import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
+import { useProviderStatus } from '../use-provider-status'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
 import { ChatSidebar } from './ChatSidebar'
@@ -17,6 +18,7 @@ export function ChatWorkspace() {
     stopActiveResponse,
     startNewChat,
   } = useChatSession()
+  const providerSetup = useProviderStatus()
 
   const latestMessage = state.messages.at(-1)
   const currentThreadTitle = threadTitle(state.messages)
@@ -43,10 +45,12 @@ export function ChatWorkspace() {
           <ChatThread
             containerRef={containerRef}
             messages={state.messages}
+            onRefreshProviderStatus={providerSetup.refresh}
             onRetry={(messageId) => {
               void retryMessage(messageId)
             }}
             onScroll={handleScroll}
+            providerStatus={providerSetup.status}
           />
           <ChatComposer
             canSend={canSend}

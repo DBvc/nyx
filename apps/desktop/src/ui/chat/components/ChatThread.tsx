@@ -1,17 +1,28 @@
 import type { RefObject, UIEventHandler } from 'react'
+import type { ComponentProps } from 'react'
 
 import type { NyxChatMessage } from '../../../../shared/chat/types'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatMessage } from './ChatMessage'
+import { ProviderSetupNotice, shouldShowProviderNotice } from './ProviderSetupNotice'
 
 interface ChatThreadProps {
   messages: ReadonlyArray<NyxChatMessage>
   containerRef: RefObject<HTMLDivElement | null>
   onScroll: UIEventHandler<HTMLDivElement>
   onRetry: (messageId: string) => void
+  providerStatus: ComponentProps<typeof ProviderSetupNotice>['status']
+  onRefreshProviderStatus: () => void
 }
 
-export function ChatThread({ messages, containerRef, onScroll, onRetry }: ChatThreadProps) {
+export function ChatThread({
+  messages,
+  containerRef,
+  onScroll,
+  onRetry,
+  providerStatus,
+  onRefreshProviderStatus,
+}: ChatThreadProps) {
   const hasMessages = messages.length > 0
 
   return (
@@ -26,11 +37,23 @@ export function ChatThread({ messages, containerRef, onScroll, onRetry }: ChatTh
         }`}
       >
         {!hasMessages ? (
-          <ChatEmptyState />
+          <ChatEmptyState
+            onRefreshProviderStatus={onRefreshProviderStatus}
+            providerStatus={providerStatus}
+          />
         ) : (
-          messages.map((message) => (
-            <ChatMessage key={message.id} message={message} onRetry={onRetry} />
-          ))
+          <>
+            {shouldShowProviderNotice(providerStatus) ? (
+              <ProviderSetupNotice
+                compact
+                onRefresh={onRefreshProviderStatus}
+                status={providerStatus}
+              />
+            ) : null}
+            {messages.map((message) => (
+              <ChatMessage key={message.id} message={message} onRetry={onRetry} />
+            ))}
+          </>
         )}
       </div>
     </div>
