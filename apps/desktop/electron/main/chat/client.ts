@@ -20,7 +20,7 @@ interface ChatCompletionChunk {
   }>
 }
 
-function buildChatCompletionsUrl(baseUrl: string) {
+export function buildChatCompletionsUrl(baseUrl: string) {
   const url = new URL(baseUrl)
 
   if (url.pathname === '/' || url.pathname === '') {
@@ -37,7 +37,7 @@ function buildChatCompletionsUrl(baseUrl: string) {
   return url.toString()
 }
 
-function buildProviderMessages(request: NyxChatRequest) {
+export function buildProviderMessages(request: NyxChatRequest) {
   const alreadyHasSystemMessage = request.messages.some((message) => message.role === 'system')
 
   if (alreadyHasSystemMessage) {
@@ -98,7 +98,7 @@ function toUpstreamError(response: Response, details: string) {
   })
 }
 
-async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
+export async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
