@@ -10,7 +10,12 @@ run = "pnpm install"
 
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app"
-run = "pnpm --dir apps/desktop dev"
+run = """
+set -a
+[ ! -f .env ] || . ./.env
+set +a
+pnpm --dir apps/desktop dev
+"""
 
 [tasks."desktop:build"]
 description = "Build the Electron desktop app"
