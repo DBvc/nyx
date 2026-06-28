@@ -8,4 +8,5 @@ let () =
                 "ready" "nyx-runtime ready"
                 (Nyx_runtime.Runtime.hello ()));
         ] );
+      ("chat", Chat_test.cases);
     ]

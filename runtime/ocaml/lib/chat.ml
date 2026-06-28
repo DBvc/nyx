@@ -79,3 +79,113 @@ type action =
   | Clear
 
 let initial = { transcript = []; current_turn = No_turn }
+
+let active_turn_matches (turn : active_turn) request_id assistant_message_id =
+  Request_id.equal turn.request_id request_id
+  && Message_id.equal turn.assistant_message_id assistant_message_id
+
+let append_message state message =
+  { state with transcript = state.transcript @ [ message ] }
+
+let user_message id content =
+  let open Message in
+  { id; role = User; content }
+
+let assistant_message id content =
+  let open Message in
+  { id; role = Assistant; content }
+
+let reduce state action =
+  match action with
+  | Submit_user_message
+      { request_id; user_message_id; assistant_message_id; content } -> (
+      match state.current_turn with
+      | No_turn ->
+          let transcript =
+            state.transcript @ [ user_message user_message_id content ]
+          in
+          {
+            transcript;
+            current_turn =
+              Active
+                {
+                  request_id;
+                  user_message_id;
+                  assistant_message_id;
+                  draft = "";
+                  phase = Submitted;
+                };
+          }
+      | Active _ | Failed _ -> state)
+  | Start_assistant { request_id; assistant_message_id } -> (
+      match state.current_turn with
+      | Active ({ phase = Submitted; _ } as turn)
+        when active_turn_matches turn request_id assistant_message_id ->
+          { state with current_turn = Active { turn with phase = Streaming } }
+      | No_turn | Active _ | Failed _ -> state)
+  | Append_delta { request_id; assistant_message_id; snapshot } -> (
+      match state.current_turn with
+      | Active turn
+        when active_turn_matches turn request_id assistant_message_id ->
+          {
+            state with
+            current_turn =
+              Active { turn with draft = snapshot; phase = Streaming };
+          }
+      | No_turn | Active _ | Failed _ -> state)
+  | Complete { request_id; assistant_message_id; final_content } -> (
+      match state.current_turn with
+      | Active turn
+        when active_turn_matches turn request_id assistant_message_id ->
+          let state =
+            append_message state
+              (assistant_message turn.assistant_message_id final_content)
+          in
+          { state with current_turn = No_turn }
+      | No_turn | Active _ | Failed _ -> state)
+  | Cancel { request_id; assistant_message_id; final_content } -> (
+      match state.current_turn with
+      | Active turn
+        when active_turn_matches turn request_id assistant_message_id ->
+          let state =
+            if String.equal final_content "" then state
+            else
+              append_message state
+                (assistant_message turn.assistant_message_id final_content)
+          in
+          { state with current_turn = No_turn }
+      | No_turn | Active _ | Failed _ -> state)
+  | Fail { request_id; assistant_message_id; error } -> (
+      match state.current_turn with
+      | Active turn
+        when active_turn_matches turn request_id assistant_message_id ->
+          {
+            state with
+            current_turn =
+              Failed
+                {
+                  request_id = turn.request_id;
+                  user_message_id = turn.user_message_id;
+                  assistant_message_id = turn.assistant_message_id;
+                  draft = turn.draft;
+                  error;
+                };
+          }
+      | No_turn | Active _ | Failed _ -> state)
+  | Retry_failed { request_id } -> (
+      match state.current_turn with
+      | Failed turn ->
+          {
+            state with
+            current_turn =
+              Active
+                {
+                  request_id;
+                  user_message_id = turn.user_message_id;
+                  assistant_message_id = turn.assistant_message_id;
+                  draft = "";
+                  phase = Submitted;
+                };
+          }
+      | No_turn | Active _ -> state)
+  | Clear -> initial
