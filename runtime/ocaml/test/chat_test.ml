@@ -155,6 +155,34 @@ let test_stream_and_complete () =
     state;
   check_no_turn state
 
+let test_delta_from_submitted_starts_streaming () =
+  let state = submitted_state () |> delta ~snapshot:"First response snapshot" in
+  check_transcript [ (Chat.Message.User, "Hello Nyx") ] state;
+  check_active ~phase:Chat.Streaming ~draft:"First response snapshot" state
+
+let test_delta_snapshot_replaces_previous_draft () =
+  let state =
+    submitted_state () |> delta ~snapshot:"He" |> delta ~snapshot:"Hello"
+  in
+  check_transcript [ (Chat.Message.User, "Hello Nyx") ] state;
+  check_active ~phase:Chat.Streaming ~draft:"Hello" state
+
+let test_complete_from_submitted_commits_assistant () =
+  let state =
+    submitted_state () |> complete ~final_content:"Immediate response"
+  in
+  check_transcript
+    [ (Chat.Message.User, "Hello Nyx"); (Assistant, "Immediate response") ]
+    state;
+  check_no_turn state
+
+let test_fail_from_submitted_keeps_empty_draft () =
+  let state =
+    submitted_state () |> fail ~error:(runtime_error "Immediate fail")
+  in
+  check_transcript [ (Chat.Message.User, "Hello Nyx") ] state;
+  check_failed ~draft:"" ~error_message:"Immediate fail" state
+
 let test_illegal_state_and_id_mismatch_are_no_op () =
   let active = active_with_draft () in
   let stale_actions =
@@ -328,13 +356,24 @@ let test_retry_failed_turn_does_not_duplicate_user_message () =
 
 let test_clear_resets_state () =
   let state = active_with_draft () |> clear in
-  Alcotest.(check bool) "initial state" true (state = Chat.initial)
+  Alcotest.(check bool) "active to initial" true (state = Chat.initial);
+
+  let state = active_with_draft () |> fail |> clear in
+  Alcotest.(check bool) "failed to initial" true (state = Chat.initial)
 
 let cases =
   [
     Alcotest.test_case "submit creates one active turn" `Quick
       test_submit_creates_single_active_turn;
     Alcotest.test_case "stream and complete" `Quick test_stream_and_complete;
+    Alcotest.test_case "delta from submitted starts streaming" `Quick
+      test_delta_from_submitted_starts_streaming;
+    Alcotest.test_case "delta snapshot replaces previous draft" `Quick
+      test_delta_snapshot_replaces_previous_draft;
+    Alcotest.test_case "complete from submitted commits assistant" `Quick
+      test_complete_from_submitted_commits_assistant;
+    Alcotest.test_case "fail from submitted keeps empty draft" `Quick
+      test_fail_from_submitted_keeps_empty_draft;
     Alcotest.test_case "illegal states and id mismatches are no-op" `Quick
       test_illegal_state_and_id_mismatch_are_no_op;
     Alcotest.test_case "cancel empty does not append assistant" `Quick

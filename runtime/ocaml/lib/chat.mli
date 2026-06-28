@@ -58,6 +58,7 @@ type action =
   | Append_delta of {
       request_id : Request_id.t;
       assistant_message_id : Message_id.t;
+      (* Full assistant draft snapshot, not an incremental text fragment. *)
       snapshot : string;
     }
   | Complete of {
