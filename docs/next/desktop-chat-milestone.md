@@ -117,14 +117,12 @@ mise run check
 mise run desktop:build
 ```
 
-For manual provider verification, export local provider env before starting the
-desktop app:
+For manual provider verification, configure a local root `.env` from
+[.env.example](../../.env.example), then start the desktop app:
 
 ```sh
-set -a
-source .env
-set +a
 mise run desktop:dev
 ```
 
-The local `.env` file must not be committed.
+`mise run desktop:dev` loads the root `.env` automatically. The local `.env`
+file must not be committed.

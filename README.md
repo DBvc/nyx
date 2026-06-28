@@ -112,6 +112,21 @@ runtime/ocaml/_opam
 
 Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
 
+## Local Provider Env
+
+Local provider credentials are kept in a root `.env` file, using
+[.env.example](./.env.example) as the template:
+
+```bash
+NYX_API_BASE_URL=
+NYX_API_TOKEN=
+NYX_MODEL=
+```
+
+The root `.env` file is ignored by Git. `mise run desktop:dev` automatically
+loads it before starting the desktop app, so the renderer still does not read
+environment variables or receive provider secrets.
+
 ## Common Commands
 
 Workspace:
