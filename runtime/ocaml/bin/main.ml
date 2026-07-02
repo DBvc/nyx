@@ -1,12 +1,12 @@
 let run_protocol () =
-  let rec loop () =
+  let rec loop session =
     match input_line stdin with
     | line -> (
-        match Nyx_runtime.Runtime_protocol.handle_request_line line with
-        | Ok response_line ->
+        match Nyx_runtime.Runtime_protocol.handle_session_line session line with
+        | Ok (session, response_line) ->
             print_endline response_line;
             flush stdout;
-            loop ()
+            loop session
         | Error error ->
             prerr_endline
               ("nyx-runtime protocol error: "
@@ -14,7 +14,7 @@ let run_protocol () =
             exit 1)
     | exception End_of_file -> ()
   in
-  loop ()
+  loop Nyx_runtime.Runtime_protocol.initial_session
 
 let () =
   match Array.to_list Sys.argv with
