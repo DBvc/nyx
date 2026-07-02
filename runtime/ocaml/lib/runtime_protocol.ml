@@ -40,6 +40,8 @@ type response =
   | Pong of { id : string }
   | Chat_reducer_state of { id : string; state : Chat.state }
 
+type session = { chat_state : Chat.state }
+
 type error =
   | Invalid_json of string
   | Missing_type
@@ -271,6 +273,74 @@ let encode_response = function
 let response_for_request = function
   | Ping { id } -> Ok (Pong { id })
   | Chat_reducer_action _ -> Error Stateful_request_requires_session
+
+let initial_session = { chat_state = Chat.initial }
+let chat_request_id value = Chat.Request_id.of_string value
+let chat_message_id value = Chat.Message_id.of_string value
+let chat_runtime_error message = Chat.Runtime_error.{ message }
+
+let chat_action_to_domain = function
+  | Submit_user_message
+      { turn_request_id; user_message_id; assistant_message_id; content } ->
+      Chat.Submit_user_message
+        {
+          request_id = chat_request_id turn_request_id;
+          user_message_id = chat_message_id user_message_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+          content;
+        }
+  | Start_assistant { turn_request_id; assistant_message_id } ->
+      Chat.Start_assistant
+        {
+          request_id = chat_request_id turn_request_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+        }
+  | Append_delta { turn_request_id; assistant_message_id; snapshot } ->
+      Chat.Append_delta
+        {
+          request_id = chat_request_id turn_request_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+          snapshot;
+        }
+  | Complete { turn_request_id; assistant_message_id; final_content } ->
+      Chat.Complete
+        {
+          request_id = chat_request_id turn_request_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+          final_content;
+        }
+  | Cancel { turn_request_id; assistant_message_id; final_content } ->
+      Chat.Cancel
+        {
+          request_id = chat_request_id turn_request_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+          final_content;
+        }
+  | Fail { turn_request_id; assistant_message_id; error_message } ->
+      Chat.Fail
+        {
+          request_id = chat_request_id turn_request_id;
+          assistant_message_id = chat_message_id assistant_message_id;
+          error = chat_runtime_error error_message;
+        }
+  | Retry_failed { turn_request_id } ->
+      Chat.Retry_failed { request_id = chat_request_id turn_request_id }
+  | Clear -> Chat.Clear
+
+let response_for_session_request session = function
+  | Ping { id } -> (session, Pong { id })
+  | Chat_reducer_action { id; action } ->
+      let chat_state =
+        Chat.reduce session.chat_state (chat_action_to_domain action)
+      in
+      ({ chat_state }, Chat_reducer_state { id; state = chat_state })
+
+let handle_session_line session line =
+  match decode_request_line line with
+  | Ok request ->
+      let session, response = response_for_session_request session request in
+      Ok (session, encode_response response)
+  | Error error -> Error error
 
 let handle_request_line line =
   match decode_request_line line with

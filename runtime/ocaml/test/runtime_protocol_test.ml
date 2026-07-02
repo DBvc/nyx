@@ -26,6 +26,22 @@ let check_error expected line =
         "error message" expected
         (Protocol.error_to_string actual)
 
+let check_session_line expected session line =
+  match Protocol.handle_session_line session line with
+  | Ok (session, actual) ->
+      Alcotest.(check string) "session response line" expected actual;
+      session
+  | Error error -> Alcotest.fail (Protocol.error_to_string error)
+
+let check_session_error expected session line =
+  match Protocol.handle_session_line session line with
+  | Ok (_, response) ->
+      Alcotest.fail ("expected error, got response: " ^ response)
+  | Error actual ->
+      Alcotest.(check string)
+        "session error message" expected
+        (Protocol.error_to_string actual)
+
 let test_valid_ping_returns_matching_pong () =
   check_response_line "{\"type\":\"pong\",\"id\":\"req_1\"}"
     "{\"type\":\"ping\",\"id\":\"req_1\"}"
@@ -212,6 +228,99 @@ let test_chat_reducer_state_encodes_failed_turn () =
      failed\"}}}}"
     actual
 
+let test_session_handler_advances_chat_state () =
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      Protocol.initial_session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+  in
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_2\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"streaming\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_2\",\"action\":\"start_assistant\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\"}"
+  in
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_3\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"Partial\",\"phase\":\"streaming\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_3\",\"action\":\"append_delta\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\",\"snapshot\":\"Partial\"}"
+  in
+  let (_ : Protocol.session) =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_4\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"assistant-1\",\"role\":\"assistant\",\"content\":\"Done\"}],\"current_turn\":{\"type\":\"no_turn\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_4\",\"action\":\"complete\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\",\"final_content\":\"Done\"}"
+  in
+  ()
+
+let test_session_handler_ping_does_not_change_chat_state () =
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      Protocol.initial_session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+  in
+  let session =
+    check_session_line "{\"type\":\"pong\",\"id\":\"ping_1\"}" session
+      "{\"type\":\"ping\",\"id\":\"ping_1\"}"
+  in
+  let (_ : Protocol.session) =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_2\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"streaming\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_2\",\"action\":\"start_assistant\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\"}"
+  in
+  ()
+
+let test_session_handler_stale_action_returns_unchanged_snapshot () =
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      Protocol.initial_session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+  in
+  let (_ : Protocol.session) =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_2\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_2\",\"action\":\"append_delta\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-stale\",\"snapshot\":\"Ignored\"}"
+  in
+  ()
+
+let test_session_handler_clear_resets_state () =
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      Protocol.initial_session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+  in
+  let (_ : Protocol.session) =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_2\",\"state\":{\"transcript\":[],\"current_turn\":{\"type\":\"no_turn\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_2\",\"action\":\"clear\"}"
+  in
+  ()
+
+let test_session_handler_errors_do_not_advance_state () =
+  let session =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+      Protocol.initial_session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+  in
+  check_session_error "unknown action: unknown_action" session
+    "{\"type\":\"chat_reducer_action\",\"id\":\"bad_1\",\"action\":\"unknown_action\",\"turn_request_id\":\"turn-1\"}";
+  let (_ : Protocol.session) =
+    check_session_line
+      "{\"type\":\"chat_reducer_state\",\"id\":\"proto_2\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"streaming\"}}}"
+      session
+      "{\"type\":\"chat_reducer_action\",\"id\":\"proto_2\",\"action\":\"start_assistant\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\"}"
+  in
+  ()
+
 let cases =
   [
     Alcotest.test_case "valid ping returns matching pong" `Quick
@@ -237,4 +346,14 @@ let cases =
       test_chat_reducer_state_encodes_active_turn;
     Alcotest.test_case "chat reducer state encodes failed turn" `Quick
       test_chat_reducer_state_encodes_failed_turn;
+    Alcotest.test_case "session handler advances chat state" `Quick
+      test_session_handler_advances_chat_state;
+    Alcotest.test_case "session handler ping does not change chat state" `Quick
+      test_session_handler_ping_does_not_change_chat_state;
+    Alcotest.test_case "session handler stale action returns unchanged snapshot"
+      `Quick test_session_handler_stale_action_returns_unchanged_snapshot;
+    Alcotest.test_case "session handler clear resets state" `Quick
+      test_session_handler_clear_resets_state;
+    Alcotest.test_case "session handler errors do not advance state" `Quick
+      test_session_handler_errors_do_not_advance_state;
   ]

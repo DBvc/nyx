@@ -40,6 +40,8 @@ type response =
   | Pong of { id : string }
   | Chat_reducer_state of { id : string; state : Chat.state }
 
+type session
+
 type error =
   | Invalid_json of string
   | Missing_type
@@ -57,5 +59,7 @@ type error =
 val decode_request_line : string -> (request, error) result
 val encode_response : response -> string
 val response_for_request : request -> (response, error) result
+val initial_session : session
+val handle_session_line : session -> string -> (session * string, error) result
 val handle_request_line : string -> (string, error) result
 val error_to_string : error -> string
