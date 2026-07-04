@@ -101,6 +101,15 @@ export class NyxChatSessionManager {
     this.activeSession.abortController.abort()
   }
 
+  reset(sender: WebContents) {
+    if (!this.activeSession || this.activeSession.sender !== sender) {
+      return
+    }
+
+    this.activeSession.abortController.abort()
+    this.activeSession = undefined
+  }
+
   private async runSession(
     session: ActiveChatSession,
     config: ReturnType<typeof readNyxChatRuntimeConfig>,

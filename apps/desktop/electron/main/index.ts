@@ -17,6 +17,7 @@ const chatSessionManager = new NyxChatSessionManager()
 function registerIpcHandlers() {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
+  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.reset)
   ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
@@ -25,6 +26,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: NyxChatCancellationRequest) => {
     chatSessionManager.cancel(request)
+  })
+
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.reset, (event) => {
+    chatSessionManager.reset(event.sender)
   })
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => readNyxProviderStatus())

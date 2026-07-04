@@ -205,11 +205,7 @@ export function useChatSession() {
       return
     }
 
-    if (state.activeRequestId) {
-      await window.nyx.chat.cancelChat({
-        requestId: state.activeRequestId,
-      })
-    }
+    await window.nyx.chat.resetChatSession()
 
     dispatch({ type: 'clear-chat' })
   }

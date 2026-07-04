@@ -5,6 +5,7 @@ import type { NyxProviderStatus } from '../provider/types'
 export interface NyxDesktopChatApi {
   startChat(request: NyxChatRequest): Promise<void>
   cancelChat(request: NyxChatCancellationRequest): Promise<void>
+  resetChatSession(): Promise<void>
   subscribe(listener: NyxChatEventListener): () => void
 }
 
