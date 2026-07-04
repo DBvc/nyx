@@ -1,8 +1,8 @@
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
-import type { NyxChatState } from './chat-types'
-import { initialNyxChatState } from './chat-types'
+import type { ChatState } from './chat-types'
+import { initialChatState } from './chat-types'
 
-type NyxChatAction =
+type ChatAction =
   | {
       type: 'set-input'
       value: string
@@ -64,13 +64,13 @@ function updateMessage(
   })
 }
 
-function isActiveAssistantTurn(state: NyxChatState, requestId: string, assistantMessageId: string) {
+function isActiveAssistantTurn(state: ChatState, requestId: string, assistantMessageId: string) {
   return (
     state.activeRequestId === requestId && state.activeAssistantMessageId === assistantMessageId
   )
 }
 
-export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxChatState {
+export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'set-input':
       return {
@@ -199,6 +199,6 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
       }
 
     case 'clear-chat':
-      return initialNyxChatState
+      return initialChatState
   }
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
-import { nyxChatReducer } from './chat-reducer'
-import { initialNyxChatState } from './chat-types'
+import { chatReducer } from './chat-reducer'
+import { initialChatState } from './chat-types'
 
 const requestId = 'request-1'
 const userMessageId = 'user-1'
@@ -39,9 +39,9 @@ const retryableError: NyxChatError = {
 }
 
 function submittedState() {
-  return nyxChatReducer(
+  return chatReducer(
     {
-      ...initialNyxChatState,
+      ...initialChatState,
       input: 'Hello Nyx',
     },
     {
@@ -56,7 +56,7 @@ function submittedState() {
 }
 
 function streamingState() {
-  return nyxChatReducer(submittedState(), {
+  return chatReducer(submittedState(), {
     type: 'request-started',
     requestId,
     assistantMessageId,
@@ -71,7 +71,7 @@ function assistantFrom(messages: ReadonlyArray<NyxChatMessage>) {
   return message as NyxChatMessage
 }
 
-describe('nyxChatReducer', () => {
+describe('chatReducer', () => {
   it('records a submitted request and appends user and assistant messages', () => {
     const state = submittedState()
 
@@ -97,7 +97,7 @@ describe('nyxChatReducer', () => {
   })
 
   it('stores streaming snapshots on request deltas', () => {
-    const state = nyxChatReducer(streamingState(), {
+    const state = chatReducer(streamingState(), {
       type: 'request-delta',
       requestId,
       assistantMessageId,
@@ -112,7 +112,7 @@ describe('nyxChatReducer', () => {
   })
 
   it('finalizes a completed request and clears active ids', () => {
-    const state = nyxChatReducer(streamingState(), {
+    const state = chatReducer(streamingState(), {
       type: 'request-completed',
       requestId,
       assistantMessageId,
@@ -134,7 +134,7 @@ describe('nyxChatReducer', () => {
   })
 
   it('preserves partial content when a request is cancelled', () => {
-    const state = nyxChatReducer(streamingState(), {
+    const state = chatReducer(streamingState(), {
       type: 'request-completed',
       requestId,
       assistantMessageId,
@@ -185,7 +185,7 @@ describe('nyxChatReducer', () => {
     ]
 
     for (const action of staleActions) {
-      expect(nyxChatReducer(state, action)).toBe(state)
+      expect(chatReducer(state, action)).toBe(state)
     }
   })
 
@@ -193,7 +193,7 @@ describe('nyxChatReducer', () => {
     const submitted = submittedState()
 
     expect(
-      nyxChatReducer(submitted, {
+      chatReducer(submitted, {
         type: 'request-started',
         requestId,
         assistantMessageId: staleAssistantMessageId,
@@ -224,12 +224,12 @@ describe('nyxChatReducer', () => {
     ]
 
     for (const action of staleActions) {
-      expect(nyxChatReducer(state, action)).toBe(state)
+      expect(chatReducer(state, action)).toBe(state)
     }
   })
 
   it('stores retryable failures on the assistant message', () => {
-    const state = nyxChatReducer(streamingState(), {
+    const state = chatReducer(streamingState(), {
       type: 'request-failed',
       requestId,
       assistantMessageId,
@@ -259,7 +259,7 @@ describe('nyxChatReducer', () => {
       retryable: false,
     }
 
-    const state = nyxChatReducer(streamingState(), {
+    const state = chatReducer(streamingState(), {
       type: 'request-failed',
       requestId,
       assistantMessageId,
@@ -277,14 +277,14 @@ describe('nyxChatReducer', () => {
   })
 
   it('reuses the same user and assistant message identity when retrying', () => {
-    const failedState = nyxChatReducer(streamingState(), {
+    const failedState = chatReducer(streamingState(), {
       type: 'request-failed',
       requestId,
       assistantMessageId,
       error: retryableError,
     })
 
-    const state = nyxChatReducer(failedState, {
+    const state = chatReducer(failedState, {
       type: 'retry-requested',
       requestId: 'request-2',
       userMessageId,
@@ -312,10 +312,10 @@ describe('nyxChatReducer', () => {
   })
 
   it('clears the chat back to the initial state', () => {
-    const state = nyxChatReducer(submittedState(), {
+    const state = chatReducer(submittedState(), {
       type: 'clear-chat',
     })
 
-    expect(state).toBe(initialNyxChatState)
+    expect(state).toBe(initialChatState)
   })
 })

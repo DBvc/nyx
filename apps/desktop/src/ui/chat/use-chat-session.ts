@@ -2,8 +2,8 @@ import { useEffect, useReducer } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
-import { nyxChatReducer } from './chat-reducer'
-import { initialNyxChatState } from './chat-types'
+import { chatReducer } from './chat-reducer'
+import { initialChatState } from './chat-types'
 
 function normalizeBridgeError(error: unknown): NyxChatError {
   if (error instanceof Error) {
@@ -51,7 +51,7 @@ function toRequestMessages(messages: ReadonlyArray<NyxChatMessage>): NyxChatInpu
 }
 
 export function useChatSession() {
-  const [state, dispatch] = useReducer(nyxChatReducer, initialNyxChatState)
+  const [state, dispatch] = useReducer(chatReducer, initialChatState)
 
   useEffect(() => {
     if (!window.nyx) {
