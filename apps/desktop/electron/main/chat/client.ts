@@ -1,11 +1,11 @@
 import type { NyxChatRequest } from '../../../shared/chat/types'
-import { createNyxChatBridgeError } from './errors'
-import type { NyxChatRuntimeConfig } from './env'
+import { createChatBridgeError } from './errors'
+import type { ChatProviderConfig } from './env'
 
 const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI assistant.'
 
 interface StreamChatCompletionOptions {
-  config: NyxChatRuntimeConfig
+  config: ChatProviderConfig
   request: NyxChatRequest
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void
@@ -64,7 +64,7 @@ async function readErrorDetails(response: Response) {
 
 function toUpstreamError(response: Response, details: string) {
   if (response.status === 400) {
-    return createNyxChatBridgeError({
+    return createChatBridgeError({
       code: 'invalid_request',
       message: 'The relay rejected this chat request.',
       retryable: false,
@@ -73,7 +73,7 @@ function toUpstreamError(response: Response, details: string) {
   }
 
   if (response.status === 401 || response.status === 403) {
-    return createNyxChatBridgeError({
+    return createChatBridgeError({
       code: 'auth_failed',
       message: 'Nyx could not authenticate with the relay API.',
       retryable: false,
@@ -82,7 +82,7 @@ function toUpstreamError(response: Response, details: string) {
   }
 
   if (response.status === 429) {
-    return createNyxChatBridgeError({
+    return createChatBridgeError({
       code: 'rate_limited',
       message: 'The relay API is rate limiting this request.',
       retryable: true,
@@ -90,7 +90,7 @@ function toUpstreamError(response: Response, details: string) {
     })
   }
 
-  return createNyxChatBridgeError({
+  return createChatBridgeError({
     code: 'upstream_error',
     message: 'The relay API returned an unexpected error.',
     retryable: true,
@@ -171,7 +171,7 @@ export async function streamChatCompletion({
   }
 
   if (!response.body) {
-    throw createNyxChatBridgeError({
+    throw createChatBridgeError({
       code: 'upstream_error',
       message: 'The relay API did not return a response body.',
       retryable: true,

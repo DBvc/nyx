@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 
-export type NyxRuntimePingErrorCode =
+export type RuntimePingErrorCode =
   | 'spawn_failed'
   | 'stdin_failed'
   | 'runtime_exit'
@@ -9,7 +9,7 @@ export type NyxRuntimePingErrorCode =
   | 'timeout'
 
 interface RuntimePingErrorDetails {
-  code: NyxRuntimePingErrorCode
+  code: RuntimePingErrorCode
   message: string
   cause?: unknown
   stderr?: string
@@ -17,15 +17,15 @@ interface RuntimePingErrorDetails {
   signal?: NodeJS.Signals | null
 }
 
-export class NyxRuntimePingError extends Error {
-  readonly code: NyxRuntimePingErrorCode
+export class RuntimePingError extends Error {
+  readonly code: RuntimePingErrorCode
   readonly stderr?: string
   readonly exitCode?: number | null
   readonly signal?: NodeJS.Signals | null
 
   constructor({ code, message, cause, stderr, exitCode, signal }: RuntimePingErrorDetails) {
     super(message, cause === undefined ? undefined : { cause })
-    this.name = 'NyxRuntimePingError'
+    this.name = 'RuntimePingError'
     this.code = code
 
     if (stderr !== undefined) {
@@ -74,7 +74,7 @@ type SpawnRuntimeProcess = (
   options: { cwd?: string },
 ) => RuntimePingProcess
 
-export interface PingNyxRuntimeOptions {
+export interface PingRuntimeOptions {
   runtimePath: string
   runtimeArgs?: ReadonlyArray<string>
   cwd?: string
@@ -83,7 +83,7 @@ export interface PingNyxRuntimeOptions {
   spawnRuntimeProcess?: SpawnRuntimeProcess
 }
 
-export interface PingNyxRuntimeResult {
+export interface PingRuntimeResult {
   requestId: string
 }
 
@@ -118,7 +118,7 @@ function parsePong(stdout: string, requestId: string) {
   const line = firstStdoutLine(stdout)
 
   if (!line) {
-    throw new NyxRuntimePingError({
+    throw new RuntimePingError({
       code: 'protocol_error',
       message: 'Nyx runtime did not write a protocol response.',
     })
@@ -129,7 +129,7 @@ function parsePong(stdout: string, requestId: string) {
   try {
     payload = JSON.parse(line) as RuntimePongPayload
   } catch (error) {
-    throw new NyxRuntimePingError({
+    throw new RuntimePingError({
       code: 'protocol_error',
       message: 'Nyx runtime wrote invalid protocol JSON.',
       cause: error,
@@ -137,28 +137,28 @@ function parsePong(stdout: string, requestId: string) {
   }
 
   if (payload.type !== 'pong') {
-    throw new NyxRuntimePingError({
+    throw new RuntimePingError({
       code: 'protocol_error',
       message: 'Nyx runtime response was not a pong.',
     })
   }
 
   if (payload.id !== requestId) {
-    throw new NyxRuntimePingError({
+    throw new RuntimePingError({
       code: 'protocol_error',
       message: 'Nyx runtime pong id did not match the ping id.',
     })
   }
 }
 
-export function pingNyxRuntimeOnce({
+export function pingRuntimeOnce({
   runtimePath,
   runtimeArgs = DEFAULT_RUNTIME_ARGS,
   cwd,
   requestId = `req_${randomUUID()}`,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   spawnRuntimeProcess: spawnRuntime = spawnRuntimeProcess,
-}: PingNyxRuntimeOptions): Promise<PingNyxRuntimeResult> {
+}: PingRuntimeOptions): Promise<PingRuntimeResult> {
   return new Promise((resolve, reject) => {
     const spawnOptions = cwd === undefined ? {} : { cwd }
     const runtimeProcess = spawnRuntime(runtimePath, runtimeArgs, spawnOptions)
@@ -177,7 +177,7 @@ export function pingNyxRuntimeOnce({
       runtimeProcess.off('close', onProcessClose)
     }
 
-    function settleWithError(error: NyxRuntimePingError) {
+    function settleWithError(error: RuntimePingError) {
       if (settled) {
         return
       }
@@ -207,7 +207,7 @@ export function pingNyxRuntimeOnce({
 
     function onStdinError(error: Error) {
       settleWithError(
-        new NyxRuntimePingError({
+        new RuntimePingError({
           code: 'stdin_failed',
           message: 'Failed to write ping request to Nyx runtime.',
           cause: error,
@@ -217,7 +217,7 @@ export function pingNyxRuntimeOnce({
 
     function onProcessError(error: Error) {
       settleWithError(
-        new NyxRuntimePingError({
+        new RuntimePingError({
           code: 'spawn_failed',
           message: 'Failed to spawn Nyx runtime.',
           cause: error,
@@ -232,7 +232,7 @@ export function pingNyxRuntimeOnce({
 
       if (exitCode !== 0) {
         settleWithError(
-          new NyxRuntimePingError({
+          new RuntimePingError({
             code: 'runtime_exit',
             message: 'Nyx runtime exited before returning a successful pong.',
             stderr: stderr.trim(),
@@ -246,13 +246,13 @@ export function pingNyxRuntimeOnce({
       try {
         parsePong(stdout, requestId)
       } catch (error) {
-        if (error instanceof NyxRuntimePingError) {
+        if (error instanceof RuntimePingError) {
           settleWithError(error)
           return
         }
 
         settleWithError(
-          new NyxRuntimePingError({
+          new RuntimePingError({
             code: 'protocol_error',
             message: 'Nyx runtime response could not be validated.',
             cause: error,
@@ -268,7 +268,7 @@ export function pingNyxRuntimeOnce({
       const didSignalRuntime = runtimeProcess.kill()
 
       settleWithError(
-        new NyxRuntimePingError({
+        new RuntimePingError({
           code: 'timeout',
           message: didSignalRuntime
             ? 'Timed out waiting for Nyx runtime pong.'

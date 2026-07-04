@@ -8,8 +8,8 @@ import {
 } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import { streamChatCompletion } from './client'
-import { readNyxChatRuntimeConfig } from './env'
-import { isAbortError, toNyxChatError } from './errors'
+import { readChatProviderConfig } from './env'
+import { isAbortError, toChatError } from './errors'
 
 interface ActiveChatSession {
   requestId: string
@@ -21,7 +21,7 @@ interface ActiveChatSession {
   finalContent: string
 }
 
-export function validateNyxChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
+export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
   const hasMessages = Array.isArray(request.messages) && request.messages.length > 0
 
   if (!request.requestId || !request.userMessageId || !request.assistantMessageId || !hasMessages) {
@@ -43,11 +43,11 @@ export function validateNyxChatRequest(request: NyxChatRequest): NyxChatErrorEve
   return null
 }
 
-export class NyxChatSessionManager {
+export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
 
   start(sender: WebContents, request: NyxChatRequest) {
-    const validationError = validateNyxChatRequest(request)
+    const validationError = validateChatRequest(request)
 
     if (validationError) {
       this.emitError(sender, request, validationError)
@@ -66,9 +66,9 @@ export class NyxChatSessionManager {
     let config
 
     try {
-      config = readNyxChatRuntimeConfig()
+      config = readChatProviderConfig()
     } catch (error) {
-      this.emitError(sender, request, toNyxChatError(error))
+      this.emitError(sender, request, toChatError(error))
       return
     }
 
@@ -112,7 +112,7 @@ export class NyxChatSessionManager {
 
   private async runSession(
     session: ActiveChatSession,
-    config: ReturnType<typeof readNyxChatRuntimeConfig>,
+    config: ReturnType<typeof readChatProviderConfig>,
     request: NyxChatRequest,
   ) {
     try {
@@ -161,7 +161,7 @@ export class NyxChatSessionManager {
           finalContent: session.finalContent,
         })
       } else {
-        this.emitError(session.sender, request, toNyxChatError(error))
+        this.emitError(session.sender, request, toChatError(error))
       }
     } finally {
       if (this.activeSession === session) {

@@ -2,7 +2,7 @@ import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { resolveNyxRuntimePath } from './path'
+import { resolveRuntimePath } from './path'
 
 function existingOnly(...paths: ReadonlyArray<string>) {
   const existingPaths = new Set(paths)
@@ -10,12 +10,12 @@ function existingOnly(...paths: ReadonlyArray<string>) {
   return (runtimePath: string) => existingPaths.has(runtimePath)
 }
 
-describe('resolveNyxRuntimePath', () => {
+describe('resolveRuntimePath', () => {
   it('prefers a configured NYX_RUNTIME_PATH when the file exists', () => {
     const runtimePath = resolve('/opt/nyx/bin/nyx-runtime')
 
     expect(
-      resolveNyxRuntimePath({
+      resolveRuntimePath({
         env: {
           NYX_RUNTIME_PATH: ` ${runtimePath} `,
         },
@@ -32,7 +32,7 @@ describe('resolveNyxRuntimePath', () => {
     const runtimePath = resolve('/missing/nyx-runtime')
     const probedPaths: string[] = []
 
-    const resolution = resolveNyxRuntimePath({
+    const resolution = resolveRuntimePath({
       env: {
         NYX_RUNTIME_PATH: runtimePath,
       },
@@ -65,7 +65,7 @@ describe('resolveNyxRuntimePath', () => {
     )
 
     expect(
-      resolveNyxRuntimePath({
+      resolveRuntimePath({
         env: {},
         repoRoot,
         fileExists: existingOnly(runtimePath),
@@ -91,7 +91,7 @@ describe('resolveNyxRuntimePath', () => {
     )
 
     expect(
-      resolveNyxRuntimePath({
+      resolveRuntimePath({
         env: {},
         cwd: join(repoRoot, 'apps', 'desktop'),
         fileExists: existingOnly(runtimePath),
@@ -117,7 +117,7 @@ describe('resolveNyxRuntimePath', () => {
     )
 
     expect(
-      resolveNyxRuntimePath({
+      resolveRuntimePath({
         env: {
           NYX_RUNTIME_PATH: '   ',
         },
@@ -145,7 +145,7 @@ describe('resolveNyxRuntimePath', () => {
     )
 
     expect(
-      resolveNyxRuntimePath({
+      resolveRuntimePath({
         env: {},
         repoRoot,
         fileExists: () => false,

@@ -11,14 +11,14 @@ vi.mock('./client', () => ({
 }))
 
 vi.mock('./env', () => ({
-  readNyxChatRuntimeConfig: () => ({
+  readChatProviderConfig: () => ({
     baseUrl: 'https://example.com/v1/',
     token: 'token',
     model: 'model',
   }),
 }))
 
-import { NyxChatSessionManager, validateNyxChatRequest } from './session'
+import { ChatSessionManager, validateChatRequest } from './session'
 
 function validRequest(): NyxChatRequest {
   return {
@@ -42,14 +42,14 @@ function mockSender() {
   } as unknown as WebContents
 }
 
-describe('validateNyxChatRequest', () => {
+describe('validateChatRequest', () => {
   it('accepts a complete new user message request', () => {
-    expect(validateNyxChatRequest(validRequest())).toBeNull()
+    expect(validateChatRequest(validRequest())).toBeNull()
   })
 
   it('accepts a complete retry failed response request', () => {
     expect(
-      validateNyxChatRequest({
+      validateChatRequest({
         ...validRequest(),
         turnIntent: 'retry_failed_response',
       }),
@@ -58,7 +58,7 @@ describe('validateNyxChatRequest', () => {
 
   it('requires a stable user message id', () => {
     expect(
-      validateNyxChatRequest({
+      validateChatRequest({
         ...validRequest(),
         userMessageId: '',
       }),
@@ -71,7 +71,7 @@ describe('validateNyxChatRequest', () => {
 
   it('requires a known product turn intent', () => {
     expect(
-      validateNyxChatRequest({
+      validateChatRequest({
         ...validRequest(),
         turnIntent: 'unknown_intent' as NyxChatRequest['turnIntent'],
       }),
@@ -83,7 +83,7 @@ describe('validateNyxChatRequest', () => {
   })
 })
 
-describe('NyxChatSessionManager reset', () => {
+describe('ChatSessionManager reset', () => {
   beforeEach(() => {
     streamChatCompletion.mockReset()
   })
@@ -95,7 +95,7 @@ describe('NyxChatSessionManager reset', () => {
       return new Promise(() => {})
     })
     const sender = mockSender()
-    const manager = new NyxChatSessionManager()
+    const manager = new ChatSessionManager()
 
     manager.start(sender, validRequest())
     manager.reset(sender)
@@ -125,7 +125,7 @@ describe('NyxChatSessionManager reset', () => {
     })
     const sender = mockSender()
     const otherSender = mockSender()
-    const manager = new NyxChatSessionManager()
+    const manager = new ChatSessionManager()
 
     manager.start(sender, validRequest())
     manager.reset(otherSender)

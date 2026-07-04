@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { checkNyxRuntimeHealth } from './health'
+import { checkRuntimeHealth } from './health'
 
 const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const artifactPath = join(repoRoot, 'apps', 'desktop', '.runtime-artifacts', 'nyx-runtime')
@@ -30,7 +30,7 @@ describe('nyx runtime artifact health integration', () => {
     expect(existsSync(runtimePath)).toBe(true)
 
     await expect(
-      checkNyxRuntimeHealth({
+      checkRuntimeHealth({
         requestId,
         timeoutMs: 5_000,
         path: {

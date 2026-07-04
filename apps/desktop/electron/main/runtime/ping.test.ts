@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream'
 
 import { describe, expect, it } from 'vitest'
 
-import { NyxRuntimePingError, pingNyxRuntimeOnce } from './ping'
+import { RuntimePingError, pingRuntimeOnce } from './ping'
 
 class FakeRuntimeProcess extends EventEmitter {
   readonly stdin = new PassThrough()
@@ -18,7 +18,7 @@ class FakeRuntimeProcess extends EventEmitter {
 }
 
 function runNodeRuntime(script: string, requestId = 'req_test') {
-  return pingNyxRuntimeOnce({
+  return pingRuntimeOnce({
     runtimePath: process.execPath,
     runtimeArgs: ['-e', script],
     requestId,
@@ -53,7 +53,7 @@ process.stdin.on('end', () => {
 })
 `
 
-describe('pingNyxRuntimeOnce', () => {
+describe('pingRuntimeOnce', () => {
   it('spawns runtime protocol mode by default and validates a matching pong', async () => {
     const fakeProcess = new FakeRuntimeProcess()
     const spawnCalls: Array<{
@@ -61,7 +61,7 @@ describe('pingNyxRuntimeOnce', () => {
       runtimeArgs: ReadonlyArray<string>
       cwd: string | undefined
     }> = []
-    const ping = pingNyxRuntimeOnce({
+    const ping = pingRuntimeOnce({
       runtimePath: '/fake/nyx-runtime',
       requestId: 'req_1',
       spawnRuntimeProcess(runtimePath, runtimeArgs, options) {
@@ -107,7 +107,7 @@ describe('pingNyxRuntimeOnce', () => {
   it('kills the runtime process on timeout', async () => {
     const fakeProcess = new FakeRuntimeProcess()
 
-    const ping = pingNyxRuntimeOnce({
+    const ping = pingRuntimeOnce({
       runtimePath: '/fake/nyx-runtime',
       requestId: 'req_timeout',
       timeoutMs: 1,
@@ -116,7 +116,7 @@ describe('pingNyxRuntimeOnce', () => {
       },
     })
 
-    await expect(ping).rejects.toBeInstanceOf(NyxRuntimePingError)
+    await expect(ping).rejects.toBeInstanceOf(RuntimePingError)
     await expect(ping).rejects.toMatchObject({
       code: 'timeout',
     })

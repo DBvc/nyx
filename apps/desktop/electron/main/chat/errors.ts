@@ -1,25 +1,25 @@
 import type { NyxChatError } from '../../../shared/chat/types'
 
-export class NyxChatBridgeError extends Error {
+export class ChatBridgeError extends Error {
   readonly chatError: NyxChatError
 
   constructor(chatError: NyxChatError) {
     super(chatError.message)
-    this.name = 'NyxChatBridgeError'
+    this.name = 'ChatBridgeError'
     this.chatError = chatError
   }
 }
 
-export function createNyxChatBridgeError(chatError: NyxChatError) {
-  return new NyxChatBridgeError(chatError)
+export function createChatBridgeError(chatError: NyxChatError) {
+  return new ChatBridgeError(chatError)
 }
 
 export function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-export function toNyxChatError(error: unknown): NyxChatError {
-  if (error instanceof NyxChatBridgeError) {
+export function toChatError(error: unknown): NyxChatError {
+  if (error instanceof ChatBridgeError) {
     return error.chatError
   }
 

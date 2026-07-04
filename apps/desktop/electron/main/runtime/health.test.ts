@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { checkNyxRuntimeHealth } from './health'
-import { NyxRuntimePingError, type PingNyxRuntimeOptions } from './ping'
+import { checkRuntimeHealth } from './health'
+import { RuntimePingError, type PingRuntimeOptions } from './ping'
 
-describe('checkNyxRuntimeHealth', () => {
+describe('checkRuntimeHealth', () => {
   it('returns unavailable without pinging when the runtime path cannot be resolved', async () => {
     let pingCount = 0
 
     await expect(
-      checkNyxRuntimeHealth({
+      checkRuntimeHealth({
         resolveRuntimePath() {
           return {
             status: 'unavailable',
@@ -30,10 +30,10 @@ describe('checkNyxRuntimeHealth', () => {
   })
 
   it('pings the resolved runtime executable and returns success', async () => {
-    const pingCalls: PingNyxRuntimeOptions[] = []
+    const pingCalls: PingRuntimeOptions[] = []
 
     await expect(
-      checkNyxRuntimeHealth({
+      checkRuntimeHealth({
         requestId: 'req_health',
         timeoutMs: 250,
         resolveRuntimePath() {
@@ -65,7 +65,7 @@ describe('checkNyxRuntimeHealth', () => {
 
   it('normalizes ping failures into an internal health error result', async () => {
     await expect(
-      checkNyxRuntimeHealth({
+      checkRuntimeHealth({
         resolveRuntimePath() {
           return {
             status: 'available',
@@ -74,7 +74,7 @@ describe('checkNyxRuntimeHealth', () => {
           }
         },
         async pingRuntimeOnce() {
-          throw new NyxRuntimePingError({
+          throw new RuntimePingError({
             code: 'runtime_exit',
             message: 'Nyx runtime exited before returning a successful pong.',
             stderr: 'runtime failed',
@@ -97,7 +97,7 @@ describe('checkNyxRuntimeHealth', () => {
 
   it('normalizes unexpected failures without exposing a raw thrown value', async () => {
     await expect(
-      checkNyxRuntimeHealth({
+      checkRuntimeHealth({
         resolveRuntimePath() {
           return {
             status: 'available',

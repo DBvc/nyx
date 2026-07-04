@@ -1,55 +1,55 @@
 import {
-  resolveNyxRuntimePath,
-  type NyxRuntimePathSource,
-  type NyxRuntimePathUnavailableReason,
-  type ResolveNyxRuntimePathOptions,
+  resolveRuntimePath as resolveRuntimePathDefault,
+  type RuntimePathSource,
+  type RuntimePathUnavailableReason,
+  type ResolveRuntimePathOptions,
 } from './path'
 import {
-  NyxRuntimePingError,
-  type NyxRuntimePingErrorCode,
-  type PingNyxRuntimeOptions,
-  type PingNyxRuntimeResult,
-  pingNyxRuntimeOnce,
+  RuntimePingError,
+  type RuntimePingErrorCode,
+  type PingRuntimeOptions,
+  type PingRuntimeResult,
+  pingRuntimeOnce as pingRuntimeOnceDefault,
 } from './ping'
 
-export type NyxRuntimeHealthErrorCode = NyxRuntimePingErrorCode | 'unknown'
+export type RuntimeHealthErrorCode = RuntimePingErrorCode | 'unknown'
 
-export interface NyxRuntimeHealthSuccess {
+export interface RuntimeHealthSuccess {
   status: 'success'
-  source: NyxRuntimePathSource
+  source: RuntimePathSource
   runtimePath: string
   requestId: string
 }
 
-export interface NyxRuntimeHealthUnavailable {
+export interface RuntimeHealthUnavailable {
   status: 'unavailable'
-  reason: NyxRuntimePathUnavailableReason
+  reason: RuntimePathUnavailableReason
   checkedPaths: ReadonlyArray<string>
 }
 
-export interface NyxRuntimeHealthError {
+export interface RuntimeHealthError {
   status: 'error'
-  source: NyxRuntimePathSource
+  source: RuntimePathSource
   runtimePath: string
-  code: NyxRuntimeHealthErrorCode
+  code: RuntimeHealthErrorCode
   message: string
   stderr?: string
   exitCode?: number | null
   signal?: NodeJS.Signals | null
 }
 
-export type NyxRuntimeHealthResult =
-  | NyxRuntimeHealthSuccess
-  | NyxRuntimeHealthUnavailable
-  | NyxRuntimeHealthError
+export type RuntimeHealthResult =
+  | RuntimeHealthSuccess
+  | RuntimeHealthUnavailable
+  | RuntimeHealthError
 
 type ResolveRuntimePath = (
-  options?: ResolveNyxRuntimePathOptions,
-) => ReturnType<typeof resolveNyxRuntimePath>
-type PingRuntimeOnce = (options: PingNyxRuntimeOptions) => Promise<PingNyxRuntimeResult>
+  options?: ResolveRuntimePathOptions,
+) => ReturnType<typeof resolveRuntimePathDefault>
+type PingRuntimeOnce = (options: PingRuntimeOptions) => Promise<PingRuntimeResult>
 
-export interface CheckNyxRuntimeHealthOptions {
-  path?: ResolveNyxRuntimePathOptions
+export interface CheckRuntimeHealthOptions {
+  path?: ResolveRuntimePathOptions
   requestId?: string
   timeoutMs?: number
   resolveRuntimePath?: ResolveRuntimePath
@@ -65,11 +65,11 @@ function runtimeErrorResult({
   runtimePath,
   error,
 }: {
-  source: NyxRuntimePathSource
+  source: RuntimePathSource
   runtimePath: string
   error: unknown
-}): NyxRuntimeHealthError {
-  if (error instanceof NyxRuntimePingError) {
+}): RuntimeHealthError {
+  if (error instanceof RuntimePingError) {
     return {
       status: 'error',
       source,
@@ -91,13 +91,13 @@ function runtimeErrorResult({
   }
 }
 
-export async function checkNyxRuntimeHealth({
+export async function checkRuntimeHealth({
   path,
   requestId,
   timeoutMs,
-  resolveRuntimePath = resolveNyxRuntimePath,
-  pingRuntimeOnce = pingNyxRuntimeOnce,
-}: CheckNyxRuntimeHealthOptions = {}): Promise<NyxRuntimeHealthResult> {
+  resolveRuntimePath = resolveRuntimePathDefault,
+  pingRuntimeOnce = pingRuntimeOnceDefault,
+}: CheckRuntimeHealthOptions = {}): Promise<RuntimeHealthResult> {
   const pathResolution = resolveRuntimePath(path)
 
   if (pathResolution.status === 'unavailable') {
@@ -109,7 +109,7 @@ export async function checkNyxRuntimeHealth({
   }
 
   try {
-    const pingOptions: PingNyxRuntimeOptions = {
+    const pingOptions: PingRuntimeOptions = {
       runtimePath: pathResolution.runtimePath,
     }
 

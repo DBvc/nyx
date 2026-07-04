@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readNyxProviderStatus } from './env'
+import { readProviderStatus } from './env'
 
 const ENV_KEYS = ['NYX_API_BASE_URL', 'NYX_API_TOKEN', 'NYX_MODEL'] as const
 const ORIGINAL_ENV = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
@@ -34,11 +34,11 @@ afterEach(() => {
   restoreEnv()
 })
 
-describe('readNyxProviderStatus', () => {
+describe('readProviderStatus', () => {
   it('reports missing required provider environment variables', () => {
     setEnv({})
 
-    expect(readNyxProviderStatus()).toEqual({
+    expect(readProviderStatus()).toEqual({
       configured: false,
       model: null,
       baseUrlHost: null,
@@ -53,7 +53,7 @@ describe('readNyxProviderStatus', () => {
       NYX_MODEL: ' nyx-model ',
     })
 
-    const status = readNyxProviderStatus()
+    const status = readProviderStatus()
 
     expect(status).toEqual({
       configured: true,
@@ -71,7 +71,7 @@ describe('readNyxProviderStatus', () => {
       NYX_API_TOKEN: 'super-secret-token',
     })
 
-    const status = readNyxProviderStatus()
+    const status = readProviderStatus()
 
     expect(status).toEqual({
       configured: false,
@@ -90,7 +90,7 @@ describe('readNyxProviderStatus', () => {
       NYX_MODEL: '   ',
     })
 
-    expect(readNyxProviderStatus()).toEqual({
+    expect(readProviderStatus()).toEqual({
       configured: false,
       model: null,
       baseUrlHost: null,

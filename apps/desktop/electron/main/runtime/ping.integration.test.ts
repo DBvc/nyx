@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { pingNyxRuntimeOnce } from './ping'
+import { pingRuntimeOnce } from './ping'
 
 const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const runtimeDir = join(repoRoot, 'runtime', 'ocaml')
@@ -27,7 +27,7 @@ describe('nyx runtime integration', () => {
 
     expect(existsSync(runtimePath)).toBe(true)
     await expect(
-      pingNyxRuntimeOnce({
+      pingRuntimeOnce({
         runtimePath,
         requestId,
         timeoutMs: 5_000,

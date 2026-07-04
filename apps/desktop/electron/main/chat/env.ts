@@ -1,7 +1,7 @@
 import type { NyxProviderMissingEnv, NyxProviderStatus } from '../../../shared/provider/types'
-import { createNyxChatBridgeError } from './errors'
+import { createChatBridgeError } from './errors'
 
-export interface NyxChatRuntimeConfig {
+export interface ChatProviderConfig {
   baseUrl: string
   token: string
   model: string
@@ -11,7 +11,7 @@ function readRequiredEnv(name: 'NYX_API_BASE_URL' | 'NYX_API_TOKEN') {
   const value = process.env[name]?.trim()
 
   if (!value) {
-    throw createNyxChatBridgeError({
+    throw createChatBridgeError({
       code: 'config_missing',
       message: `Missing required environment variable: ${name}.`,
       retryable: false,
@@ -27,7 +27,7 @@ function normalizeBaseUrl(rawBaseUrl: string) {
   try {
     url = new URL(rawBaseUrl)
   } catch {
-    throw createNyxChatBridgeError({
+    throw createChatBridgeError({
       code: 'config_missing',
       message: 'NYX_API_BASE_URL must be a valid URL.',
       retryable: false,
@@ -41,7 +41,7 @@ function normalizeBaseUrl(rawBaseUrl: string) {
   return url.toString()
 }
 
-export function readNyxProviderStatus(): NyxProviderStatus {
+export function readProviderStatus(): NyxProviderStatus {
   const rawBaseUrl = process.env.NYX_API_BASE_URL?.trim()
   const token = process.env.NYX_API_TOKEN?.trim()
   const missingEnv: NyxProviderMissingEnv[] = []
@@ -71,7 +71,7 @@ export function readNyxProviderStatus(): NyxProviderStatus {
   }
 }
 
-export function readNyxChatRuntimeConfig(): NyxChatRuntimeConfig {
+export function readChatProviderConfig(): ChatProviderConfig {
   return {
     baseUrl: normalizeBaseUrl(readRequiredEnv('NYX_API_BASE_URL')),
     token: readRequiredEnv('NYX_API_TOKEN'),

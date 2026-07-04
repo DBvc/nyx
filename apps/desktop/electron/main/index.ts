@@ -5,14 +5,14 @@ import { dirname, join } from 'node:path'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/chat/types'
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
-import { readNyxProviderStatus } from './chat/env'
-import { NyxChatSessionManager } from './chat/session'
+import { readProviderStatus } from './chat/env'
+import { ChatSessionManager } from './chat/session'
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 const rendererDistPath = join(moduleDir, '../renderer')
 const preloadPath = join(moduleDir, '../preload/index.cjs')
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
-const chatSessionManager = new NyxChatSessionManager()
+const chatSessionManager = new ChatSessionManager()
 
 function registerIpcHandlers() {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
@@ -32,7 +32,7 @@ function registerIpcHandlers() {
     chatSessionManager.reset(event.sender)
   })
 
-  ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => readNyxProviderStatus())
+  ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => readProviderStatus())
 }
 
 function createMainWindow() {

@@ -4,31 +4,29 @@ import { fileURLToPath } from 'node:url'
 
 export const NYX_RUNTIME_PATH_ENV = 'NYX_RUNTIME_PATH' as const
 
-export type NyxRuntimePathSource = 'env' | 'repo-dev-fallback'
-export type NyxRuntimePathUnavailableReason =
-  | 'configured_path_missing'
-  | 'repo_dev_fallback_missing'
+export type RuntimePathSource = 'env' | 'repo-dev-fallback'
+export type RuntimePathUnavailableReason = 'configured_path_missing' | 'repo_dev_fallback_missing'
 
-export interface NyxRuntimePathAvailable {
+export interface RuntimePathAvailable {
   status: 'available'
-  source: NyxRuntimePathSource
+  source: RuntimePathSource
   runtimePath: string
 }
 
-export interface NyxRuntimePathUnavailable {
+export interface RuntimePathUnavailable {
   status: 'unavailable'
-  reason: NyxRuntimePathUnavailableReason
+  reason: RuntimePathUnavailableReason
   checkedPaths: ReadonlyArray<string>
 }
 
-export type NyxRuntimePathResolution = NyxRuntimePathAvailable | NyxRuntimePathUnavailable
+export type RuntimePathResolution = RuntimePathAvailable | RuntimePathUnavailable
 
 interface RuntimePathEnv {
   NYX_RUNTIME_PATH?: string
   [key: string]: string | undefined
 }
 
-export interface ResolveNyxRuntimePathOptions {
+export interface ResolveRuntimePathOptions {
   env?: RuntimePathEnv
   repoRoot?: string
   cwd?: string
@@ -55,12 +53,12 @@ function normalizeExplicitPath(runtimePath: string) {
   return resolve(runtimePath)
 }
 
-export function resolveNyxRuntimePath({
+export function resolveRuntimePath({
   env = process.env,
   repoRoot,
   cwd = process.cwd(),
   fileExists = existsSync,
-}: ResolveNyxRuntimePathOptions = {}): NyxRuntimePathResolution {
+}: ResolveRuntimePathOptions = {}): RuntimePathResolution {
   const configuredRuntimePath = env.NYX_RUNTIME_PATH?.trim()
 
   if (configuredRuntimePath) {
