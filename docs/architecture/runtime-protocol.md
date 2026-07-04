@@ -26,6 +26,21 @@ chat session manager, provider calls, preload, renderer, or UI.
 
 The local repo fallback is not a packaged app distribution contract.
 
+## Generated Runtime Artifact
+
+`apps/desktop/.runtime-artifacts/nyx-runtime` is reserved for a local generated
+copy of the OCaml runtime executable.
+
+This artifact exists to prove that desktop tooling can prepare a runtime binary
+and that Electron main can consume it through an explicit `NYX_RUNTIME_PATH`
+override. It is not a source of truth, is not committed, and is not a packaged
+app distribution contract.
+
+The artifact path must not be added to the default runtime resolver candidate
+list in this phase. Until packaged app distribution is explicitly designed,
+Electron main may consume this artifact only through explicit verification
+commands that set `NYX_RUNTIME_PATH`.
+
 Current local entrypoints:
 
 - `nyx-runtime ping`

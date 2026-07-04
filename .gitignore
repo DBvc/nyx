@@ -4,6 +4,7 @@ dist
 out
 .vite
 coverage
+apps/desktop/.runtime-artifacts/
 .env
 .env.local
 .env.*.local
