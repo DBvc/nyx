@@ -52,7 +52,47 @@ Current local protocol scope:
 - chat reducer session verification scaffold
 
 The runtime-side scaffold lives under `runtime/ocaml`. The only desktop
-integration in this phase is the explicit health boundary described below.
+runtime work in this phase is explicit, opt-in verification. It is not part of
+app startup, renderer IPC, or the product chat path.
+
+## Chat Reducer Protocol Proof
+
+`runtime-chat-reducer-protocol-proof` is a verification-only slice. Its purpose
+is to prove that Electron main-side test code can drive the existing OCaml chat
+reducer session scaffold through `nyx-runtime protocol` when the runtime binary
+is provided explicitly.
+
+This proof may use the generated runtime artifact only through an explicit
+`NYX_RUNTIME_PATH` override. The artifact path must remain outside the default
+runtime resolver candidate list and must not become a packaged app distribution
+contract.
+
+The proof is intentionally not a shadow runtime, not chat core integration, and
+not product integration. It must not connect the runtime to:
+
+- app startup
+- BrowserWindow lifecycle
+- `NyxChatSessionManager`
+- provider streaming
+- preload
+- renderer
+- UI
+- shared chat IPC
+
+It must not introduce a production runtime client, runtime manager, exported
+session helper, or reusable chat-core abstraction. Any process helper used for
+this proof should stay test-local or otherwise test-only.
+
+The proof may assert fixed lifecycle fixtures for the current OCaml reducer
+semantics, such as complete, cancel, fail, clear, and retry of a failed turn.
+Those fixtures are evidence for the current protocol scaffold only. They do not
+make OCaml authoritative for desktop chat state, do not decide ownership of
+desktop `userMessageId` values, and do not change provider request or streaming
+semantics.
+
+If a later step needs to change `NyxChatSessionManager`, shared/preload/renderer
+IPC, provider streaming, `userMessageId` ownership, or runtime protocol
+semantics, that is outside this proof and requires a separate plan.
 
 ## Desktop Health Boundary
 
