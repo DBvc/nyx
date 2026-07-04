@@ -110,6 +110,10 @@ run = "scripts/check-runtime-artifact.sh"
 description = "Verify Electron main chat reducer protocol fixtures through the generated runtime artifact"
 run = "scripts/check-runtime-chat-reducer.sh"
 
+[tasks."runtime:protocol-session:check"]
+description = "Verify Electron main runtime protocol session through the generated runtime artifact"
+run = "scripts/check-runtime-protocol-session.sh"
+
 [tasks."runtime:check"]
 description = "Run all OCaml runtime checks"
 run = """
