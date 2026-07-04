@@ -106,6 +106,10 @@ run = "scripts/prepare-runtime-artifact.sh"
 description = "Verify Electron main runtime health through the generated runtime artifact"
 run = "scripts/check-runtime-artifact.sh"
 
+[tasks."runtime:chat-reducer:check"]
+description = "Verify Electron main chat reducer protocol fixtures through the generated runtime artifact"
+run = "scripts/check-runtime-chat-reducer.sh"
+
 [tasks."runtime:check"]
 description = "Run all OCaml runtime checks"
 run = """
