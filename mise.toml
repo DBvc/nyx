@@ -98,6 +98,10 @@ run = "cd runtime/ocaml && opam exec -- dune build @fmt"
 description = "Run the OCaml runtime ping command"
 run = "cd runtime/ocaml && opam exec -- dune exec nyx-runtime -- ping"
 
+[tasks."runtime:artifact:prepare"]
+description = "Prepare the local generated OCaml runtime artifact for desktop checks"
+run = "scripts/prepare-runtime-artifact.sh"
+
 [tasks."runtime:check"]
 description = "Run all OCaml runtime checks"
 run = """
