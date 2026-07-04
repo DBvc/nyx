@@ -23,6 +23,16 @@ export const nyxChatRunStatuses = [
 
 export type NyxChatRunStatus = (typeof nyxChatRunStatuses)[number]
 
+export const nyxChatTurnIntents = ['new_user_message', 'retry_failed_response'] as const
+
+export type NyxChatTurnIntent = (typeof nyxChatTurnIntents)[number]
+
+const nyxChatTurnIntentSet = new Set<string>(nyxChatTurnIntents)
+
+export function isNyxChatTurnIntent(value: unknown): value is NyxChatTurnIntent {
+  return typeof value === 'string' && nyxChatTurnIntentSet.has(value)
+}
+
 export const nyxChatErrorCodes = [
   'config_missing',
   'invalid_request',
@@ -59,7 +69,9 @@ export interface NyxChatMessage {
 
 export interface NyxChatRequest {
   requestId: string
+  userMessageId: string
   assistantMessageId: string
+  turnIntent: NyxChatTurnIntent
   messages: ReadonlyArray<NyxChatInputMessage>
   systemPrompt?: string
 }

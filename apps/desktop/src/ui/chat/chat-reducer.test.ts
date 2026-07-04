@@ -5,8 +5,10 @@ import { nyxChatReducer } from './chat-reducer'
 import { initialNyxChatState } from './chat-types'
 
 const requestId = 'request-1'
+const userMessageId = 'user-1'
 const assistantMessageId = 'assistant-1'
 const staleRequestId = 'request-stale'
+const staleAssistantMessageId = 'assistant-stale'
 
 const submittedMessages: ReadonlyArray<NyxChatInputMessage> = [
   {
@@ -16,7 +18,7 @@ const submittedMessages: ReadonlyArray<NyxChatInputMessage> = [
 ]
 
 const userMessage: NyxChatMessage = {
-  id: 'user-1',
+  id: userMessageId,
   role: 'user',
   content: 'Hello Nyx',
   status: 'completed',
@@ -57,6 +59,7 @@ function streamingState() {
   return nyxChatReducer(submittedState(), {
     type: 'request-started',
     requestId,
+    assistantMessageId,
   })
 }
 
@@ -76,8 +79,13 @@ describe('nyxChatReducer', () => {
     expect(state.runStatus).toBe('submitting')
     expect(state.activeRequestId).toBe(requestId)
     expect(state.activeAssistantMessageId).toBe(assistantMessageId)
-    expect(state.lastSubmittedMessages).toBe(submittedMessages)
-    expect(state.lastAssistantMessageId).toBe(assistantMessageId)
+    expect(state.activeTurn).toEqual({
+      requestId,
+      userMessageId,
+      assistantMessageId,
+      submittedMessages,
+    })
+    expect(state.retryableTurn).toBeNull()
     expect(state.messages).toEqual([userMessage, assistantMessage])
   })
 
@@ -116,6 +124,8 @@ describe('nyxChatReducer', () => {
 
     expect(state.activeRequestId).toBeUndefined()
     expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toBeNull()
     expect(state.runStatus).toBe('completed')
     expect(assistant.content).toBe('Final response')
     expect(assistant.status).toBe('completed')
@@ -136,6 +146,8 @@ describe('nyxChatReducer', () => {
 
     expect(state.activeRequestId).toBeUndefined()
     expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toBeNull()
     expect(state.runStatus).toBe('cancelled')
     expect(assistant.content).toBe('Partial response')
     expect(assistant.status).toBe('cancelled')
@@ -149,6 +161,7 @@ describe('nyxChatReducer', () => {
       {
         type: 'request-started' as const,
         requestId: staleRequestId,
+        assistantMessageId,
       },
       {
         type: 'request-delta' as const,
@@ -176,6 +189,45 @@ describe('nyxChatReducer', () => {
     }
   })
 
+  it('ignores lifecycle events for a stale assistant message identity', () => {
+    const submitted = submittedState()
+
+    expect(
+      nyxChatReducer(submitted, {
+        type: 'request-started',
+        requestId,
+        assistantMessageId: staleAssistantMessageId,
+      }),
+    ).toBe(submitted)
+
+    const state = streamingState()
+    const staleActions = [
+      {
+        type: 'request-delta' as const,
+        requestId,
+        assistantMessageId: staleAssistantMessageId,
+        snapshot: 'Stale response',
+      },
+      {
+        type: 'request-completed' as const,
+        requestId,
+        assistantMessageId: staleAssistantMessageId,
+        status: 'completed' as const,
+        finalContent: 'Stale final response',
+      },
+      {
+        type: 'request-failed' as const,
+        requestId,
+        assistantMessageId: staleAssistantMessageId,
+        error: retryableError,
+      },
+    ]
+
+    for (const action of staleActions) {
+      expect(nyxChatReducer(state, action)).toBe(state)
+    }
+  })
+
   it('stores retryable failures on the assistant message', () => {
     const state = nyxChatReducer(streamingState(), {
       type: 'request-failed',
@@ -188,6 +240,12 @@ describe('nyxChatReducer', () => {
 
     expect(state.activeRequestId).toBeUndefined()
     expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toEqual({
+      userMessageId,
+      assistantMessageId,
+      submittedMessages,
+    })
     expect(state.runStatus).toBe('failed')
     expect(assistant.status).toBe('failed')
     expect(assistant.error).toEqual(retryableError)
@@ -211,12 +269,14 @@ describe('nyxChatReducer', () => {
     const assistant = assistantFrom(state.messages)
 
     expect(state.runStatus).toBe('failed')
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toBeNull()
     expect(assistant.status).toBe('failed')
     expect(assistant.error).toEqual(nonRetryableError)
     expect(assistant.canRetry).toBe(false)
   })
 
-  it('reuses the same assistant message when retrying', () => {
+  it('reuses the same user and assistant message identity when retrying', () => {
     const failedState = nyxChatReducer(streamingState(), {
       type: 'request-failed',
       requestId,
@@ -224,18 +284,12 @@ describe('nyxChatReducer', () => {
       error: retryableError,
     })
 
-    const retryMessages: ReadonlyArray<NyxChatInputMessage> = [
-      {
-        role: 'user',
-        content: 'Try again',
-      },
-    ]
-
     const state = nyxChatReducer(failedState, {
       type: 'retry-requested',
       requestId: 'request-2',
+      userMessageId,
       assistantMessageId,
-      submittedMessages: retryMessages,
+      submittedMessages,
     })
 
     const assistant = assistantFrom(state.messages)
@@ -243,8 +297,13 @@ describe('nyxChatReducer', () => {
     expect(state.runStatus).toBe('submitting')
     expect(state.activeRequestId).toBe('request-2')
     expect(state.activeAssistantMessageId).toBe(assistantMessageId)
-    expect(state.lastSubmittedMessages).toBe(retryMessages)
-    expect(state.lastAssistantMessageId).toBe(assistantMessageId)
+    expect(state.activeTurn).toEqual({
+      requestId: 'request-2',
+      userMessageId,
+      assistantMessageId,
+      submittedMessages,
+    })
+    expect(state.retryableTurn).toBeNull()
     expect(assistant.id).toBe(assistantMessageId)
     expect(assistant.content).toBe('')
     expect(assistant.status).toBe('pending')

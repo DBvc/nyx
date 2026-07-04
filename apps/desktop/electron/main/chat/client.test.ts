@@ -6,7 +6,9 @@ import { buildChatCompletionsUrl, buildProviderMessages, iterateSseData } from '
 function requestWithMessages(messages: NyxChatRequest['messages']): NyxChatRequest {
   return {
     requestId: 'request-1',
+    userMessageId: 'user-1',
     assistantMessageId: 'assistant-1',
+    turnIntent: 'new_user_message',
     messages,
   }
 }

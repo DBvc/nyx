@@ -18,6 +18,7 @@ type NyxChatAction =
   | {
       type: 'request-started'
       requestId: string
+      assistantMessageId: string
     }
   | {
       type: 'request-delta'
@@ -41,6 +42,7 @@ type NyxChatAction =
   | {
       type: 'retry-requested'
       requestId: string
+      userMessageId: string
       assistantMessageId: string
       submittedMessages: ReadonlyArray<NyxChatInputMessage>
     }
@@ -62,6 +64,12 @@ function updateMessage(
   })
 }
 
+function isActiveAssistantTurn(state: NyxChatState, requestId: string, assistantMessageId: string) {
+  return (
+    state.activeRequestId === requestId && state.activeAssistantMessageId === assistantMessageId
+  )
+}
+
 export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxChatState {
   switch (action.type) {
     case 'set-input':
@@ -77,27 +85,32 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
         runStatus: 'submitting',
         activeRequestId: action.requestId,
         activeAssistantMessageId: action.assistantMessageId,
-        lastSubmittedMessages: action.submittedMessages,
-        lastAssistantMessageId: action.assistantMessageId,
+        activeTurn: {
+          requestId: action.requestId,
+          userMessageId: action.userMessage.id,
+          assistantMessageId: action.assistantMessageId,
+          submittedMessages: action.submittedMessages,
+        },
+        retryableTurn: null,
         messages: [...state.messages, action.userMessage, action.assistantMessage],
       }
 
     case 'request-started':
-      if (state.activeRequestId !== action.requestId || !state.activeAssistantMessageId) {
+      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
       return {
         ...state,
         runStatus: 'streaming',
-        messages: updateMessage(state.messages, state.activeAssistantMessageId, (message) => ({
+        messages: updateMessage(state.messages, action.assistantMessageId, (message) => ({
           ...message,
           status: 'streaming',
         })),
       }
 
     case 'request-delta':
-      if (state.activeRequestId !== action.requestId) {
+      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -112,7 +125,7 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
       }
 
     case 'request-completed':
-      if (state.activeRequestId !== action.requestId) {
+      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -121,6 +134,8 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
         runStatus: action.status,
         activeRequestId: undefined,
         activeAssistantMessageId: undefined,
+        activeTurn: null,
+        retryableTurn: null,
         messages: updateMessage(state.messages, action.assistantMessageId, (message) => ({
           ...(() => {
             const { error: _error, ...rest } = message
@@ -133,7 +148,7 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
       }
 
     case 'request-failed':
-      if (state.activeRequestId !== action.requestId) {
+      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -142,6 +157,15 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
         runStatus: 'failed',
         activeRequestId: undefined,
         activeAssistantMessageId: undefined,
+        activeTurn: null,
+        retryableTurn:
+          action.error.retryable && state.activeTurn
+            ? {
+                userMessageId: state.activeTurn.userMessageId,
+                assistantMessageId: state.activeTurn.assistantMessageId,
+                submittedMessages: state.activeTurn.submittedMessages,
+              }
+            : null,
         messages: updateMessage(state.messages, action.assistantMessageId, (message) => ({
           ...message,
           status: 'failed',
@@ -156,8 +180,13 @@ export function nyxChatReducer(state: NyxChatState, action: NyxChatAction): NyxC
         runStatus: 'submitting',
         activeRequestId: action.requestId,
         activeAssistantMessageId: action.assistantMessageId,
-        lastSubmittedMessages: action.submittedMessages,
-        lastAssistantMessageId: action.assistantMessageId,
+        activeTurn: {
+          requestId: action.requestId,
+          userMessageId: action.userMessageId,
+          assistantMessageId: action.assistantMessageId,
+          submittedMessages: action.submittedMessages,
+        },
+        retryableTurn: null,
         messages: updateMessage(state.messages, action.assistantMessageId, (message) => ({
           ...(() => {
             const { error: _error, ...rest } = message

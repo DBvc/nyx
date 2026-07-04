@@ -1,7 +1,11 @@
 import type { WebContents } from 'electron'
 
 import type { NyxChatEvent, NyxChatErrorEvent } from '../../../shared/chat/events'
-import type { NyxChatCancellationRequest, NyxChatRequest } from '../../../shared/chat/types'
+import {
+  isNyxChatTurnIntent,
+  type NyxChatCancellationRequest,
+  type NyxChatRequest,
+} from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import { streamChatCompletion } from './client'
 import { readNyxChatRuntimeConfig } from './env'
@@ -9,22 +13,44 @@ import { isAbortError, toNyxChatError } from './errors'
 
 interface ActiveChatSession {
   requestId: string
+  userMessageId: string
   assistantMessageId: string
+  turnIntent: NyxChatRequest['turnIntent']
   sender: WebContents
   abortController: AbortController
   finalContent: string
+}
+
+export function validateNyxChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
+  const hasMessages = Array.isArray(request.messages) && request.messages.length > 0
+
+  if (!request.requestId || !request.userMessageId || !request.assistantMessageId || !hasMessages) {
+    return {
+      code: 'invalid_request',
+      message: 'Chat requests must include ids, intent, and at least one message.',
+      retryable: false,
+    }
+  }
+
+  if (!isNyxChatTurnIntent(request.turnIntent)) {
+    return {
+      code: 'invalid_request',
+      message: 'Chat requests must use a known turn intent.',
+      retryable: false,
+    }
+  }
+
+  return null
 }
 
 export class NyxChatSessionManager {
   private activeSession: ActiveChatSession | undefined
 
   start(sender: WebContents, request: NyxChatRequest) {
-    if (!request.requestId || !request.assistantMessageId || request.messages.length === 0) {
-      this.emitError(sender, request, {
-        code: 'invalid_request',
-        message: 'Chat requests must include ids and at least one message.',
-        retryable: false,
-      })
+    const validationError = validateNyxChatRequest(request)
+
+    if (validationError) {
+      this.emitError(sender, request, validationError)
       return
     }
 
@@ -48,7 +74,9 @@ export class NyxChatSessionManager {
 
     const session: ActiveChatSession = {
       requestId: request.requestId,
+      userMessageId: request.userMessageId,
       assistantMessageId: request.assistantMessageId,
+      turnIntent: request.turnIntent,
       sender,
       abortController: new AbortController(),
       finalContent: '',

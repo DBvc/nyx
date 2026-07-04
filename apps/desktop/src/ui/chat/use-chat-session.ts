@@ -64,6 +64,7 @@ export function useChatSession() {
           dispatch({
             type: 'request-started',
             requestId: event.requestId,
+            assistantMessageId: event.assistantMessageId,
           })
           return
 
@@ -105,6 +106,7 @@ export function useChatSession() {
     }
 
     const requestId = crypto.randomUUID()
+    const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
     const requestMessages = [
       ...toRequestMessages(state.messages),
@@ -117,7 +119,7 @@ export function useChatSession() {
       assistantMessageId,
       submittedMessages: requestMessages,
       userMessage: {
-        id: crypto.randomUUID(),
+        id: userMessageId,
         role: 'user',
         content: prompt,
         status: 'completed',
@@ -133,7 +135,9 @@ export function useChatSession() {
     try {
       await window.nyx.chat.startChat({
         requestId,
+        userMessageId,
         assistantMessageId,
+        turnIntent: 'new_user_message',
         messages: requestMessages,
       })
     } catch (error) {
@@ -150,32 +154,36 @@ export function useChatSession() {
     if (
       state.activeRequestId ||
       !window.nyx ||
-      !state.lastSubmittedMessages ||
-      state.lastAssistantMessageId !== messageId
+      !state.retryableTurn ||
+      state.retryableTurn.assistantMessageId !== messageId
     ) {
       return
     }
 
     const requestId = crypto.randomUUID()
+    const retryableTurn = state.retryableTurn
 
     dispatch({
       type: 'retry-requested',
       requestId,
-      assistantMessageId: messageId,
-      submittedMessages: state.lastSubmittedMessages,
+      userMessageId: retryableTurn.userMessageId,
+      assistantMessageId: retryableTurn.assistantMessageId,
+      submittedMessages: retryableTurn.submittedMessages,
     })
 
     try {
       await window.nyx.chat.startChat({
         requestId,
-        assistantMessageId: messageId,
-        messages: state.lastSubmittedMessages,
+        userMessageId: retryableTurn.userMessageId,
+        assistantMessageId: retryableTurn.assistantMessageId,
+        turnIntent: 'retry_failed_response',
+        messages: retryableTurn.submittedMessages,
       })
     } catch (error) {
       dispatch({
         type: 'request-failed',
         requestId,
-        assistantMessageId: messageId,
+        assistantMessageId: retryableTurn.assistantMessageId,
         error: normalizeBridgeError(error),
       })
     }

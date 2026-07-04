@@ -4,14 +4,27 @@ import type {
   NyxChatRunStatus,
 } from '../../../shared/chat/types'
 
+export interface NyxChatTurnRequest {
+  requestId: string
+  userMessageId: string
+  assistantMessageId: string
+  submittedMessages: ReadonlyArray<NyxChatInputMessage>
+}
+
+export interface NyxRetryableChatTurn {
+  userMessageId: string
+  assistantMessageId: string
+  submittedMessages: ReadonlyArray<NyxChatInputMessage>
+}
+
 export interface NyxChatState {
   messages: NyxChatMessage[]
   input: string
   runStatus: NyxChatRunStatus
   activeRequestId: string | undefined
   activeAssistantMessageId: string | undefined
-  lastSubmittedMessages: ReadonlyArray<NyxChatInputMessage> | null
-  lastAssistantMessageId: string | undefined
+  activeTurn: NyxChatTurnRequest | null
+  retryableTurn: NyxRetryableChatTurn | null
 }
 
 export const initialNyxChatState: NyxChatState = {
@@ -20,6 +33,6 @@ export const initialNyxChatState: NyxChatState = {
   runStatus: 'idle',
   activeRequestId: undefined,
   activeAssistantMessageId: undefined,
-  lastSubmittedMessages: null,
-  lastAssistantMessageId: undefined,
+  activeTurn: null,
+  retryableTurn: null,
 }
