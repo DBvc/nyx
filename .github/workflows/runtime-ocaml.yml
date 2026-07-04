@@ -1,0 +1,41 @@
+name: runtime-ocaml
+
+on:
+  push:
+    paths:
+      - 'runtime/ocaml/**'
+      - '.github/workflows/runtime-ocaml.yml'
+      - 'scripts/check-runtime.sh'
+      - 'scripts/audit-ocaml-runtime.sh'
+      - 'AGENTS.md'
+      - 'docs/architecture/**'
+  pull_request:
+    paths:
+      - 'runtime/ocaml/**'
+      - '.github/workflows/runtime-ocaml.yml'
+      - 'scripts/check-runtime.sh'
+      - 'scripts/audit-ocaml-runtime.sh'
+      - 'AGENTS.md'
+      - 'docs/architecture/**'
+
+permissions: read-all
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runtime/ocaml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.5.0
+          dune-cache: true
+      - run: opam install . --deps-only --with-test --with-doc --yes
+      - run: opam install ocamlformat.0.29.0 --yes
+      - run: opam exec -- dune build
+      - run: opam exec -- dune runtest
+      - run: opam exec -- dune build @fmt
+      - run: opam exec -- dune build @doc
+      - run: opam exec -- dune exec nyx-runtime -- ping

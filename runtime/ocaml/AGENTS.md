@@ -98,6 +98,8 @@ opam exec -- dune exec nyx-runtime -- ping
 
 Keep early dependencies small.
 
+`nyx_runtime.opam` is manually maintained. When changing runtime package metadata, dependencies, test-only dependencies, doc dependencies, or Dune package configuration, update `runtime/ocaml/nyx_runtime.opam` in the same change and keep CI aligned with it.
+
 Allowed now as project dependencies:
 
 - standard library
