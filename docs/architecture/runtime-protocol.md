@@ -50,10 +50,59 @@ Current local protocol scope:
 
 - ping/pong request-response
 - chat reducer session verification scaffold
+- Electron main protocol session verification scaffold
 
 The runtime-side scaffold lives under `runtime/ocaml`. The only desktop
 runtime work in this phase is explicit, opt-in verification. It is not part of
 app startup, renderer IPC, or the product chat path.
+
+## Runtime Protocol Session Helper
+
+Electron main owns a main-only protocol session helper:
+
+- `apps/desktop/electron/main/runtime/protocol-session.ts`
+
+The helper is a transport and lifecycle boundary for a long-lived
+`nyx-runtime protocol` child process. It sends one NDJSON request per line,
+correlates protocol responses by `id`, tracks pending requests, applies request
+timeouts, normalizes protocol/process/stdin failures, and closes pending
+requests when the session is disposed or the runtime exits.
+
+The helper is intentionally generic at the transport layer only. It must not
+become a chat API, runtime manager, supervisor, reconnect loop, event bus,
+provider adapter, or product state owner. In this phase it has no authority over
+desktop chat state, provider requests, model streaming, retries, cancellation,
+or message identity.
+
+Allowed consumers in this phase:
+
+- Electron main unit tests for the helper.
+- Explicit integration checks that provide a runtime executable with
+  `NYX_RUNTIME_PATH`.
+
+Disallowed consumers in this phase:
+
+- app startup
+- BrowserWindow lifecycle
+- `ChatSessionManager`
+- provider streaming
+- preload
+- renderer
+- UI
+- shared chat IPC
+- packaged app runtime distribution
+
+The real-runtime verification entrypoint is:
+
+- `mise run runtime:protocol-session:check`
+
+That task prepares the generated runtime artifact, sets
+`NYX_RUNTIME_PATH=apps/desktop/.runtime-artifacts/nyx-runtime`, enables the
+dedicated `NYX_RUNTIME_PROTOCOL_SESSION=1` test gate, and runs
+`apps/desktop/electron/main/runtime/protocol-session.integration.test.ts`.
+Normal `mise run desktop:test` runs the test suite with this integration test
+skipped. This keeps the generated artifact outside the default runtime resolver
+and outside ordinary desktop test setup.
 
 ## Chat Reducer Protocol Proof
 
@@ -72,7 +121,7 @@ not product integration. It must not connect the runtime to:
 
 - app startup
 - BrowserWindow lifecycle
-- `NyxChatSessionManager`
+- `ChatSessionManager`
 - provider streaming
 - preload
 - renderer
@@ -90,7 +139,7 @@ make OCaml authoritative for desktop chat state, do not decide ownership of
 desktop `userMessageId` values, and do not change provider request or streaming
 semantics.
 
-If a later step needs to change `NyxChatSessionManager`, shared/preload/renderer
+If a later step needs to change `ChatSessionManager`, shared/preload/renderer
 IPC, provider streaming, `userMessageId` ownership, or runtime protocol
 semantics, that is outside this proof and requires a separate plan.
 
@@ -145,6 +194,21 @@ When invoked through protocol mode, stdout is reserved for protocol responses an
 Electron main's health boundary currently exercises only this ping/pong
 scaffold. It does not make OCaml authoritative for chat state or provider
 requests.
+
+## Shadow Equivalence Boundary
+
+A future shadow-equivalence slice may compare Electron main's current chat
+state transitions with OCaml runtime outputs, but that is a separate issue. It
+must first define the product-visible projection to compare, the message and
+turn identifiers that own identity, and the evidence that proves equivalence
+without changing the live product path.
+
+Until that separate plan exists, this protocol session helper remains
+verification-only. It must not be connected to `ChatSessionManager`, provider
+streaming, shared/preload/renderer IPC, app startup, BrowserWindow lifecycle, or
+UI. It also must not change current provider credential ownership: Electron
+main continues to own provider configuration and secrets, and the renderer
+continues not to read them.
 
 ## Later Protocol Concepts
 
