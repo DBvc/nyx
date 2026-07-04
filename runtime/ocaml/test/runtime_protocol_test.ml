@@ -1,11 +1,11 @@
 module Protocol = Nyx_runtime.Runtime_protocol
 module Chat = Nyx_runtime.Chat
 
-let turn_1 = Chat.Request_id.of_string "turn-1"
-let user_1 = Chat.Message_id.of_string "user-1"
-let assistant_1 = Chat.Message_id.of_string "assistant-1"
-let system_1 = Chat.Message_id.of_string "system-1"
-let assistant_done_1 = Chat.Message_id.of_string "assistant-done-1"
+let unsafe_request_id_for_tests = Chat.Request_id.unsafe_of_string_for_tests
+let unsafe_message_id_for_tests = Chat.Message_id.unsafe_of_string_for_tests
+let turn_1 = unsafe_request_id_for_tests "turn-1"
+let user_1 = unsafe_message_id_for_tests "user-1"
+let assistant_1 = unsafe_message_id_for_tests "assistant-1"
 
 let runtime_error message =
   let open Chat.Runtime_error in
@@ -134,6 +134,22 @@ let test_chat_reducer_action_uses_turn_request_id () =
   check_error "missing field: turn_request_id"
     "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"retry_failed\",\"request_id\":\"turn-1\"}"
 
+let test_chat_reducer_action_rejects_empty_domain_ids () =
+  let cases =
+    [
+      ( "invalid field: turn_request_id",
+        "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+      );
+      ( "invalid field: user_message_id",
+        "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+      );
+      ( "invalid field: assistant_message_id",
+        "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"\",\"content\":\"Hello\"}"
+      );
+    ]
+  in
+  List.iter (fun (expected, line) -> check_error expected line) cases
+
 let test_unknown_chat_reducer_action_is_rejected () =
   check_error "unknown action: start_turn"
     "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"start_turn\",\"turn_request_id\":\"turn-1\"}"
@@ -142,21 +158,24 @@ let test_chat_reducer_request_requires_session_handler () =
   check_error "stateful request requires session"
     "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"clear\"}"
 
-let test_chat_reducer_state_encodes_transcript_roles_and_no_turn () =
-  let message id role content =
-    let open Chat.Message in
-    { id; role; content }
-  in
+let test_chat_reducer_state_encodes_completed_transcript_and_no_turn () =
   let state =
-    {
-      Chat.transcript =
-        [
-          message system_1 System "System rules";
-          message user_1 User "Hello";
-          message assistant_done_1 Assistant "Done";
-        ];
-      current_turn = No_turn;
-    }
+    Chat.initial
+    |> reduce
+         (Chat.Submit_user_message
+            {
+              request_id = turn_1;
+              user_message_id = user_1;
+              assistant_message_id = assistant_1;
+              content = "Hello";
+            })
+    |> reduce
+         (Chat.Complete
+            {
+              request_id = turn_1;
+              assistant_message_id = assistant_1;
+              final_content = "Done";
+            })
   in
   let actual =
     Protocol.encode_response
@@ -164,8 +183,7 @@ let test_chat_reducer_state_encodes_transcript_roles_and_no_turn () =
   in
   Alcotest.(check string)
     "chat reducer state"
-    "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"system-1\",\"role\":\"system\",\"content\":\"System \
-     rules\"},{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"assistant-done-1\",\"role\":\"assistant\",\"content\":\"Done\"}],\"current_turn\":{\"type\":\"no_turn\"}}}"
+    "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"assistant-1\",\"role\":\"assistant\",\"content\":\"Done\"}],\"current_turn\":{\"type\":\"no_turn\"}}}"
     actual
 
 let test_chat_reducer_state_encodes_active_turn () =
@@ -336,12 +354,15 @@ let cases =
       test_chat_reducer_action_contract_is_decoded;
     Alcotest.test_case "chat reducer action uses turn_request_id" `Quick
       test_chat_reducer_action_uses_turn_request_id;
+    Alcotest.test_case "chat reducer action rejects empty domain ids" `Quick
+      test_chat_reducer_action_rejects_empty_domain_ids;
     Alcotest.test_case "unknown chat reducer action is rejected" `Quick
       test_unknown_chat_reducer_action_is_rejected;
     Alcotest.test_case "chat reducer request requires session handler" `Quick
       test_chat_reducer_request_requires_session_handler;
-    Alcotest.test_case "chat reducer state encodes transcript roles and no turn"
-      `Quick test_chat_reducer_state_encodes_transcript_roles_and_no_turn;
+    Alcotest.test_case
+      "chat reducer state encodes completed transcript and no turn" `Quick
+      test_chat_reducer_state_encodes_completed_transcript_and_no_turn;
     Alcotest.test_case "chat reducer state encodes active turn" `Quick
       test_chat_reducer_state_encodes_active_turn;
     Alcotest.test_case "chat reducer state encodes failed turn" `Quick

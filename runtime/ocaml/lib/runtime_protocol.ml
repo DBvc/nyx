@@ -251,6 +251,7 @@ let encode_current_turn = function
         ]
 
 let encode_chat_state (state : Chat.state) =
+  let state = Chat.view state in
   `Assoc
     [
       ("transcript", `List (List.map encode_message state.transcript));
@@ -275,8 +276,19 @@ let response_for_request = function
   | Chat_reducer_action _ -> Error Stateful_request_requires_session
 
 let initial_session = { chat_state = Chat.initial }
-let chat_request_id value = Chat.Request_id.of_string value
-let chat_message_id value = Chat.Message_id.of_string value
+
+let chat_request_id value =
+  match Chat.Request_id.of_string value with
+  | Ok request_id -> request_id
+  | Error Chat.Request_id.Empty ->
+      invalid_arg "Runtime_protocol.chat_request_id: expected non-empty id"
+
+let chat_message_id value =
+  match Chat.Message_id.of_string value with
+  | Ok message_id -> message_id
+  | Error Chat.Message_id.Empty ->
+      invalid_arg "Runtime_protocol.chat_message_id: expected non-empty id"
+
 let chat_runtime_error message = Chat.Runtime_error.{ message }
 
 let chat_action_to_domain = function

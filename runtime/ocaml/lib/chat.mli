@@ -1,15 +1,23 @@
 module Request_id : sig
   type t
+  type error = Empty
 
-  val of_string : string -> t
+  val of_string : string -> (t, error) result
+
+  (* Test fixture helper. Production code should use [of_string]. *)
+  val unsafe_of_string_for_tests : string -> t
   val to_string : t -> string
   val equal : t -> t -> bool
 end
 
 module Message_id : sig
   type t
+  type error = Empty
 
-  val of_string : string -> t
+  val of_string : string -> (t, error) result
+
+  (* Test fixture helper. Production code should use [of_string]. *)
+  val unsafe_of_string_for_tests : string -> t
   val to_string : t -> string
   val equal : t -> t -> bool
 end
@@ -42,7 +50,8 @@ type failed_turn = {
 }
 
 type current_turn = No_turn | Active of active_turn | Failed of failed_turn
-type state = { transcript : Message.t list; current_turn : current_turn }
+type state
+type view = { transcript : Message.t list; current_turn : current_turn }
 
 type action =
   | Submit_user_message of {
@@ -80,4 +89,8 @@ type action =
   | Clear
 
 val initial : state
+val view : state -> view
+
+(* Invalid, stale, or out-of-phase actions are ignored and return the unchanged
+   state. *)
 val reduce : state -> action -> state

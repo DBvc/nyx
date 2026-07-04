@@ -1,12 +1,14 @@
 module Chat = Nyx_runtime.Chat
 
-let request_1 = Chat.Request_id.of_string "request-1"
-let request_2 = Chat.Request_id.of_string "request-2"
-let stale_request = Chat.Request_id.of_string "request-stale"
-let user_1 = Chat.Message_id.of_string "user-1"
-let user_2 = Chat.Message_id.of_string "user-2"
-let assistant_1 = Chat.Message_id.of_string "assistant-1"
-let assistant_stale = Chat.Message_id.of_string "assistant-stale"
+let unsafe_request_id_for_tests = Chat.Request_id.unsafe_of_string_for_tests
+let unsafe_message_id_for_tests = Chat.Message_id.unsafe_of_string_for_tests
+let request_1 = unsafe_request_id_for_tests "request-1"
+let request_2 = unsafe_request_id_for_tests "request-2"
+let stale_request = unsafe_request_id_for_tests "request-stale"
+let user_1 = unsafe_message_id_for_tests "user-1"
+let user_2 = unsafe_message_id_for_tests "user-2"
+let assistant_1 = unsafe_message_id_for_tests "assistant-1"
+let assistant_stale = unsafe_message_id_for_tests "assistant-stale"
 
 let pp_role formatter role =
   Format.pp_print_string formatter
@@ -61,12 +63,12 @@ let active_with_draft () =
   streaming_state () |> delta ~snapshot:"Partial response"
 
 let transcript state =
-  let open Chat in
-  state.transcript
+  let view = Chat.view state in
+  view.transcript
 
 let current_turn state =
-  let open Chat in
-  state.current_turn
+  let view = Chat.view state in
+  view.current_turn
 
 let transcript_summary state =
   List.map
@@ -128,6 +130,27 @@ let check_failed ?(request_id = request_1) ?(user_message_id = user_1)
 
 let check_no_op label state action =
   Alcotest.(check bool) label true (Chat.reduce state action = state)
+
+let test_id_constructors_validate_empty_string () =
+  (match Chat.Request_id.of_string "" with
+  | Error Chat.Request_id.Empty -> ()
+  | Ok _ -> Alcotest.fail "expected empty request id to be rejected");
+  (match Chat.Message_id.of_string "" with
+  | Error Chat.Message_id.Empty -> ()
+  | Ok _ -> Alcotest.fail "expected empty message id to be rejected");
+
+  (match Chat.Request_id.of_string "request-ok" with
+  | Ok request_id ->
+      Alcotest.(check string)
+        "request id" "request-ok"
+        (Chat.Request_id.to_string request_id)
+  | Error Chat.Request_id.Empty -> Alcotest.fail "expected non-empty request id");
+  match Chat.Message_id.of_string "message-ok" with
+  | Ok message_id ->
+      Alcotest.(check string)
+        "message id" "message-ok"
+        (Chat.Message_id.to_string message_id)
+  | Error Chat.Message_id.Empty -> Alcotest.fail "expected non-empty message id"
 
 let test_submit_creates_single_active_turn () =
   let state = submitted_state () in
@@ -363,6 +386,8 @@ let test_clear_resets_state () =
 
 let cases =
   [
+    Alcotest.test_case "id constructors validate empty string" `Quick
+      test_id_constructors_validate_empty_string;
     Alcotest.test_case "submit creates one active turn" `Quick
       test_submit_creates_single_active_turn;
     Alcotest.test_case "stream and complete" `Quick test_stream_and_complete;
