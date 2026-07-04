@@ -2,13 +2,29 @@
 
 Status: Draft.
 
-This document describes the future boundary between Electron main and the OCaml runtime.
+This document describes the boundary between Electron main and the OCaml runtime.
 
 ## Current Phase
 
-No runtime communication exists yet.
+Electron main now has an explicit, main-only runtime health boundary.
 
-The OCaml runtime does have a local CLI protocol scaffold for runtime verification. This scaffold is not wired to Electron.
+The desktop app can resolve a `nyx-runtime` executable and, when explicitly
+called from Electron main code, verify the local protocol scaffold with a
+ping/pong request over `nyx-runtime protocol`.
+
+This boundary is intentionally narrow:
+
+- Electron main owns runtime path resolution, child process lifecycle, timeout
+  handling, and error normalization.
+- `NYX_RUNTIME_PATH` is a main-process development/test override only.
+- A local repo fallback may point at `runtime/ocaml/_build/install/default/bin/nyx-runtime`
+  for development and tests.
+- Missing runtime binaries are reported as structured unavailable results.
+
+This boundary is not connected to app startup, BrowserWindow lifecycle, the
+chat session manager, provider calls, preload, renderer, or UI.
+
+The local repo fallback is not a packaged app distribution contract.
 
 Current local entrypoints:
 
@@ -20,11 +36,33 @@ Current local protocol scope:
 - ping/pong request-response
 - chat reducer session verification scaffold
 
-The scaffold lives under `runtime/ocaml` and must not be treated as desktop integration.
+The runtime-side scaffold lives under `runtime/ocaml`. The only desktop
+integration in this phase is the explicit health boundary described below.
 
-## Future Direction
+## Desktop Health Boundary
 
-Electron main will spawn the OCaml runtime as a child process.
+Electron main owns the current desktop-side health check implementation:
+
+- `apps/desktop/electron/main/runtime/path.ts`
+- `apps/desktop/electron/main/runtime/ping.ts`
+- `apps/desktop/electron/main/runtime/health.ts`
+
+`checkNyxRuntimeHealth()` is an internal Electron main helper. It resolves the
+runtime path, invokes the existing protocol ping helper, and returns one of:
+
+- `success`: the runtime answered with a matching pong id.
+- `unavailable`: no configured or local development runtime executable exists.
+- `error`: the runtime process failed to spawn, exited unsuccessfully, timed out,
+  or returned an invalid protocol response.
+
+The health result is not a shared contract. It must not be exported through
+preload, renderer IPC, settings UI, provider status UI, or chat state.
+
+## Protocol Direction
+
+Electron main is the only desktop process that may spawn the OCaml runtime as a
+child process. The current health boundary already uses this ownership rule for
+ping/pong; broader runtime workflows must keep the same process boundary.
 
 Transport:
 
@@ -48,6 +86,10 @@ Rules:
 ```
 
 When invoked through protocol mode, stdout is reserved for protocol responses and stderr is reserved for diagnostics.
+
+Electron main's health boundary currently exercises only this ping/pong
+scaffold. It does not make OCaml authoritative for chat state or provider
+requests.
 
 ## Later Protocol Concepts
 
