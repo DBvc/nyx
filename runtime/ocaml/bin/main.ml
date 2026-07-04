@@ -16,8 +16,12 @@ let run_protocol () =
   in
   loop Nyx_runtime.Runtime_protocol.initial_session
 
+let usage = "usage: nyx-runtime [ping|protocol]"
+
 let () =
   match Array.to_list Sys.argv with
   | [ _; "ping" ] -> print_endline "pong"
   | [ _; "protocol" ] -> run_protocol ()
-  | _ -> print_endline (Nyx_runtime.Runtime.hello ())
+  | _ ->
+      prerr_endline usage;
+      exit 64

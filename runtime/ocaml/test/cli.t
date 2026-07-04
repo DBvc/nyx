@@ -26,3 +26,19 @@ Invalid protocol input writes stderr only and exits nonzero.
   $ cat stdout.log
   $ cat stderr.log
   nyx-runtime protocol error: missing id
+
+Unknown CLI arguments write stderr only and exit nonzero.
+
+  $ ../bin/main.exe unknown >stdout.log 2>stderr.log
+  [64]
+  $ cat stdout.log
+  $ cat stderr.log
+  usage: nyx-runtime [ping|protocol]
+
+No CLI arguments write stderr only and exit nonzero.
+
+  $ ../bin/main.exe >stdout.log 2>stderr.log
+  [64]
+  $ cat stdout.log
+  $ cat stderr.log
+  usage: nyx-runtime [ping|protocol]

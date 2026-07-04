@@ -1,17 +1,4 @@
 module Protocol = Nyx_runtime.Runtime_protocol
-module Chat = Nyx_runtime.Chat
-
-let unsafe_request_id_for_tests = Chat.Request_id.unsafe_of_string_for_tests
-let unsafe_message_id_for_tests = Chat.Message_id.unsafe_of_string_for_tests
-let turn_1 = unsafe_request_id_for_tests "turn-1"
-let user_1 = unsafe_message_id_for_tests "user-1"
-let assistant_1 = unsafe_message_id_for_tests "assistant-1"
-
-let runtime_error message =
-  let open Chat.Runtime_error in
-  { message }
-
-let reduce action state = Chat.reduce state action
 
 let check_response_line expected line =
   match Protocol.handle_request_line line with
@@ -41,6 +28,58 @@ let check_session_error expected session line =
       Alcotest.(check string)
         "session error message" expected
         (Protocol.error_to_string actual)
+
+let submit_user_message_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"content\":\"Hello\"}"
+    id
+
+let start_assistant_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"start_assistant\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\"}"
+    id
+
+let append_delta_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"append_delta\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\",\"snapshot\":\"Partial\"}"
+    id
+
+let complete_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"complete\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\",\"final_content\":\"Done\"}"
+    id
+
+let fail_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"fail\",\"turn_request_id\":\"turn-1\",\"assistant_message_id\":\"assistant-1\",\"error\":{\"message\":\"Network \
+     failed\"}}"
+    id
+
+let submitted_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
+    id
+
+let streaming_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"streaming\"}}}"
+    id
+
+let partial_streaming_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"Partial\",\"phase\":\"streaming\"}}}"
+    id
+
+let completed_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"assistant-1\",\"role\":\"assistant\",\"content\":\"Done\"}],\"current_turn\":{\"type\":\"no_turn\"}}}"
+    id
+
+let failed_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"failed\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"Partial\",\"error\":{\"message\":\"Network \
+     failed\"}}}}"
+    id
 
 let test_valid_ping_returns_matching_pong () =
   check_response_line "{\"type\":\"pong\",\"id\":\"req_1\"}"
@@ -159,92 +198,53 @@ let test_chat_reducer_request_requires_session_handler () =
     "{\"type\":\"chat_reducer_action\",\"id\":\"proto_1\",\"action\":\"clear\"}"
 
 let test_chat_reducer_state_encodes_completed_transcript_and_no_turn () =
-  let state =
-    Chat.initial
-    |> reduce
-         (Chat.Submit_user_message
-            {
-              request_id = turn_1;
-              user_message_id = user_1;
-              assistant_message_id = assistant_1;
-              content = "Hello";
-            })
-    |> reduce
-         (Chat.Complete
-            {
-              request_id = turn_1;
-              assistant_message_id = assistant_1;
-              final_content = "Done";
-            })
+  let session =
+    check_session_line
+      (submitted_state_line "proto_1")
+      Protocol.initial_session
+      (submit_user_message_line "proto_1")
   in
-  let actual =
-    Protocol.encode_response
-      (Protocol.Chat_reducer_state { id = "proto_1"; state })
+  let (_ : Protocol.session) =
+    check_session_line
+      (completed_state_line "proto_2")
+      session (complete_line "proto_2")
   in
-  Alcotest.(check string)
-    "chat reducer state"
-    "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"assistant-1\",\"role\":\"assistant\",\"content\":\"Done\"}],\"current_turn\":{\"type\":\"no_turn\"}}}"
-    actual
+  ()
 
 let test_chat_reducer_state_encodes_active_turn () =
-  let state =
-    Chat.initial
-    |> reduce
-         (Chat.Submit_user_message
-            {
-              request_id = turn_1;
-              user_message_id = user_1;
-              assistant_message_id = assistant_1;
-              content = "Hello";
-            })
-    |> reduce
-         (Chat.Start_assistant
-            { request_id = turn_1; assistant_message_id = assistant_1 })
+  let session =
+    check_session_line
+      (submitted_state_line "proto_1")
+      Protocol.initial_session
+      (submit_user_message_line "proto_1")
   in
-  let actual =
-    Protocol.encode_response
-      (Protocol.Chat_reducer_state { id = "proto_1"; state })
+  let (_ : Protocol.session) =
+    check_session_line
+      (streaming_state_line "proto_2")
+      session
+      (start_assistant_line "proto_2")
   in
-  Alcotest.(check string)
-    "active turn state"
-    "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"streaming\"}}}"
-    actual
+  ()
 
 let test_chat_reducer_state_encodes_failed_turn () =
-  let state =
-    Chat.initial
-    |> reduce
-         (Chat.Submit_user_message
-            {
-              request_id = turn_1;
-              user_message_id = user_1;
-              assistant_message_id = assistant_1;
-              content = "Hello";
-            })
-    |> reduce
-         (Chat.Append_delta
-            {
-              request_id = turn_1;
-              assistant_message_id = assistant_1;
-              snapshot = "Partial";
-            })
-    |> reduce
-         (Chat.Fail
-            {
-              request_id = turn_1;
-              assistant_message_id = assistant_1;
-              error = runtime_error "Network failed";
-            })
+  let session =
+    check_session_line
+      (submitted_state_line "proto_1")
+      Protocol.initial_session
+      (submit_user_message_line "proto_1")
   in
-  let actual =
-    Protocol.encode_response
-      (Protocol.Chat_reducer_state { id = "proto_1"; state })
+  let session =
+    check_session_line
+      (partial_streaming_state_line "proto_2")
+      session
+      (append_delta_line "proto_2")
   in
-  Alcotest.(check string)
-    "failed turn state"
-    "{\"type\":\"chat_reducer_state\",\"id\":\"proto_1\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"failed\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"Partial\",\"error\":{\"message\":\"Network \
-     failed\"}}}}"
-    actual
+  let (_ : Protocol.session) =
+    check_session_line
+      (failed_state_line "proto_3")
+      session (fail_line "proto_3")
+  in
+  ()
 
 let test_session_handler_advances_chat_state () =
   let session =

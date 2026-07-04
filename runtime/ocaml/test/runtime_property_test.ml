@@ -80,7 +80,9 @@ let protocol_ping_round_trips_non_empty_id =
       in
       match Protocol.handle_request_line request_line with
       | Ok response_line ->
-          String.equal response_line (Protocol.encode_response (Pong { id }))
+          String.equal response_line
+            (Yojson.Basic.to_string
+               (`Assoc [ ("type", `String "pong"); ("id", `String id) ]))
       | Error _ -> false)
 
 let cases =

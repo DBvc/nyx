@@ -1,3 +1,7 @@
+(* Local NDJSON protocol scaffold for runtime verification only. Electron process
+   lifecycle, renderer communication, provider calls, and persistence stay out of
+   this module until an explicit boundary task introduces them. *)
+
 type chat_reducer_action =
   | Submit_user_message of {
       turn_request_id : string;
@@ -36,10 +40,6 @@ type request =
   | Ping of { id : string }
   | Chat_reducer_action of { id : string; action : chat_reducer_action }
 
-type response =
-  | Pong of { id : string }
-  | Chat_reducer_state of { id : string; state : Chat.state }
-
 type session
 
 type error =
@@ -57,8 +57,6 @@ type error =
   | Stateful_request_requires_session
 
 val decode_request_line : string -> (request, error) result
-val encode_response : response -> string
-val response_for_request : request -> (response, error) result
 val initial_session : session
 val handle_session_line : session -> string -> (session * string, error) result
 val handle_request_line : string -> (string, error) result
