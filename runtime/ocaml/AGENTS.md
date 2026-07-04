@@ -31,16 +31,19 @@ It should not own:
 
 ## Current Phase
 
-Current phase only requires:
+Current phase includes:
 
 - Dune project
 - buildable library
 - executable CLI
 - minimal domain types
+- local runtime protocol scaffold
 - unit tests
 - formatting setup
 
-Do not implement runtime protocol code, process management, tools, agents, or provider calls unless the task explicitly asks for it.
+The checked-in protocol scaffold is for local runtime verification only. Electron is still not wired to OCaml.
+
+Do not implement Electron process management, renderer communication, tools, agents, persistence, provider calls, or broader runtime protocol concepts unless the task explicitly asks for them.
 
 ## OCaml Version
 
@@ -59,6 +62,8 @@ Do not commit `_opam`.
 From repository root:
 
 ```bash
+./scripts/audit-ocaml-runtime.sh
+./scripts/check-runtime.sh
 mise run runtime:setup
 mise run runtime:build
 mise run runtime:test
@@ -114,28 +119,37 @@ Do not add large frameworks or concurrency libraries yet, including:
 
 These may be added later only when the runtime design justifies them.
 
-## Protocol Rules For Future Work
+## Protocol Rules
 
-When runtime communication is introduced later:
+The current runtime CLI has a local protocol mode for verification. It is not connected to Electron.
 
 - stdout must be protocol only
 - stderr must be logs only
 - use NDJSON
 - one JSON message per line
 - every request must have an id
-- Electron main owns process lifecycle
+- Electron main will own process lifecycle in a future explicit task
 - renderer must never talk to OCaml directly
 
-First protocol spike should be only:
+The current scaffold includes ping/pong:
 
 ```json
 {"type":"ping","id":"req_1"}
 {"type":"pong","id":"req_1"}
 ```
 
+It also includes a local chat reducer session scaffold used for runtime verification. Do not expand this into Electron integration, process lifecycle, model provider calls, tool execution, or agent orchestration without an explicit task.
+
 ## Verification
 
 For any runtime change, run:
+
+```bash
+./scripts/audit-ocaml-runtime.sh
+./scripts/check-runtime.sh
+```
+
+Equivalent focused checks:
 
 ```bash
 mise run runtime:build

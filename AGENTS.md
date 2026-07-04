@@ -7,8 +7,8 @@ Current product scope is still `v1 min chat`. Do not expand the product into a g
 ## Project Layout
 
 - `apps/desktop`: Electron desktop app.
-- `runtime/ocaml`: planned OCaml runtime core. Do not assume it exists until the runtime skeleton task creates it.
-- `docs/architecture`: planned architecture notes and runtime boundary documents. Do not assume these docs exist until the runtime docs task creates them.
+- `runtime/ocaml`: OCaml runtime core skeleton. It exists and is intentionally isolated from Electron.
+- `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 
 ## Source of Truth
@@ -55,7 +55,7 @@ Still out of scope:
 - OS side effects
 - current v1 min chat behavior
 
-`runtime/ocaml`, once created, owns:
+`runtime/ocaml` owns:
 
 - typed runtime domain model
 - runtime event model
@@ -63,6 +63,8 @@ Still out of scope:
 - future tool scheduling semantics
 - future policy and capability model
 - replayable runtime tests
+
+Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, and a local protocol scaffold for runtime verification. Electron is still not wired to the runtime.
 
 ## Hard Rules
 
@@ -88,7 +90,7 @@ mise install
 pnpm install
 ```
 
-OCaml compiler, opam setup, and runtime tasks are introduced only after `runtime/ocaml` exists.
+OCaml compiler, opam setup, and runtime tasks are available for `runtime/ocaml`.
 
 ## Common Commands
 
@@ -104,7 +106,26 @@ mise run desktop:format
 mise run desktop:format-check
 ```
 
-Root npm scripts are compatibility aliases for the current desktop checks. Prefer `mise run desktop:*` commands in new docs until workspace-level runtime tasks exist.
+Root npm scripts are compatibility aliases for workspace checks. Prefer explicit `mise run desktop:*` and `mise run runtime:*` commands in new docs.
+
+Runtime:
+
+```bash
+mise run runtime:setup
+mise run runtime:build
+mise run runtime:test
+mise run runtime:format
+mise run runtime:format-check
+mise run runtime:ping
+mise run runtime:check
+```
+
+Root runtime harness scripts:
+
+```bash
+./scripts/audit-ocaml-runtime.sh
+./scripts/check-runtime.sh
+```
 
 ## Verification Rules
 
@@ -116,7 +137,28 @@ mise run desktop:typecheck:compat
 mise run desktop:lint
 ```
 
-For future runtime-only or cross-boundary changes, first confirm the relevant `runtime:*` or workspace-level `mise` tasks exist.
+For runtime-only changes, run:
+
+```bash
+mise run runtime:build
+mise run runtime:test
+mise run runtime:format-check
+```
+
+For runtime CLI or protocol changes, also run:
+
+```bash
+mise run runtime:ping
+```
+
+When the root runtime harness scripts exist and apply to the change, prefer:
+
+```bash
+./scripts/audit-ocaml-runtime.sh
+./scripts/check-runtime.sh
+```
+
+For future cross-boundary changes, first confirm the relevant `runtime:*`, `desktop:*`, or workspace-level `mise` tasks exist.
 
 ## Subproject Instructions
 
@@ -126,7 +168,7 @@ Before editing `apps/desktop`, read:
 apps/desktop/AGENTS.md
 ```
 
-Before editing `runtime/ocaml` after it exists, read:
+Before editing `runtime/ocaml`, read:
 
 ```text
 runtime/ocaml/AGENTS.md
