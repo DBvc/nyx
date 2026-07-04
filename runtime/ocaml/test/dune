@@ -1,3 +1,6 @@
 (test
  (name runtime_test)
- (libraries nyx_runtime alcotest))
+ (libraries nyx_runtime alcotest qcheck-core qcheck-alcotest))
+
+(cram
+ (deps ../bin/main.exe))
