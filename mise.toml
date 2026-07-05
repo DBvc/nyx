@@ -36,7 +36,7 @@ description = "Build the macOS arm64 production package"
 run = "pnpm --dir apps/desktop package:mac:prod"
 
 [tasks."desktop:package:mac:verify"]
-description = "Verify the macOS arm64 package contains the bundled runtime"
+description = "Verify the macOS arm64 package, update metadata, and distribution artifacts"
 run = "pnpm --dir apps/desktop package:mac:verify"
 
 [tasks."desktop:release:mac:verify"]

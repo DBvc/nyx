@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 FLAVOR="${1:-${NYX_PACKAGE_FLAVOR:-dev}}"
+ZIP_VERIFY_DIR=""
 
 case "$FLAVOR" in
   dev)
@@ -43,6 +44,68 @@ assert_arm64_binary() {
   [ "$archs" = "arm64" ] || fail "runtime must be arm64 only, got '$archs': $binary_path"
 }
 
+assert_distribution_artifact() {
+  local artifact_path="$1"
+  local artifact_label="$2"
+
+  [ -s "$artifact_path" ] || fail "$artifact_label artifact is empty: $artifact_path"
+}
+
+cleanup() {
+  if [ -n "$ZIP_VERIFY_DIR" ] && [ -d "$ZIP_VERIFY_DIR" ]; then
+    rm -rf "$ZIP_VERIFY_DIR"
+  fi
+}
+
+trap cleanup EXIT
+
+assert_zip_artifact() {
+  local zip_app_path
+  local zip_info_plist
+  local zip_runtime_path
+  local zip_bundle_id
+  local zip_bundle_name
+  local zip_bundle_version
+  local zip_ping_output
+
+  if ! ZIP_TEST_OUTPUT="$(unzip -tq "$ZIP_PATH" 2>&1)"; then
+    fail "ZIP artifact verification failed: $ZIP_TEST_OUTPUT"
+  fi
+
+  ZIP_VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/nyx-mac-zip.XXXXXX")" ||
+    fail "could not create temporary ZIP verification directory"
+
+  if ! ZIP_EXTRACT_OUTPUT="$(unzip -q "$ZIP_PATH" -d "$ZIP_VERIFY_DIR" 2>&1)"; then
+    fail "ZIP artifact extraction failed: $ZIP_EXTRACT_OUTPUT"
+  fi
+
+  zip_app_path="$ZIP_VERIFY_DIR/$PRODUCT_NAME.app"
+  zip_info_plist="$zip_app_path/Contents/Info.plist"
+  zip_runtime_path="$zip_app_path/Contents/Resources/runtime/nyx-runtime"
+
+  [ -d "$zip_app_path" ] || fail "ZIP artifact is missing app bundle: $PRODUCT_NAME.app"
+  [ -f "$zip_info_plist" ] || fail "ZIP artifact is missing Info.plist: $zip_info_plist"
+  [ -f "$zip_runtime_path" ] || fail "ZIP artifact is missing packaged runtime: $zip_runtime_path"
+  [ -x "$zip_runtime_path" ] || fail "ZIP artifact packaged runtime is not executable: $zip_runtime_path"
+  assert_arm64_binary "$zip_runtime_path"
+
+  zip_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$zip_info_plist")"
+  [ "$zip_bundle_id" = "$APP_ID" ] || fail "unexpected ZIP CFBundleIdentifier: $zip_bundle_id"
+
+  zip_bundle_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$zip_info_plist")"
+  [ "$zip_bundle_name" = "$PRODUCT_NAME" ] || fail "unexpected ZIP CFBundleName: $zip_bundle_name"
+
+  zip_bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$zip_info_plist")"
+  [ "$zip_bundle_version" = "$PACKAGE_VERSION" ] ||
+    fail "unexpected ZIP CFBundleShortVersionString: $zip_bundle_version"
+
+  if ! zip_ping_output="$("$zip_runtime_path" ping)"; then
+    fail "ZIP artifact packaged runtime ping command failed: $zip_runtime_path ping"
+  fi
+
+  [ "$zip_ping_output" = "pong" ] || fail "ZIP artifact packaged runtime ping returned unexpected output: $zip_ping_output"
+}
+
 normalize_feed_url() {
   local value="${1:-}"
   value="${value%"${value##*[![:space:]]}"}"
@@ -68,6 +131,16 @@ UPDATE_METADATA_PATH="$OUT_DIR/$UPDATE_CHANNEL-mac.yml"
 [ -f "$RUNTIME_PATH" ] || fail "packaged runtime is missing: $RUNTIME_PATH"
 [ -x "$RUNTIME_PATH" ] || fail "packaged runtime is not executable: $RUNTIME_PATH"
 assert_arm64_binary "$RUNTIME_PATH"
+command -v hdiutil >/dev/null || fail "hdiutil is required to verify the DMG artifact"
+command -v unzip >/dev/null || fail "unzip is required to verify the ZIP artifact"
+assert_distribution_artifact "$DMG_PATH" "DMG"
+assert_distribution_artifact "$ZIP_PATH" "ZIP"
+
+if ! DMG_VERIFY_OUTPUT="$(hdiutil verify "$DMG_PATH" 2>&1)"; then
+  fail "DMG artifact verification failed: $DMG_VERIFY_OUTPUT"
+fi
+
+assert_zip_artifact
 
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
 [ "$BUNDLE_ID" = "$APP_ID" ] || fail "unexpected CFBundleIdentifier: $BUNDLE_ID"

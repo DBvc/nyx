@@ -82,6 +82,10 @@ apps/desktop/.package-resources/runtime/nyx-runtime
 
 Generated release artifacts such as `.dmg`, `.zip`, `latest-mac.yml`, blockmaps,
 and notarized app bundles are release outputs. They must not be committed.
+Package verification must check the generated app bundle and the final
+distribution artifacts. The DMG must pass local image verification, and the ZIP
+artifact must pass full archive verification and contain the matching `.app`
+bundle with its `Info.plist` and packaged `runtime/nyx-runtime`.
 
 ## Signing And Update Boundary
 
