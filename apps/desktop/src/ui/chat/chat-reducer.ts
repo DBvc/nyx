@@ -1,4 +1,9 @@
-import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
+import type {
+  NyxChatError,
+  NyxChatInputMessage,
+  NyxChatMessage,
+  NyxChatTurnUserMessage,
+} from '../../../shared/chat/types'
 import type { ChatState } from './chat-types'
 import { initialChatState } from './chat-types'
 
@@ -11,6 +16,7 @@ type ChatAction =
       type: 'request-submitted'
       requestId: string
       assistantMessageId: string
+      turnUserMessage: NyxChatTurnUserMessage
       submittedMessages: ReadonlyArray<NyxChatInputMessage>
       userMessage: NyxChatMessage
       assistantMessage: NyxChatMessage
@@ -44,6 +50,7 @@ type ChatAction =
       requestId: string
       userMessageId: string
       assistantMessageId: string
+      turnUserMessage: NyxChatTurnUserMessage
       submittedMessages: ReadonlyArray<NyxChatInputMessage>
     }
   | {
@@ -89,6 +96,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           requestId: action.requestId,
           userMessageId: action.userMessage.id,
           assistantMessageId: action.assistantMessageId,
+          turnUserMessage: action.turnUserMessage,
           submittedMessages: action.submittedMessages,
         },
         retryableTurn: null,
@@ -163,6 +171,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             ? {
                 userMessageId: state.activeTurn.userMessageId,
                 assistantMessageId: state.activeTurn.assistantMessageId,
+                turnUserMessage: state.activeTurn.turnUserMessage,
                 submittedMessages: state.activeTurn.submittedMessages,
               }
             : null,
@@ -184,6 +193,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           requestId: action.requestId,
           userMessageId: action.userMessageId,
           assistantMessageId: action.assistantMessageId,
+          turnUserMessage: action.turnUserMessage,
           submittedMessages: action.submittedMessages,
         },
         retryableTurn: null,

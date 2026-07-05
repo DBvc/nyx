@@ -9,6 +9,10 @@ function requestWithMessages(messages: NyxChatRequest['messages']): NyxChatReque
     userMessageId: 'user-1',
     assistantMessageId: 'assistant-1',
     turnIntent: 'new_user_message',
+    turnUserMessage: {
+      id: 'user-1',
+      content: 'Hello',
+    },
     messages,
   }
 }
@@ -104,6 +108,32 @@ describe('buildProviderMessages', () => {
       {
         role: 'user',
         content: 'Hello',
+      },
+    ])
+  })
+
+  it('keeps turn user message identity out of provider messages', () => {
+    expect(
+      buildProviderMessages({
+        ...requestWithMessages([
+          {
+            role: 'user',
+            content: 'Provider context only.',
+          },
+        ]),
+        turnUserMessage: {
+          id: 'user-with-id',
+          content: 'Explicit current prompt.',
+        },
+      }),
+    ).toEqual([
+      {
+        role: 'system',
+        content: 'You are Nyx, a concise and reliable desktop AI assistant.',
+      },
+      {
+        role: 'user',
+        content: 'Provider context only.',
       },
     ])
   })

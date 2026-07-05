@@ -32,6 +32,10 @@ function validRequest(): NyxChatRequest {
     userMessageId: 'user-1',
     assistantMessageId: 'assistant-1',
     turnIntent: 'new_user_message',
+    turnUserMessage: {
+      id: 'user-1',
+      content: 'Hello Nyx',
+    },
     messages: [
       {
         role: 'user',
@@ -132,7 +136,58 @@ describe('validateChatRequest', () => {
       }),
     ).toEqual({
       code: 'invalid_request',
-      message: 'Chat requests must include ids, intent, and at least one message.',
+      message:
+        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
+      retryable: false,
+    })
+  })
+
+  it('requires an explicit current user message identity', () => {
+    const { turnUserMessage: _turnUserMessage, ...request } = validRequest()
+
+    expect(validateChatRequest(request as NyxChatRequest)).toEqual({
+      code: 'invalid_request',
+      message:
+        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
+      retryable: false,
+    })
+  })
+
+  it('requires the current user message id to match userMessageId', () => {
+    expect(
+      validateChatRequest({
+        ...validRequest(),
+        turnUserMessage: {
+          id: 'other-user',
+          content: 'Hello Nyx',
+        },
+      }),
+    ).toEqual({
+      code: 'invalid_request',
+      message: 'Chat requests must keep the current user message id aligned with userMessageId.',
+      retryable: false,
+    })
+  })
+
+  it('requires the current user message content to match the provider-visible prompt', () => {
+    expect(
+      validateChatRequest({
+        ...validRequest(),
+        turnUserMessage: {
+          id: 'user-1',
+          content: 'Runtime prompt',
+        },
+        messages: [
+          {
+            role: 'user',
+            content: 'Provider prompt',
+          },
+        ],
+      }),
+    ).toEqual({
+      code: 'invalid_request',
+      message:
+        'Chat requests must keep the current user message content aligned with provider messages.',
       retryable: false,
     })
   })
@@ -308,6 +363,57 @@ describe('ChatSessionManager runtime chat state gate', () => {
       'runtime:complete',
       'event:chat:done',
     ])
+  })
+
+  it('uses explicit turn user message content for runtime submit when provider context is aligned', async () => {
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Hello' })
+    const runtimeClient = fakeRuntimeChatStateClient()
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {
+        NYX_RUNTIME_CHAT_STATE: '1',
+      },
+      createRuntimeChatStateClient: () => runtimeClient,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: {
+        id: 'user-1',
+        content: 'Explicit current prompt',
+      },
+      messages: [
+        {
+          role: 'user',
+          content: 'Earlier provider context',
+        },
+        {
+          role: 'assistant',
+          content: 'Earlier assistant context',
+        },
+        {
+          role: 'user',
+          content: 'Explicit current prompt',
+        },
+      ],
+    })
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-1',
+        assistantMessageId: 'assistant-1',
+        status: 'completed',
+        finalContent: 'Hello',
+      })
+    })
+
+    expect(runtimeClient.submitUserMessage).toHaveBeenCalledWith({
+      turnRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      content: 'Explicit current prompt',
+    })
   })
 
   it('retries a failed response without resubmitting the user message', async () => {

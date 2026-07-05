@@ -24,6 +24,11 @@ const userMessage: NyxChatMessage = {
   status: 'completed',
 }
 
+const turnUserMessage = {
+  id: userMessageId,
+  content: 'Hello Nyx',
+}
+
 const assistantMessage: NyxChatMessage = {
   id: assistantMessageId,
   role: 'assistant',
@@ -48,6 +53,7 @@ function submittedState() {
       type: 'request-submitted',
       requestId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages,
       userMessage,
       assistantMessage,
@@ -83,6 +89,7 @@ describe('chatReducer', () => {
       requestId,
       userMessageId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages,
     })
     expect(state.retryableTurn).toBeNull()
@@ -244,6 +251,7 @@ describe('chatReducer', () => {
     expect(state.retryableTurn).toEqual({
       userMessageId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages,
     })
     expect(state.runStatus).toBe('failed')
@@ -289,6 +297,7 @@ describe('chatReducer', () => {
       requestId: 'request-2',
       userMessageId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages,
     })
 
@@ -301,6 +310,7 @@ describe('chatReducer', () => {
       requestId: 'request-2',
       userMessageId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages,
     })
     expect(state.retryableTurn).toBeNull()

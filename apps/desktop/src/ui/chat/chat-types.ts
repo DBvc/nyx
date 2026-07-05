@@ -2,18 +2,21 @@ import type {
   NyxChatInputMessage,
   NyxChatMessage,
   NyxChatRunStatus,
+  NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
 
 export interface ChatTurnRequest {
   requestId: string
   userMessageId: string
   assistantMessageId: string
+  turnUserMessage: NyxChatTurnUserMessage
   submittedMessages: ReadonlyArray<NyxChatInputMessage>
 }
 
 export interface RetryableChatTurn {
   userMessageId: string
   assistantMessageId: string
+  turnUserMessage: NyxChatTurnUserMessage
   submittedMessages: ReadonlyArray<NyxChatInputMessage>
 }
 

@@ -58,6 +58,11 @@ export interface NyxChatInputMessage {
   content: string
 }
 
+export interface NyxChatTurnUserMessage {
+  id: string
+  content: string
+}
+
 export interface NyxChatMessage {
   id: string
   role: NyxChatRole
@@ -72,6 +77,7 @@ export interface NyxChatRequest {
   userMessageId: string
   assistantMessageId: string
   turnIntent: NyxChatTurnIntent
+  turnUserMessage: NyxChatTurnUserMessage
   messages: ReadonlyArray<NyxChatInputMessage>
   systemPrompt?: string
 }

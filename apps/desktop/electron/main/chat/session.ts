@@ -9,7 +9,7 @@ import {
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import { streamChatCompletion } from './client'
 import { readChatProviderConfig } from './env'
-import { createChatBridgeError, isAbortError, toChatError } from './errors'
+import { isAbortError, toChatError } from './errors'
 import {
   createRuntimeChatStateClient as createRuntimeChatStateClientDefault,
   NYX_RUNTIME_CHAT_STATE_ENV,
@@ -40,11 +40,23 @@ interface ChatSessionManagerOptions {
 
 export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
   const hasMessages = Array.isArray(request.messages) && request.messages.length > 0
+  const hasTurnUserMessage =
+    typeof request.turnUserMessage?.id === 'string' &&
+    request.turnUserMessage.id.length > 0 &&
+    typeof request.turnUserMessage?.content === 'string' &&
+    request.turnUserMessage.content.length > 0
 
-  if (!request.requestId || !request.userMessageId || !request.assistantMessageId || !hasMessages) {
+  if (
+    !request.requestId ||
+    !request.userMessageId ||
+    !request.assistantMessageId ||
+    !hasMessages ||
+    !hasTurnUserMessage
+  ) {
     return {
       code: 'invalid_request',
-      message: 'Chat requests must include ids, intent, and at least one message.',
+      message:
+        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
       retryable: false,
     }
   }
@@ -57,6 +69,23 @@ export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent[
     }
   }
 
+  if (request.turnUserMessage.id !== request.userMessageId) {
+    return {
+      code: 'invalid_request',
+      message: 'Chat requests must keep the current user message id aligned with userMessageId.',
+      retryable: false,
+    }
+  }
+
+  if (latestProviderUserMessageContent(request) !== request.turnUserMessage.content) {
+    return {
+      code: 'invalid_request',
+      message:
+        'Chat requests must keep the current user message content aligned with provider messages.',
+      retryable: false,
+    }
+  }
+
   return null
 }
 
@@ -64,7 +93,7 @@ function isRuntimeChatStateEnabled(env: ChatSessionEnv) {
   return env[NYX_RUNTIME_CHAT_STATE_ENV] === '1'
 }
 
-function latestUserMessageContent(request: NyxChatRequest) {
+function latestProviderUserMessageContent(request: NyxChatRequest) {
   for (let index = request.messages.length - 1; index >= 0; index -= 1) {
     const message = request.messages[index]
 
@@ -248,21 +277,11 @@ export class ChatSessionManager {
     request: NyxChatRequest,
   ) {
     if (request.turnIntent === 'new_user_message') {
-      const content = latestUserMessageContent(request)
-
-      if (content === undefined) {
-        throw createChatBridgeError({
-          code: 'invalid_request',
-          message: 'Chat requests with a new user message must include a user message.',
-          retryable: false,
-        })
-      }
-
       await runtimeChatStateClient.submitUserMessage({
         turnRequestId: request.requestId,
         userMessageId: request.userMessageId,
         assistantMessageId: request.assistantMessageId,
-        content,
+        content: request.turnUserMessage.content,
       })
     } else {
       await runtimeChatStateClient.retryFailed({

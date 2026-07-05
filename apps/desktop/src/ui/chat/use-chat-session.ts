@@ -108,6 +108,10 @@ export function useChatSession() {
     const requestId = crypto.randomUUID()
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
+    const turnUserMessage = {
+      id: userMessageId,
+      content: prompt,
+    }
     const requestMessages = [
       ...toRequestMessages(state.messages),
       { role: 'user' as const, content: prompt },
@@ -117,6 +121,7 @@ export function useChatSession() {
       type: 'request-submitted',
       requestId,
       assistantMessageId,
+      turnUserMessage,
       submittedMessages: requestMessages,
       userMessage: {
         id: userMessageId,
@@ -138,6 +143,7 @@ export function useChatSession() {
         userMessageId,
         assistantMessageId,
         turnIntent: 'new_user_message',
+        turnUserMessage,
         messages: requestMessages,
       })
     } catch (error) {
@@ -168,6 +174,7 @@ export function useChatSession() {
       requestId,
       userMessageId: retryableTurn.userMessageId,
       assistantMessageId: retryableTurn.assistantMessageId,
+      turnUserMessage: retryableTurn.turnUserMessage,
       submittedMessages: retryableTurn.submittedMessages,
     })
 
@@ -177,6 +184,7 @@ export function useChatSession() {
         userMessageId: retryableTurn.userMessageId,
         assistantMessageId: retryableTurn.assistantMessageId,
         turnIntent: 'retry_failed_response',
+        turnUserMessage: retryableTurn.turnUserMessage,
         messages: retryableTurn.submittedMessages,
       })
     } catch (error) {
