@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 FLAVOR="${1:-${NYX_PACKAGE_FLAVOR:-dev}}"
 ZIP_VERIFY_DIR=""
+DMG_MOUNT_POINT=""
 
 case "$FLAVOR" in
   dev)
@@ -52,6 +53,10 @@ assert_distribution_artifact() {
 }
 
 cleanup() {
+  if [ -n "$DMG_MOUNT_POINT" ]; then
+    hdiutil detach "$DMG_MOUNT_POINT" >/dev/null 2>&1 || true
+    rmdir "$DMG_MOUNT_POINT" >/dev/null 2>&1 || true
+  fi
   if [ -n "$ZIP_VERIFY_DIR" ] && [ -d "$ZIP_VERIFY_DIR" ]; then
     rm -rf "$ZIP_VERIFY_DIR"
   fi
@@ -59,14 +64,56 @@ cleanup() {
 
 trap cleanup EXIT
 
+assert_app_payload() {
+  local app_path="$1"
+  local artifact_label="$2"
+  local info_plist
+  local runtime_path
+  local bundle_id
+  local bundle_name
+  local bundle_version
+  local ping_output
+
+  info_plist="$app_path/Contents/Info.plist"
+  runtime_path="$app_path/Contents/Resources/runtime/nyx-runtime"
+
+  [ -d "$app_path" ] || fail "$artifact_label is missing app bundle: $app_path"
+  [ -f "$info_plist" ] || fail "$artifact_label is missing Info.plist: $info_plist"
+  [ -f "$runtime_path" ] || fail "$artifact_label is missing packaged runtime: $runtime_path"
+  [ -x "$runtime_path" ] || fail "$artifact_label packaged runtime is not executable: $runtime_path"
+  assert_arm64_binary "$runtime_path"
+
+  bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")"
+  [ "$bundle_id" = "$APP_ID" ] || fail "unexpected $artifact_label CFBundleIdentifier: $bundle_id"
+
+  bundle_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$info_plist")"
+  [ "$bundle_name" = "$PRODUCT_NAME" ] || fail "unexpected $artifact_label CFBundleName: $bundle_name"
+
+  bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")"
+  [ "$bundle_version" = "$PACKAGE_VERSION" ] ||
+    fail "unexpected $artifact_label CFBundleShortVersionString: $bundle_version"
+
+  if ! ping_output="$("$runtime_path" ping)"; then
+    fail "$artifact_label packaged runtime ping command failed: $runtime_path ping"
+  fi
+
+  [ "$ping_output" = "pong" ] || fail "$artifact_label packaged runtime ping returned unexpected output: $ping_output"
+}
+
+assert_dmg_artifact() {
+  DMG_MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/nyx-mac-dmg.XXXXXX")" ||
+    fail "could not create temporary DMG mount point"
+
+  if ! hdiutil attach -readonly -nobrowse -mountpoint "$DMG_MOUNT_POINT" "$DMG_PATH" >/dev/null; then
+    fail "DMG artifact attach failed: $DMG_PATH"
+  fi
+
+  [ -d "$DMG_MOUNT_POINT" ] || fail "DMG mount point is missing: $DMG_MOUNT_POINT"
+  assert_app_payload "$DMG_MOUNT_POINT/$PRODUCT_NAME.app" "DMG artifact"
+}
+
 assert_zip_artifact() {
   local zip_app_path
-  local zip_info_plist
-  local zip_runtime_path
-  local zip_bundle_id
-  local zip_bundle_name
-  local zip_bundle_version
-  local zip_ping_output
 
   if ! ZIP_TEST_OUTPUT="$(unzip -tq "$ZIP_PATH" 2>&1)"; then
     fail "ZIP artifact verification failed: $ZIP_TEST_OUTPUT"
@@ -80,30 +127,7 @@ assert_zip_artifact() {
   fi
 
   zip_app_path="$ZIP_VERIFY_DIR/$PRODUCT_NAME.app"
-  zip_info_plist="$zip_app_path/Contents/Info.plist"
-  zip_runtime_path="$zip_app_path/Contents/Resources/runtime/nyx-runtime"
-
-  [ -d "$zip_app_path" ] || fail "ZIP artifact is missing app bundle: $PRODUCT_NAME.app"
-  [ -f "$zip_info_plist" ] || fail "ZIP artifact is missing Info.plist: $zip_info_plist"
-  [ -f "$zip_runtime_path" ] || fail "ZIP artifact is missing packaged runtime: $zip_runtime_path"
-  [ -x "$zip_runtime_path" ] || fail "ZIP artifact packaged runtime is not executable: $zip_runtime_path"
-  assert_arm64_binary "$zip_runtime_path"
-
-  zip_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$zip_info_plist")"
-  [ "$zip_bundle_id" = "$APP_ID" ] || fail "unexpected ZIP CFBundleIdentifier: $zip_bundle_id"
-
-  zip_bundle_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$zip_info_plist")"
-  [ "$zip_bundle_name" = "$PRODUCT_NAME" ] || fail "unexpected ZIP CFBundleName: $zip_bundle_name"
-
-  zip_bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$zip_info_plist")"
-  [ "$zip_bundle_version" = "$PACKAGE_VERSION" ] ||
-    fail "unexpected ZIP CFBundleShortVersionString: $zip_bundle_version"
-
-  if ! zip_ping_output="$("$zip_runtime_path" ping)"; then
-    fail "ZIP artifact packaged runtime ping command failed: $zip_runtime_path ping"
-  fi
-
-  [ "$zip_ping_output" = "pong" ] || fail "ZIP artifact packaged runtime ping returned unexpected output: $zip_ping_output"
+  assert_app_payload "$zip_app_path" "ZIP artifact"
 }
 
 normalize_feed_url() {
@@ -140,6 +164,7 @@ if ! DMG_VERIFY_OUTPUT="$(hdiutil verify "$DMG_PATH" 2>&1)"; then
   fail "DMG artifact verification failed: $DMG_VERIFY_OUTPUT"
 fi
 
+assert_dmg_artifact
 assert_zip_artifact
 
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"

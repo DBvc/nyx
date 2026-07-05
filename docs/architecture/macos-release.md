@@ -86,9 +86,10 @@ Package commands must clean the current flavor output directory before invoking
 `electron-builder` so stale artifacts from a previous feed or signing mode
 cannot be mistaken for the current package result.
 Package verification must check the generated app bundle and the final
-distribution artifacts. The DMG must pass local image verification, and the ZIP
-artifact must pass full archive verification and contain the matching `.app`
-bundle with its `Info.plist` and packaged `runtime/nyx-runtime`.
+distribution artifacts. The DMG must pass local image verification and
+read-only mounted payload verification. The ZIP artifact must pass full archive
+verification. Both final artifacts must contain the matching `.app` bundle with
+its `Info.plist` and packaged `runtime/nyx-runtime`.
 
 ## Signing And Update Boundary
 
