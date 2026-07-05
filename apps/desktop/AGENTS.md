@@ -73,6 +73,14 @@ When changing IPC, preload, or cross-process behavior:
 
 Do not make renderer and main communicate through untyped stringly payloads when a shared type can exist.
 
+## Naming Boundary
+
+Follow `../../docs/architecture/naming-boundary.md` for desktop TypeScript naming.
+
+Keep the `Nyx` prefix on shared/preload/window/IPC/environment contract names such as `NyxChatRequest`, `NyxChatEvent`, `NyxDesktopApi`, `NyxProviderStatus`, `NYX_CHAT_IPC_CHANNELS`, and `NYX_PROVIDER_IPC_CHANNELS`.
+
+Do not use `Nyx` as an implementation-local ownership prefix inside `electron/main` or `src`. Prefer local names such as `RuntimePathResolution`, `ChatSessionManager`, `ChatState`, and `chatReducer` when the symbol is not a shared, preload, IPC, environment, or product-facing contract.
+
 ## Commands
 
 From repository root:

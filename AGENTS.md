@@ -66,6 +66,14 @@ Still out of scope:
 
 Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, and a local protocol scaffold for runtime verification. Electron is still not wired to the runtime.
 
+## Naming Boundary
+
+Follow `docs/architecture/naming-boundary.md` for TypeScript naming in the desktop app.
+
+`Nyx` is a product and boundary marker, not a general implementation ownership prefix. Keep `Nyx` on product-level shared contracts, preload/window contracts, IPC constants, environment variable names, and user/product-facing brand text. Do not add `Nyx` to Electron main or renderer implementation-local helpers, state, reducers, or tests when the file path and module already provide ownership.
+
+Before naming, renaming, or planning runtime-boundary work, check the naming boundary document. If a candidate name appears to cross shared, preload, IPC, environment, or product-facing boundaries, treat it as a boundary decision and re-plan instead of mechanically renaming it.
+
 ## Hard Rules
 
 - Do not change product behavior while doing structural migration.
