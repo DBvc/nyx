@@ -7,10 +7,11 @@ Nyx is split into two first-class subprojects:
 
 ## Current Phase
 
-The default desktop chat path remains owned by Electron main and does not use
-OCaml. Electron main may communicate with OCaml only through explicit runtime
-boundary code for local verification and the opt-in runtime-backed chat state
-path behind `NYX_RUNTIME_CHAT_STATE=1`.
+The desktop chat path remains owned by Electron main, and Electron main now uses
+the OCaml runtime-backed reducer as the default chat state path. Electron main
+may communicate with OCaml only through explicit runtime boundary code for local
+verification and this default runtime-backed chat state path. `NYX_RUNTIME_CHAT_STATE=0`
+exists only as a diagnostic disable.
 
 ## Ownership
 

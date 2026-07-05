@@ -46,7 +46,7 @@ function configuredRuntimeArtifactPath() {
 function checkedRuntimeArtifactPath() {
   const runtimePath = configuredRuntimeArtifactPath()
 
-  expect(process.env.NYX_RUNTIME_CHAT_STATE).toBe('1')
+  expect(process.env.NYX_RUNTIME_CHAT_STATE).toBeUndefined()
   expect(runtimePath).toBe(artifactPath)
   expect(existsSync(runtimePath)).toBe(true)
 

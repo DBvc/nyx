@@ -96,7 +96,7 @@ export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent[
 }
 
 function isRuntimeChatStateEnabled(env: ChatSessionEnv) {
-  return env[NYX_RUNTIME_CHAT_STATE_ENV] === '1'
+  return env[NYX_RUNTIME_CHAT_STATE_ENV] !== '0'
 }
 
 function latestProviderUserMessageContent(request: NyxChatRequest) {

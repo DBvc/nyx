@@ -9,7 +9,7 @@ This document describes the boundary between Electron main and the OCaml runtime
 Electron main now has two explicit, main-only runtime boundaries:
 
 - runtime health verification
-- opt-in runtime-backed chat state
+- default runtime-backed chat state
 
 The desktop app can resolve a `nyx-runtime` executable and, when explicitly
 called from Electron main code, verify the local protocol scaffold with a
@@ -24,11 +24,11 @@ This boundary is intentionally narrow:
   for development and tests.
 - Missing runtime binaries are reported as structured unavailable results.
 
-The default desktop path is still closed: without the explicit
-`NYX_RUNTIME_CHAT_STATE=1` opt-in, Electron main must not resolve or spawn the
-runtime for chat, and the existing provider/chat flow remains the product path.
-With the opt-in enabled, only Electron main's `ChatSessionManager` may use the
-runtime-backed chat state adapter.
+The desktop chat path now uses runtime-backed chat state by default. Only
+Electron main's `ChatSessionManager` may use the runtime-backed chat state
+adapter, and `NYX_RUNTIME_CHAT_STATE=0` exists only as a diagnostic disable.
+When that diagnostic disable is set, Electron main must not resolve or spawn the
+runtime for chat and must use the no-runtime chat state path.
 
 This runtime boundary must not resolve, spawn, ping, or protocol-check the
 runtime during app startup or BrowserWindow lifecycle. It also does not move
@@ -64,21 +64,21 @@ Current local protocol scope:
 
 The runtime-side scaffold lives under `runtime/ocaml`. The only desktop
 runtime work in this artifact path is explicit verification. It is not part of
-app startup, renderer IPC, default chat, or packaged distribution.
+app startup, renderer IPC, or packaged distribution.
 
-## Runtime-Backed Chat State Opt-In
+## Default Runtime-Backed Chat State
 
-`NYX_RUNTIME_CHAT_STATE=1` enables the first real main-only runtime-backed chat
-state path. It is an Electron main opt-in: `ChatSessionManager` uses a
-main-owned runtime chat state client to send the existing
+Runtime-backed chat state is enabled by default for Electron main's desktop chat
+path. `ChatSessionManager` uses a main-owned runtime chat state client to send
+the existing
 `chat_reducer_action` protocol messages to `nyx-runtime protocol` and validate
 matching `chat_reducer_state` responses.
 
-The opt-in path covers the current chat turn lifecycle inside Electron main:
+The default path covers the current chat turn lifecycle inside Electron main:
 new user message, retry failed response, assistant start, streaming delta,
 complete, cancel, fail, and reset/clear. The runtime state is an internal
-semantic gate for Electron main only. It is not renderer state and is not a
-new shared IPC or preload contract.
+semantic gate for Electron main only. It is not renderer state and is not a new
+shared IPC or preload contract.
 
 Failure recovery keeps the existing v1 min chat behavior: after a provider
 failure, a retry reuses the failed turn's user and assistant identity, while a
@@ -90,20 +90,20 @@ draft, and starts the fresh turn from the new user message. Renderer
 The runtime chat state client is scoped to the owning Electron `WebContents`
 that starts the runtime-backed chat path. A reset clears only that owner's
 runtime state. Each `WebContents` gets its own runtime session, and a destroyed
-owner closes its runtime session and aborts any active turn. This keeps the
-opt-in runtime state tied to the current desktop chat owner instead of becoming
-process-global state.
+owner closes its runtime session and aborts any active turn. This keeps runtime
+state tied to the current desktop chat owner instead of becoming process-global
+state.
 
-The default path remains closed. When `NYX_RUNTIME_CHAT_STATE` is unset,
-desktop chat must not resolve or spawn the runtime, and the existing v1 min
-chat behavior remains owned by Electron main and the renderer's temporary
-in-memory UI state.
+When `NYX_RUNTIME_CHAT_STATE` is unset, desktop chat must use the runtime-backed
+chat state path. `NYX_RUNTIME_CHAT_STATE=0` is the only diagnostic disable. In
+that disabled mode, desktop chat must not resolve or spawn the runtime and the
+no-runtime chat state path remains available for diagnosis.
 
-When `NYX_RUNTIME_CHAT_STATE=1` is set, runtime setup, protocol request,
+When runtime-backed chat state is enabled, runtime setup, protocol request,
 response shape, and reducer invariant failures are authoritative for that turn.
 Electron main must fail the turn as a non-retryable chat error and discard the
 runtime chat state client when one exists. It must not silently fall back to the
-no-runtime default path.
+no-runtime diagnostic path.
 
 Ownership rules:
 
@@ -130,17 +130,13 @@ The real-runtime verification entrypoint is:
 - `mise run runtime:chat-state:check`
 
 That task prepares the generated runtime artifact, sets an explicit
-`NYX_RUNTIME_PATH`, enables `NYX_RUNTIME_CHAT_STATE=1`, enables the dedicated
+`NYX_RUNTIME_PATH`, unsets `NYX_RUNTIME_CHAT_STATE`, enables the dedicated
 integration test gate, and runs the runtime-backed chat state integration test
 with a mocked provider stream. Normal `mise run desktop:test` keeps this
 integration test skipped.
 
-After this issue, follow-up work must choose one of three paths:
-
-- make the runtime-backed chat state path default-on
-- keep it opt-in only while listing concrete blockers
-- remove the runtime-backed chat state path
-
+Default-on has been chosen for this path. The next boundary not solved here is
+packaged desktop runtime binary distribution and packaged path resolution.
 Do not add more pure shadow-only preparation tasks for this path.
 
 ## Runtime Protocol Session Helper
@@ -166,8 +162,8 @@ Allowed consumers in this phase:
 - Electron main unit tests for the helper.
 - Explicit integration checks that provide a runtime executable with
   `NYX_RUNTIME_PATH`.
-- The main-owned runtime chat state client, only when
-  `NYX_RUNTIME_CHAT_STATE=1` is set.
+- The main-owned runtime chat state client when runtime-backed chat state is not
+  diagnostically disabled.
 
 Disallowed consumers in this phase:
 
@@ -222,10 +218,10 @@ that proof stayed test-local or otherwise test-only.
 
 The proof asserted fixed lifecycle fixtures for the OCaml reducer semantics,
 such as complete, cancel, fail, clear, and retry of a failed turn. Those
-fixtures were evidence for the protocol scaffold only. The later
-runtime-backed chat state opt-in path is the separate main-only integration
-that uses this evidence without moving provider ownership, renderer state,
-preload IPC, or UI into the runtime.
+fixtures were evidence for the protocol scaffold only. The runtime-backed chat
+state path is the separate main-only integration that uses this evidence
+without moving provider ownership, renderer state, preload IPC, or UI into the
+runtime.
 
 ## Desktop Health Boundary
 
@@ -282,13 +278,13 @@ requests.
 ## Shadow-Only Boundary Is Closed
 
 For the runtime-backed chat state path, pure shadow-only preparation is no
-longer the next step. The main-only opt-in integration exists behind
-`NYX_RUNTIME_CHAT_STATE=1`.
+longer the next step. The main-only runtime-backed chat state integration is
+default-on for Electron main chat state.
 
 Future shadow or comparison work is allowed only when it is tied to a concrete
-blocker for default-on and states the decision it will unblock. It must not be
-used as another generic prerequisite before deciding whether to make the path
-default-on, keep it opt-in with named blockers, or remove it.
+blocker for packaged distribution or a named runtime-state correctness issue.
+It must not be used as another generic prerequisite before using the default
+runtime-backed chat state path.
 
 Any future comparison still must not change provider credential ownership:
 Electron main continues to own provider configuration and secrets, and the

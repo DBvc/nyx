@@ -12,10 +12,9 @@ Nyx is split into two first-class subprojects:
 - `runtime/ocaml`: an independent OCaml runtime core skeleton.
 
 The desktop app is the only user-facing product surface right now. The OCaml
-runtime exists as a foundation for later typed Agent/runtime work. The default
-desktop chat path remains closed to the runtime, while Electron main has an
-explicit opt-in runtime-backed chat state path behind
-`NYX_RUNTIME_CHAT_STATE=1`.
+runtime exists as a foundation for later typed Agent/runtime work. Electron
+main now uses the runtime-backed chat state reducer by default for the desktop
+chat path, with `NYX_RUNTIME_CHAT_STATE=0` reserved as a diagnostic disable.
 
 Current architecture notes:
 
@@ -39,8 +38,8 @@ Milestone details and code entry points are recorded in
 
 Important boundary: the renderer still does not read environment variables,
 provider tokens, full provider URLs, or raw provider configs. Provider calls and
-cancellation handles stay in Electron main. The OCaml runtime can validate chat
-state only through the explicit Electron-main opt-in path; it does not call
+cancellation handles stay in Electron main. The OCaml runtime owns only the
+main-side chat state reducer semantics for this path; it does not call
 providers, read provider env, own credentials, or talk to the renderer.
 
 ## Current Product Scope
@@ -97,9 +96,9 @@ Out of scope for this phase:
 
 Electron main is the only desktop process that may communicate with OCaml, over
 stdio/NDJSON. Current desktop use is limited to runtime health/protocol
-verification and the opt-in runtime-backed chat state path behind
-`NYX_RUNTIME_CHAT_STATE=1`. The renderer must never talk to the OCaml runtime
-directly.
+verification and the default runtime-backed chat state path in Electron main.
+Set `NYX_RUNTIME_CHAT_STATE=0` only for diagnostic fallback. The renderer must
+never talk to the OCaml runtime directly.
 
 ## Tooling
 
@@ -130,11 +129,15 @@ Local provider credentials are kept in a root `.env` file, using
 NYX_API_BASE_URL=
 NYX_API_TOKEN=
 NYX_MODEL=
+# Optional diagnostic override:
+# NYX_RUNTIME_CHAT_STATE=0
 ```
 
 The root `.env` file is ignored by Git. `mise run desktop:dev` automatically
 loads it before starting the desktop app, so the renderer still does not read
-environment variables or receive provider secrets.
+environment variables or receive provider secrets. Unless
+`NYX_RUNTIME_CHAT_STATE=0` is set for diagnostics, the dev task also prepares
+the local OCaml runtime install output before launching Electron.
 
 ## Common Commands
 

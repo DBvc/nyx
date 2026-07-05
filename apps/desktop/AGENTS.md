@@ -37,7 +37,8 @@ This subproject owns:
 - Main process owns OS side effects.
 - Do not import from `runtime/ocaml`.
 - Do not use the OCaml runtime outside explicit Electron-main runtime boundary code.
-- The runtime-backed chat state path is opt-in only through `NYX_RUNTIME_CHAT_STATE=1`; do not make it default-on unless explicitly requested.
+- The runtime-backed chat state path is default-on inside Electron main; `NYX_RUNTIME_CHAT_STATE=0` is only a diagnostic disable.
+- Do not expand runtime use into renderer, preload, provider credentials, provider calls, or packaged distribution unless explicitly requested.
 - Do not add product features outside `v1 min chat` unless explicitly requested.
 
 ## Current Scope

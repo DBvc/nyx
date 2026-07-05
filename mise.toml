@@ -11,9 +11,15 @@ run = "pnpm install"
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app"
 run = """
+set -e
 set -a
 [ ! -f .env ] || . ./.env
 set +a
+
+if [ "${NYX_RUNTIME_CHAT_STATE:-}" != "0" ]; then
+  scripts/prepare-runtime-artifact.sh
+fi
+
 pnpm --dir apps/desktop dev
 """
 
@@ -52,7 +58,9 @@ run = "pnpm --dir apps/desktop format:check"
 [tasks."desktop:check"]
 description = "Run all desktop checks"
 run = """
+set -e
 pnpm --dir apps/desktop test
+mise run runtime:chat-state:check
 pnpm --dir apps/desktop typecheck
 pnpm --dir apps/desktop typecheck:compat
 pnpm --dir apps/desktop lint

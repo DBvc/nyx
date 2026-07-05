@@ -16,7 +16,7 @@ fail() {
 
 printf '[runtime:chat-state:check] NYX_RUNTIME_PATH=%s\n' "$ARTIFACT_PATH"
 
-NYX_RUNTIME_PATH="$ARTIFACT_PATH" \
-  NYX_RUNTIME_CHAT_STATE=1 \
+env -u NYX_RUNTIME_CHAT_STATE \
+  NYX_RUNTIME_PATH="$ARTIFACT_PATH" \
   NYX_RUNTIME_CHAT_STATE_INTEGRATION=1 \
   pnpm --dir "$ROOT/apps/desktop" exec vitest run electron/main/chat/session-runtime-chat-state.integration.test.ts

@@ -2,10 +2,10 @@
 
 This directory contains the Nyx OCaml runtime core.
 
-The runtime is intentionally separate from the Electron desktop app. The default
-desktop path remains separate; the only current connection is an explicit
-Electron-main-owned protocol path for runtime verification and opt-in
-runtime-backed chat state.
+The runtime is intentionally separate from the Electron desktop app. The current
+connection is an Electron-main-owned protocol path for runtime verification and
+default runtime-backed chat state. Provider calls, provider credentials,
+renderer state, preload contracts, and UI remain outside the runtime.
 
 ## Purpose
 
@@ -45,8 +45,8 @@ Current phase includes:
 - formatting setup
 
 The checked-in protocol scaffold is for local runtime verification and the
-explicit Electron-main-only `NYX_RUNTIME_CHAT_STATE=1` chat state opt-in.
-Default desktop chat remains closed to OCaml.
+default Electron-main-only runtime-backed chat state path. `NYX_RUNTIME_CHAT_STATE=0`
+exists only as a diagnostic disable.
 
 Do not implement Electron process management, renderer communication, tools, agents, persistence, provider calls, or broader runtime protocol concepts unless the task explicitly asks for them.
 
@@ -129,7 +129,7 @@ These may be added later only when the runtime design justifies them.
 ## Protocol Rules
 
 The current runtime CLI has a local protocol mode for verification and explicit
-Electron-main use behind opt-in runtime boundary tasks.
+Electron-main use behind runtime boundary tasks.
 
 - stdout must be protocol only
 - stderr must be logs only
@@ -147,9 +147,9 @@ The current scaffold includes ping/pong:
 ```
 
 It also includes a local chat reducer session scaffold used for runtime
-verification and the opt-in Electron-main chat state path. Do not expand this
-into default desktop chat, renderer/preload communication, model provider
-calls, tool execution, or agent orchestration without an explicit task.
+verification and the default Electron-main chat state path. Do not expand this
+into renderer/preload communication, model provider calls, tool execution, or
+agent orchestration without an explicit task.
 
 ## Verification
 

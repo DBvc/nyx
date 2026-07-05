@@ -413,6 +413,6 @@ describe('createRuntimeChatStateClient', () => {
           checkedPaths: ['/missing/nyx-runtime'],
         }),
       }),
-    ).toThrow('NYX_RUNTIME_CHAT_STATE is enabled')
+    ).toThrow('Runtime-backed chat state is enabled by default')
   })
 })

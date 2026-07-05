@@ -7,7 +7,7 @@ Current product scope is still `v1 min chat`. Do not expand the product into a g
 ## Project Layout
 
 - `apps/desktop`: Electron desktop app.
-- `runtime/ocaml`: OCaml runtime core skeleton. The default desktop path remains separate; an explicit Electron-main-only runtime-backed chat state opt-in exists.
+- `runtime/ocaml`: OCaml runtime core skeleton. Electron main uses a default-on runtime-backed chat state path while provider integration and UI remain in the desktop app.
 - `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 
@@ -64,7 +64,7 @@ Still out of scope:
 - future policy and capability model
 - replayable runtime tests
 
-Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, a local protocol scaffold for runtime verification, and an explicit Electron-main-only runtime-backed chat state path behind `NYX_RUNTIME_CHAT_STATE=1`. The default desktop chat path remains closed to the runtime.
+Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, a local protocol scaffold for runtime verification, and a default-on Electron-main-only runtime-backed chat state path. `NYX_RUNTIME_CHAT_STATE=0` exists only as a diagnostic disable. Provider calls, credentials, renderer state, preload contracts, and UI remain outside the runtime.
 
 ## Naming Boundary
 

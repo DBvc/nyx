@@ -509,7 +509,8 @@ export function createRuntimeChatStateClient({
   if (pathResolution.status === 'unavailable') {
     throw createChatBridgeError({
       code: 'config_missing',
-      message: 'NYX_RUNTIME_CHAT_STATE is enabled, but the Nyx runtime executable was not found.',
+      message:
+        'Runtime-backed chat state is enabled by default, but the Nyx runtime executable was not found.',
       retryable: false,
       ...(() => {
         const details = unavailableRuntimeDetails(pathResolution.checkedPaths)

@@ -26,6 +26,10 @@ vi.mock('./env', () => ({
 
 import { ChatSessionManager, validateChatRequest } from './session'
 
+const runtimeChatStateDisabledEnv = {
+  NYX_RUNTIME_CHAT_STATE: '0',
+}
+
 function validRequest(): NyxChatRequest {
   return {
     requestId: 'request-1',
@@ -278,7 +282,9 @@ describe('ChatSessionManager reset', () => {
       return new Promise(() => {})
     })
     const sender = mockSender()
-    const manager = new ChatSessionManager()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+    })
 
     manager.start(sender, validRequest())
     manager.reset(sender)
@@ -308,7 +314,9 @@ describe('ChatSessionManager reset', () => {
     })
     const sender = mockSender()
     const otherSender = mockSender()
-    const manager = new ChatSessionManager()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+    })
 
     manager.start(sender, validRequest())
     manager.reset(otherSender)
@@ -322,7 +330,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     streamChatCompletion.mockReset()
   })
 
-  it('does not create a runtime chat state client when the env gate is off', async () => {
+  it('does not create a runtime chat state client when explicitly disabled', async () => {
     streamChatCompletion.mockImplementation(
       async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
         await onDelta('Hi', 'Hi')
@@ -332,7 +340,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const createRuntimeChatStateClient = vi.fn(() => fakeRuntimeChatStateClient())
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {},
+      env: runtimeChatStateDisabledEnv,
       createRuntimeChatStateClient,
     })
 
@@ -357,7 +365,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     })
   })
 
-  it('runs a new user message through runtime state before streaming events', async () => {
+  it('runs a new user message through runtime state by default before streaming events', async () => {
     const order: string[] = []
     streamChatCompletion.mockImplementation(
       async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
@@ -370,9 +378,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient(order)
     const sender = mockSender(order)
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => {
         order.push('runtime:factory')
         return runtimeClient
@@ -430,9 +436,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -481,9 +485,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -521,9 +523,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient(order)
     const sender = mockSender(order)
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -572,9 +572,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -616,9 +614,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -641,9 +637,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const sender = mockSender()
     const otherSender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -676,9 +670,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const sender = mockSender()
     const otherSender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient,
     })
 
@@ -770,9 +762,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const sender = mockSender()
     const otherSender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient,
     })
 
@@ -821,9 +811,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -844,9 +832,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     vi.mocked(runtimeClient.submitUserMessage).mockRejectedValueOnce(new Error('Runtime failed'))
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
@@ -884,9 +870,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
       .mockReturnValueOnce(recoveredRuntimeClient)
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient,
     })
 
@@ -945,9 +929,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     )
     const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: {
-        NYX_RUNTIME_CHAT_STATE: '1',
-      },
+      env: {},
       createRuntimeChatStateClient: () => runtimeClient,
     })
 
