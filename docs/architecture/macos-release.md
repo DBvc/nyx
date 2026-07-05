@@ -90,6 +90,15 @@ notarization, and stapling before they are treated as production release
 artifacts. Missing Apple credentials should fail or block the production release
 path; they must not silently downgrade production to an unsigned release.
 
+The production package command must pass a local/CI signing preflight before
+`electron-builder` runs. The host must provide `notarytool`, `stapler`,
+`codesign`, and `spctl`. Signing may use `CSC_LINK`, `CSC_NAME`, or an
+installed Developer ID Application identity, and one complete notarization
+credential set: `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`,
+`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`, or
+`APPLE_KEYCHAIN_PROFILE` with optional `APPLE_KEYCHAIN`. These are process
+environment names only; credential values must not be committed.
+
 Automatic update support must be main-process owned and package-aware. It must
 not add renderer update UI in the first release slice. Development and
 production update feeds must remain isolated by identity and channel.

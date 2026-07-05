@@ -39,6 +39,10 @@ run = "pnpm --dir apps/desktop package:mac:prod"
 description = "Verify the macOS arm64 package contains the bundled runtime"
 run = "pnpm --dir apps/desktop package:mac:verify"
 
+[tasks."desktop:release:mac:verify"]
+description = "Verify the production macOS package is signed, notarized, and stapled"
+run = "pnpm --dir apps/desktop release:mac:verify"
+
 [tasks."desktop:preview"]
 description = "Preview the Electron desktop app"
 run = "pnpm --dir apps/desktop preview"

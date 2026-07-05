@@ -9,6 +9,7 @@ function readPackageFlavor() {
 }
 
 const packageFlavor = readPackageFlavor()
+const isProduction = packageFlavor === 'prod'
 const identities = {
   dev: {
     appId: 'dev.dbvc.nyx',
@@ -23,6 +24,20 @@ const identities = {
 }
 const identity = identities[packageFlavor]
 const artifactName = `${identity.artifactPrefix}-\${version}-mac-arm64.\${ext}`
+const macSigningConfig = isProduction
+  ? {
+      ...(process.env.CSC_NAME ? { identity: process.env.CSC_NAME } : {}),
+      entitlements: 'build/entitlements.mac.plist',
+      entitlementsInherit: 'build/entitlements.mac.inherit.plist',
+      forceCodeSigning: true,
+      hardenedRuntime: true,
+      notarize: true,
+      strictVerify: true,
+    }
+  : {
+      identity: null,
+      notarize: false,
+    }
 
 export default {
   appId: identity.appId,
@@ -41,7 +56,7 @@ export default {
   ],
   mac: {
     category: 'public.app-category.developer-tools',
-    identity: null,
+    ...macSigningConfig,
     target: [
       {
         target: 'dmg',
