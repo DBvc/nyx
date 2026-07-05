@@ -73,8 +73,8 @@ configuration issue and must not be hidden by local development paths.
 for explicit runtime verification. It is not a source of truth and must not be
 used as the packaged app distribution contract.
 
-The packaged release flow must use a separate gitignored package staging path
-when staging the runtime for `electron-builder`, for example:
+The packaged release flow uses a separate gitignored package staging path when
+staging the runtime for `electron-builder`:
 
 ```text
 apps/desktop/.package-resources/runtime/nyx-runtime

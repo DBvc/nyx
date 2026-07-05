@@ -11,6 +11,69 @@ function existingOnly(...paths: ReadonlyArray<string>) {
 }
 
 describe('resolveRuntimePath', () => {
+  it('uses only the bundled runtime path in packaged mode', () => {
+    const resourcesPath = '/Nyx.app/Contents/Resources'
+    const runtimePath = join(resourcesPath, 'runtime', 'nyx-runtime')
+    const envRuntimePath = resolve('/opt/nyx/bin/nyx-runtime')
+    const repoRuntimePath = join(
+      '/repo',
+      'runtime',
+      'ocaml',
+      '_build',
+      'install',
+      'default',
+      'bin',
+      'nyx-runtime',
+    )
+    const probedPaths: string[] = []
+
+    const resolution = resolveRuntimePath({
+      env: {
+        NYX_RUNTIME_PATH: envRuntimePath,
+      },
+      isPackaged: true,
+      resourcesPath,
+      repoRoot: '/repo',
+      fileExists(path) {
+        probedPaths.push(path)
+        return path === runtimePath || path === envRuntimePath || path === repoRuntimePath
+      },
+    })
+
+    expect(resolution).toEqual({
+      status: 'available',
+      source: 'packaged',
+      runtimePath,
+    })
+    expect(probedPaths).toEqual([runtimePath])
+  })
+
+  it('fails closed when the bundled runtime is missing in packaged mode', () => {
+    const resourcesPath = '/Nyx.app/Contents/Resources'
+    const runtimePath = join(resourcesPath, 'runtime', 'nyx-runtime')
+    const probedPaths: string[] = []
+
+    const resolution = resolveRuntimePath({
+      env: {
+        NYX_RUNTIME_PATH: resolve('/opt/nyx/bin/nyx-runtime'),
+      },
+      isPackaged: true,
+      resourcesPath,
+      repoRoot: '/repo',
+      fileExists(path) {
+        probedPaths.push(path)
+        return false
+      },
+    })
+
+    expect(resolution).toEqual({
+      status: 'unavailable',
+      reason: 'packaged_runtime_missing',
+      checkedPaths: [runtimePath],
+    })
+    expect(probedPaths).toEqual([runtimePath])
+  })
+
   it('prefers a configured NYX_RUNTIME_PATH when the file exists', () => {
     const runtimePath = resolve('/opt/nyx/bin/nyx-runtime')
 

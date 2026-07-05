@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url'
 
 export const NYX_RUNTIME_PATH_ENV = 'NYX_RUNTIME_PATH' as const
 
-export type RuntimePathSource = 'env' | 'repo-dev-fallback'
-export type RuntimePathUnavailableReason = 'configured_path_missing' | 'repo_dev_fallback_missing'
+export type RuntimePathSource = 'env' | 'repo-dev-fallback' | 'packaged'
+export type RuntimePathUnavailableReason =
+  | 'configured_path_missing'
+  | 'repo_dev_fallback_missing'
+  | 'packaged_runtime_missing'
 
 export interface RuntimePathAvailable {
   status: 'available'
@@ -28,6 +31,8 @@ interface RuntimePathEnv {
 
 export interface ResolveRuntimePathOptions {
   env?: RuntimePathEnv
+  isPackaged?: boolean
+  resourcesPath?: string
   repoRoot?: string
   cwd?: string
   fileExists?: (runtimePath: string) => boolean
@@ -49,16 +54,40 @@ function repoDevFallbackPath(repoRoot: string) {
   return join(repoRoot, 'runtime', 'ocaml', '_build', 'install', 'default', 'bin', 'nyx-runtime')
 }
 
+function packagedRuntimePath(resourcesPath: string) {
+  return join(resourcesPath, 'runtime', 'nyx-runtime')
+}
+
 function normalizeExplicitPath(runtimePath: string) {
   return resolve(runtimePath)
 }
 
 export function resolveRuntimePath({
   env = process.env,
+  isPackaged = false,
+  resourcesPath = process.resourcesPath,
   repoRoot,
   cwd = process.cwd(),
   fileExists = existsSync,
 }: ResolveRuntimePathOptions = {}): RuntimePathResolution {
+  if (isPackaged) {
+    const runtimePath = packagedRuntimePath(resourcesPath)
+
+    if (fileExists(runtimePath)) {
+      return {
+        status: 'available',
+        source: 'packaged',
+        runtimePath,
+      }
+    }
+
+    return {
+      status: 'unavailable',
+      reason: 'packaged_runtime_missing',
+      checkedPaths: [runtimePath],
+    }
+  }
+
   const configuredRuntimePath = env.NYX_RUNTIME_PATH?.trim()
 
   if (configuredRuntimePath) {

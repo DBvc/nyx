@@ -5,6 +5,7 @@ out
 .vite
 coverage
 apps/desktop/.runtime-artifacts/
+apps/desktop/.package-resources/
 .env
 .env.local
 .env.*.local

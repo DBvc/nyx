@@ -27,6 +27,18 @@ pnpm --dir apps/desktop dev
 description = "Build the Electron desktop app"
 run = "pnpm --dir apps/desktop build"
 
+[tasks."desktop:package:mac:dev"]
+description = "Build the macOS arm64 development package"
+run = "pnpm --dir apps/desktop package:mac:dev"
+
+[tasks."desktop:package:mac:prod"]
+description = "Build the macOS arm64 production package"
+run = "pnpm --dir apps/desktop package:mac:prod"
+
+[tasks."desktop:package:mac:verify"]
+description = "Verify the macOS arm64 package contains the bundled runtime"
+run = "pnpm --dir apps/desktop package:mac:verify"
+
 [tasks."desktop:preview"]
 description = "Preview the Electron desktop app"
 run = "pnpm --dir apps/desktop preview"

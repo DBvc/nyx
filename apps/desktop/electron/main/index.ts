@@ -7,12 +7,25 @@ import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/ch
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
+import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 const rendererDistPath = join(moduleDir, '../renderer')
 const preloadPath = join(moduleDir, '../preload/index.cjs')
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
-const chatSessionManager = new ChatSessionManager()
+
+function createMainRuntimeChatStateClient() {
+  return createRuntimeChatStateClient({
+    path: {
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    },
+  })
+}
+
+const chatSessionManager = new ChatSessionManager({
+  createRuntimeChatStateClient: createMainRuntimeChatStateClient,
+})
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
 
