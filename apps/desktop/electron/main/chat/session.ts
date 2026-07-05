@@ -9,7 +9,13 @@ import {
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import { streamChatCompletion } from './client'
 import { readChatProviderConfig } from './env'
-import { isAbortError, toChatError } from './errors'
+import { createChatBridgeError, isAbortError, toChatError } from './errors'
+import {
+  createRuntimeChatStateClient as createRuntimeChatStateClientDefault,
+  NYX_RUNTIME_CHAT_STATE_ENV,
+  RuntimeChatStateClientError,
+  type RuntimeChatStateClient,
+} from '../runtime/chat-state-client'
 
 interface ActiveChatSession {
   requestId: string
@@ -19,6 +25,17 @@ interface ActiveChatSession {
   sender: WebContents
   abortController: AbortController
   finalContent: string
+  runtimeChatStateClient?: RuntimeChatStateClient
+}
+
+interface ChatSessionEnv {
+  NYX_RUNTIME_CHAT_STATE?: string
+  [key: string]: string | undefined
+}
+
+interface ChatSessionManagerOptions {
+  env?: ChatSessionEnv
+  createRuntimeChatStateClient?: () => RuntimeChatStateClient
 }
 
 export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
@@ -43,8 +60,44 @@ export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent[
   return null
 }
 
+function isRuntimeChatStateEnabled(env: ChatSessionEnv) {
+  return env[NYX_RUNTIME_CHAT_STATE_ENV] === '1'
+}
+
+function latestUserMessageContent(request: NyxChatRequest) {
+  for (let index = request.messages.length - 1; index >= 0; index -= 1) {
+    const message = request.messages[index]
+
+    if (message?.role === 'user') {
+      return message.content
+    }
+  }
+
+  return undefined
+}
+
+function toNonRetryableRuntimeChatError(error: unknown): NyxChatErrorEvent['error'] {
+  const chatError = toChatError(error)
+
+  return {
+    ...chatError,
+    retryable: false,
+  }
+}
+
 export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
+  private readonly runtimeChatStateEnabled: boolean
+  private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
+  private runtimeChatStateClient: RuntimeChatStateClient | undefined
+
+  constructor({
+    env = process.env,
+    createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
+  }: ChatSessionManagerOptions = {}) {
+    this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
+    this.createRuntimeChatStateClient = createRuntimeChatStateClient
+  }
 
   start(sender: WebContents, request: NyxChatRequest) {
     const validationError = validateChatRequest(request)
@@ -83,14 +136,14 @@ export class ChatSessionManager {
     }
 
     this.activeSession = session
-    this.emitEvent(sender, {
-      type: 'chat:start',
-      requestId: request.requestId,
-      assistantMessageId: request.assistantMessageId,
-      status: 'streaming',
-    })
 
-    void this.runSession(session, config, request)
+    if (!this.runtimeChatStateEnabled) {
+      this.emitStart(session)
+      void this.runSession(session, config, request)
+      return
+    }
+
+    void this.prepareRuntimeAndRunSession(session, config, request)
   }
 
   cancel(request: NyxChatCancellationRequest) {
@@ -101,13 +154,126 @@ export class ChatSessionManager {
     this.activeSession.abortController.abort()
   }
 
-  reset(sender: WebContents) {
-    if (!this.activeSession || this.activeSession.sender !== sender) {
+  async reset(sender: WebContents) {
+    if (this.activeSession && this.activeSession.sender !== sender) {
       return
     }
 
-    this.activeSession.abortController.abort()
-    this.activeSession = undefined
+    if (this.activeSession) {
+      this.activeSession.abortController.abort()
+      this.activeSession = undefined
+    }
+
+    const runtimeChatStateClient = this.runtimeChatStateClient
+
+    if (!runtimeChatStateClient) {
+      return
+    }
+
+    this.runtimeChatStateClient = undefined
+
+    try {
+      await runtimeChatStateClient.clear()
+    } catch {
+      // Reset detaches the old runtime client so the next turn starts from a fresh session.
+    } finally {
+      runtimeChatStateClient.close()
+    }
+  }
+
+  private async prepareRuntimeAndRunSession(
+    session: ActiveChatSession,
+    config: ReturnType<typeof readChatProviderConfig>,
+    request: NyxChatRequest,
+  ) {
+    try {
+      const runtimeChatStateClient = this.getRuntimeChatStateClient()
+
+      session.runtimeChatStateClient = runtimeChatStateClient
+
+      await this.startRuntimeTurn(runtimeChatStateClient, request)
+
+      if (this.activeSession !== session) {
+        return
+      }
+
+      this.emitStart(session)
+
+      if (session.abortController.signal.aborted) {
+        await runtimeChatStateClient.cancel({
+          turnRequestId: session.requestId,
+          assistantMessageId: session.assistantMessageId,
+          finalContent: session.finalContent,
+        })
+        this.emitDone(session, 'cancelled')
+        this.activeSession = undefined
+        return
+      }
+
+      await this.runSession(session, config, request)
+    } catch (error) {
+      if (this.activeSession !== session) {
+        return
+      }
+
+      this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+      this.emitError(session.sender, request, toNonRetryableRuntimeChatError(error))
+      this.activeSession = undefined
+    }
+  }
+
+  private getRuntimeChatStateClient() {
+    if (this.runtimeChatStateClient) {
+      return this.runtimeChatStateClient
+    }
+
+    this.runtimeChatStateClient = this.createRuntimeChatStateClient()
+    return this.runtimeChatStateClient
+  }
+
+  private discardRuntimeChatStateClient(runtimeChatStateClient?: RuntimeChatStateClient) {
+    if (!runtimeChatStateClient) {
+      return
+    }
+
+    if (this.runtimeChatStateClient === runtimeChatStateClient) {
+      this.runtimeChatStateClient = undefined
+    }
+
+    runtimeChatStateClient.close()
+  }
+
+  private async startRuntimeTurn(
+    runtimeChatStateClient: RuntimeChatStateClient,
+    request: NyxChatRequest,
+  ) {
+    if (request.turnIntent === 'new_user_message') {
+      const content = latestUserMessageContent(request)
+
+      if (content === undefined) {
+        throw createChatBridgeError({
+          code: 'invalid_request',
+          message: 'Chat requests with a new user message must include a user message.',
+          retryable: false,
+        })
+      }
+
+      await runtimeChatStateClient.submitUserMessage({
+        turnRequestId: request.requestId,
+        userMessageId: request.userMessageId,
+        assistantMessageId: request.assistantMessageId,
+        content,
+      })
+    } else {
+      await runtimeChatStateClient.retryFailed({
+        turnRequestId: request.requestId,
+      })
+    }
+
+    await runtimeChatStateClient.startAssistant({
+      turnRequestId: request.requestId,
+      assistantMessageId: request.assistantMessageId,
+    })
   }
 
   private async runSession(
@@ -120,12 +286,22 @@ export class ChatSessionManager {
         config,
         request,
         signal: session.abortController.signal,
-        onDelta: (delta, snapshot) => {
+        onDelta: async (delta, snapshot) => {
           if (this.activeSession !== session) {
             return
           }
 
           session.finalContent = snapshot
+          await session.runtimeChatStateClient?.appendDelta({
+            turnRequestId: session.requestId,
+            assistantMessageId: session.assistantMessageId,
+            snapshot,
+          })
+
+          if (this.activeSession !== session) {
+            return
+          }
+
           this.emitEvent(session.sender, {
             type: 'chat:delta',
             requestId: session.requestId,
@@ -139,29 +315,57 @@ export class ChatSessionManager {
       session.finalContent = result.finalContent
 
       if (this.activeSession === session) {
-        this.emitEvent(session.sender, {
-          type: 'chat:done',
-          requestId: session.requestId,
+        await session.runtimeChatStateClient?.complete({
+          turnRequestId: session.requestId,
           assistantMessageId: session.assistantMessageId,
-          status: 'completed',
           finalContent: session.finalContent,
         })
+
+        if (this.activeSession === session) {
+          this.emitDone(session, 'completed')
+        }
       }
     } catch (error) {
       if (this.activeSession !== session) {
         return
       }
 
+      if (error instanceof RuntimeChatStateClientError) {
+        this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+        this.emitError(session.sender, request, toNonRetryableRuntimeChatError(error))
+        return
+      }
+
       if (isAbortError(error)) {
-        this.emitEvent(session.sender, {
-          type: 'chat:done',
-          requestId: session.requestId,
-          assistantMessageId: session.assistantMessageId,
-          status: 'cancelled',
-          finalContent: session.finalContent,
-        })
+        try {
+          await session.runtimeChatStateClient?.cancel({
+            turnRequestId: session.requestId,
+            assistantMessageId: session.assistantMessageId,
+            finalContent: session.finalContent,
+          })
+        } catch (runtimeError) {
+          this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+          this.emitError(session.sender, request, toNonRetryableRuntimeChatError(runtimeError))
+          return
+        }
+
+        this.emitDone(session, 'cancelled')
       } else {
-        this.emitError(session.sender, request, toChatError(error))
+        const chatError = toChatError(error)
+
+        try {
+          await session.runtimeChatStateClient?.fail({
+            turnRequestId: session.requestId,
+            assistantMessageId: session.assistantMessageId,
+            message: chatError.message,
+          })
+        } catch (runtimeError) {
+          this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+          this.emitError(session.sender, request, toNonRetryableRuntimeChatError(runtimeError))
+          return
+        }
+
+        this.emitError(session.sender, request, chatError)
       }
     } finally {
       if (this.activeSession === session) {
@@ -181,6 +385,25 @@ export class ChatSessionManager {
       assistantMessageId: request.assistantMessageId,
       status: 'failed',
       error,
+    })
+  }
+
+  private emitStart(session: ActiveChatSession) {
+    this.emitEvent(session.sender, {
+      type: 'chat:start',
+      requestId: session.requestId,
+      assistantMessageId: session.assistantMessageId,
+      status: 'streaming',
+    })
+  }
+
+  private emitDone(session: ActiveChatSession, status: 'completed' | 'cancelled') {
+    this.emitEvent(session.sender, {
+      type: 'chat:done',
+      requestId: session.requestId,
+      assistantMessageId: session.assistantMessageId,
+      status,
+      finalContent: session.finalContent,
     })
   }
 

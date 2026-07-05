@@ -8,7 +8,7 @@ interface StreamChatCompletionOptions {
   config: ChatProviderConfig
   request: NyxChatRequest
   signal: AbortSignal
-  onDelta: (delta: string, snapshot: string) => void
+  onDelta: (delta: string, snapshot: string) => void | Promise<void>
 }
 
 interface ChatCompletionChunk {
@@ -191,7 +191,7 @@ export async function streamChatCompletion({
 
     if (typeof delta === 'string' && delta.length > 0) {
       finalContent += delta
-      onDelta(delta, finalContent)
+      await onDelta(delta, finalContent)
     }
 
     if (choice?.finish_reason) {
