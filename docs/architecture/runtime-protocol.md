@@ -80,6 +80,13 @@ complete, cancel, fail, and reset/clear. The runtime state is an internal
 semantic gate for Electron main only. It is not renderer state and is not a
 new shared IPC or preload contract.
 
+Failure recovery keeps the existing v1 min chat behavior: after a provider
+failure, a retry reuses the failed turn's user and assistant identity, while a
+new user message submits a distinct user and assistant identity. The OCaml chat
+reducer preserves the committed transcript, does not commit the failed assistant
+draft, and starts the fresh turn from the new user message. Renderer
+`resetChatSession()` awaits Electron main's async runtime clear/close cleanup.
+
 The default path remains closed. When `NYX_RUNTIME_CHAT_STATE` is unset,
 desktop chat must not resolve or spawn the runtime, and the existing v1 min
 chat behavior remains owned by Electron main and the renderer's temporary

@@ -107,28 +107,31 @@ let assistant_message id content =
   let open Message in
   { id; role = Assistant; content }
 
+let start_user_turn state ~request_id ~user_message_id ~assistant_message_id
+    ~content =
+  let state = append_message state (user_message user_message_id content) in
+  {
+    state with
+    current_turn_ =
+      Active
+        {
+          request_id;
+          user_message_id;
+          assistant_message_id;
+          draft = "";
+          phase = Submitted;
+        };
+  }
+
 let reduce state action =
   match action with
   | Submit_user_message
       { request_id; user_message_id; assistant_message_id; content } -> (
       match state.current_turn_ with
-      | No_turn ->
-          let transcript =
-            state.transcript_ @ [ user_message user_message_id content ]
-          in
-          {
-            transcript_ = transcript;
-            current_turn_ =
-              Active
-                {
-                  request_id;
-                  user_message_id;
-                  assistant_message_id;
-                  draft = "";
-                  phase = Submitted;
-                };
-          }
-      | Active _ | Failed _ -> state)
+      | No_turn | Failed _ ->
+          start_user_turn state ~request_id ~user_message_id
+            ~assistant_message_id ~content
+      | Active _ -> state)
   | Start_assistant { request_id; assistant_message_id } -> (
       match state.current_turn_ with
       | Active ({ phase = Submitted; _ } as turn)

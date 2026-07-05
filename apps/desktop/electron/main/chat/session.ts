@@ -286,6 +286,8 @@ export class ChatSessionManager {
     } else {
       await runtimeChatStateClient.retryFailed({
         turnRequestId: request.requestId,
+        userMessageId: request.userMessageId,
+        assistantMessageId: request.assistantMessageId,
       })
     }
 

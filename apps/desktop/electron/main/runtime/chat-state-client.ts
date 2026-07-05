@@ -44,8 +44,8 @@ export interface RuntimeAppendDelta extends RuntimeChatTurn {
   snapshot: string
 }
 
-export interface RuntimeRetryFailed {
-  turnRequestId: string
+export interface RuntimeRetryFailed extends RuntimeChatTurn {
+  userMessageId: string
 }
 
 type RuntimeChatReducerRole = 'system' | 'user' | 'assistant'
@@ -383,6 +383,8 @@ export class RuntimeProtocolChatStateClient implements RuntimeChatStateClient {
 
     expectActiveTurn('retry_failed', state, {
       turnRequestId: turn.turnRequestId,
+      userMessageId: turn.userMessageId,
+      assistantMessageId: turn.assistantMessageId,
       draft: '',
       phase: 'submitted',
     })

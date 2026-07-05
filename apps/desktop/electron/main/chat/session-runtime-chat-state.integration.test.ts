@@ -316,6 +316,74 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
     },
   )
 
+  integrationIt('starts a fresh runtime-backed user message after a provider failure', async () => {
+    checkedRuntimeArtifactPath()
+    streamChatCompletion
+      .mockRejectedValueOnce(new Error('Provider exploded'))
+      .mockImplementationOnce(
+        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
+          await onDelta('Fresh', 'Fresh')
+          return { finalContent: 'Fresh answer' }
+        },
+      )
+    const sender = mockSender()
+    const manager = new ChatSessionManager()
+
+    try {
+      manager.start(sender, chatRequest({ requestId: 'request-fail-new-1' }))
+
+      await waitForAssertion(() => {
+        expect(sentChatEvents(sender).at(-1)).toEqual({
+          type: 'chat:error',
+          requestId: 'request-fail-new-1',
+          assistantMessageId: 'assistant-1',
+          status: 'failed',
+          error: {
+            code: 'unknown',
+            message: 'Provider exploded',
+            retryable: true,
+          },
+        })
+      })
+
+      manager.start(
+        sender,
+        chatRequest({
+          requestId: 'request-after-fail-new-1',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          content: 'Fresh prompt',
+        }),
+      )
+
+      await waitForAssertion(() => {
+        expect(sentChatEvents(sender).at(-1)).toEqual({
+          type: 'chat:done',
+          requestId: 'request-after-fail-new-1',
+          assistantMessageId: 'assistant-2',
+          status: 'completed',
+          finalContent: 'Fresh answer',
+        })
+      })
+
+      expect(streamChatCompletion).toHaveBeenCalledTimes(2)
+      expect(streamChatCompletion.mock.calls[1]?.[0]).toMatchObject({
+        request: {
+          requestId: 'request-after-fail-new-1',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          turnIntent: 'new_user_message',
+          turnUserMessage: {
+            id: 'user-2',
+            content: 'Fresh prompt',
+          },
+        },
+      })
+    } finally {
+      await manager.reset(sender)
+    }
+  })
+
   integrationIt('resets and clears a runtime-backed turn before the next request', async () => {
     checkedRuntimeArtifactPath()
     let activeSignal: AbortSignal | undefined

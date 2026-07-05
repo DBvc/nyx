@@ -231,6 +231,8 @@ describe('RuntimeProtocolChatStateClient', () => {
     })
     await client.retryFailed({
       turnRequestId: 'request-4',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
     })
     await client.clear()
 
@@ -325,6 +327,35 @@ describe('RuntimeProtocolChatStateClient', () => {
     ).rejects.toMatchObject({
       message:
         'Nyx runtime chat reducer did not apply start_assistant; active turn invariant failed.',
+    })
+  })
+
+  it('rejects retry states that do not match the expected failed turn identity', async () => {
+    const fakeRuntime = fakeProtocolSession((request) =>
+      stateResponse(
+        request.id,
+        activeTurn(
+          stringField(request, 'turn_request_id'),
+          'other-user',
+          'assistant-1',
+          '',
+          'submitted',
+        ),
+        [message('user-1', 'user', 'Hello Nyx')],
+      ),
+    )
+    const client = new RuntimeProtocolChatStateClient({
+      session: fakeRuntime.session,
+    })
+
+    await expect(
+      client.retryFailed({
+        turnRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+      }),
+    ).rejects.toMatchObject({
+      message: 'Nyx runtime chat reducer did not apply retry_failed; active turn invariant failed.',
     })
   })
 

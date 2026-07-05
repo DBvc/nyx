@@ -55,6 +55,12 @@ let fail_line id =
      failed\"}}"
     id
 
+let second_submit_user_message_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_action\",\"id\":\"%s\",\"action\":\"submit_user_message\",\"turn_request_id\":\"turn-2\",\"user_message_id\":\"user-2\",\"assistant_message_id\":\"assistant-2\",\"content\":\"Fresh \
+     prompt\"}"
+    id
+
 let submitted_state_line id =
   Printf.sprintf
     "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
@@ -79,6 +85,12 @@ let failed_state_line id =
   Printf.sprintf
     "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"}],\"current_turn\":{\"type\":\"failed\",\"turn_request_id\":\"turn-1\",\"user_message_id\":\"user-1\",\"assistant_message_id\":\"assistant-1\",\"draft\":\"Partial\",\"error\":{\"message\":\"Network \
      failed\"}}}}"
+    id
+
+let failed_recovery_submitted_state_line id =
+  Printf.sprintf
+    "{\"type\":\"chat_reducer_state\",\"id\":\"%s\",\"state\":{\"transcript\":[{\"id\":\"user-1\",\"role\":\"user\",\"content\":\"Hello\"},{\"id\":\"user-2\",\"role\":\"user\",\"content\":\"Fresh \
+     prompt\"}],\"current_turn\":{\"type\":\"active\",\"turn_request_id\":\"turn-2\",\"user_message_id\":\"user-2\",\"assistant_message_id\":\"assistant-2\",\"draft\":\"\",\"phase\":\"submitted\"}}}"
     id
 
 let test_valid_ping_returns_matching_pong () =
@@ -246,6 +258,32 @@ let test_chat_reducer_state_encodes_failed_turn () =
   in
   ()
 
+let test_session_handler_accepts_new_user_message_after_failed_turn () =
+  let session =
+    check_session_line
+      (submitted_state_line "proto_1")
+      Protocol.initial_session
+      (submit_user_message_line "proto_1")
+  in
+  let session =
+    check_session_line
+      (partial_streaming_state_line "proto_2")
+      session
+      (append_delta_line "proto_2")
+  in
+  let session =
+    check_session_line
+      (failed_state_line "proto_3")
+      session (fail_line "proto_3")
+  in
+  let (_ : Protocol.session) =
+    check_session_line
+      (failed_recovery_submitted_state_line "proto_4")
+      session
+      (second_submit_user_message_line "proto_4")
+  in
+  ()
+
 let test_session_handler_advances_chat_state () =
   let session =
     check_session_line
@@ -367,6 +405,9 @@ let cases =
       test_chat_reducer_state_encodes_active_turn;
     Alcotest.test_case "chat reducer state encodes failed turn" `Quick
       test_chat_reducer_state_encodes_failed_turn;
+    Alcotest.test_case
+      "session handler accepts new user message after failed turn" `Quick
+      test_session_handler_accepts_new_user_message_after_failed_turn;
     Alcotest.test_case "session handler advances chat state" `Quick
       test_session_handler_advances_chat_state;
     Alcotest.test_case "session handler ping does not change chat state" `Quick

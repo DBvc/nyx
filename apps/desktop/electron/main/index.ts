@@ -14,25 +14,35 @@ const preloadPath = join(moduleDir, '../preload/index.cjs')
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 const chatSessionManager = new ChatSessionManager()
 
-function registerIpcHandlers() {
+type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
+
+export interface RegisterIpcHandlersOptions {
+  chatSessionManager?: ChatSessionController
+  providerStatusReader?: typeof readProviderStatus
+}
+
+export function registerIpcHandlers({
+  chatSessionManager: manager = chatSessionManager,
+  providerStatusReader = readProviderStatus,
+}: RegisterIpcHandlersOptions = {}) {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.reset)
   ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
-    chatSessionManager.start(event.sender, request)
+    manager.start(event.sender, request)
   })
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: NyxChatCancellationRequest) => {
-    chatSessionManager.cancel(request)
+    manager.cancel(request)
   })
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.reset, (event) => {
-    chatSessionManager.reset(event.sender)
+    return manager.reset(event.sender)
   })
 
-  ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => readProviderStatus())
+  ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())
 }
 
 function createMainWindow() {

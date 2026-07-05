@@ -446,6 +446,8 @@ describe('ChatSessionManager runtime chat state gate', () => {
     expect(runtimeClient.submitUserMessage).not.toHaveBeenCalled()
     expect(runtimeClient.retryFailed).toHaveBeenCalledWith({
       turnRequestId: 'request-retry-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
     })
     expect(runtimeClient.startAssistant).toHaveBeenCalledWith({
       turnRequestId: 'request-retry-1',

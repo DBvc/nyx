@@ -8,6 +8,7 @@ let stale_request = unsafe_request_id_for_tests "request-stale"
 let user_1 = unsafe_message_id_for_tests "user-1"
 let user_2 = unsafe_message_id_for_tests "user-2"
 let assistant_1 = unsafe_message_id_for_tests "assistant-1"
+let assistant_2 = unsafe_message_id_for_tests "assistant-2"
 let assistant_stale = unsafe_message_id_for_tests "assistant-stale"
 
 let pp_role formatter role =
@@ -313,14 +314,7 @@ let test_illegal_state_and_id_mismatch_are_no_op () =
   let failed = active |> fail in
   let failed_actions =
     [
-      Chat.Submit_user_message
-        {
-          request_id = request_2;
-          user_message_id = user_2;
-          assistant_message_id = assistant_stale;
-          content = "Second message";
-        };
-      Start_assistant
+      Chat.Start_assistant
         { request_id = request_1; assistant_message_id = assistant_1 };
       Append_delta
         {
@@ -372,6 +366,18 @@ let test_fail_keeps_draft_out_of_transcript () =
   check_transcript [ (Chat.Message.User, "Hello Nyx") ] state;
   check_failed state
 
+let test_failed_turn_accepts_new_user_message () =
+  let state =
+    active_with_draft () |> fail
+    |> submit ~request_id:request_2 ~user_message_id:user_2
+         ~assistant_message_id:assistant_2 ~content:"Second message"
+  in
+  check_transcript
+    [ (Chat.Message.User, "Hello Nyx"); (User, "Second message") ]
+    state;
+  check_active ~request_id:request_2 ~user_message_id:user_2
+    ~assistant_message_id:assistant_2 ~phase:Chat.Submitted ~draft:"" state
+
 let test_retry_failed_turn_does_not_duplicate_user_message () =
   let state = active_with_draft () |> fail |> retry ~request_id:request_2 in
   check_transcript [ (Chat.Message.User, "Hello Nyx") ] state;
@@ -407,6 +413,8 @@ let cases =
       test_cancel_partial_appends_assistant;
     Alcotest.test_case "fail keeps draft out of transcript" `Quick
       test_fail_keeps_draft_out_of_transcript;
+    Alcotest.test_case "failed turn accepts new user message" `Quick
+      test_failed_turn_accepts_new_user_message;
     Alcotest.test_case "retry failed turn does not duplicate user message"
       `Quick test_retry_failed_turn_does_not_duplicate_user_message;
     Alcotest.test_case "clear resets state" `Quick test_clear_resets_state;
