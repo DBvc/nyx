@@ -87,6 +87,13 @@ reducer preserves the committed transcript, does not commit the failed assistant
 draft, and starts the fresh turn from the new user message. Renderer
 `resetChatSession()` awaits Electron main's async runtime clear/close cleanup.
 
+The runtime chat state client is scoped to the owning Electron `WebContents`
+that starts the runtime-backed chat path. A reset clears only that owner's
+runtime state. Each `WebContents` gets its own runtime session, and a destroyed
+owner closes its runtime session and aborts any active turn. This keeps the
+opt-in runtime state tied to the current desktop chat owner instead of becoming
+process-global state.
+
 The default path remains closed. When `NYX_RUNTIME_CHAT_STATE` is unset,
 desktop chat must not resolve or spawn the runtime, and the existing v1 min
 chat behavior remains owned by Electron main and the renderer's temporary

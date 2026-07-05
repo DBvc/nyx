@@ -11,7 +11,11 @@ Nyx is split into two first-class subprojects:
 - `apps/desktop`: the current Electron desktop app.
 - `runtime/ocaml`: an independent OCaml runtime core skeleton.
 
-The desktop app is the only user-facing product surface right now. The OCaml runtime exists as a foundation for later typed Agent/runtime work, but it is not connected to Electron yet.
+The desktop app is the only user-facing product surface right now. The OCaml
+runtime exists as a foundation for later typed Agent/runtime work. The default
+desktop chat path remains closed to the runtime, while Electron main has an
+explicit opt-in runtime-backed chat state path behind
+`NYX_RUNTIME_CHAT_STATE=1`.
 
 Current architecture notes:
 
@@ -35,8 +39,9 @@ Milestone details and code entry points are recorded in
 
 Important boundary: the renderer still does not read environment variables,
 provider tokens, full provider URLs, or raw provider configs. Provider calls and
-cancellation handles stay in Electron main. The OCaml runtime is still
-independent and is not connected to the desktop chat path.
+cancellation handles stay in Electron main. The OCaml runtime can validate chat
+state only through the explicit Electron-main opt-in path; it does not call
+providers, read provider env, own credentials, or talk to the renderer.
 
 ## Current Product Scope
 
@@ -90,7 +95,11 @@ Out of scope for this phase:
 - future policy and capability model
 - replayable runtime tests
 
-Electron and OCaml do not communicate yet. When that work starts later, Electron main is expected to own the OCaml child process lifecycle over stdio/NDJSON. The renderer must never talk to the OCaml runtime directly.
+Electron main is the only desktop process that may communicate with OCaml, over
+stdio/NDJSON. Current desktop use is limited to runtime health/protocol
+verification and the opt-in runtime-backed chat state path behind
+`NYX_RUNTIME_CHAT_STATE=1`. The renderer must never talk to the OCaml runtime
+directly.
 
 ## Tooling
 
@@ -161,6 +170,7 @@ mise run runtime:format
 mise run runtime:format-check
 mise run runtime:ping
 mise run runtime:check
+mise run runtime:chat-state:check
 ```
 
 Root `pnpm` scripts are compatibility aliases for the same `mise` tasks:
@@ -204,7 +214,7 @@ mise run build
 ## Development Rules
 
 - Keep the product inside `v1 min chat` unless a task explicitly changes scope.
-- Do not implement Electron <-> OCaml communication as part of structural docs or setup work.
+- Do not implement new or broader Electron <-> OCaml communication as part of structural docs or setup work.
 - Renderer code must not read environment variables or provider credentials.
 - Provider calls and cancellation handles belong in Electron main.
 - Runtime code should stay pure and tiny until a concrete runtime behavior requires more.

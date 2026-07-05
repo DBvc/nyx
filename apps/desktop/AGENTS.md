@@ -36,7 +36,8 @@ This subproject owns:
 - Main process owns provider calls and cancellation handles.
 - Main process owns OS side effects.
 - Do not import from `runtime/ocaml`.
-- Do not assume the OCaml runtime is connected yet.
+- Do not use the OCaml runtime outside explicit Electron-main runtime boundary code.
+- The runtime-backed chat state path is opt-in only through `NYX_RUNTIME_CHAT_STATE=1`; do not make it default-on unless explicitly requested.
 - Do not add product features outside `v1 min chat` unless explicitly requested.
 
 ## Current Scope
@@ -123,6 +124,12 @@ For build-affecting changes:
 
 ```bash
 mise run desktop:build
+```
+
+For Electron-main runtime chat state or protocol boundary changes:
+
+```bash
+mise run runtime:chat-state:check
 ```
 
 For broad desktop changes:

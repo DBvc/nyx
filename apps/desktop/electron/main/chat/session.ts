@@ -28,6 +28,12 @@ interface ActiveChatSession {
   runtimeChatStateClient?: RuntimeChatStateClient
 }
 
+interface RuntimeChatStateSession {
+  sender: WebContents
+  client: RuntimeChatStateClient
+  onSenderDestroyed: () => void
+}
+
 interface ChatSessionEnv {
   NYX_RUNTIME_CHAT_STATE?: string
   [key: string]: string | undefined
@@ -118,7 +124,7 @@ export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
   private readonly runtimeChatStateEnabled: boolean
   private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
-  private runtimeChatStateClient: RuntimeChatStateClient | undefined
+  private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
 
   constructor({
     env = process.env,
@@ -184,29 +190,25 @@ export class ChatSessionManager {
   }
 
   async reset(sender: WebContents) {
-    if (this.activeSession && this.activeSession.sender !== sender) {
-      return
-    }
-
-    if (this.activeSession) {
+    if (this.activeSession?.sender === sender) {
       this.activeSession.abortController.abort()
       this.activeSession = undefined
     }
 
-    const runtimeChatStateClient = this.runtimeChatStateClient
+    const runtimeChatStateSession = this.runtimeChatStateSessions.get(sender)
 
-    if (!runtimeChatStateClient) {
+    if (!runtimeChatStateSession) {
       return
     }
 
-    this.runtimeChatStateClient = undefined
+    this.detachRuntimeChatStateSession(runtimeChatStateSession)
 
     try {
-      await runtimeChatStateClient.clear()
+      await runtimeChatStateSession.client.clear()
     } catch {
       // Reset detaches the old runtime client so the next turn starts from a fresh session.
     } finally {
-      runtimeChatStateClient.close()
+      runtimeChatStateSession.client.close()
     }
   }
 
@@ -216,7 +218,7 @@ export class ChatSessionManager {
     request: NyxChatRequest,
   ) {
     try {
-      const runtimeChatStateClient = this.getRuntimeChatStateClient()
+      const runtimeChatStateClient = this.getRuntimeChatStateClient(session.sender)
 
       session.runtimeChatStateClient = runtimeChatStateClient
 
@@ -251,13 +253,26 @@ export class ChatSessionManager {
     }
   }
 
-  private getRuntimeChatStateClient() {
-    if (this.runtimeChatStateClient) {
-      return this.runtimeChatStateClient
+  private getRuntimeChatStateClient(sender: WebContents) {
+    const existingSession = this.runtimeChatStateSessions.get(sender)
+
+    if (existingSession && !sender.isDestroyed()) {
+      return existingSession.client
     }
 
-    this.runtimeChatStateClient = this.createRuntimeChatStateClient()
-    return this.runtimeChatStateClient
+    if (existingSession) {
+      this.closeRuntimeChatStateSession(existingSession)
+    }
+
+    const runtimeChatStateClient = this.createRuntimeChatStateClient()
+    const runtimeChatStateSession = this.createRuntimeChatStateSession(
+      sender,
+      runtimeChatStateClient,
+    )
+
+    this.runtimeChatStateSessions.set(sender, runtimeChatStateSession)
+
+    return runtimeChatStateClient
   }
 
   private discardRuntimeChatStateClient(runtimeChatStateClient?: RuntimeChatStateClient) {
@@ -265,11 +280,70 @@ export class ChatSessionManager {
       return
     }
 
-    if (this.runtimeChatStateClient === runtimeChatStateClient) {
-      this.runtimeChatStateClient = undefined
+    const runtimeChatStateSession = this.findRuntimeChatStateSession(runtimeChatStateClient)
+
+    if (runtimeChatStateSession) {
+      this.closeRuntimeChatStateSession(runtimeChatStateSession)
+      return
     }
 
     runtimeChatStateClient.close()
+  }
+
+  private createRuntimeChatStateSession(
+    sender: WebContents,
+    client: RuntimeChatStateClient,
+  ): RuntimeChatStateSession {
+    let runtimeChatStateSession: RuntimeChatStateSession | undefined
+    const onSenderDestroyed = () => {
+      if (runtimeChatStateSession) {
+        this.handleRuntimeChatStateSenderDestroyed(runtimeChatStateSession)
+      }
+    }
+    const createdSession = {
+      sender,
+      client,
+      onSenderDestroyed,
+    }
+
+    runtimeChatStateSession = createdSession
+    sender.once('destroyed', onSenderDestroyed)
+
+    return createdSession
+  }
+
+  private detachRuntimeChatStateSession(runtimeChatStateSession: RuntimeChatStateSession) {
+    if (
+      this.runtimeChatStateSessions.get(runtimeChatStateSession.sender) === runtimeChatStateSession
+    ) {
+      this.runtimeChatStateSessions.delete(runtimeChatStateSession.sender)
+    }
+
+    runtimeChatStateSession.sender.off('destroyed', runtimeChatStateSession.onSenderDestroyed)
+  }
+
+  private findRuntimeChatStateSession(runtimeChatStateClient: RuntimeChatStateClient) {
+    for (const runtimeChatStateSession of this.runtimeChatStateSessions.values()) {
+      if (runtimeChatStateSession.client === runtimeChatStateClient) {
+        return runtimeChatStateSession
+      }
+    }
+
+    return undefined
+  }
+
+  private closeRuntimeChatStateSession(runtimeChatStateSession: RuntimeChatStateSession) {
+    this.detachRuntimeChatStateSession(runtimeChatStateSession)
+    runtimeChatStateSession.client.close()
+  }
+
+  private handleRuntimeChatStateSenderDestroyed(runtimeChatStateSession: RuntimeChatStateSession) {
+    if (this.activeSession?.sender === runtimeChatStateSession.sender) {
+      this.activeSession.abortController.abort()
+      this.activeSession = undefined
+    }
+
+    this.closeRuntimeChatStateSession(runtimeChatStateSession)
   }
 
   private async startRuntimeTurn(

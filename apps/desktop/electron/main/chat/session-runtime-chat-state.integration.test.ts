@@ -85,10 +85,41 @@ function chatRequest({
 }
 
 function mockSender() {
+  const listeners = new Map<string, Set<() => void>>()
   const sender = {
     isDestroyed: vi.fn(() => false),
     send: vi.fn(),
+    once: vi.fn(),
+    off: vi.fn(),
+    emitDestroyed: vi.fn(),
   }
+
+  sender.once.mockImplementation((event: string, listener: () => void) => {
+    const eventListeners = listeners.get(event) ?? new Set<() => void>()
+
+    eventListeners.add(listener)
+    listeners.set(event, eventListeners)
+
+    return sender
+  })
+  sender.off.mockImplementation((event: string, listener: () => void) => {
+    listeners.get(event)?.delete(listener)
+
+    return sender
+  })
+  sender.emitDestroyed.mockImplementation(() => {
+    sender.isDestroyed.mockReturnValue(true)
+
+    const destroyedListeners = listeners.get('destroyed')
+
+    if (destroyedListeners) {
+      for (const listener of destroyedListeners) {
+        listener()
+      }
+    }
+
+    listeners.delete('destroyed')
+  })
 
   return sender as unknown as WebContents & typeof sender
 }

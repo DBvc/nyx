@@ -7,7 +7,7 @@ Current product scope is still `v1 min chat`. Do not expand the product into a g
 ## Project Layout
 
 - `apps/desktop`: Electron desktop app.
-- `runtime/ocaml`: OCaml runtime core skeleton. It exists and is intentionally isolated from Electron.
+- `runtime/ocaml`: OCaml runtime core skeleton. The default desktop path remains separate; an explicit Electron-main-only runtime-backed chat state opt-in exists.
 - `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 
@@ -64,7 +64,7 @@ Still out of scope:
 - future policy and capability model
 - replayable runtime tests
 
-Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, and a local protocol scaffold for runtime verification. Electron is still not wired to the runtime.
+Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, a local protocol scaffold for runtime verification, and an explicit Electron-main-only runtime-backed chat state path behind `NYX_RUNTIME_CHAT_STATE=1`. The default desktop chat path remains closed to the runtime.
 
 ## Naming Boundary
 
@@ -77,7 +77,7 @@ Before naming, renaming, or planning runtime-boundary work, check the naming bou
 ## Hard Rules
 
 - Do not change product behavior while doing structural migration.
-- Do not implement Electron <-> OCaml communication unless the task explicitly asks for it.
+- Do not implement new or broader Electron <-> OCaml communication unless the task explicitly asks for it.
 - Do not introduce FFI.
 - Do not let renderer read environment variables.
 - Do not let renderer access provider credentials.
@@ -126,6 +126,7 @@ mise run runtime:format
 mise run runtime:format-check
 mise run runtime:ping
 mise run runtime:check
+mise run runtime:chat-state:check
 ```
 
 Root runtime harness scripts:
@@ -159,6 +160,12 @@ For runtime CLI or protocol changes, also run:
 mise run runtime:ping
 ```
 
+For runtime-backed chat state or Electron-main/runtime boundary changes, also run:
+
+```bash
+mise run runtime:chat-state:check
+```
+
 When the root runtime harness scripts exist and apply to the change, prefer:
 
 ```bash
@@ -166,7 +173,7 @@ When the root runtime harness scripts exist and apply to the change, prefer:
 ./scripts/check-runtime.sh
 ```
 
-For future cross-boundary changes, first confirm the relevant `runtime:*`, `desktop:*`, or workspace-level `mise` tasks exist.
+For future cross-boundary changes, first confirm the relevant `runtime:*`, `desktop:*`, or workspace-level `mise` tasks exist. `mise run check` includes the runtime-backed chat state integration check.
 
 ## Subproject Instructions
 

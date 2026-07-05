@@ -148,6 +148,7 @@ mise run desktop:typecheck
 mise run desktop:typecheck:compat
 mise run desktop:lint
 mise run runtime:check
+mise run runtime:chat-state:check
 """
 
 [tasks.build]

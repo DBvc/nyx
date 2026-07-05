@@ -45,13 +45,73 @@ function validRequest(): NyxChatRequest {
   }
 }
 
+function requestWithIds({
+  requestId,
+  userMessageId,
+  assistantMessageId,
+  content,
+}: {
+  requestId: string
+  userMessageId: string
+  assistantMessageId: string
+  content: string
+}): NyxChatRequest {
+  return {
+    ...validRequest(),
+    requestId,
+    userMessageId,
+    assistantMessageId,
+    turnUserMessage: {
+      id: userMessageId,
+      content,
+    },
+    messages: [
+      {
+        role: 'user',
+        content,
+      },
+    ],
+  }
+}
+
 function mockSender(eventOrder?: string[]) {
+  const listeners = new Map<string, Set<() => void>>()
   const sender = {
     isDestroyed: vi.fn(() => false),
     send: vi.fn((_channel: string, event: NyxChatEvent) => {
       eventOrder?.push(`event:${event.type}`)
     }),
+    once: vi.fn(),
+    off: vi.fn(),
+    emitDestroyed: vi.fn(),
   }
+
+  sender.once.mockImplementation((event: string, listener: () => void) => {
+    const eventListeners = listeners.get(event) ?? new Set<() => void>()
+
+    eventListeners.add(listener)
+    listeners.set(event, eventListeners)
+
+    return sender
+  })
+  sender.off.mockImplementation((event: string, listener: () => void) => {
+    listeners.get(event)?.delete(listener)
+
+    return sender
+  })
+  sender.emitDestroyed.mockImplementation(() => {
+    sender.isDestroyed.mockReturnValue(true)
+
+    const destroyedListeners = listeners.get('destroyed')
+
+    if (destroyedListeners) {
+      for (const listener of destroyedListeners) {
+        listener()
+      }
+    }
+
+    listeners.delete('destroyed')
+  })
 
   return sender as unknown as WebContents & typeof sender
 }
@@ -572,6 +632,210 @@ describe('ChatSessionManager runtime chat state gate', () => {
 
     expect(activeSignal?.aborted).toBe(true)
     expect(runtimeClient.clear).toHaveBeenCalledTimes(1)
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not clear runtime chat state for another sender', async () => {
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
+    const runtimeClient = fakeRuntimeChatStateClient()
+    const sender = mockSender()
+    const otherSender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {
+        NYX_RUNTIME_CHAT_STATE: '1',
+      },
+      createRuntimeChatStateClient: () => runtimeClient,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-1',
+        assistantMessageId: 'assistant-1',
+        status: 'completed',
+        finalContent: 'Done',
+      })
+    })
+
+    await manager.reset(otherSender)
+
+    expect(runtimeClient.clear).not.toHaveBeenCalled()
+    expect(runtimeClient.close).not.toHaveBeenCalled()
+  })
+
+  it('keeps separate runtime chat state clients per sender', async () => {
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
+    const firstRuntimeClient = fakeRuntimeChatStateClient()
+    const secondRuntimeClient = fakeRuntimeChatStateClient()
+    const createRuntimeChatStateClient = vi
+      .fn()
+      .mockReturnValueOnce(firstRuntimeClient)
+      .mockReturnValueOnce(secondRuntimeClient)
+    const sender = mockSender()
+    const otherSender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {
+        NYX_RUNTIME_CHAT_STATE: '1',
+      },
+      createRuntimeChatStateClient,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-1',
+        assistantMessageId: 'assistant-1',
+        status: 'completed',
+        finalContent: 'Done',
+      })
+    })
+
+    manager.start(
+      otherSender,
+      requestWithIds({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        content: 'Hello from another sender',
+      }),
+    )
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(otherSender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-2',
+        assistantMessageId: 'assistant-2',
+        status: 'completed',
+        finalContent: 'Done',
+      })
+    })
+
+    expect(firstRuntimeClient.close).not.toHaveBeenCalled()
+    expect(secondRuntimeClient.submitUserMessage).toHaveBeenCalledWith({
+      turnRequestId: 'request-2',
+      userMessageId: 'user-2',
+      assistantMessageId: 'assistant-2',
+      content: 'Hello from another sender',
+    })
+    expect(createRuntimeChatStateClient).toHaveBeenCalledTimes(2)
+
+    manager.start(
+      sender,
+      requestWithIds({
+        requestId: 'request-3',
+        userMessageId: 'user-3',
+        assistantMessageId: 'assistant-3',
+        content: 'Back to the first sender',
+      }),
+    )
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-3',
+        assistantMessageId: 'assistant-3',
+        status: 'completed',
+        finalContent: 'Done',
+      })
+    })
+
+    expect(createRuntimeChatStateClient).toHaveBeenCalledTimes(2)
+    expect(firstRuntimeClient.submitUserMessage).toHaveBeenCalledWith({
+      turnRequestId: 'request-3',
+      userMessageId: 'user-3',
+      assistantMessageId: 'assistant-3',
+      content: 'Back to the first sender',
+    })
+  })
+
+  it('clears an idle sender runtime state without aborting another active sender', async () => {
+    let activeSignal: AbortSignal | undefined
+    streamChatCompletion
+      .mockResolvedValueOnce({ finalContent: 'Done' })
+      .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
+        activeSignal = signal
+
+        return new Promise(() => {})
+      })
+    const idleRuntimeClient = fakeRuntimeChatStateClient()
+    const activeRuntimeClient = fakeRuntimeChatStateClient()
+    const createRuntimeChatStateClient = vi
+      .fn()
+      .mockReturnValueOnce(idleRuntimeClient)
+      .mockReturnValueOnce(activeRuntimeClient)
+    const sender = mockSender()
+    const otherSender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {
+        NYX_RUNTIME_CHAT_STATE: '1',
+      },
+      createRuntimeChatStateClient,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-1',
+        assistantMessageId: 'assistant-1',
+        status: 'completed',
+        finalContent: 'Done',
+      })
+    })
+
+    manager.start(
+      otherSender,
+      requestWithIds({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        content: 'Keep streaming',
+      }),
+    )
+
+    await waitForAssertion(() => {
+      expect(streamChatCompletion).toHaveBeenCalledTimes(2)
+    })
+
+    await manager.reset(sender)
+
+    expect(activeSignal?.aborted).toBe(false)
+    expect(idleRuntimeClient.clear).toHaveBeenCalledTimes(1)
+    expect(idleRuntimeClient.close).toHaveBeenCalledTimes(1)
+    expect(activeRuntimeClient.clear).not.toHaveBeenCalled()
+    expect(activeRuntimeClient.close).not.toHaveBeenCalled()
+  })
+
+  it('closes runtime chat state when the owning sender is destroyed', async () => {
+    let activeSignal: AbortSignal | undefined
+    streamChatCompletion.mockImplementation(({ signal }: { signal: AbortSignal }) => {
+      activeSignal = signal
+
+      return new Promise(() => {})
+    })
+    const runtimeClient = fakeRuntimeChatStateClient()
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {
+        NYX_RUNTIME_CHAT_STATE: '1',
+      },
+      createRuntimeChatStateClient: () => runtimeClient,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
+    })
+
+    sender.emitDestroyed()
+
+    expect(activeSignal?.aborted).toBe(true)
     expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 

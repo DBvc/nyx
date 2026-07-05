@@ -2,7 +2,10 @@
 
 This directory contains the Nyx OCaml runtime core.
 
-The runtime is intentionally separate from the Electron desktop app. It is not connected to Electron yet.
+The runtime is intentionally separate from the Electron desktop app. The default
+desktop path remains separate; the only current connection is an explicit
+Electron-main-owned protocol path for runtime verification and opt-in
+runtime-backed chat state.
 
 ## Purpose
 
@@ -41,7 +44,9 @@ Current phase includes:
 - unit tests
 - formatting setup
 
-The checked-in protocol scaffold is for local runtime verification only. Electron is still not wired to OCaml.
+The checked-in protocol scaffold is for local runtime verification and the
+explicit Electron-main-only `NYX_RUNTIME_CHAT_STATE=1` chat state opt-in.
+Default desktop chat remains closed to OCaml.
 
 Do not implement Electron process management, renderer communication, tools, agents, persistence, provider calls, or broader runtime protocol concepts unless the task explicitly asks for them.
 
@@ -88,7 +93,7 @@ opam exec -- dune exec nyx-runtime -- ping
 - Avoid stringly typed state.
 - Keep side effects out of the core.
 - Prefer pure functions for state transitions.
-- Add tests for runtime behavior before wiring it into Electron.
+- Add tests for runtime behavior before expanding Electron integration.
 - Keep protocol serialization separate from domain types once protocol code exists.
 - Use `.mli` files when a module boundary stabilizes.
 - Avoid global mutable state.
@@ -123,14 +128,15 @@ These may be added later only when the runtime design justifies them.
 
 ## Protocol Rules
 
-The current runtime CLI has a local protocol mode for verification. It is not connected to Electron.
+The current runtime CLI has a local protocol mode for verification and explicit
+Electron-main use behind opt-in runtime boundary tasks.
 
 - stdout must be protocol only
 - stderr must be logs only
 - use NDJSON
 - one JSON message per line
 - every request must have an id
-- Electron main will own process lifecycle in a future explicit task
+- Electron main owns process lifecycle for any current or future desktop use
 - renderer must never talk to OCaml directly
 
 The current scaffold includes ping/pong:
@@ -140,7 +146,10 @@ The current scaffold includes ping/pong:
 {"type":"pong","id":"req_1"}
 ```
 
-It also includes a local chat reducer session scaffold used for runtime verification. Do not expand this into Electron integration, process lifecycle, model provider calls, tool execution, or agent orchestration without an explicit task.
+It also includes a local chat reducer session scaffold used for runtime
+verification and the opt-in Electron-main chat state path. Do not expand this
+into default desktop chat, renderer/preload communication, model provider
+calls, tool execution, or agent orchestration without an explicit task.
 
 ## Verification
 
