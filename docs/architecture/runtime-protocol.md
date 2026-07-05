@@ -36,6 +36,23 @@ provider calls, preload, renderer, or UI into the runtime.
 
 The local repo fallback is not a packaged app distribution contract.
 
+## Packaged Runtime Distribution Boundary
+
+The macOS packaged runtime boundary is defined in
+[macos-release.md](./macos-release.md). The first packaged target is macOS arm64.
+
+When packaged distribution is implemented, Electron main must resolve
+`nyx-runtime` only from the app bundle resources path:
+
+```text
+process.resourcesPath/runtime/nyx-runtime
+```
+
+The packaged resolver must fail closed. In packaged mode it must not read
+`NYX_RUNTIME_PATH`, must not use the repo development fallback, and must not use
+`apps/desktop/.runtime-artifacts/nyx-runtime`. A missing packaged runtime is a
+release failure, not a provider configuration problem.
+
 ## Generated Runtime Artifact
 
 `apps/desktop/.runtime-artifacts/nyx-runtime` is reserved for a local generated
