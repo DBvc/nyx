@@ -131,7 +131,7 @@ packages the production macOS arm64 app, verifies Developer ID signing,
 notarization, stapling, Gatekeeper assessment, packaged runtime payload, update
 metadata, and uploads release artifacts to the GitHub Release for the tag.
 
-Required GitHub configuration:
+Required GitHub configuration for a credentialed production run:
 
 - `MACOS_CERTIFICATE_P12_BASE64` secret: base64-encoded Developer ID
   Application `.p12` certificate.
@@ -145,6 +145,28 @@ Required GitHub configuration:
 If any required signing, notarization, or update-feed input is unavailable, the
 workflow must fail during preflight. It must not publish or upload unsigned
 production artifacts.
+
+## Follow-up: Credentialed Production Release
+
+The repository currently owns the fail-closed packaging, signing, verification,
+and workflow source contract. A later release-operations task must provision the
+real production release environment before Nyx is treated as actually released:
+
+- Apple Developer Program access and the production Developer ID Application
+  certificate for `com.dbvc.nyx`.
+- App Store Connect notarization credentials, or an equivalent supported
+  notary credential path.
+- Any Apple app/bundle registration required by the chosen production release
+  process.
+- The production update feed location for `com.dbvc.nyx` / `latest`.
+- A tagged GitHub Release environment allowed to upload the macOS artifacts.
+
+That follow-up task must run `mise run desktop:package:mac:prod`,
+`mise run desktop:release:mac:verify`, and the tag-triggered GitHub release
+workflow with the real credentials. It must prove Developer ID signing,
+notarization, stapling, Gatekeeper assessment, packaged runtime verification,
+update metadata, and artifact upload. Until then, production release remains
+blocked by design.
 
 ## Out Of Scope
 
