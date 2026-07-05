@@ -179,6 +179,8 @@ if [ -n "$UPDATE_FEED_URL" ]; then
 else
   [ ! -f "$APP_UPDATE_CONFIG" ] ||
     fail "app-update.yml is present without $UPDATE_FEED_ENV; remove stale update feed config"
+  [ ! -f "$UPDATE_METADATA_PATH" ] ||
+    fail "$UPDATE_CHANNEL-mac.yml is present without $UPDATE_FEED_ENV; clean package output before building"
 fi
 
 pnpm --dir "$ROOT/apps/desktop" exec vitest run electron/main/runtime/path.test.ts

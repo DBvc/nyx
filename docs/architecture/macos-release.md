@@ -82,6 +82,9 @@ apps/desktop/.package-resources/runtime/nyx-runtime
 
 Generated release artifacts such as `.dmg`, `.zip`, `latest-mac.yml`, blockmaps,
 and notarized app bundles are release outputs. They must not be committed.
+Package commands must clean the current flavor output directory before invoking
+`electron-builder` so stale artifacts from a previous feed or signing mode
+cannot be mistaken for the current package result.
 Package verification must check the generated app bundle and the final
 distribution artifacts. The DMG must pass local image verification, and the ZIP
 artifact must pass full archive verification and contain the matching `.app`
