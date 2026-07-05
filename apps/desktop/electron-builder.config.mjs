@@ -10,20 +10,48 @@ function readPackageFlavor() {
 
 const packageFlavor = readPackageFlavor()
 const isProduction = packageFlavor === 'prod'
+function readFeedUrl(envVar) {
+  return process.env[envVar]?.trim().replace(/\/+$/, '') || null
+}
+
+function assertFeedUrlIsolation() {
+  const devFeedUrl = readFeedUrl('NYX_DEV_UPDATE_FEED_URL')
+  const prodFeedUrl = readFeedUrl('NYX_PROD_UPDATE_FEED_URL')
+
+  if (devFeedUrl && prodFeedUrl && devFeedUrl === prodFeedUrl) {
+    throw new Error('NYX_DEV_UPDATE_FEED_URL and NYX_PROD_UPDATE_FEED_URL must not point at the same update feed')
+  }
+}
+
 const identities = {
   dev: {
     appId: 'dev.dbvc.nyx',
     productName: 'Nyx Dev',
     artifactPrefix: 'nyx-dev',
+    updateChannel: 'dev',
+    updateFeedEnv: 'NYX_DEV_UPDATE_FEED_URL',
   },
   prod: {
     appId: 'com.dbvc.nyx',
     productName: 'Nyx',
     artifactPrefix: 'nyx',
+    updateChannel: 'latest',
+    updateFeedEnv: 'NYX_PROD_UPDATE_FEED_URL',
   },
 }
 const identity = identities[packageFlavor]
 const artifactName = `${identity.artifactPrefix}-\${version}-mac-arm64.\${ext}`
+assertFeedUrlIsolation()
+const updateFeedUrl = readFeedUrl(identity.updateFeedEnv)
+const publishConfig = updateFeedUrl
+  ? [
+      {
+        provider: 'generic',
+        url: updateFeedUrl,
+        channel: identity.updateChannel,
+      },
+    ]
+  : null
 const macSigningConfig = isProduction
   ? {
       ...(process.env.CSC_NAME ? { identity: process.env.CSC_NAME } : {}),
@@ -56,6 +84,9 @@ export default {
   ],
   mac: {
     category: 'public.app-category.developer-tools',
+    detectUpdateChannel: false,
+    generateUpdatesFilesForAllChannels: false,
+    publish: publishConfig,
     ...macSigningConfig,
     target: [
       {
@@ -68,5 +99,5 @@ export default {
       },
     ],
   },
-  publish: null,
+  publish: publishConfig,
 }

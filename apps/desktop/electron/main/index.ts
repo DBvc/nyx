@@ -8,6 +8,7 @@ import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
+import { configureMainAutoUpdate } from './update/service'
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 const rendererDistPath = join(moduleDir, '../renderer')
@@ -84,9 +85,18 @@ function createMainWindow() {
   return window
 }
 
+function configureAutoUpdate() {
+  return configureMainAutoUpdate({
+    appName: app.getName(),
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  })
+}
+
 app.whenReady().then(() => {
   registerIpcHandlers()
   createMainWindow()
+  configureAutoUpdate()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

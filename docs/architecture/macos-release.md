@@ -102,6 +102,12 @@ environment names only; credential values must not be committed.
 Automatic update support must be main-process owned and package-aware. It must
 not add renderer update UI in the first release slice. Development and
 production update feeds must remain isolated by identity and channel.
+`NYX_DEV_UPDATE_FEED_URL` configures the `dev.dbvc.nyx` / `dev` feed, and
+`NYX_PROD_UPDATE_FEED_URL` configures the `com.dbvc.nyx` / `latest` feed. These
+URLs are public release locations, not secrets, and they must not point at the
+same base URL. If a packaged app has neither a generated `app-update.yml` nor
+the matching feed URL environment variable, main-process auto update stays
+disabled.
 
 ## Out Of Scope
 
