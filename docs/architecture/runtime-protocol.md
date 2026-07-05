@@ -6,7 +6,10 @@ This document describes the boundary between Electron main and the OCaml runtime
 
 ## Current Phase
 
-Electron main now has an explicit, main-only runtime health boundary.
+Electron main now has two explicit, main-only runtime boundaries:
+
+- runtime health verification
+- opt-in runtime-backed chat state
 
 The desktop app can resolve a `nyx-runtime` executable and, when explicitly
 called from Electron main code, verify the local protocol scaffold with a
@@ -21,8 +24,15 @@ This boundary is intentionally narrow:
   for development and tests.
 - Missing runtime binaries are reported as structured unavailable results.
 
-This boundary is not connected to app startup, BrowserWindow lifecycle, the
-chat session manager, provider calls, preload, renderer, or UI.
+The default desktop path is still closed: without the explicit
+`NYX_RUNTIME_CHAT_STATE=1` opt-in, Electron main must not resolve or spawn the
+runtime for chat, and the existing provider/chat flow remains the product path.
+With the opt-in enabled, only Electron main's `ChatSessionManager` may use the
+runtime-backed chat state adapter.
+
+This runtime boundary must not resolve, spawn, ping, or protocol-check the
+runtime during app startup or BrowserWindow lifecycle. It also does not move
+provider calls, preload, renderer, or UI into the runtime.
 
 The local repo fallback is not a packaged app distribution contract.
 
@@ -53,8 +63,71 @@ Current local protocol scope:
 - Electron main protocol session verification scaffold
 
 The runtime-side scaffold lives under `runtime/ocaml`. The only desktop
-runtime work in this phase is explicit, opt-in verification. It is not part of
-app startup, renderer IPC, or the product chat path.
+runtime work in this artifact path is explicit verification. It is not part of
+app startup, renderer IPC, default chat, or packaged distribution.
+
+## Runtime-Backed Chat State Opt-In
+
+`NYX_RUNTIME_CHAT_STATE=1` enables the first real main-only runtime-backed chat
+state path. It is an Electron main opt-in: `ChatSessionManager` uses a
+main-owned runtime chat state client to send the existing
+`chat_reducer_action` protocol messages to `nyx-runtime protocol` and validate
+matching `chat_reducer_state` responses.
+
+The opt-in path covers the current chat turn lifecycle inside Electron main:
+new user message, retry failed response, assistant start, streaming delta,
+complete, cancel, fail, and reset/clear. The runtime state is an internal
+semantic gate for Electron main only. It is not renderer state and is not a
+new shared IPC or preload contract.
+
+The default path remains closed. When `NYX_RUNTIME_CHAT_STATE` is unset,
+desktop chat must not resolve or spawn the runtime, and the existing v1 min
+chat behavior remains owned by Electron main and the renderer's temporary
+in-memory UI state.
+
+When `NYX_RUNTIME_CHAT_STATE=1` is set, runtime setup, protocol request,
+response shape, and reducer invariant failures are authoritative for that turn.
+Electron main must fail the turn as a non-retryable chat error and discard the
+runtime chat state client when one exists. It must not silently fall back to the
+no-runtime default path.
+
+Ownership rules:
+
+- Electron main owns provider configuration, provider credentials, environment
+  variable reads, provider calls, abort/cancel handles, runtime child process
+  lifecycle, and OS side effects.
+- OCaml runtime owns only the typed chat reducer semantics exposed through the
+  existing local protocol. It does not own provider integration, environment
+  access, preload, renderer, or UI.
+- preload and renderer do not read runtime state, provider secrets, provider
+  configuration, or environment variables.
+- renderer never talks to the runtime directly.
+
+This is not runtime provider integration. The runtime must not call model
+providers, read provider env, hold provider tokens, choose models, or shape the
+provider request body.
+
+This is also not a renderer/preload API, not packaged runtime distribution, and
+not an agent, tool, plugin, artifact, history, settings, model picker,
+markdown, multimodal, or cloud-sync capability.
+
+The real-runtime verification entrypoint is:
+
+- `mise run runtime:chat-state:check`
+
+That task prepares the generated runtime artifact, sets an explicit
+`NYX_RUNTIME_PATH`, enables `NYX_RUNTIME_CHAT_STATE=1`, enables the dedicated
+integration test gate, and runs the runtime-backed chat state integration test
+with a mocked provider stream. Normal `mise run desktop:test` keeps this
+integration test skipped.
+
+After this issue, follow-up work must choose one of three paths:
+
+- make the runtime-backed chat state path default-on
+- keep it opt-in only while listing concrete blockers
+- remove the runtime-backed chat state path
+
+Do not add more pure shadow-only preparation tasks for this path.
 
 ## Runtime Protocol Session Helper
 
@@ -79,13 +152,14 @@ Allowed consumers in this phase:
 - Electron main unit tests for the helper.
 - Explicit integration checks that provide a runtime executable with
   `NYX_RUNTIME_PATH`.
+- The main-owned runtime chat state client, only when
+  `NYX_RUNTIME_CHAT_STATE=1` is set.
 
 Disallowed consumers in this phase:
 
 - app startup
 - BrowserWindow lifecycle
-- `ChatSessionManager`
-- provider streaming
+- provider client or provider adapter code
 - preload
 - renderer
 - UI
@@ -106,18 +180,18 @@ and outside ordinary desktop test setup.
 
 ## Chat Reducer Protocol Proof
 
-`runtime-chat-reducer-protocol-proof` is a verification-only slice. Its purpose
-is to prove that Electron main-side test code can drive the existing OCaml chat
-reducer session scaffold through `nyx-runtime protocol` when the runtime binary
-is provided explicitly.
+`runtime-chat-reducer-protocol-proof` was a verification-only slice. Its purpose
+was to prove that Electron main-side test code could drive the existing OCaml
+chat reducer session scaffold through `nyx-runtime protocol` when the runtime
+binary was provided explicitly.
 
-This proof may use the generated runtime artifact only through an explicit
+This proof used the generated runtime artifact only through an explicit
 `NYX_RUNTIME_PATH` override. The artifact path must remain outside the default
 runtime resolver candidate list and must not become a packaged app distribution
 contract.
 
-The proof is intentionally not a shadow runtime, not chat core integration, and
-not product integration. It must not connect the runtime to:
+The proof was intentionally not a shadow runtime, not chat core integration, and
+not product integration. That proof did not connect the runtime to:
 
 - app startup
 - BrowserWindow lifecycle
@@ -128,20 +202,16 @@ not product integration. It must not connect the runtime to:
 - UI
 - shared chat IPC
 
-It must not introduce a production runtime client, runtime manager, exported
+It did not introduce a production runtime client, runtime manager, exported
 session helper, or reusable chat-core abstraction. Any process helper used for
-this proof should stay test-local or otherwise test-only.
+that proof stayed test-local or otherwise test-only.
 
-The proof may assert fixed lifecycle fixtures for the current OCaml reducer
-semantics, such as complete, cancel, fail, clear, and retry of a failed turn.
-Those fixtures are evidence for the current protocol scaffold only. They do not
-make OCaml authoritative for desktop chat state, do not decide ownership of
-desktop `userMessageId` values, and do not change provider request or streaming
-semantics.
-
-If a later step needs to change `ChatSessionManager`, shared/preload/renderer
-IPC, provider streaming, `userMessageId` ownership, or runtime protocol
-semantics, that is outside this proof and requires a separate plan.
+The proof asserted fixed lifecycle fixtures for the OCaml reducer semantics,
+such as complete, cancel, fail, clear, and retry of a failed turn. Those
+fixtures were evidence for the protocol scaffold only. The later
+runtime-backed chat state opt-in path is the separate main-only integration
+that uses this evidence without moving provider ownership, renderer state,
+preload IPC, or UI into the runtime.
 
 ## Desktop Health Boundary
 
@@ -195,20 +265,20 @@ Electron main's health boundary currently exercises only this ping/pong
 scaffold. It does not make OCaml authoritative for chat state or provider
 requests.
 
-## Shadow Equivalence Boundary
+## Shadow-Only Boundary Is Closed
 
-A future shadow-equivalence slice may compare Electron main's current chat
-state transitions with OCaml runtime outputs, but that is a separate issue. It
-must first define the product-visible projection to compare, the message and
-turn identifiers that own identity, and the evidence that proves equivalence
-without changing the live product path.
+For the runtime-backed chat state path, pure shadow-only preparation is no
+longer the next step. The main-only opt-in integration exists behind
+`NYX_RUNTIME_CHAT_STATE=1`.
 
-Until that separate plan exists, this protocol session helper remains
-verification-only. It must not be connected to `ChatSessionManager`, provider
-streaming, shared/preload/renderer IPC, app startup, BrowserWindow lifecycle, or
-UI. It also must not change current provider credential ownership: Electron
-main continues to own provider configuration and secrets, and the renderer
-continues not to read them.
+Future shadow or comparison work is allowed only when it is tied to a concrete
+blocker for default-on and states the decision it will unblock. It must not be
+used as another generic prerequisite before deciding whether to make the path
+default-on, keep it opt-in with named blockers, or remove it.
+
+Any future comparison still must not change provider credential ownership:
+Electron main continues to own provider configuration and secrets, and the
+renderer continues not to read them.
 
 ## Later Protocol Concepts
 
