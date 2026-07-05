@@ -9,6 +9,7 @@ fail() {
   exit 1
 }
 
+"$ROOT/scripts/check-mac-signing-env.sh"
 "$ROOT/scripts/check-mac-package.sh" prod
 
 command -v codesign >/dev/null || fail 'codesign is required for release verification'
