@@ -117,6 +117,35 @@ same base URL. If a packaged app has neither a generated `app-update.yml` nor
 the matching feed URL environment variable, main-process auto update stays
 disabled.
 
+## GitHub Release Workflow
+
+The macOS release workflow is tag-triggered for `v*` tags and must run on a
+standard Apple Silicon macOS runner, currently `macos-14`. This is required
+because the packaged `nyx-runtime` binary must be arm64-only; an Intel macOS
+runner must fail before packaging instead of producing a mismatched Electron
+shell and runtime.
+
+The workflow installs JavaScript and OCaml dependencies, verifies the desktop
+static checks, verifies runtime-backed chat state, builds the desktop app,
+packages the production macOS arm64 app, verifies Developer ID signing,
+notarization, stapling, Gatekeeper assessment, packaged runtime payload, update
+metadata, and uploads release artifacts to the GitHub Release for the tag.
+
+Required GitHub configuration:
+
+- `MACOS_CERTIFICATE_P12_BASE64` secret: base64-encoded Developer ID
+  Application `.p12` certificate.
+- `MACOS_CERTIFICATE_PASSWORD` secret: password for the `.p12` certificate.
+- `APPLE_API_KEY` secret: App Store Connect API key `.p8` file content.
+- `APPLE_API_KEY_ID` secret: key id for `APPLE_API_KEY`.
+- `APPLE_API_ISSUER` secret: issuer id for `APPLE_API_KEY`.
+- `NYX_PROD_UPDATE_FEED_URL` repository variable or secret: public production
+  update feed base URL for `com.dbvc.nyx` / `latest`.
+
+If any required signing, notarization, or update-feed input is unavailable, the
+workflow must fail during preflight. It must not publish or upload unsigned
+production artifacts.
+
 ## Out Of Scope
 
 This release boundary does not add or change:
