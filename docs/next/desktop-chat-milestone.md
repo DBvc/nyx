@@ -14,6 +14,7 @@ Implemented:
 - real provider traffic from Electron main
 - streaming assistant responses
 - temporary in-memory conversation state
+- default Electron-main-only runtime-backed chat state
 - `Stop`
 - `Retry`
 - `New chat`
@@ -71,6 +72,13 @@ Electron main provider/chat boundary:
 - [apps/desktop/electron/main/chat/session.ts](../../apps/desktop/electron/main/chat/session.ts)
 - [apps/desktop/electron/main/chat/errors.ts](../../apps/desktop/electron/main/chat/errors.ts)
 
+Electron main runtime boundary:
+
+- [apps/desktop/electron/main/runtime/chat-state-client.ts](../../apps/desktop/electron/main/runtime/chat-state-client.ts)
+- [apps/desktop/electron/main/runtime/protocol-session.ts](../../apps/desktop/electron/main/runtime/protocol-session.ts)
+- [runtime/ocaml/lib/chat.ml](../../runtime/ocaml/lib/chat.ml)
+- [runtime/ocaml/lib/runtime_protocol.ml](../../runtime/ocaml/lib/runtime_protocol.ml)
+
 Renderer chat UI:
 
 - [apps/desktop/src/ui/chat/use-chat-session.ts](../../apps/desktop/src/ui/chat/use-chat-session.ts)
@@ -84,6 +92,7 @@ Tests:
 - [apps/desktop/src/ui/chat/chat-presenters.test.ts](../../apps/desktop/src/ui/chat/chat-presenters.test.ts)
 - [apps/desktop/electron/main/chat/env.test.ts](../../apps/desktop/electron/main/chat/env.test.ts)
 - [apps/desktop/electron/main/chat/client.test.ts](../../apps/desktop/electron/main/chat/client.test.ts)
+- [apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts](../../apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts)
 
 ## Security Boundary
 
@@ -98,8 +107,18 @@ Tests:
 
 ## Runtime Boundary
 
-The OCaml runtime under [runtime/ocaml](../../runtime/ocaml) remains independent.
-It is not imported, spawned, or called by the Electron desktop app.
+The OCaml runtime under [runtime/ocaml](../../runtime/ocaml) remains independent,
+but Electron main now uses its typed chat reducer through the default
+runtime-backed chat state path. `NYX_RUNTIME_CHAT_STATE=0` exists only as a
+diagnostic disable.
+
+This is still a narrow main-only boundary:
+
+- Electron main owns provider config, credentials, provider calls, cancellation,
+  and runtime child-process lifecycle.
+- OCaml owns typed chat reducer semantics only.
+- Renderer and preload do not spawn, import, or talk to the runtime.
+- The runtime does not call providers or read provider environment variables.
 
 Current runtime boundary docs:
 

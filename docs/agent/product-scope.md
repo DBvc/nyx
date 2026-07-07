@@ -8,8 +8,8 @@ This phase is intentionally narrow. It is not trying to be a multi-agent product
 
 ## Source of Truth
 
-- Primary source: [docs/v1-min-chat-implementation-plan.md](/Users/sy/Code/github/nyx/docs/v1-min-chat-implementation-plan.md)
-- Background only: [README.md](/Users/sy/Code/github/nyx/README.md), [PRD.md](/Users/sy/Code/github/nyx/PRD.md), [docs/v0-technical-baseline.md](/Users/sy/Code/github/nyx/docs/v0-technical-baseline.md)
+- Primary source: [docs/v1-min-chat-implementation-plan.md](../v1-min-chat-implementation-plan.md)
+- Background only: [README.md](../../README.md), [PRD.md](../../PRD.md), [docs/v0-technical-baseline.md](../v0-technical-baseline.md)
 
 If those documents disagree, follow the min-chat implementation plan.
 
@@ -25,6 +25,7 @@ If those documents disagree, follow the min-chat implementation plan.
 - `New chat` / clear current thread
 - Environment-based provider configuration
 - Secret handling only in Electron `main`
+- Electron-main-only runtime-backed chat state
 
 ## Explicitly Out of Scope
 
@@ -34,7 +35,8 @@ If those documents disagree, follow the min-chat implementation plan.
 - Local persistence or restart recovery
 - Markdown rendering or code highlighting
 - Skills, agents, artifacts, tools, memory
-- Team workflows, sync, cloud features, packaging polish
+- Team workflows, sync, cloud features
+- Windows, Linux, MAS, x64, or universal packaging targets
 
 ## Scope Discipline
 

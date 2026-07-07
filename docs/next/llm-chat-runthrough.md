@@ -5,8 +5,12 @@ Date: 2026-06-27
 ## Scope
 
 This runthrough verifies the current Electron desktop `v1 min chat` path with an
-OpenAI-compatible provider. The OCaml runtime is still not connected to the
-desktop chat path.
+OpenAI-compatible provider.
+
+At the time of this 2026-06-27 provider runthrough, the OCaml runtime had not
+yet been connected to the desktop chat path. As of 2026-07-07, Electron main uses
+runtime-backed chat state by default. This runthrough remains provider/UI
+evidence; runtime-backed chat state is covered by `mise run runtime:chat-state:check`.
 
 ## Provider
 
