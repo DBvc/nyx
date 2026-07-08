@@ -19,7 +19,9 @@ function assertFeedUrlIsolation() {
   const prodFeedUrl = readFeedUrl('NYX_PROD_UPDATE_FEED_URL')
 
   if (devFeedUrl && prodFeedUrl && devFeedUrl === prodFeedUrl) {
-    throw new Error('NYX_DEV_UPDATE_FEED_URL and NYX_PROD_UPDATE_FEED_URL must not point at the same update feed')
+    throw new Error(
+      'NYX_DEV_UPDATE_FEED_URL and NYX_PROD_UPDATE_FEED_URL must not point at the same update feed',
+    )
   }
 }
 

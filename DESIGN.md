@@ -2,9 +2,10 @@
 
 ## 1. Product Reality
 
-Nyx is a minimal desktop AI chat client.
+Nyx is a minimal desktop AI chat client by default.
 
-For this phase, the interface should support a focused desktop chat loop with a familiar app shell:
+For ordinary work, the interface should support a focused desktop chat loop
+with a familiar app shell:
 
 - one app window
 - one quiet left sidebar for orientation and primary actions
@@ -13,7 +14,8 @@ For this phase, the interface should support a focused desktop chat loop with a 
 - real streaming feedback
 - stop, retry, and new-chat controls
 
-Nyx is not a general AI workbench. Do not introduce visual patterns that imply:
+Nyx is not a general AI workbench by default. Do not introduce visual patterns
+that imply:
 
 - settings panels
 - tools or skills surfaces
@@ -22,6 +24,13 @@ Nyx is not a general AI workbench. Do not introduce visual patterns that imply:
 - fake persistent history that is not backed by real data
 
 The main chat surface is still the product. The sidebar supports the chat loop. It must not compete with it.
+
+When the user explicitly asks to execute the gated first agent-workbench
+workstream, the product may add Settings > Connections and thread-first copy.
+That workstream still must not imply fake tools, fake artifacts, fake history,
+fake file context, approval cards, a multi-agent dashboard, or a permanent
+third workspace region. A future details pane is not part of the first
+workstream; if introduced later, it must be contextual and backed by real data.
 
 ## 2. Visual Theme and Atmosphere
 
@@ -87,7 +96,8 @@ Plain-text chat readability matters more than personality flourishes.
 
 ## 5. Layout Principles
 
-The layout should remain single-page with a standard desktop chat application shape.
+The default layout should remain single-page with a standard desktop chat
+application shape.
 
 Core structure:
 
@@ -105,9 +115,11 @@ Layout behavior:
 - the main pane should carry the visual center of gravity
 - keep the message column readable, never excessively wide
 - do not split the main pane into multiple major panels
-- do not add a third workspace region
+- do not add a third workspace region in the default min-chat surface
 
-The allowed structure is: sidebar plus main chat pane. No more than that.
+The allowed default structure is: sidebar plus main chat pane. No more than
+that. The explicit first agent-workbench workstream may add a Settings route for
+Connections, but it must not turn the main surface into a dashboard.
 
 ## 6. Component Styling
 
@@ -222,12 +234,14 @@ Do not:
 When editing Nyx UI:
 
 - follow `AGENTS.md` and the current min-chat implementation plan
-- preserve the single-page, plain-text chat scope
+- preserve the single-page, plain-text chat scope unless implementing a named
+  agent-workbench slice
 - use a lightweight sidebar plus main chat pane layout
 - keep the app ordinary and dependable, not flashy
 - use the full window, not a centered child shell
 - reuse existing theme tokens before adding new ones
-- if a visual idea suggests a broader product scope, do not implement it
+- if a visual idea suggests a broader product scope than the current task
+  allows, do not implement it
 
 Good prompts for UI work in this repository:
 

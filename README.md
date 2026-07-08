@@ -2,7 +2,9 @@
 
 Nyx is a personal desktop AI chat client.
 
-The repository is now organized as a workspace, but the current product scope remains intentionally narrow: `v1 min chat`. The goal of this phase is still a minimal, real, streaming desktop chat loop, not a general AI workbench.
+The repository is now organized as a workspace, but the default product scope
+remains intentionally narrow: `v1 min chat`. The completed baseline is a
+minimal, real, streaming desktop chat loop, not a general AI workbench.
 
 ## Workspace
 
@@ -73,6 +75,35 @@ Out of scope for this phase:
 - artifacts
 - cloud sync
 - multimodal features
+
+## Next Product Workstream
+
+An explicit first agent-workbench workstream is tracked in
+[docs/next/agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md).
+It applies only when a user asks to execute that workstream or one of its named
+slices. Ordinary work still follows the `v1 min chat` source of truth above.
+
+The first agent-workbench workstream allows only the foundation needed for a
+thread-first shell and local provider setup:
+
+- Connections settings for OpenAI-compatible provider profiles
+- encrypted local API key storage owned by Electron main
+- default provider/model target resolution
+- `.env` provider configuration as a development fallback
+- redacted connection status
+- real provider test and model refresh
+- thread-first UI copy and renderer-local thread item adapter
+
+Settings may handle non-secret provider profile metadata through typed
+Connections APIs. Provider tokens and stored secrets remain main-owned, and the
+main chat surface stays redacted.
+
+It still does not implement tools, MCP, terminal execution, browser automation,
+permission approval cards, artifacts, persistent thread history, projects/file
+context, thread IPC, or OCaml thread runtime wiring.
+
+The product direction for that gated workstream is recorded in
+[agent-workbench-direction.md](./docs/next/agent-workbench-direction.md).
 
 ## Boundaries
 
@@ -217,8 +248,12 @@ mise run build
 ## Development Rules
 
 - Keep the product inside `v1 min chat` unless a task explicitly changes scope.
+- For explicit agent-workbench workstream tasks, follow
+  [agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md)
+  for that slice only.
 - Do not implement new or broader Electron <-> OCaml communication as part of structural docs or setup work.
 - Renderer code must not read environment variables or provider credentials.
 - Provider calls and cancellation handles belong in Electron main.
 - Runtime code should stay pure and tiny until a concrete runtime behavior requires more.
-- Do not add tools, agents, plugin UI, persistence, or settings UI during this phase.
+- Do not add tools, agents, plugin UI, persistence, or settings UI outside an
+  explicit agent-workbench slice that allows it.

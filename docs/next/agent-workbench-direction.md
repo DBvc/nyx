@@ -1,0 +1,134 @@
+# Nyx Thread-First Agent Workbench Direction
+
+Status: Proposed next workstream after `v1 min chat`.
+
+This document defines the direction for explicitly requested
+agent-workbench work. It does not replace the default repository scope for
+ordinary tasks. Unless a user explicitly asks to execute the agent-workbench
+workstream or one of its task slices, follow
+[v1-min-chat-implementation-plan.md](../v1-min-chat-implementation-plan.md).
+
+## Decision
+
+Nyx will evolve from the completed `v1 min chat` baseline toward a local-first,
+thread-first personal Agent workbench.
+
+The user-facing model is:
+
+```text
+One thread.
+One thing I want done.
+One input box.
+A visible execution flow when real execution exists.
+Results I can use.
+```
+
+The user should not choose an Ask/Work mode, a specialist Agent, or
+planner/executor/reviewer model routing in the primary UI.
+
+## First Workstream
+
+The first agent-workbench workstream is deliberately narrow. It prepares the
+product shell and provider configuration layer without pretending that real
+tools or agent execution exist.
+
+In scope for this first workstream:
+
+- scope-gated documentation for the agent-workbench path
+- Connections settings for OpenAI-compatible provider profiles
+- encrypted local API key storage owned by Electron main
+- default provider/model target resolution
+- `.env` provider configuration as a development fallback
+- redacted connection status in the main surface
+- real provider test and model refresh utilities
+- thread-first UI copy
+- renderer-local thread item adapter over the existing chat state
+
+Out of scope for this first workstream:
+
+- Ask/Work toggle
+- multi-Agent picker
+- planner/executor/reviewer routing UI
+- tools
+- MCP
+- terminal execution
+- browser automation
+- permission approval cards
+- artifacts
+- persistent thread history
+- projects or file context
+- details drawer
+- thread IPC replacing chat IPC
+- OCaml thread runtime domain or Electron wiring
+
+## Product Rules
+
+### Single Primary Thread
+
+The main surface remains one input box and one current thread. Simple questions
+and task requests both happen in the same thread. Later runtime states may show
+activity, approvals, or results only when backed by real implementation.
+
+### No Fake Capability Panels
+
+Do not show tools, artifacts, history, file context, projects, commands,
+approvals, or activity unless the data is real and the current slice explicitly
+implements it.
+
+### Connections Are Capability Setup
+
+Settings and model configuration are allowed only for the explicit
+agent-workbench workstream. They are capability setup, not a model-routing
+dashboard.
+
+Allowed first capability:
+
+```text
+OpenAI-compatible provider profiles
+Manual model ids
+Default target
+Connection test
+Model refresh
+```
+
+Still not allowed in the main surface:
+
+```text
+Planner model
+Executor model
+Reviewer model
+Model routing
+Agent profile
+Capability graph
+```
+
+## Ownership Rules
+
+Renderer may hold a newly typed API key only while the user edits a Settings
+form and submits it to Electron main. Renderer must never retrieve stored
+secrets, read environment variables, call model providers directly, spawn child
+processes, talk to OCaml, or perform OS side effects.
+
+Electron main owns provider profiles, model profiles, encrypted secrets,
+provider target resolution, provider calls, cancellation, settings file IO, and
+future OS-facing side effects.
+
+OCaml remains a pure runtime semantics boundary. It must not read provider
+configuration, hold provider credentials, call providers, access files, run
+commands, own UI, or talk to renderer/preload.
+
+## Success Criteria
+
+The first workstream is successful when:
+
+- users can configure an OpenAI-compatible provider in Settings
+- saved API keys are encrypted locally and never returned to renderer
+- users can set a default provider/model target
+- existing `.env` provider configuration still works when no persisted default
+  exists
+- the main surface can stream a response through the effective connection
+- main UI language is thread-first
+- existing stop, retry, reset/new thread, streaming, and runtime-backed chat
+  state behavior remain intact
+- no fake tools, fake artifacts, fake history, fake activity, or fake agent
+  execution is shown

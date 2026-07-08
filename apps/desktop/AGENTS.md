@@ -2,7 +2,12 @@
 
 This directory contains the Nyx Electron desktop app.
 
-The desktop app is currently the only user-facing product surface. It remains scoped to `v1 min chat`.
+The desktop app is currently the only user-facing product surface. Its default
+scope remains `v1 min chat`.
+
+Connections settings and thread-first UI work are allowed only when the user
+explicitly asks to execute the gated agent-workbench workstream or a named slice
+from `../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
 
@@ -29,7 +34,11 @@ This subproject owns:
 ## Hard Rules
 
 - Renderer must not read environment variables.
-- Renderer must not receive provider tokens, base URLs, or raw provider configs.
+- Renderer must not receive provider tokens, stored secrets, or raw provider
+  configs.
+- Renderer must not receive full provider base URLs outside a typed Connections
+  Settings API from an explicit agent-workbench slice. Main chat and status
+  surfaces may receive only redacted host/model summaries.
 - Renderer must not call model providers directly.
 - Renderer must not spawn child processes.
 - Preload must expose a narrow, typed API only.
@@ -40,6 +49,10 @@ This subproject owns:
 - The runtime-backed chat state path is default-on inside Electron main; `NYX_RUNTIME_CHAT_STATE=0` is only a diagnostic disable.
 - Do not expand runtime use into renderer, preload, provider credentials, provider calls, or packaged distribution unless explicitly requested.
 - Do not add product features outside `v1 min chat` unless explicitly requested.
+- For explicit agent-workbench slices, keep the slice narrow and follow
+  `../../docs/next/agent-workbench-task-slices.md`. Do not treat that workstream
+  as blanket permission for tools, agents, artifacts, history, browser
+  automation, terminal execution, or broader runtime integration.
 
 ## Current Scope
 
@@ -63,6 +76,25 @@ Not allowed in this phase:
 - agent UI
 - plugin UI
 - artifact UI
+
+Explicit first agent-workbench workstream additions:
+
+- Connections settings for OpenAI-compatible provider profiles
+- encrypted local API key storage owned by Electron main
+- default provider/model target resolution with `.env` fallback
+- redacted connection status
+- real provider test and model refresh
+- thread-first copy and renderer-local thread item adapter
+
+Still not allowed in that first workstream:
+
+- Ask/Work toggle
+- multi-Agent picker
+- tools, MCP, terminal execution, or browser automation
+- persistent thread history
+- fake artifacts, fake file context, fake activity, or approval cards
+- thread IPC
+- OCaml thread runtime domain or Electron wiring
 
 ## Contract Rules
 

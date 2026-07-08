@@ -2,7 +2,15 @@
 
 Nyx is a workspace for a personal AI client and a planned typed runtime core.
 
-Current product scope is still `v1 min chat`. Do not expand the product into a general AI workbench during structural or runtime migration work.
+Current default product scope is still `v1 min chat`. Do not expand the
+product into a general AI workbench during structural or runtime migration
+work.
+
+There is one explicit exception: when the user asks to execute the
+agent-workbench workstream or a named slice from
+`docs/next/agent-workbench-task-slices.md`, follow that gated workstream for the
+requested slice only. Do not use the agent-workbench documents as permission to
+broaden unrelated tasks.
 
 ## Project Layout
 
@@ -10,16 +18,30 @@ Current product scope is still `v1 min chat`. Do not expand the product into a g
 - `runtime/ocaml`: OCaml runtime core skeleton. Electron main uses a default-on runtime-backed chat state path while provider integration and UI remain in the desktop app.
 - `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
+- `docs/next/agent-workbench-task-slices.md`: explicit next workstream gate for
+  thread-first Agent Workbench foundation tasks.
 
 ## Source of Truth
 
-When product scope conflicts appear, follow this order:
+For ordinary work, when product scope conflicts appear, follow this order:
 
 1. `docs/v1-min-chat-implementation-plan.md`
 2. `docs/architecture/*.md` when present
 3. `README.md`
 4. `PRD.md`
 5. `DESIGN.md`
+
+For explicit agent-workbench workstream tasks only, follow this order:
+
+1. `docs/next/agent-workbench-task-slices.md`
+2. `docs/next/agent-workbench-direction.md`
+3. `docs/next/provider-connections-implementation.md`
+4. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
+   existing behavior must be preserved
+
+The agent-workbench task slices in this repository supersede earlier external
+draft task ordering. Do not follow older AGW-00..13 draft ordering unless a
+current repository document reintroduces it.
 
 The current desktop product remains a minimal single-page chat client:
 
@@ -42,6 +64,29 @@ Still out of scope:
 - artifacts
 - cloud sync
 - multimodal features
+
+For the explicit first agent-workbench workstream, only the following additions
+are allowed:
+
+- Connections settings for OpenAI-compatible provider profiles
+- encrypted local API key storage owned by Electron main
+- default provider/model target resolution with `.env` fallback
+- redacted connection status
+- real provider test and model refresh
+- thread-first copy and renderer-local thread item adapter
+
+Still out of scope for that first workstream:
+
+- tools
+- MCP
+- terminal or browser automation
+- permission approval cards
+- artifacts
+- persistent thread history
+- projects or file context
+- details drawer
+- thread IPC replacing chat IPC
+- OCaml thread runtime domain or Electron wiring
 
 ## Workspace Boundary
 
