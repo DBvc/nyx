@@ -7,8 +7,9 @@ import {
   type NyxChatRequest,
 } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
+import type { ChatProviderConfigResolver } from '../connections/provider-resolver'
 import { streamChatCompletion } from './client'
-import { readChatProviderConfig } from './env'
+import { readChatProviderConfig, type ChatProviderConfig } from './env'
 import { isAbortError, toChatError } from './errors'
 import {
   createRuntimeChatStateClient as createRuntimeChatStateClientDefault,
@@ -42,6 +43,7 @@ interface ChatSessionEnv {
 interface ChatSessionManagerOptions {
   env?: ChatSessionEnv
   createRuntimeChatStateClient?: () => RuntimeChatStateClient
+  resolveProviderConfig?: ChatProviderConfigResolver
 }
 
 export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
@@ -120,18 +122,25 @@ function toNonRetryableRuntimeChatError(error: unknown): NyxChatErrorEvent['erro
   }
 }
 
+function isPromiseLike<TValue>(value: TValue | Promise<TValue>): value is Promise<TValue> {
+  return typeof (value as Promise<TValue>).then === 'function'
+}
+
 export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
   private readonly runtimeChatStateEnabled: boolean
   private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
+  private readonly resolveProviderConfig: ChatProviderConfigResolver
   private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
 
   constructor({
     env = process.env,
     createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
+    resolveProviderConfig = readChatProviderConfig,
   }: ChatSessionManagerOptions = {}) {
     this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
     this.createRuntimeChatStateClient = createRuntimeChatStateClient
+    this.resolveProviderConfig = resolveProviderConfig
   }
 
   start(sender: WebContents, request: NyxChatRequest) {
@@ -151,15 +160,6 @@ export class ChatSessionManager {
       return
     }
 
-    let config
-
-    try {
-      config = readChatProviderConfig()
-    } catch (error) {
-      this.emitError(sender, request, toChatError(error))
-      return
-    }
-
     const session: ActiveChatSession = {
       requestId: request.requestId,
       userMessageId: request.userMessageId,
@@ -172,6 +172,44 @@ export class ChatSessionManager {
 
     this.activeSession = session
 
+    let configResult
+
+    try {
+      configResult = this.resolveProviderConfig()
+    } catch (error) {
+      this.handleProviderConfigError(session, request, error)
+      return
+    }
+
+    if (isPromiseLike(configResult)) {
+      void this.startAfterAsyncProviderConfig(session, configResult, request)
+      return
+    }
+
+    this.startWithProviderConfig(session, configResult, request)
+  }
+
+  private async startAfterAsyncProviderConfig(
+    session: ActiveChatSession,
+    configResult: Promise<ChatProviderConfig>,
+    request: NyxChatRequest,
+  ) {
+    try {
+      this.startWithProviderConfig(session, await configResult, request)
+    } catch (error) {
+      this.handleProviderConfigError(session, request, error)
+    }
+  }
+
+  private startWithProviderConfig(
+    session: ActiveChatSession,
+    config: ChatProviderConfig,
+    request: NyxChatRequest,
+  ) {
+    if (this.activeSession !== session) {
+      return
+    }
+
     if (!this.runtimeChatStateEnabled) {
       this.emitStart(session)
       void this.runSession(session, config, request)
@@ -179,6 +217,19 @@ export class ChatSessionManager {
     }
 
     void this.prepareRuntimeAndRunSession(session, config, request)
+  }
+
+  private handleProviderConfigError(
+    session: ActiveChatSession,
+    request: NyxChatRequest,
+    error: unknown,
+  ) {
+    if (this.activeSession !== session) {
+      return
+    }
+
+    this.emitError(session.sender, request, toChatError(error))
+    this.activeSession = undefined
   }
 
   cancel(request: NyxChatCancellationRequest) {
@@ -214,7 +265,7 @@ export class ChatSessionManager {
 
   private async prepareRuntimeAndRunSession(
     session: ActiveChatSession,
-    config: ReturnType<typeof readChatProviderConfig>,
+    config: ChatProviderConfig,
     request: NyxChatRequest,
   ) {
     try {
@@ -373,7 +424,7 @@ export class ChatSessionManager {
 
   private async runSession(
     session: ActiveChatSession,
-    config: ReturnType<typeof readChatProviderConfig>,
+    config: ChatProviderConfig,
     request: NyxChatRequest,
   ) {
     try {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -7,6 +7,10 @@ import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/ch
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
+import { ConnectionStore } from './connections/connection-store'
+import { createConnectionsSettingsPaths } from './connections/config-file'
+import { createLazyChatProviderConfigResolver } from './connections/provider-resolver'
+import { createSafeStorageSecretCrypto, SecretStore } from './connections/secret-store'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 import { configureMainAutoUpdate } from './update/service'
 
@@ -24,8 +28,25 @@ function createMainRuntimeChatStateClient() {
   })
 }
 
+function createMainChatProviderConfigResolver() {
+  return createLazyChatProviderConfigResolver({
+    createDependencies: () => {
+      const paths = createConnectionsSettingsPaths(app.getPath('userData'))
+
+      return {
+        connectionStore: new ConnectionStore({ filePath: paths.connectionsFilePath }),
+        secretStore: new SecretStore({
+          filePath: paths.secretsFilePath,
+          crypto: createSafeStorageSecretCrypto(safeStorage),
+        }),
+      }
+    },
+  })
+}
+
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
+  resolveProviderConfig: createMainChatProviderConfigResolver(),
 })
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>

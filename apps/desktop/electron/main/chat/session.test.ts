@@ -24,6 +24,7 @@ vi.mock('./env', () => ({
   }),
 }))
 
+import { createChatBridgeError } from './errors'
 import { ChatSessionManager, validateChatRequest } from './session'
 
 const runtimeChatStateDisabledEnv = {
@@ -322,6 +323,93 @@ describe('ChatSessionManager reset', () => {
     manager.reset(otherSender)
 
     expect(signal?.aborted).toBe(false)
+  })
+})
+
+describe('ChatSessionManager provider resolver', () => {
+  beforeEach(() => {
+    streamChatCompletion.mockReset()
+  })
+
+  it('uses the injected provider config resolver for chat streaming', async () => {
+    const config = {
+      baseUrl: 'https://persisted.example.com/v1/',
+      token: 'stored-token',
+      model: 'stored-model',
+    }
+    const resolveProviderConfig = vi.fn(() => config)
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveProviderConfig,
+    })
+
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
+    })
+    expect(resolveProviderConfig).toHaveBeenCalledTimes(1)
+    expect(streamChatCompletion.mock.calls[0]?.[0]).toMatchObject({ config })
+  })
+
+  it('emits a config error without calling the provider and clears the active session', async () => {
+    const resolveProviderConfig = vi
+      .fn()
+      .mockRejectedValueOnce(
+        createChatBridgeError({
+          code: 'config_missing',
+          message: 'No usable chat provider configuration is available.',
+          retryable: false,
+        }),
+      )
+      .mockReturnValueOnce({
+        baseUrl: 'https://persisted.example.com/v1/',
+        token: 'stored-token',
+        model: 'stored-model',
+      })
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveProviderConfig,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender)).toEqual([
+        {
+          type: 'chat:error',
+          requestId: 'request-1',
+          assistantMessageId: 'assistant-1',
+          status: 'failed',
+          error: {
+            code: 'config_missing',
+            message: 'No usable chat provider configuration is available.',
+            retryable: false,
+          },
+        },
+      ])
+    })
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Recovered' })
+    manager.start(sender, {
+      ...validRequest(),
+      requestId: 'request-2',
+      assistantMessageId: 'assistant-2',
+    })
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toEqual({
+        type: 'chat:done',
+        requestId: 'request-2',
+        assistantMessageId: 'assistant-2',
+        status: 'completed',
+        finalContent: 'Recovered',
+      })
+    })
   })
 })
 
