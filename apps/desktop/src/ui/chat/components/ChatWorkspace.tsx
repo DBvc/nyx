@@ -1,13 +1,19 @@
+import { useState } from 'react'
+
+import { ConnectionsSettingsPage } from '../../settings/ConnectionsSettingsPage'
 import { threadPreview, threadTitle } from '../chat-presenters'
 import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
-import { useProviderStatus } from '../use-provider-status'
+import { useConnectionStatus } from '../use-connection-status'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
 import { ChatSidebar } from './ChatSidebar'
 import { ChatThread } from './ChatThread'
 
+type WorkspaceView = 'chat' | 'connections'
+
 export function ChatWorkspace() {
+  const [activeView, setActiveView] = useState<WorkspaceView>('chat')
   const {
     state,
     isBusy,
@@ -18,7 +24,7 @@ export function ChatWorkspace() {
     stopActiveResponse,
     startNewChat,
   } = useChatSession()
-  const providerSetup = useProviderStatus()
+  const connectionSetup = useConnectionStatus()
 
   const latestMessage = state.messages.at(-1)
   const currentThreadTitle = threadTitle(state.messages)
@@ -32,8 +38,16 @@ export function ChatWorkspace() {
     <main className='h-screen overflow-hidden bg-nyx-canvas text-nyx-ink'>
       <div className='flex h-full w-full flex-col lg:flex-row'>
         <ChatSidebar
+          activeView={activeView}
           onNewChat={() => {
             void startNewChat()
+            setActiveView('chat')
+          }}
+          onOpenChat={() => {
+            setActiveView('chat')
+          }}
+          onOpenConnectionsSettings={() => {
+            setActiveView('connections')
           }}
           preview={currentThreadPreview}
           runStatus={state.runStatus}
@@ -41,25 +55,43 @@ export function ChatWorkspace() {
         />
 
         <section className='flex min-h-0 min-w-0 flex-1 flex-col bg-nyx-canvas'>
-          <ChatHeader runStatus={state.runStatus} title={currentThreadTitle} />
-          <ChatThread
-            containerRef={containerRef}
-            messages={state.messages}
-            onRefreshProviderStatus={providerSetup.refresh}
-            onRetry={(messageId) => {
-              void retryMessage(messageId)
-            }}
-            onScroll={handleScroll}
-            providerStatus={providerSetup.status}
-          />
-          <ChatComposer
-            canSend={canSend}
-            input={state.input}
-            isBusy={isBusy}
-            onInputChange={setInput}
-            onSend={sendCurrentInput}
-            onStop={stopActiveResponse}
-          />
+          {activeView === 'chat' ? (
+            <>
+              <ChatHeader
+                connectionStatus={connectionSetup.status}
+                runStatus={state.runStatus}
+                title={currentThreadTitle}
+              />
+              <ChatThread
+                connectionStatus={connectionSetup.status}
+                containerRef={containerRef}
+                messages={state.messages}
+                onOpenConnectionsSettings={() => {
+                  setActiveView('connections')
+                }}
+                onRefreshConnectionStatus={connectionSetup.refresh}
+                onRetry={(messageId) => {
+                  void retryMessage(messageId)
+                }}
+                onScroll={handleScroll}
+              />
+              <ChatComposer
+                canSend={canSend}
+                input={state.input}
+                isBusy={isBusy}
+                onInputChange={setInput}
+                onSend={sendCurrentInput}
+                onStop={stopActiveResponse}
+              />
+            </>
+          ) : (
+            <ConnectionsSettingsPage
+              onBackToChat={() => {
+                setActiveView('chat')
+              }}
+              onConnectionsChanged={connectionSetup.refresh}
+            />
+          )}
         </section>
       </div>
     </main>

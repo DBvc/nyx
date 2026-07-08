@@ -4,15 +4,16 @@ import type { ComponentProps } from 'react'
 import type { NyxChatMessage } from '../../../../shared/chat/types'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatMessage } from './ChatMessage'
-import { ProviderSetupNotice, shouldShowProviderNotice } from './ProviderSetupNotice'
+import { ConnectionSetupNotice, shouldShowConnectionNotice } from './ConnectionSetupNotice'
 
 interface ChatThreadProps {
   messages: ReadonlyArray<NyxChatMessage>
   containerRef: RefObject<HTMLDivElement | null>
   onScroll: UIEventHandler<HTMLDivElement>
   onRetry: (messageId: string) => void
-  providerStatus: ComponentProps<typeof ProviderSetupNotice>['status']
-  onRefreshProviderStatus: () => void
+  connectionStatus: ComponentProps<typeof ConnectionSetupNotice>['status']
+  onOpenConnectionsSettings: () => void
+  onRefreshConnectionStatus: () => void
 }
 
 export function ChatThread({
@@ -20,8 +21,9 @@ export function ChatThread({
   containerRef,
   onScroll,
   onRetry,
-  providerStatus,
-  onRefreshProviderStatus,
+  connectionStatus,
+  onOpenConnectionsSettings,
+  onRefreshConnectionStatus,
 }: ChatThreadProps) {
   const hasMessages = messages.length > 0
 
@@ -38,16 +40,18 @@ export function ChatThread({
       >
         {!hasMessages ? (
           <ChatEmptyState
-            onRefreshProviderStatus={onRefreshProviderStatus}
-            providerStatus={providerStatus}
+            connectionStatus={connectionStatus}
+            onOpenConnectionsSettings={onOpenConnectionsSettings}
+            onRefreshConnectionStatus={onRefreshConnectionStatus}
           />
         ) : (
           <>
-            {shouldShowProviderNotice(providerStatus) ? (
-              <ProviderSetupNotice
+            {shouldShowConnectionNotice(connectionStatus) ? (
+              <ConnectionSetupNotice
                 compact
-                onRefresh={onRefreshProviderStatus}
-                status={providerStatus}
+                onOpenSettings={onOpenConnectionsSettings}
+                onRefresh={onRefreshConnectionStatus}
+                status={connectionStatus}
               />
             ) : null}
             {messages.map((message) => (

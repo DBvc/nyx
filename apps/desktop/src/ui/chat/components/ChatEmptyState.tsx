@@ -1,26 +1,35 @@
 import type { ComponentProps } from 'react'
 
-import { ProviderSetupNotice } from './ProviderSetupNotice'
+import { ConnectionSetupNotice } from './ConnectionSetupNotice'
 
 interface ChatEmptyStateProps {
-  providerStatus: ComponentProps<typeof ProviderSetupNotice>['status']
-  onRefreshProviderStatus: () => void
+  connectionStatus: ComponentProps<typeof ConnectionSetupNotice>['status']
+  onOpenConnectionsSettings: () => void
+  onRefreshConnectionStatus: () => void
 }
 
-export function ChatEmptyState({ providerStatus, onRefreshProviderStatus }: ChatEmptyStateProps) {
-  const isProviderReady = providerStatus.kind === 'ready' && providerStatus.value.configured
+export function ChatEmptyState({
+  connectionStatus,
+  onOpenConnectionsSettings,
+  onRefreshConnectionStatus,
+}: ChatEmptyStateProps) {
+  const isConnectionReady = connectionStatus.kind === 'ready' && connectionStatus.summary.configured
 
   return (
     <section className='space-y-5'>
       <div>
         <p className='text-[12px] font-medium text-nyx-subtle'>
-          {isProviderReady ? 'Ready' : 'Setup'}
+          {isConnectionReady ? 'Ready' : 'Setup'}
         </p>
         <h2 className='mt-2 text-[22px] font-semibold text-nyx-ink'>
-          {isProviderReady ? 'What can I help with?' : 'Finish provider setup'}
+          {isConnectionReady ? 'What can I help with?' : 'Finish connection setup'}
         </h2>
       </div>
-      <ProviderSetupNotice status={providerStatus} onRefresh={onRefreshProviderStatus} />
+      <ConnectionSetupNotice
+        onOpenSettings={onOpenConnectionsSettings}
+        onRefresh={onRefreshConnectionStatus}
+        status={connectionStatus}
+      />
     </section>
   )
 }
