@@ -7,8 +7,13 @@ import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/ch
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
+import {
+  createLazyConnectionsService,
+  type ConnectionsController,
+} from './connections/connection-service'
 import { ConnectionStore } from './connections/connection-store'
 import { createConnectionsSettingsPaths } from './connections/config-file'
+import { registerConnectionsIpcHandlers } from './connections/ipc-handlers'
 import { createLazyChatProviderConfigResolver } from './connections/provider-resolver'
 import { createSafeStorageSecretCrypto, SecretStore } from './connections/secret-store'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
@@ -44,20 +49,39 @@ function createMainChatProviderConfigResolver() {
   })
 }
 
+function createMainConnectionsService() {
+  return createLazyConnectionsService({
+    createDependencies: () => {
+      const paths = createConnectionsSettingsPaths(app.getPath('userData'))
+
+      return {
+        connectionStore: new ConnectionStore({ filePath: paths.connectionsFilePath }),
+        secretStore: new SecretStore({
+          filePath: paths.secretsFilePath,
+          crypto: createSafeStorageSecretCrypto(safeStorage),
+        }),
+      }
+    },
+  })
+}
+
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
   resolveProviderConfig: createMainChatProviderConfigResolver(),
 })
+const connectionsService = createMainConnectionsService()
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
 
 export interface RegisterIpcHandlersOptions {
   chatSessionManager?: ChatSessionController
+  connections?: ConnectionsController
   providerStatusReader?: typeof readProviderStatus
 }
 
 export function registerIpcHandlers({
   chatSessionManager: manager = chatSessionManager,
+  connections = connectionsService,
   providerStatusReader = readProviderStatus,
 }: RegisterIpcHandlersOptions = {}) {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
@@ -78,6 +102,11 @@ export function registerIpcHandlers({
   })
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())
+
+  registerConnectionsIpcHandlers({
+    ipcMain,
+    connections,
+  })
 }
 
 function createMainWindow() {

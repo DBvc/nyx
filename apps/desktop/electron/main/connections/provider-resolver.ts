@@ -5,6 +5,7 @@ import { ChatBridgeError, createChatBridgeError } from '../chat/errors'
 import type { ConnectionStore } from './connection-store'
 import type { ConnectionProviderRecord, ConnectionStoreState } from './schemas'
 import type { SecretStore } from './secret-store'
+import { normalizeConnectionBaseUrl } from './url'
 
 export interface ResolveChatProviderConfigInput {
   target?: NyxConnectionTarget
@@ -43,19 +44,11 @@ function createInvalidTargetError() {
 }
 
 function normalizeBaseUrl(rawBaseUrl: string) {
-  let url: URL
-
   try {
-    url = new URL(rawBaseUrl)
+    return normalizeConnectionBaseUrl(rawBaseUrl)
   } catch {
     throw createConfigMissingError()
   }
-
-  if (!url.pathname.endsWith('/')) {
-    url.pathname = `${url.pathname}/`
-  }
-
-  return url.toString()
 }
 
 function findTarget(

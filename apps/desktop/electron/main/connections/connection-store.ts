@@ -12,6 +12,7 @@ import {
   type ConnectionStoreState,
   parseConnectionStoreState,
 } from './schemas'
+import { normalizeConnectionBaseUrl } from './url'
 
 export type ConnectionStoreErrorCode = 'invalid_input' | 'not_found'
 
@@ -68,7 +69,7 @@ function normalizeBaseUrl(value: string) {
   const trimmed = trimRequired(value, 'baseUrl')
 
   try {
-    return new URL(trimmed).toString()
+    return normalizeConnectionBaseUrl(trimmed)
   } catch {
     throw new ConnectionStoreError('invalid_input', 'baseUrl must be a valid URL.')
   }

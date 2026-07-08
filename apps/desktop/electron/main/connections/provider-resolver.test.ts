@@ -71,6 +71,31 @@ describe('createChatProviderConfigResolver', () => {
     expect(envConfigReader).not.toHaveBeenCalled()
   })
 
+  it('strips credentials and query secrets from persisted provider base URLs', async () => {
+    const resolver = createChatProviderConfigResolver({
+      connectionStore: {
+        readState: vi.fn(async () =>
+          providerState({
+            providers: [
+              {
+                ...providerState().providers[0]!,
+                baseUrl: 'https://user:secret@api.example.com/custom/v1?api_key=hidden#secret',
+              },
+            ],
+          }),
+        ),
+      },
+      secretStore: {
+        readSecret: vi.fn(async () => 'stored-secret'),
+      },
+      envConfigReader: vi.fn(envConfig),
+    })
+
+    await expect(resolver()).resolves.toMatchObject({
+      baseUrl: 'https://api.example.com/custom/v1/',
+    })
+  })
+
   it('falls back to env config when no persisted default target exists', async () => {
     const secretStore = {
       readSecret: vi.fn(async () => 'stored-secret'),

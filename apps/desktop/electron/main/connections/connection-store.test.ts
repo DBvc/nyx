@@ -75,7 +75,7 @@ describe('ConnectionStore', () => {
           id: 'provider-1',
           kind: 'openai-compatible',
           displayName: 'Local Relay',
-          baseUrl: 'https://relay.example.test/v1',
+          baseUrl: 'https://relay.example.test/v1/',
           enabled: true,
           models: [
             {
@@ -102,6 +102,24 @@ describe('ConnectionStore', () => {
     expect(raw).not.toContain('api_key')
     expect(raw).not.toContain('Authorization')
     expect(raw).not.toContain('secret')
+  })
+
+  it('strips credentials, query, and hash from provider base URLs', async () => {
+    const store = createStore(await createTempFile('connections.json'))
+
+    const provider = await store.saveProvider({
+      ...providerInput(),
+      baseUrl: 'https://token-user:secret@relay.example.test/custom/v1?api_key=hidden#secret',
+    })
+
+    expect(provider.baseUrl).toBe('https://relay.example.test/custom/v1/')
+    await expect(store.readState()).resolves.toMatchObject({
+      providers: [
+        {
+          baseUrl: 'https://relay.example.test/custom/v1/',
+        },
+      ],
+    })
   })
 
   it('clears the default target when the referenced provider is deleted', async () => {
