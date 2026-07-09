@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
   safeStorage: electronMock.safeStorage,
 }))
 
-import { registerIpcHandlers } from './index'
+import { registerIpcHandlers, resolveDevServerUrl } from './index'
 
 const appGetPathCallCountAfterImport = electronMock.app.getPath.mock.calls.length
 const safeStorageAvailabilityCallCountAfterImport =
@@ -57,6 +57,25 @@ function registeredHandler(channel: string) {
 
   return handler
 }
+
+describe('resolveDevServerUrl', () => {
+  it('uses the electron-vite renderer URL in dev', () => {
+    expect(
+      resolveDevServerUrl({
+        ELECTRON_RENDERER_URL: 'http://127.0.0.1:5173/',
+        VITE_DEV_SERVER_URL: 'http://127.0.0.1:3000/',
+      }),
+    ).toBe('http://127.0.0.1:5173/')
+  })
+
+  it('keeps the legacy VITE dev server URL as a fallback', () => {
+    expect(
+      resolveDevServerUrl({
+        VITE_DEV_SERVER_URL: 'http://127.0.0.1:3000/',
+      }),
+    ).toBe('http://127.0.0.1:3000/')
+  })
+})
 
 describe('registerIpcHandlers', () => {
   beforeEach(() => {

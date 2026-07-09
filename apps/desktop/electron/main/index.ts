@@ -22,7 +22,11 @@ import { configureMainAutoUpdate } from './update/service'
 const moduleDir = dirname(fileURLToPath(import.meta.url))
 const rendererDistPath = join(moduleDir, '../renderer')
 const preloadPath = join(moduleDir, '../preload/index.cjs')
-const devServerUrl = process.env.VITE_DEV_SERVER_URL
+const devServerUrl = resolveDevServerUrl(process.env)
+
+export function resolveDevServerUrl(env: NodeJS.ProcessEnv) {
+  return env.ELECTRON_RENDERER_URL || env.VITE_DEV_SERVER_URL
+}
 
 function createMainRuntimeChatStateClient() {
   return createRuntimeChatStateClient({
