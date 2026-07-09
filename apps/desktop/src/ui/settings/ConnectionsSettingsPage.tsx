@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type {
   NyxConnectionModelInput,
+  NyxConnectionModelProfile,
   NyxConnectionProviderDetail,
   NyxConnectionSaveProviderInput,
   NyxConnectionsOverview,
@@ -73,6 +74,16 @@ function formFromProvider(
     defaultModelId: provider.defaultModelId ?? provider.models[0]?.id ?? '',
     useAsDefault: overview.defaultTarget?.providerId === provider.id,
   }
+}
+
+export function modelFormsFromProfiles(
+  models: ReadonlyArray<NyxConnectionModelProfile>,
+): ProviderModelForm[] {
+  return models.map((model) => ({
+    id: model.id,
+    displayName: model.displayName === model.id ? '' : model.displayName,
+    enabled: model.enabled,
+  }))
 }
 
 function rendererErrorMessage(_error: unknown) {
@@ -165,6 +176,8 @@ export function ConnectionsSettingsPage({
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false)
 
   const overview = loadState.kind === 'ready' ? loadState.overview : null
   const selectedSummary = overview?.providers.find((provider) => provider.id === selectedProviderId)
@@ -172,6 +185,7 @@ export function ConnectionsSettingsPage({
     () => form.models.map((model) => model.id.trim()).filter(Boolean),
     [form.models],
   )
+  const isBusy = isLoadingDetail || isSaving || isDeleting || isTesting || isRefreshingModels
 
   const readProvider = useCallback(
     async (providerId: string, nextOverview: NyxConnectionsOverview) => {
@@ -423,6 +437,79 @@ export function ConnectionsSettingsPage({
       setNotice({ kind: 'error', message: rendererErrorMessage(error) })
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  async function handleTestConnection() {
+    const connections = window.nyx?.connections
+    const providerId = form.providerId
+
+    if (!connections || !providerId) {
+      return
+    }
+
+    setIsTesting(true)
+    setNotice(null)
+
+    try {
+      const result = await connections.testProvider({ providerId })
+
+      if (!result.ok) {
+        setNotice({ kind: 'error', message: result.error.message })
+        return
+      }
+
+      const latencyLabel =
+        result.value.latencyMs === null ? 'latency unavailable' : `${result.value.latencyMs}ms`
+      setNotice({
+        kind: 'success',
+        message: `Connection test passed with ${result.value.modelId} (${latencyLabel}).`,
+      })
+    } catch (error) {
+      setNotice({ kind: 'error', message: rendererErrorMessage(error) })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  async function handleRefreshModels() {
+    const connections = window.nyx?.connections
+    const providerId = form.providerId
+
+    if (!connections || !providerId) {
+      return
+    }
+
+    setIsRefreshingModels(true)
+    setNotice(null)
+
+    try {
+      const result = await connections.refreshModels({ providerId })
+
+      if (!result.ok) {
+        setNotice({ kind: 'error', message: result.error.message })
+        return
+      }
+
+      setForm((current) => {
+        const models = modelFormsFromProfiles(result.value.models)
+        const modelIds = new Set(models.map((model) => model.id))
+        const defaultModelId = modelIds.has(current.defaultModelId)
+          ? current.defaultModelId
+          : (models.find((model) => model.enabled)?.id ?? models[0]?.id ?? '')
+
+        return { ...current, models, defaultModelId }
+      })
+      setNotice({
+        kind: 'success',
+        message: `Models refreshed: ${result.value.discoveredCount} discovered, ${result.value.preservedManualCount} manual preserved.`,
+      })
+      await refreshOverview(providerId)
+      await onConnectionsChanged()
+    } catch (error) {
+      setNotice({ kind: 'error', message: rendererErrorMessage(error) })
+    } finally {
+      setIsRefreshingModels(false)
     }
   }
 
@@ -709,29 +796,54 @@ export function ConnectionsSettingsPage({
               </label>
 
               <div className='flex flex-col gap-2 border-t border-nyx-line-soft pt-4 sm:flex-row sm:items-center sm:justify-between'>
-                <button
-                  className='h-9 rounded-md bg-nyx-accent px-4 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-45'
-                  disabled={isSaving || isLoadingDetail}
-                  onClick={() => {
-                    void handleSave()
-                  }}
-                  type='button'
-                >
-                  {isSaving ? 'Saving...' : 'Save connection'}
-                </button>
-
-                {form.providerId ? (
+                <div className='flex flex-wrap gap-2'>
                   <button
-                    className='h-9 rounded-md px-3 text-[13px] text-red-700 hover:bg-red-50 disabled:opacity-45'
-                    disabled={isDeleting || isSaving}
+                    className='h-9 rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:opacity-45'
+                    disabled={!form.providerId || isBusy}
                     onClick={() => {
-                      void handleDelete()
+                      void handleTestConnection()
                     }}
                     type='button'
                   >
-                    {isDeleting ? 'Deleting...' : 'Delete provider'}
+                    {isTesting ? 'Testing...' : 'Test connection'}
                   </button>
-                ) : null}
+                  <button
+                    className='h-9 rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:opacity-45'
+                    disabled={!form.providerId || isBusy}
+                    onClick={() => {
+                      void handleRefreshModels()
+                    }}
+                    type='button'
+                  >
+                    {isRefreshingModels ? 'Refreshing...' : 'Refresh models'}
+                  </button>
+                </div>
+
+                <div className='flex flex-wrap gap-2 sm:justify-end'>
+                  <button
+                    className='h-9 rounded-md bg-nyx-accent px-4 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-45'
+                    disabled={isBusy}
+                    onClick={() => {
+                      void handleSave()
+                    }}
+                    type='button'
+                  >
+                    {isSaving ? 'Saving...' : 'Save connection'}
+                  </button>
+
+                  {form.providerId ? (
+                    <button
+                      className='h-9 rounded-md px-3 text-[13px] text-red-700 hover:bg-red-50 disabled:opacity-45'
+                      disabled={isBusy}
+                      onClick={() => {
+                        void handleDelete()
+                      }}
+                      type='button'
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete provider'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </section>

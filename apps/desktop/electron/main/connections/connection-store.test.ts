@@ -155,6 +155,42 @@ describe('ConnectionStore', () => {
     ).rejects.toBeInstanceOf(ConnectionStoreError)
   })
 
+  it('merges discovered models without deleting manual models', async () => {
+    const store = createStore(await createTempFile('connections.json'))
+    const provider = await store.saveProvider({
+      ...providerInput(),
+      models: [
+        {
+          id: 'manual-model',
+          displayName: 'Manual Model',
+        },
+      ],
+    })
+    await store.mergeDiscoveredModels(provider.id, ['stale-discovered'])
+    await store.mergeDiscoveredModels(provider.id, ['fresh-discovered'])
+
+    const state = await store.readState()
+
+    expect(state.providers[0]?.models).toEqual([
+      {
+        id: 'manual-model',
+        displayName: 'Manual Model',
+        enabled: true,
+        source: 'manual',
+        createdAt: '2026-07-08T00:00:00.000Z',
+        updatedAt: '2026-07-08T00:00:00.000Z',
+      },
+      {
+        id: 'fresh-discovered',
+        displayName: 'fresh-discovered',
+        enabled: true,
+        source: 'discovered',
+        createdAt: '2026-07-08T00:00:00.000Z',
+        updatedAt: '2026-07-08T00:00:00.000Z',
+      },
+    ])
+  })
+
   it('fails closed on malformed JSON without overwriting the file', async () => {
     const filePath = await createTempFile('connections.json')
     await writeFile(filePath, '{not-json', 'utf8')

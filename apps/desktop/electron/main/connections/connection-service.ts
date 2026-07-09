@@ -26,6 +26,11 @@ import type {
 import { readProviderStatus } from '../chat/env'
 import { ConfigFileError } from './config-file'
 import { ConnectionStore, ConnectionStoreError } from './connection-store'
+import {
+  ConnectionsProviderError,
+  createProviderConnectionClient,
+  type ProviderConnectionClient,
+} from './provider-test'
 import type { ConnectionProviderRecord } from './schemas'
 import { SecretStore, SecretStoreError } from './secret-store'
 import { normalizeConnectionBaseUrl, readConnectionBaseUrlHost } from './url'
@@ -36,12 +41,15 @@ export interface ConnectionsServiceDependencies {
     | 'deleteProvider'
     | 'getProvider'
     | 'listProviders'
+    | 'mergeDiscoveredModels'
     | 'readState'
     | 'saveProvider'
     | 'setDefaultTarget'
   >
-  secretStore: Pick<SecretStore, 'deleteSecret' | 'hasSecret' | 'writeSecret'>
+  secretStore: Pick<SecretStore, 'deleteSecret' | 'hasSecret' | 'readSecret' | 'writeSecret'>
+  providerClient?: ProviderConnectionClient
   providerStatusReader?: () => NyxProviderStatus
+  now?: () => string
 }
 
 export interface LazyConnectionsServiceOptions {
@@ -71,15 +79,15 @@ function fail<TValue>(error: NyxConnectionsSafeError): NyxConnectionsResult<TVal
   return { ok: false, error }
 }
 
-function unsupportedError(message: string): NyxConnectionsSafeError {
-  return {
-    code: 'unsupported',
-    message,
-    retryable: false,
-  }
+function operationError(error: NyxConnectionsSafeError): never {
+  throw new ConnectionsProviderError(error)
 }
 
 function toSafeError(error: unknown): NyxConnectionsSafeError {
+  if (error instanceof ConnectionsProviderError) {
+    return error.safeError
+  }
+
   if (error instanceof ConnectionStoreError) {
     return {
       code: error.code,
@@ -154,16 +162,22 @@ function normalizeCredentialInput(credential: NyxConnectionSaveProviderInput['cr
 export class ConnectionsService implements ConnectionsController {
   private readonly connectionStore: ConnectionsServiceDependencies['connectionStore']
   private readonly secretStore: ConnectionsServiceDependencies['secretStore']
+  private readonly providerClient: ProviderConnectionClient
   private readonly providerStatusReader: () => NyxProviderStatus
+  private readonly now: () => string
 
   constructor({
     connectionStore,
     secretStore,
+    providerClient = createProviderConnectionClient(),
     providerStatusReader = readProviderStatus,
+    now = () => new Date().toISOString(),
   }: ConnectionsServiceDependencies) {
     this.connectionStore = connectionStore
     this.secretStore = secretStore
+    this.providerClient = providerClient
     this.providerStatusReader = providerStatusReader
+    this.now = now
   }
 
   async overview() {
@@ -224,18 +238,46 @@ export class ConnectionsService implements ConnectionsController {
     })
   }
 
-  async testProvider(_input: NyxConnectionTestInput): Promise<NyxConnectionTestResult> {
-    return fail<NyxConnectionTestSuccess>(
-      unsupportedError('Test connection is not implemented yet.'),
-    )
+  async testProvider(input: NyxConnectionTestInput): Promise<NyxConnectionTestResult> {
+    return safeResult(async () => {
+      const provider = await this.readUsableProvider(input.providerId)
+      const model = this.resolveEnabledTestModel(provider, input.modelId)
+      const apiKey = await this.readRequiredSecret(provider.id)
+      const result = await this.providerClient.testConnection({
+        apiKey,
+        baseUrl: normalizeConnectionBaseUrl(provider.baseUrl),
+        modelId: model.id,
+      })
+
+      return {
+        providerId: provider.id,
+        modelId: model.id,
+        checkedAt: this.now(),
+        latencyMs: result.latencyMs,
+      } satisfies NyxConnectionTestSuccess
+    })
   }
 
   async refreshModels(
-    _input: NyxConnectionRefreshModelsInput,
+    input: NyxConnectionRefreshModelsInput,
   ): Promise<NyxConnectionRefreshModelsResult> {
-    return fail<NyxConnectionRefreshModelsSuccess>(
-      unsupportedError('Refresh models is not implemented yet.'),
-    )
+    return safeResult(async () => {
+      const provider = await this.readUsableProvider(input.providerId)
+      const apiKey = await this.readRequiredSecret(provider.id)
+      const result = await this.providerClient.refreshModels({
+        apiKey,
+        baseUrl: normalizeConnectionBaseUrl(provider.baseUrl),
+      })
+      const merged = await this.connectionStore.mergeDiscoveredModels(provider.id, result.modelIds)
+
+      return {
+        providerId: provider.id,
+        refreshedAt: this.now(),
+        models: merged.provider.models.map((model) => ({ ...model })),
+        discoveredCount: merged.discoveredCount,
+        preservedManualCount: merged.preservedManualCount,
+      } satisfies NyxConnectionRefreshModelsSuccess
+    })
   }
 
   private async readOverview(): Promise<NyxConnectionsOverview> {
@@ -281,6 +323,71 @@ export class ConnectionsService implements ConnectionsController {
       baseUrl: normalizeConnectionBaseUrl(provider.baseUrl),
       models: provider.models.map((model) => ({ ...model })),
     }
+  }
+
+  private async readUsableProvider(providerId: string) {
+    const provider = await this.connectionStore.getProvider(trimRequired(providerId, 'providerId'))
+
+    if (!provider) {
+      throw new ConnectionStoreError('not_found', 'Provider was not found.')
+    }
+
+    if (!provider.enabled) {
+      operationError({
+        code: 'invalid_input',
+        message: 'Provider must be enabled before contacting the provider.',
+        retryable: false,
+      })
+    }
+
+    return provider
+  }
+
+  private resolveEnabledTestModel(provider: ConnectionProviderRecord, inputModelId?: string) {
+    const requestedModelId = inputModelId?.trim()
+
+    if (requestedModelId) {
+      const model = provider.models.find((candidate) => candidate.id === requestedModelId)
+
+      if (!model || !model.enabled) {
+        operationError({
+          code: 'invalid_input',
+          message: 'Requested test model must be enabled.',
+          retryable: false,
+        })
+      }
+
+      return model
+    }
+
+    const defaultModel = provider.defaultModelId
+      ? provider.models.find((candidate) => candidate.id === provider.defaultModelId)
+      : null
+
+    if (!defaultModel || !defaultModel.enabled) {
+      operationError({
+        code: 'invalid_input',
+        message: 'Provider needs an enabled default model before testing.',
+        retryable: false,
+      })
+    }
+
+    return defaultModel
+  }
+
+  private async readRequiredSecret(providerId: string) {
+    const secret = await this.secretStore.readSecret(providerId)
+    const apiKey = secret?.trim()
+
+    if (!apiKey) {
+      operationError({
+        code: 'config_missing',
+        message: 'Saved provider credentials are missing.',
+        retryable: false,
+      })
+    }
+
+    return apiKey
   }
 }
 

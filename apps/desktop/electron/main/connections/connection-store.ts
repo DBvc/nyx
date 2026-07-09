@@ -38,6 +38,12 @@ export interface DeleteProviderResult {
   providerId: string
 }
 
+export interface MergeDiscoveredModelsResult {
+  provider: ConnectionProviderRecord
+  discoveredCount: number
+  preservedManualCount: number
+}
+
 const emptyConnectionStoreState = {
   version: 1,
   providers: [],
@@ -108,6 +114,57 @@ function normalizeModels(
       updatedAt: now,
     } satisfies ConnectionModelRecord
   })
+}
+
+function normalizeDiscoveredModelIds(inputModelIds: ReadonlyArray<string>) {
+  const seenIds = new Set<string>()
+  const modelIds: string[] = []
+
+  for (const inputModelId of inputModelIds) {
+    const id = trimRequired(inputModelId, 'model.id')
+
+    if (!seenIds.has(id)) {
+      seenIds.add(id)
+      modelIds.push(id)
+    }
+  }
+
+  if (modelIds.length === 0) {
+    throw new ConnectionStoreError('invalid_input', 'At least one discovered model is required.')
+  }
+
+  return modelIds
+}
+
+function mergeDiscoveredModels(
+  provider: ConnectionProviderRecord,
+  discoveredModelIds: ReadonlyArray<string>,
+  now: string,
+) {
+  const discoveredIds = normalizeDiscoveredModelIds(discoveredModelIds)
+  const existingById = new Map(provider.models.map((model) => [model.id, model]))
+  const manualModels = provider.models.filter((model) => model.source === 'manual')
+  const manualIds = new Set(manualModels.map((model) => model.id))
+  const discoveredModels = discoveredIds
+    .filter((modelId) => !manualIds.has(modelId))
+    .map((modelId) => {
+      const existing = existingById.get(modelId)
+
+      return {
+        id: modelId,
+        displayName: existing?.displayName ?? modelId,
+        enabled: existing?.enabled ?? true,
+        source: 'discovered' as const,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      } satisfies ConnectionModelRecord
+    })
+
+  return {
+    discoveredCount: discoveredIds.length,
+    preservedManualCount: manualModels.length,
+    models: [...manualModels.map((model) => ({ ...model })), ...discoveredModels],
+  }
 }
 
 function findProvider(state: ConnectionStoreState, providerId: string) {
@@ -234,6 +291,58 @@ export class ConnectionStore {
     await this.configFile.write(state)
 
     return { providerId }
+  }
+
+  async mergeDiscoveredModels(
+    providerId: string,
+    discoveredModelIds: ReadonlyArray<string>,
+  ): Promise<MergeDiscoveredModelsResult> {
+    const state = await this.readState()
+    const trimmedProviderId = trimRequired(providerId, 'providerId')
+    const existingIndex = state.providers.findIndex((provider) => provider.id === trimmedProviderId)
+    const existing = existingIndex >= 0 ? (state.providers[existingIndex] ?? null) : null
+
+    if (!existing) {
+      throw new ConnectionStoreError('not_found', 'Provider was not found.')
+    }
+
+    const now = this.now()
+    const { discoveredCount, models, preservedManualCount } = mergeDiscoveredModels(
+      existing,
+      discoveredModelIds,
+      now,
+    )
+    const defaultModelId =
+      existing.defaultModelId && models.some((model) => model.id === existing.defaultModelId)
+        ? existing.defaultModelId
+        : (models.find((model) => model.enabled)?.id ?? models[0]?.id ?? null)
+    const provider = {
+      ...existing,
+      models,
+      defaultModelId,
+      updatedAt: now,
+    } satisfies ConnectionProviderRecord
+
+    state.providers[existingIndex] = provider
+
+    if (
+      state.defaultTarget?.providerId === provider.id &&
+      !targetExists(state, provider.id, state.defaultTarget.modelId)
+    ) {
+      state.defaultTarget = null
+    }
+
+    await this.configFile.write(state)
+
+    return {
+      provider: cloneState({
+        version: 1,
+        providers: [provider],
+        defaultTarget: null,
+      }).providers[0]!,
+      discoveredCount,
+      preservedManualCount,
+    }
   }
 
   async setDefaultTarget({ target }: NyxConnectionSetDefaultTargetInput) {

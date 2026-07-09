@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   defaultModelIdFromForm,
+  modelFormsFromProfiles,
   normalizeModels,
   type ProviderForm,
   validateDefaultTargetReadiness,
@@ -115,5 +116,39 @@ describe('ConnectionsSettingsPage form helpers', () => {
         models,
       }),
     ).not.toThrow()
+  })
+
+  it('maps refreshed provider models back to editable form rows', () => {
+    expect(
+      modelFormsFromProfiles([
+        {
+          id: 'manual-model',
+          displayName: 'Manual Model',
+          enabled: true,
+          source: 'manual',
+          createdAt: '2026-07-08T00:00:00.000Z',
+          updatedAt: '2026-07-08T00:00:00.000Z',
+        },
+        {
+          id: 'discovered-model',
+          displayName: 'discovered-model',
+          enabled: true,
+          source: 'discovered',
+          createdAt: '2026-07-08T00:00:00.000Z',
+          updatedAt: '2026-07-08T00:00:00.000Z',
+        },
+      ]),
+    ).toEqual([
+      {
+        id: 'manual-model',
+        displayName: 'Manual Model',
+        enabled: true,
+      },
+      {
+        id: 'discovered-model',
+        displayName: '',
+        enabled: true,
+      },
+    ])
   })
 })

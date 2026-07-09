@@ -110,6 +110,41 @@ function createServiceHarness(initialState: ConnectionStoreState) {
 
       return { providerId }
     }),
+    mergeDiscoveredModels: vi.fn(async (providerId: string, modelIds: ReadonlyArray<string>) => {
+      const provider = state.providers.find((candidate) => candidate.id === providerId)
+
+      if (!provider) {
+        throw new ConnectionStoreError('not_found', 'Provider was not found.')
+      }
+
+      const manualModels = provider.models.filter((model) => model.source === 'manual')
+      const manualIds = new Set(manualModels.map((model) => model.id))
+      const discoveredModels = modelIds
+        .filter((modelId) => !manualIds.has(modelId))
+        .map((modelId) => ({
+          id: modelId,
+          displayName: modelId,
+          enabled: true,
+          source: 'discovered' as const,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }))
+
+      provider.models = [...manualModels, ...discoveredModels]
+
+      if (
+        !provider.defaultModelId ||
+        !provider.models.some((model) => model.id === provider.defaultModelId)
+      ) {
+        provider.defaultModelId = provider.models[0]?.id ?? null
+      }
+
+      return {
+        provider: cloneProvider(provider),
+        discoveredCount: modelIds.length,
+        preservedManualCount: manualModels.length,
+      }
+    }),
     setDefaultTarget: vi.fn(async (input: NyxConnectionSetDefaultTargetInput) => {
       state.defaultTarget = input.target ? { ...input.target } : null
 
@@ -118,22 +153,30 @@ function createServiceHarness(initialState: ConnectionStoreState) {
   }
   const secretStore: ConnectionsServiceDependencies['secretStore'] = {
     hasSecret: vi.fn(async (providerId: string) => secrets.has(providerId)),
+    readSecret: vi.fn(async (providerId: string) => secrets.get(providerId) ?? null),
     writeSecret,
     deleteSecret,
+  }
+  const providerClient: NonNullable<ConnectionsServiceDependencies['providerClient']> = {
+    testConnection: vi.fn(async () => ({ latencyMs: 42 })),
+    refreshModels: vi.fn(async () => ({ modelIds: ['model-2'] })),
   }
   const service = new ConnectionsService({
     connectionStore,
     secretStore,
+    providerClient,
     providerStatusReader: () => ({
       configured: false,
       model: null,
       baseUrlHost: null,
       missingEnv: ['NYX_API_BASE_URL', 'NYX_API_TOKEN'],
     }),
+    now: () => timestamp,
   })
 
   return {
     connectionStore,
+    providerClient,
     secretStore,
     service,
     secrets,
@@ -365,28 +408,97 @@ describe('ConnectionsService', () => {
     expect(JSON.stringify(result)).not.toContain('raw token-shaped local file detail')
   })
 
-  it('returns explicit unsupported safe results for provider test and model refresh', async () => {
+  it('tests a saved provider with its default enabled model without returning the secret', async () => {
     const harness = createServiceHarness({
       version: 1,
-      providers: [],
+      providers: [providerRecord()],
+      defaultTarget: null,
+    })
+    harness.secrets.set('provider-1', 'sk-super-secret')
+
+    const result = await harness.service.testProvider({ providerId: 'provider-1' })
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        providerId: 'provider-1',
+        modelId: 'model-1',
+        checkedAt: timestamp,
+        latencyMs: 42,
+      },
+    })
+    expect(harness.providerClient.testConnection).toHaveBeenCalledWith({
+      apiKey: 'sk-super-secret',
+      baseUrl: 'https://api.example.com/custom/v1/',
+      modelId: 'model-1',
+    })
+    expect(JSON.stringify(result)).not.toContain('sk-super-secret')
+  })
+
+  it('returns a safe config error when provider credentials are missing', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [providerRecord()],
       defaultTarget: null,
     })
 
-    await expect(harness.service.testProvider({ providerId: 'provider-1' })).resolves.toEqual({
+    const result = await harness.service.testProvider({ providerId: 'provider-1' })
+
+    expect(result).toEqual({
       ok: false,
       error: {
-        code: 'unsupported',
-        message: 'Test connection is not implemented yet.',
+        code: 'config_missing',
+        message: 'Saved provider credentials are missing.',
         retryable: false,
       },
     })
-    await expect(harness.service.refreshModels({ providerId: 'provider-1' })).resolves.toEqual({
-      ok: false,
-      error: {
-        code: 'unsupported',
-        message: 'Refresh models is not implemented yet.',
-        retryable: false,
+    expect(harness.providerClient.testConnection).not.toHaveBeenCalled()
+  })
+
+  it('refreshes discovered models while preserving manual models', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [providerRecord()],
+      defaultTarget: null,
+    })
+    harness.secrets.set('provider-1', 'sk-super-secret')
+    vi.mocked(harness.providerClient.refreshModels).mockResolvedValueOnce({
+      modelIds: ['model-1', 'model-2'],
+    })
+
+    const result = await harness.service.refreshModels({ providerId: 'provider-1' })
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        providerId: 'provider-1',
+        refreshedAt: timestamp,
+        discoveredCount: 2,
+        preservedManualCount: 1,
+        models: [
+          {
+            id: 'model-1',
+            displayName: 'Model One',
+            enabled: true,
+            source: 'manual',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+          {
+            id: 'model-2',
+            displayName: 'model-2',
+            enabled: true,
+            source: 'discovered',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        ],
       },
     })
+    expect(harness.connectionStore.mergeDiscoveredModels).toHaveBeenCalledWith('provider-1', [
+      'model-1',
+      'model-2',
+    ])
+    expect(JSON.stringify(result)).not.toContain('sk-super-secret')
   })
 })
