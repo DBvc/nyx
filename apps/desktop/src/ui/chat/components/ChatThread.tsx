@@ -1,13 +1,13 @@
 import type { RefObject, UIEventHandler } from 'react'
 import type { ComponentProps } from 'react'
 
-import type { NyxChatMessage } from '../../../../shared/chat/types'
+import type { ThreadStreamItem } from '../thread-items'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatMessage } from './ChatMessage'
 import { ConnectionSetupNotice, shouldShowConnectionNotice } from './ConnectionSetupNotice'
 
 interface ChatThreadProps {
-  messages: ReadonlyArray<NyxChatMessage>
+  items: ReadonlyArray<ThreadStreamItem>
   containerRef: RefObject<HTMLDivElement | null>
   onScroll: UIEventHandler<HTMLDivElement>
   onRetry: (messageId: string) => void
@@ -17,7 +17,7 @@ interface ChatThreadProps {
 }
 
 export function ChatThread({
-  messages,
+  items,
   containerRef,
   onScroll,
   onRetry,
@@ -25,20 +25,20 @@ export function ChatThread({
   onOpenConnectionsSettings,
   onRefreshConnectionStatus,
 }: ChatThreadProps) {
-  const hasMessages = messages.length > 0
+  const hasItems = items.length > 0
 
   return (
     <div
-      className={`min-h-0 flex-1 ${hasMessages ? 'overflow-y-auto' : 'overflow-hidden'}`}
+      className={`min-h-0 flex-1 ${hasItems ? 'overflow-y-auto' : 'overflow-hidden'}`}
       onScroll={onScroll}
       ref={containerRef}
     >
       <div
         className={`mx-auto flex min-h-full w-full flex-col px-5 ${
-          hasMessages ? 'max-w-[44rem] gap-7 py-7' : 'max-w-[37.5rem] justify-center pb-28'
+          hasItems ? 'max-w-[44rem] gap-7 py-7' : 'max-w-[37.5rem] justify-center pb-28'
         }`}
       >
-        {!hasMessages ? (
+        {!hasItems ? (
           <ChatEmptyState
             connectionStatus={connectionStatus}
             onOpenConnectionsSettings={onOpenConnectionsSettings}
@@ -54,8 +54,8 @@ export function ChatThread({
                 status={connectionStatus}
               />
             ) : null}
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} onRetry={onRetry} />
+            {items.map((item) => (
+              <ChatMessage key={item.id} message={item.message} onRetry={onRetry} />
             ))}
           </>
         )}

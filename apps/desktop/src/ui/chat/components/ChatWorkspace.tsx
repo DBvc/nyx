@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { ConnectionsSettingsPage } from '../../settings/ConnectionsSettingsPage'
 import { threadPreview, threadTitle } from '../chat-presenters'
+import { toThreadStreamItems } from '../thread-items'
 import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
 import { useConnectionStatus } from '../use-connection-status'
@@ -26,12 +27,13 @@ export function ChatWorkspace() {
   } = useChatSession()
   const connectionSetup = useConnectionStatus()
 
-  const latestMessage = state.messages.at(-1)
+  const threadItems = useMemo(() => toThreadStreamItems(state.messages), [state.messages])
+  const latestMessageItem = threadItems.at(-1)
   const currentThreadTitle = threadTitle(state.messages)
   const currentThreadPreview = threadPreview(state.messages)
   const { containerRef, handleScroll } = useAutoScroll(
-    state.messages.length,
-    latestMessage?.content ?? state.runStatus,
+    threadItems.length,
+    latestMessageItem?.message.content ?? state.runStatus,
   )
 
   return (
@@ -39,7 +41,7 @@ export function ChatWorkspace() {
       <div className='flex h-full w-full flex-col lg:flex-row'>
         <ChatSidebar
           activeView={activeView}
-          onNewChat={() => {
+          onNewThread={() => {
             void startNewChat()
             setActiveView('chat')
           }}
@@ -65,7 +67,7 @@ export function ChatWorkspace() {
               <ChatThread
                 connectionStatus={connectionSetup.status}
                 containerRef={containerRef}
-                messages={state.messages}
+                items={threadItems}
                 onOpenConnectionsSettings={() => {
                   setActiveView('connections')
                 }}

@@ -22,7 +22,7 @@ export function ChatEmptyState({
           {isConnectionReady ? 'Ready' : 'Setup'}
         </p>
         <h2 className='mt-2 text-[22px] font-semibold text-nyx-ink'>
-          {isConnectionReady ? 'What can I help with?' : 'Finish connection setup'}
+          {isConnectionReady ? 'Tell Nyx what to do' : 'Finish connection setup'}
         </h2>
       </div>
       <ConnectionSetupNotice

@@ -56,13 +56,13 @@ export function ChatComposer({
       <form className='mx-auto w-full max-w-[44rem]' onSubmit={handleSubmit}>
         <div className='rounded-[1.35rem] border border-nyx-line bg-nyx-composer px-4 py-3 shadow-[0_8px_28px_rgba(0,0,0,0.08)] focus-within:border-[#c7c7c2]'>
           <textarea
-            aria-label='Message Nyx'
+            aria-label='Tell Nyx what to do'
             className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[14px] leading-6 text-nyx-ink outline-none'
             onChange={(event) => {
               onInputChange(event.target.value)
             }}
             onKeyDown={handleKeyDown}
-            placeholder='Ask for follow-up changes'
+            placeholder='Tell Nyx what to do...'
             spellCheck={false}
             value={input}
           />

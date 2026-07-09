@@ -67,7 +67,7 @@ describe('chat presenters', () => {
   })
 
   it('falls back for an empty thread shell', () => {
-    expect(threadTitle([])).toBe('New chat')
-    expect(threadPreview([])).toBe('Ready to start')
+    expect(threadTitle([])).toBe('New thread')
+    expect(threadPreview([])).toBe('Ready for a new thread')
   })
 })

@@ -40,14 +40,14 @@ export function threadTitle(messages: ReadonlyArray<NyxChatMessage>) {
     (message) => message.role === 'user' && message.content.trim().length > 0,
   )
 
-  return firstUserMessage ? summarizeText(firstUserMessage.content, 48) : 'New chat'
+  return firstUserMessage ? summarizeText(firstUserMessage.content, 48) : 'New thread'
 }
 
 export function threadPreview(messages: ReadonlyArray<NyxChatMessage>) {
   const lastMessage = [...messages].reverse().find((message) => message.content.trim().length > 0)
 
   if (!lastMessage) {
-    return 'Ready to start'
+    return 'Ready for a new thread'
   }
 
   return summarizeText(lastMessage.content, 46)
