@@ -37,3 +37,17 @@ export type NyxCurrentThreadSnapshotResult =
       ok: false
       error: NyxCurrentThreadSnapshotError
     }
+
+export interface NyxCurrentThreadResetError {
+  code: 'reset_failed'
+  message: 'Nyx could not start a fresh thread.'
+}
+
+export type NyxCurrentThreadResetResult =
+  | {
+      ok: true
+    }
+  | {
+      ok: false
+      error: NyxCurrentThreadResetError
+    }

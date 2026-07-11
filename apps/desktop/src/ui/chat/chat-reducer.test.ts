@@ -82,6 +82,9 @@ describe('chatReducer', () => {
   it('starts with current thread hydration blocking the renderer projection', () => {
     expect(initialChatState.hydrationStatus).toBe('loading')
     expect(initialChatState.hydrationError).toBeNull()
+    expect(initialChatState.projectionGeneration).toBe(0)
+    expect(initialChatState.resetStatus).toBe('idle')
+    expect(initialChatState.resetError).toBeNull()
   })
 
   it('hydrates an empty current thread into a ready state with no active identity', () => {
@@ -93,6 +96,7 @@ describe('chatReducer', () => {
       },
       {
         type: 'current-thread-hydrated',
+        generation: 0,
         snapshot: null,
       },
     )
@@ -116,6 +120,7 @@ describe('chatReducer', () => {
     }
     const state = chatReducer(initialChatState, {
       type: 'current-thread-hydrated',
+      generation: 0,
       snapshot,
     })
 
@@ -133,6 +138,7 @@ describe('chatReducer', () => {
   it('stores only the safe current thread load error and remains blocked', () => {
     const state = chatReducer(initialChatState, {
       type: 'current-thread-hydration-failed',
+      generation: 0,
       error: {
         code: 'load_failed',
         message: 'Nyx could not load the current thread.',
@@ -146,6 +152,60 @@ describe('chatReducer', () => {
     })
     expect(state.messages).toEqual([])
     expect(state.activeRequestId).toBeUndefined()
+  })
+
+  it('blocks the projection while reset is in progress', () => {
+    const state = chatReducer(submittedState(), { type: 'reset-started', generation: 1 })
+
+    expect(state.resetStatus).toBe('resetting')
+    expect(state.resetError).toBeNull()
+    expect(state.projectionGeneration).toBe(1)
+    expect(state.activeRequestId).toBeUndefined()
+    expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toBeNull()
+  })
+
+  it('ignores a stale hydration result after reset advances the projection generation', () => {
+    const resettingState = chatReducer(submittedState(), {
+      type: 'reset-started',
+      generation: 1,
+    })
+    const state = chatReducer(resettingState, {
+      type: 'current-thread-hydrated',
+      generation: 0,
+      snapshot: null,
+    })
+
+    expect(state).toBe(resettingState)
+    expect(state.resetStatus).toBe('resetting')
+    expect(state.projectionGeneration).toBe(1)
+  })
+
+  it('keeps reset failure safe and blocks stale conversation actions', () => {
+    const resettingState = chatReducer(submittedState(), {
+      type: 'reset-started',
+      generation: 1,
+    })
+    const state = chatReducer(resettingState, {
+      type: 'reset-failed',
+      generation: 1,
+      error: {
+        code: 'reset_failed',
+        message: 'Nyx could not start a fresh thread.',
+      },
+    })
+
+    expect(state.hydrationStatus).toBe('error')
+    expect(state.resetStatus).toBe('idle')
+    expect(state.resetError).toEqual({
+      code: 'reset_failed',
+      message: 'Nyx could not start a fresh thread.',
+    })
+    expect(state.activeRequestId).toBeUndefined()
+    expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.retryableTurn).toBeNull()
   })
 
   it('records a submitted request and appends user and assistant messages', () => {
@@ -392,13 +452,19 @@ describe('chatReducer', () => {
   })
 
   it('clears the chat back to the initial state', () => {
-    const state = chatReducer(submittedState(), {
+    const resettingState = chatReducer(submittedState(), {
+      type: 'reset-started',
+      generation: 1,
+    })
+    const state = chatReducer(resettingState, {
       type: 'clear-chat',
+      generation: 1,
     })
 
     expect(state).toEqual({
       ...initialChatState,
       hydrationStatus: 'ready',
+      projectionGeneration: 1,
     })
   })
 })

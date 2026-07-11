@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron'
 
 import type { NyxChatEvent, NyxChatErrorEvent } from '../../../shared/chat/events'
+import type { NyxCurrentThreadResetResult } from '../../../shared/chat/snapshot'
 import {
   isNyxChatTurnIntent,
   type NyxChatCancellationRequest,
@@ -36,6 +37,7 @@ interface ActiveChatSession {
   runtimeChatStateClient?: RuntimeChatStateClient
   currentThreadSession?: CurrentThreadSessionCoordinator
   preparedCurrentThread?: PreparedCurrentThreadTurn
+  operation?: Promise<void>
 }
 
 interface RuntimeChatStateSession {
@@ -137,6 +139,16 @@ function isPromiseLike<TValue>(value: TValue | Promise<TValue>): value is Promis
   return typeof (value as Promise<TValue>).then === 'function'
 }
 
+function currentThreadResetFailure(): NyxCurrentThreadResetResult {
+  return {
+    ok: false,
+    error: {
+      code: 'reset_failed',
+      message: 'Nyx could not start a fresh thread.',
+    },
+  }
+}
+
 export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
   private readonly runtimeChatStateEnabled: boolean
@@ -144,6 +156,7 @@ export class ChatSessionManager {
   private readonly resolveProviderConfig: ChatProviderConfigResolver
   private readonly resolveCurrentThreadSession: (() => CurrentThreadSessionCoordinator) | undefined
   private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
+  private resetOperation: Promise<NyxCurrentThreadResetResult> | undefined
 
   constructor({
     env = process.env,
@@ -162,6 +175,15 @@ export class ChatSessionManager {
 
     if (validationError) {
       this.emitError(sender, request, validationError)
+      return
+    }
+
+    if (this.resetOperation) {
+      this.emitError(sender, request, {
+        code: 'invalid_request',
+        message: 'Nyx is still starting a fresh thread.',
+        retryable: false,
+      })
       return
     }
 
@@ -187,12 +209,12 @@ export class ChatSessionManager {
 
     this.activeSession = session
 
-    if (this.resolveCurrentThreadSession) {
-      void this.prepareDurableSession(session, request)
-      return
-    }
+    const operation = this.resolveCurrentThreadSession
+      ? this.prepareDurableSession(session, request)
+      : this.resolveConfigAndStart(session, request)
 
-    this.resolveConfigAndStart(session, request)
+    session.operation = operation
+    void operation
   }
 
   private async prepareDurableSession(session: ActiveChatSession, request: NyxChatRequest) {
@@ -212,7 +234,7 @@ export class ChatSessionManager {
         messages: preparedCurrentThread.providerMessages,
       }
       session.request = durableRequest
-      this.resolveConfigAndStart(session, durableRequest)
+      await this.resolveConfigAndStart(session, durableRequest)
     } catch (error) {
       if (this.activeSession !== session) {
         return
@@ -232,22 +254,23 @@ export class ChatSessionManager {
     }
   }
 
-  private resolveConfigAndStart(session: ActiveChatSession, request: NyxChatRequest) {
+  private resolveConfigAndStart(
+    session: ActiveChatSession,
+    request: NyxChatRequest,
+  ): Promise<void> {
     let configResult
 
     try {
       configResult = this.resolveProviderConfig()
     } catch (error) {
-      void this.handleProviderConfigError(session, request, error)
-      return
+      return this.handleProviderConfigError(session, request, error)
     }
 
     if (isPromiseLike(configResult)) {
-      void this.startAfterAsyncProviderConfig(session, configResult, request)
-      return
+      return this.startAfterAsyncProviderConfig(session, configResult, request)
     }
 
-    this.startWithProviderConfig(session, configResult, request)
+    return this.startWithProviderConfig(session, configResult, request)
   }
 
   private async startAfterAsyncProviderConfig(
@@ -256,7 +279,7 @@ export class ChatSessionManager {
     request: NyxChatRequest,
   ) {
     try {
-      this.startWithProviderConfig(session, await configResult, request)
+      await this.startWithProviderConfig(session, await configResult, request)
     } catch (error) {
       await this.handleProviderConfigError(session, request, error)
     }
@@ -266,18 +289,17 @@ export class ChatSessionManager {
     session: ActiveChatSession,
     config: ChatProviderConfig,
     request: NyxChatRequest,
-  ) {
+  ): Promise<void> {
     if (this.activeSession !== session) {
-      return
+      return Promise.resolve()
     }
 
     if (!this.runtimeChatStateEnabled) {
       this.emitStart(session)
-      void this.runSession(session, config, request)
-      return
+      return this.runSession(session, config, request)
     }
 
-    void this.prepareRuntimeAndRunSession(session, config, request)
+    return this.prepareRuntimeAndRunSession(session, config, request)
   }
 
   private async handleProviderConfigError(
@@ -307,28 +329,56 @@ export class ChatSessionManager {
     this.activeSession.abortController.abort()
   }
 
-  async reset(sender: WebContents) {
-    if (this.activeSession?.sender === sender) {
-      this.activeSession.abortController.abort()
-      this.activeSession = undefined
+  async reset(_sender: WebContents): Promise<NyxCurrentThreadResetResult> {
+    if (this.resetOperation) {
+      return this.resetOperation
     }
 
-    const runtimeChatStateSession = this.runtimeChatStateSessions.get(sender)
+    const resetOperation = this.performReset()
+    this.resetOperation = resetOperation
 
-    if (runtimeChatStateSession) {
-      this.detachRuntimeChatStateSession(runtimeChatStateSession)
-
-      try {
-        await runtimeChatStateSession.client.clear()
-      } catch {
-        // Reset detaches the old runtime client so the next turn starts from a fresh session.
-      } finally {
-        runtimeChatStateSession.client.close()
+    try {
+      return await resetOperation
+    } finally {
+      if (this.resetOperation === resetOperation) {
+        this.resetOperation = undefined
       }
     }
+  }
 
-    if (this.resolveCurrentThreadSession) {
-      await this.resolveCurrentThreadSession().reset()
+  private async performReset(): Promise<NyxCurrentThreadResetResult> {
+    try {
+      if (this.activeSession) {
+        const session = this.activeSession
+        session.abortController.abort()
+        this.activeSession = undefined
+
+        try {
+          await session.operation
+        } catch {
+          // Explicit reset still owns cleanup when an abandoned session exits unexpectedly.
+        }
+      }
+
+      for (const runtimeChatStateSession of this.runtimeChatStateSessions.values()) {
+        this.detachRuntimeChatStateSession(runtimeChatStateSession)
+
+        try {
+          await runtimeChatStateSession.client.clear()
+        } catch {
+          // Reset detaches the old runtime client so the next turn starts from a fresh session.
+        } finally {
+          runtimeChatStateSession.client.close()
+        }
+      }
+
+      if (this.resolveCurrentThreadSession) {
+        await this.resolveCurrentThreadSession().reset()
+      }
+
+      return { ok: true }
+    } catch {
+      return currentThreadResetFailure()
     }
   }
 

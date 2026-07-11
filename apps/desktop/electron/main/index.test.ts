@@ -83,9 +83,9 @@ describe('registerIpcHandlers', () => {
     vi.clearAllMocks()
   })
 
-  it('returns the async reset promise to ipcRenderer.invoke callers', () => {
+  it('returns the safe async reset result to ipcRenderer.invoke callers', () => {
     const sender = {} as WebContents
-    const resetPromise = Promise.resolve()
+    const resetPromise = Promise.resolve({ ok: true } as const)
     const chatSessionManager = {
       start: vi.fn(),
       cancel: vi.fn(),
@@ -145,7 +145,7 @@ describe('registerIpcHandlers', () => {
       chatSessionManager: {
         start: vi.fn(),
         cancel: vi.fn(),
-        reset: vi.fn(),
+        reset: vi.fn(async () => ({ ok: true as const })),
       },
       connections,
     })
@@ -162,7 +162,7 @@ describe('registerIpcHandlers', () => {
     const chatSessionManager = {
       start: vi.fn(),
       cancel: vi.fn(),
-      reset: vi.fn(),
+      reset: vi.fn(async () => ({ ok: true as const })),
     }
     const connections = {
       overview: vi.fn(),

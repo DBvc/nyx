@@ -6,6 +6,7 @@ interface ChatSidebarProps {
   preview: string
   runStatus: NyxChatRunStatus
   activeView: 'chat' | 'connections'
+  newThreadDisabled: boolean
   onNewThread: () => void
   onOpenChat: () => void
   onOpenConnectionsSettings: () => void
@@ -46,6 +47,7 @@ export function ChatSidebar({
   preview,
   runStatus,
   activeView,
+  newThreadDisabled,
   onNewThread,
   onOpenChat,
   onOpenConnectionsSettings,
@@ -53,7 +55,8 @@ export function ChatSidebar({
   return (
     <aside className='flex w-full shrink-0 flex-col border-b border-nyx-line-soft bg-nyx-sidebar px-2 py-2 lg:w-[18rem] lg:border-b-0 lg:border-r'>
       <button
-        className='flex h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] text-nyx-ink hover:bg-nyx-hover'
+        className='flex h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
+        disabled={newThreadDisabled}
         onClick={onNewThread}
         type='button'
       >

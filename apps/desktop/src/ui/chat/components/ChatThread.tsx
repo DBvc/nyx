@@ -3,7 +3,10 @@ import type { ComponentProps } from 'react'
 
 import type { ThreadStreamItem } from '../thread-items'
 import type { ChatHydrationStatus } from '../chat-types'
-import type { NyxCurrentThreadSnapshotError } from '../../../../shared/chat/snapshot'
+import type {
+  NyxCurrentThreadResetError,
+  NyxCurrentThreadSnapshotError,
+} from '../../../../shared/chat/snapshot'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatMessage } from './ChatMessage'
 import { ConnectionSetupNotice, shouldShowConnectionNotice } from './ConnectionSetupNotice'
@@ -18,6 +21,7 @@ interface ChatThreadProps {
   onRefreshConnectionStatus: () => void
   hydrationStatus: ChatHydrationStatus
   hydrationError: NyxCurrentThreadSnapshotError | null
+  resetError: NyxCurrentThreadResetError | null
 }
 
 export function ChatThread({
@@ -30,6 +34,7 @@ export function ChatThread({
   onRefreshConnectionStatus,
   hydrationStatus,
   hydrationError,
+  resetError,
 }: ChatThreadProps) {
   const hasItems = hydrationStatus === 'ready' && items.length > 0
 
@@ -52,8 +57,12 @@ export function ChatThread({
         ) : hydrationStatus === 'error' ? (
           <section className='space-y-2' role='alert'>
             <p className='text-[12px] font-medium text-red-700'>Current thread unavailable</p>
-            <h2 className='text-[22px] font-semibold text-nyx-ink'>Conversation could not load</h2>
-            <p className='text-[14px] leading-6 text-nyx-muted'>{hydrationError?.message}</p>
+            <h2 className='text-[22px] font-semibold text-nyx-ink'>
+              {resetError ? 'Fresh thread could not start' : 'Conversation could not load'}
+            </h2>
+            <p className='text-[14px] leading-6 text-nyx-muted'>
+              {resetError?.message ?? hydrationError?.message}
+            </p>
           </section>
         ) : !hasItems ? (
           <ChatEmptyState

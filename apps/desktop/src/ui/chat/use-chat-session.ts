@@ -1,7 +1,10 @@
-import { useEffect, useReducer } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
-import type { NyxCurrentThreadSnapshotError } from '../../../shared/chat/snapshot'
+import type {
+  NyxCurrentThreadResetError,
+  NyxCurrentThreadSnapshotError,
+} from '../../../shared/chat/snapshot'
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
 import { chatReducer } from './chat-reducer'
 import { initialChatState } from './chat-types'
@@ -26,6 +29,13 @@ function currentThreadSnapshotBridgeError(): NyxCurrentThreadSnapshotError {
   return {
     code: 'load_failed',
     message: 'Nyx could not load the current thread.',
+  }
+}
+
+function currentThreadResetBridgeError(): NyxCurrentThreadResetError {
+  return {
+    code: 'reset_failed',
+    message: 'Nyx could not start a fresh thread.',
   }
 }
 
@@ -60,6 +70,7 @@ function toRequestMessages(messages: ReadonlyArray<NyxChatMessage>): NyxChatInpu
 
 export function useChatSession() {
   const [state, dispatch] = useReducer(chatReducer, initialChatState)
+  const projectionGeneration = useRef(initialChatState.projectionGeneration)
 
   useEffect(() => {
     if (!window.nyx) {
@@ -67,6 +78,7 @@ export function useChatSession() {
     }
 
     let disposed = false
+    const hydrationGeneration = projectionGeneration.current
     const chat = window.nyx.chat
     const unsubscribe = chat.subscribe((event: NyxChatEvent) => {
       switch (event.type) {
@@ -117,6 +129,7 @@ export function useChatSession() {
         if (result.ok) {
           dispatch({
             type: 'current-thread-hydrated',
+            generation: hydrationGeneration,
             snapshot: result.value,
           })
           return
@@ -124,6 +137,7 @@ export function useChatSession() {
 
         dispatch({
           type: 'current-thread-hydration-failed',
+          generation: hydrationGeneration,
           error: result.error,
         })
       })
@@ -131,6 +145,7 @@ export function useChatSession() {
         if (!disposed) {
           dispatch({
             type: 'current-thread-hydration-failed',
+            generation: hydrationGeneration,
             error: currentThreadSnapshotBridgeError(),
           })
         }
@@ -204,6 +219,7 @@ export function useChatSession() {
     if (
       state.activeRequestId ||
       state.hydrationStatus !== 'ready' ||
+      state.resetStatus === 'resetting' ||
       !window.nyx ||
       !state.retryableTurn ||
       state.retryableTurn.assistantMessageId !== messageId
@@ -253,25 +269,50 @@ export function useChatSession() {
   }
 
   async function startNewChat() {
-    if (state.hydrationStatus !== 'ready') {
+    if (state.hydrationStatus === 'loading' || state.resetStatus === 'resetting') {
       return
     }
 
     if (!window.nyx) {
-      dispatch({ type: 'clear-chat' })
+      const generation = projectionGeneration.current + 1
+      projectionGeneration.current = generation
+      dispatch({ type: 'reset-started', generation })
+      dispatch({ type: 'clear-chat', generation })
       return
     }
 
-    await window.nyx.chat.resetChatSession()
+    const generation = projectionGeneration.current + 1
+    projectionGeneration.current = generation
+    dispatch({ type: 'reset-started', generation })
 
-    dispatch({ type: 'clear-chat' })
+    try {
+      const result = await window.nyx.chat.resetChatSession()
+
+      if (!result.ok) {
+        dispatch({ type: 'reset-failed', generation, error: result.error })
+        return
+      }
+    } catch {
+      dispatch({
+        type: 'reset-failed',
+        generation,
+        error: currentThreadResetBridgeError(),
+      })
+      return
+    }
+
+    dispatch({ type: 'clear-chat', generation })
   }
 
   return {
     state,
     isBusy: Boolean(state.activeRequestId),
+    isResetting: state.resetStatus === 'resetting',
     canSend:
-      state.hydrationStatus === 'ready' && state.input.trim().length > 0 && !state.activeRequestId,
+      state.hydrationStatus === 'ready' &&
+      state.resetStatus === 'idle' &&
+      state.input.trim().length > 0 &&
+      !state.activeRequestId,
     setInput(value: string) {
       dispatch({
         type: 'set-input',

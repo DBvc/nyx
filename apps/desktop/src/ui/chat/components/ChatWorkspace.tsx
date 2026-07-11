@@ -18,6 +18,7 @@ export function ChatWorkspace() {
   const {
     state,
     isBusy,
+    isResetting,
     canSend,
     setInput,
     sendCurrentInput,
@@ -41,6 +42,7 @@ export function ChatWorkspace() {
       <div className='flex h-full w-full flex-col lg:flex-row'>
         <ChatSidebar
           activeView={activeView}
+          newThreadDisabled={state.hydrationStatus === 'loading' || isResetting}
           onNewThread={() => {
             void startNewChat()
             setActiveView('chat')
@@ -68,6 +70,7 @@ export function ChatWorkspace() {
                 connectionStatus={connectionSetup.status}
                 hydrationError={state.hydrationError}
                 hydrationStatus={state.hydrationStatus}
+                resetError={state.resetError}
                 containerRef={containerRef}
                 items={threadItems}
                 onOpenConnectionsSettings={() => {
@@ -81,7 +84,7 @@ export function ChatWorkspace() {
               />
               <ChatComposer
                 canSend={canSend}
-                disabled={state.hydrationStatus !== 'ready'}
+                disabled={state.hydrationStatus !== 'ready' || isResetting}
                 input={state.input}
                 isBusy={isBusy}
                 onInputChange={setInput}

@@ -486,6 +486,88 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
   })
 
   integrationIt(
+    'removes an aborted durable turn before a fresh runtime-backed request',
+    async () => {
+      checkedRuntimeArtifactPath()
+      const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-reset-'))
+      const store = new CurrentThreadStore({
+        filePath: join(tempDir, 'current-thread.json'),
+        generateId: () => 'thread-after-reset',
+      })
+      const coordinator = new CurrentThreadSessionCoordinator({ store })
+      const sender = mockSender()
+      const clearStates: RuntimeChatReducerState[] = []
+      streamChatCompletion
+        .mockImplementationOnce(
+          ({ signal }: { signal: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              signal.addEventListener('abort', () => reject(abortError()), { once: true })
+            }),
+        )
+        .mockImplementationOnce(
+          async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
+            await onDelta('Fresh', 'Fresh')
+            return { finalContent: 'Fresh answer' }
+          },
+        )
+      const manager = new ChatSessionManager({
+        createRuntimeChatStateClient: () => createObservableRuntimeChatStateClient(clearStates),
+        resolveCurrentThreadSession: () => coordinator,
+      })
+
+      try {
+        manager.start(sender, chatRequest({ requestId: 'request-durable-reset-1' }))
+        await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+        await expect(store.read()).resolves.toMatchObject({
+          turns: [{ assistantStatus: 'pending' }],
+        })
+
+        await expect(manager.reset(sender)).resolves.toEqual({ ok: true })
+
+        await expect(store.read()).resolves.toBeNull()
+        expect(sentChatEvents(sender).map((event) => event.type)).toEqual(['chat:start'])
+        expect(clearStates).toEqual([
+          {
+            transcript: [],
+            current_turn: { type: 'no_turn' },
+          },
+        ])
+
+        manager.start(
+          sender,
+          chatRequest({
+            requestId: 'request-after-durable-reset-1',
+            userMessageId: 'user-2',
+            assistantMessageId: 'assistant-2',
+            content: 'Fresh prompt',
+          }),
+        )
+
+        await waitForAssertion(() => {
+          expect(sentChatEvents(sender).at(-1)).toMatchObject({
+            type: 'chat:done',
+            requestId: 'request-after-durable-reset-1',
+            finalContent: 'Fresh answer',
+          })
+        })
+        await expect(store.read()).resolves.toMatchObject({
+          threadId: 'thread-after-reset',
+          turns: [
+            {
+              userMessageId: 'user-2',
+              assistantStatus: 'completed',
+              assistantContent: 'Fresh answer',
+            },
+          ],
+        })
+      } finally {
+        await manager.reset(sender)
+        await rm(tempDir, { recursive: true, force: true })
+      }
+    },
+  )
+
+  integrationIt(
     'replays a durable completed turn into a fresh runtime before continuing',
     async () => {
       checkedRuntimeArtifactPath()

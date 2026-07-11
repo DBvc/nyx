@@ -5,6 +5,7 @@ import type {
   NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
 import type {
+  NyxCurrentThreadResetError,
   NyxCurrentThreadSnapshot,
   NyxCurrentThreadSnapshotError,
 } from '../../../shared/chat/snapshot'
@@ -14,10 +15,12 @@ import { initialChatState } from './chat-types'
 type ChatAction =
   | {
       type: 'current-thread-hydrated'
+      generation: number
       snapshot: NyxCurrentThreadSnapshot | null
     }
   | {
       type: 'current-thread-hydration-failed'
+      generation: number
       error: NyxCurrentThreadSnapshotError
     }
   | {
@@ -66,7 +69,17 @@ type ChatAction =
       submittedMessages: ReadonlyArray<NyxChatInputMessage>
     }
   | {
+      type: 'reset-started'
+      generation: number
+    }
+  | {
+      type: 'reset-failed'
+      generation: number
+      error: NyxCurrentThreadResetError
+    }
+  | {
       type: 'clear-chat'
+      generation: number
     }
 
 function updateMessage(
@@ -92,6 +105,10 @@ function isActiveAssistantTurn(state: ChatState, requestId: string, assistantMes
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'current-thread-hydrated': {
+      if (action.generation !== state.projectionGeneration) {
+        return state
+      }
+
       const readyState = {
         ...initialChatState,
         hydrationStatus: 'ready',
@@ -121,6 +138,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
 
     case 'current-thread-hydration-failed':
+      if (action.generation !== state.projectionGeneration) {
+        return state
+      }
+
       return {
         ...initialChatState,
         hydrationStatus: 'error',
@@ -256,10 +277,44 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         })),
       }
 
+    case 'reset-started':
+      return {
+        ...state,
+        activeRequestId: undefined,
+        activeAssistantMessageId: undefined,
+        activeTurn: null,
+        retryableTurn: null,
+        projectionGeneration: action.generation,
+        resetStatus: 'resetting',
+        resetError: null,
+      }
+
+    case 'reset-failed':
+      if (action.generation !== state.projectionGeneration) {
+        return state
+      }
+
+      return {
+        ...state,
+        runStatus: 'failed',
+        activeRequestId: undefined,
+        activeAssistantMessageId: undefined,
+        activeTurn: null,
+        retryableTurn: null,
+        hydrationStatus: 'error',
+        resetStatus: 'idle',
+        resetError: { ...action.error },
+      }
+
     case 'clear-chat':
+      if (action.generation !== state.projectionGeneration) {
+        return state
+      }
+
       return {
         ...initialChatState,
         hydrationStatus: 'ready',
+        projectionGeneration: action.generation,
       }
   }
 }

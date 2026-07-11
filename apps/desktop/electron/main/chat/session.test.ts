@@ -152,6 +152,15 @@ function abortError() {
   return error
 }
 
+function deferred<TValue>() {
+  let resolve!: (value: TValue) => void
+  const promise = new Promise<TValue>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+
+  return { promise, resolve }
+}
+
 function runtimeState(): RuntimeChatReducerState {
   return {
     transcript: [],
@@ -295,19 +304,24 @@ describe('ChatSessionManager reset', () => {
     streamChatCompletion.mockReset()
   })
 
-  it('aborts and clears the active session for the same sender', () => {
+  it('aborts and clears the active session for the same sender', async () => {
     let signal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(({ signal: activeSignal }: { signal: AbortSignal }) => {
-      signal = activeSignal
-      return new Promise(() => {})
-    })
+    streamChatCompletion
+      .mockImplementationOnce(({ signal: activeSignal }: { signal: AbortSignal }) => {
+        signal = activeSignal
+        return new Promise((_resolve, reject) => {
+          activeSignal.addEventListener('abort', () => reject(abortError()), { once: true })
+        })
+      })
+      .mockResolvedValueOnce({ finalContent: 'Fresh' })
     const sender = mockSender()
     const manager = new ChatSessionManager({
       env: runtimeChatStateDisabledEnv,
     })
 
     manager.start(sender, validRequest())
-    manager.reset(sender)
+    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+    await expect(manager.reset(sender)).resolves.toEqual({ ok: true })
 
     expect(signal?.aborted).toBe(true)
     expect(sender.send).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, {
@@ -323,14 +337,16 @@ describe('ChatSessionManager reset', () => {
       assistantMessageId: 'assistant-2',
     })
 
-    expect(streamChatCompletion).toHaveBeenCalledTimes(2)
+    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(2))
   })
 
-  it('does not reset an active session owned by another sender', () => {
+  it('resets the manager-owned active session from another sender', async () => {
     let signal: AbortSignal | undefined
     streamChatCompletion.mockImplementation(({ signal: activeSignal }: { signal: AbortSignal }) => {
       signal = activeSignal
-      return new Promise(() => {})
+      return new Promise((_resolve, reject) => {
+        activeSignal.addEventListener('abort', () => reject(abortError()), { once: true })
+      })
     })
     const sender = mockSender()
     const otherSender = mockSender()
@@ -339,9 +355,121 @@ describe('ChatSessionManager reset', () => {
     })
 
     manager.start(sender, validRequest())
-    manager.reset(otherSender)
+    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+    await expect(manager.reset(otherSender)).resolves.toEqual({ ok: true })
 
-    expect(signal?.aborted).toBe(false)
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('waits for durable preparation before deleting the current thread', async () => {
+    const order: string[] = []
+    const prepareGate = deferred<PreparedCurrentThreadTurn>()
+    const coordinator = {
+      prepare: vi.fn(async () => {
+        order.push('durable:prepare')
+        const prepared = await prepareGate.promise
+        order.push('durable:prepared')
+        return prepared
+      }),
+      reset: vi.fn(async () => {
+        order.push('durable:reset')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+    await waitForAssertion(() => expect(coordinator.prepare).toHaveBeenCalledTimes(1))
+
+    const resetPromise = manager.reset(sender)
+    expect(coordinator.reset).not.toHaveBeenCalled()
+
+    prepareGate.resolve(preparedTurn())
+    await expect(resetPromise).resolves.toEqual({ ok: true })
+
+    expect(order).toEqual(['durable:prepare', 'durable:prepared', 'durable:reset'])
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+    expect(sender.send).not.toHaveBeenCalled()
+  })
+
+  it('waits for provider abort before clearing runtime and durable state', async () => {
+    const order: string[] = []
+    const providerExit = deferred<void>()
+    let activeSignal: AbortSignal | undefined
+    streamChatCompletion.mockImplementationOnce(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          activeSignal = signal
+          signal.addEventListener(
+            'abort',
+            () => {
+              order.push('provider:aborted')
+              void providerExit.promise.then(() => reject(abortError()))
+            },
+            { once: true },
+          )
+        }),
+    )
+    const runtimeClient = fakeRuntimeChatStateClient(order)
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      reset: vi.fn(async () => {
+        order.push('durable:reset')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+
+    const resetPromise = manager.reset(sender)
+    await waitForAssertion(() => expect(order).toContain('provider:aborted'))
+    expect(activeSignal?.aborted).toBe(true)
+    expect(runtimeClient.clear).not.toHaveBeenCalled()
+    expect(coordinator.reset).not.toHaveBeenCalled()
+
+    providerExit.resolve()
+    await expect(resetPromise).resolves.toEqual({ ok: true })
+
+    expect(order.slice(-4)).toEqual([
+      'provider:aborted',
+      'runtime:clear',
+      'runtime:close',
+      'durable:reset',
+    ])
+    expect(sentChatEvents(sender).map((event) => event.type)).toEqual(['chat:start'])
+  })
+
+  it('returns one safe reset error without exposing store details', async () => {
+    const coordinator = {
+      reset: vi.fn(async () => {
+        throw new Error('Authorization: Bearer secret at /private/current-thread.json')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    const result = await manager.reset(mockSender())
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'reset_failed',
+        message: 'Nyx could not start a fresh thread.',
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain('Bearer secret')
+    expect(JSON.stringify(result)).not.toContain('/private')
   })
 })
 
@@ -716,7 +844,9 @@ describe('ChatSessionManager runtime chat state gate', () => {
     let activeSignal: AbortSignal | undefined
     streamChatCompletion.mockImplementation(({ signal }: { signal: AbortSignal }) => {
       activeSignal = signal
-      return new Promise(() => {})
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(abortError()), { once: true })
+      })
     })
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
@@ -738,7 +868,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
     expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 
-  it('does not clear runtime chat state for another sender', async () => {
+  it('clears manager-owned runtime chat state from another sender', async () => {
     streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
     const runtimeClient = fakeRuntimeChatStateClient()
     const sender = mockSender()
@@ -762,8 +892,8 @@ describe('ChatSessionManager runtime chat state gate', () => {
 
     await manager.reset(otherSender)
 
-    expect(runtimeClient.clear).not.toHaveBeenCalled()
-    expect(runtimeClient.close).not.toHaveBeenCalled()
+    expect(runtimeClient.clear).toHaveBeenCalledTimes(1)
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 
   it('keeps separate runtime chat state clients per sender', async () => {
@@ -851,14 +981,16 @@ describe('ChatSessionManager runtime chat state gate', () => {
     })
   })
 
-  it('clears an idle sender runtime state without aborting another active sender', async () => {
+  it('aborts the active turn and clears every runtime projection on global reset', async () => {
     let activeSignal: AbortSignal | undefined
     streamChatCompletion
       .mockResolvedValueOnce({ finalContent: 'Done' })
       .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
         activeSignal = signal
 
-        return new Promise(() => {})
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(abortError()), { once: true })
+        })
       })
     const idleRuntimeClient = fakeRuntimeChatStateClient()
     const activeRuntimeClient = fakeRuntimeChatStateClient()
@@ -901,11 +1033,11 @@ describe('ChatSessionManager runtime chat state gate', () => {
 
     await manager.reset(sender)
 
-    expect(activeSignal?.aborted).toBe(false)
+    expect(activeSignal?.aborted).toBe(true)
     expect(idleRuntimeClient.clear).toHaveBeenCalledTimes(1)
     expect(idleRuntimeClient.close).toHaveBeenCalledTimes(1)
-    expect(activeRuntimeClient.clear).not.toHaveBeenCalled()
-    expect(activeRuntimeClient.close).not.toHaveBeenCalled()
+    expect(activeRuntimeClient.clear).toHaveBeenCalledTimes(1)
+    expect(activeRuntimeClient.close).toHaveBeenCalledTimes(1)
   })
 
   it('closes runtime chat state when the owning sender is destroyed', async () => {
@@ -1103,6 +1235,36 @@ describe('ChatSessionManager durable current thread ordering', () => {
       'durable:complete',
       'event:chat:done',
     ])
+  })
+
+  it('persists the latest assistant draft when the provider fails', async () => {
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      fail: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockImplementationOnce(
+      async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
+        await onDelta('Partial', 'Partial draft')
+        throw new Error('Provider failed')
+      },
+    )
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({ type: 'chat:error' })
+    })
+    expect(coordinator.fail).toHaveBeenCalledWith(
+      'request-1',
+      'assistant-1',
+      'Partial draft',
+      expect.objectContaining({ message: 'Provider failed' }),
+    )
   })
 
   it('fails closed before provider work when durable request validation fails', async () => {
