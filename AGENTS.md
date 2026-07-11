@@ -18,8 +18,8 @@ broaden unrelated tasks.
 - `runtime/ocaml`: OCaml runtime core skeleton. Electron main uses a default-on runtime-backed chat state path while provider integration and UI remain in the desktop app.
 - `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
-- `docs/next/agent-workbench-task-slices.md`: explicit next workstream gate for
-  thread-first Agent Workbench foundation tasks.
+- `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
+  thread-first Agent Workbench foundation and current-thread durability tasks.
 
 ## Source of Truth
 
@@ -88,6 +88,26 @@ Still out of scope for that first workstream:
 - thread IPC replacing chat IPC
 - OCaml thread runtime domain or Electron wiring
 
+For the explicit second `current-thread-durability` workstream, only the
+following additions are allowed:
+
+- one Electron-main-owned durable current thread record
+- a narrow typed current-thread snapshot on the existing chat bridge
+- renderer hydration from that safe snapshot while renderer state remains an
+  in-memory projection
+- main-derived provider messages with compatibility validation against the
+  existing renderer request payload
+- lazy replay into the existing runtime chat reducer before the next real turn
+- interrupted-turn recovery and explicit New thread/Start fresh reset
+
+This second workstream is not persistent thread history. Still out of scope:
+
+- Recent, thread lists, thread switching, search, archive, or hidden history
+- full thread IPC replacing chat IPC
+- OCaml thread runtime domain or new runtime protocol messages
+- activity, approvals, artifacts, tools, MCP, terminal, or browser automation
+- SQLite, JSONL, conversation encryption, or multi-window synchronization
+
 ## Workspace Boundary
 
 `apps/desktop` owns:
@@ -99,6 +119,8 @@ Still out of scope for that first workstream:
 - provider credentials
 - OS side effects
 - current v1 min chat behavior
+- explicit current-thread durable storage and recovery when a named second
+  workstream slice authorizes it
 
 `runtime/ocaml` owns:
 
@@ -128,6 +150,8 @@ Before naming, renaming, or planning runtime-boundary work, check the naming bou
 - Do not let renderer access provider credentials.
 - Do not move provider tokens into OCaml.
 - Do not add Rust, Swift, Tauri, mobile, or server projects in this phase.
+- Do not treat current-thread durability as permission to add multi-thread
+  history, thread switching, or a parallel Thread reducer.
 - Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
 - Prefer `git mv` for file moves.
 - Use relative documentation links. Do not write local absolute paths such as `/Users/...`.

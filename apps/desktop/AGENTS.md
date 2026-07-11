@@ -5,9 +5,10 @@ This directory contains the Nyx Electron desktop app.
 The desktop app is currently the only user-facing product surface. Its default
 scope remains `v1 min chat`.
 
-Connections settings and thread-first UI work are allowed only when the user
-explicitly asks to execute the gated agent-workbench workstream or a named slice
-from `../../docs/next/agent-workbench-task-slices.md`.
+Connections settings, thread-first UI work, and current-thread durability are
+allowed only when the user explicitly asks to execute the corresponding gated
+agent-workbench workstream or a named slice from
+`../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
 
@@ -22,6 +23,7 @@ This subproject owns:
 - environment variable reading
 - provider credentials
 - OS-facing side effects
+- explicit main-owned current-thread persistence and recovery
 
 ## Directory Map
 
@@ -44,6 +46,8 @@ This subproject owns:
 - Preload must expose a narrow, typed API only.
 - Main process owns provider calls and cancellation handles.
 - Main process owns OS side effects.
+- Electron main owns any persisted current-thread record and file IO. Renderer
+  may receive only a safe typed snapshot and remains an in-memory projection.
 - Do not import from `runtime/ocaml`.
 - Do not use the OCaml runtime outside explicit Electron-main runtime boundary code.
 - The runtime-backed chat state path is default-on inside Electron main; `NYX_RUNTIME_CHAT_STATE=0` is only a diagnostic disable.
@@ -53,6 +57,9 @@ This subproject owns:
   `../../docs/next/agent-workbench-task-slices.md`. Do not treat that workstream
   as blanket permission for tools, agents, artifacts, history, browser
   automation, terminal execution, or broader runtime integration.
+- Current-thread durability slices may replay only the existing runtime chat
+  reducer protocol. They must not add a Thread reducer, new runtime protocol
+  messages, runtime startup during snapshot load, or renderer/runtime contact.
 
 ## Current Scope
 
@@ -95,6 +102,25 @@ Still not allowed in that first workstream:
 - fake artifacts, fake file context, fake activity, or approval cards
 - thread IPC
 - OCaml thread runtime domain or Electron wiring
+
+Explicit second `current-thread-durability` workstream additions:
+
+- one versioned current-thread record owned by Electron main
+- one safe current-thread snapshot method under the existing `window.nyx.chat`
+  bridge
+- renderer hydration while `ChatState` remains an in-memory projection
+- main-derived provider context with compatibility validation
+- lazy replay through the existing runtime chat state client before the next
+  real turn
+- interrupted-turn recovery and explicit New thread/Start fresh reset
+
+Still not allowed in that second workstream:
+
+- Recent, thread lists, thread switching, search, archive, or hidden history
+- full thread IPC or `window.nyx.thread`
+- OCaml Thread domain, new runtime protocol actions, or provider calls in OCaml
+- tools, MCP, activity, approvals, artifacts, terminal, or browser automation
+- SQLite, JSONL, conversation encryption, or multi-window synchronization
 
 ## Contract Rules
 
@@ -174,7 +200,8 @@ mise run desktop:check
 ## Style
 
 - Keep UI state transitions explicit and testable.
-- Keep renderer state in memory for current scope.
+- Keep renderer state as an in-memory projection; do not make renderer the
+  durable current-thread owner.
 - Keep side effects near Electron main.
 - Prefer small typed contracts over implicit objects.
 - Do not over-abstract for future Agent features yet.
