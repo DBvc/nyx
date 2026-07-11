@@ -5,6 +5,11 @@ import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
+  CurrentThreadSessionError,
+  type CurrentThreadSessionCoordinator,
+  type PreparedCurrentThreadTurn,
+} from '../current-thread/session-coordinator'
+import {
   RuntimeChatStateClientError,
   type RuntimeChatStateClient,
   type RuntimeChatReducerState,
@@ -177,6 +182,20 @@ function fakeRuntimeChatStateClient(order?: string[]) {
   }
 
   return client
+}
+
+function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadTurn {
+  return {
+    providerMessages: [{ role: 'user', content: providerContent }],
+    replayRecord: null,
+    pendingRecord: {
+      version: 1,
+      threadId: 'thread-1',
+      turns: [],
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    } as PreparedCurrentThreadTurn['pendingRecord'],
+  }
 }
 
 describe('validateChatRequest', () => {
@@ -1038,6 +1057,205 @@ describe('ChatSessionManager runtime chat state gate', () => {
     })
 
     expect(runtimeClient.fail).not.toHaveBeenCalled()
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ChatSessionManager durable current thread ordering', () => {
+  beforeEach(() => {
+    streamChatCompletion.mockReset()
+  })
+
+  it('uses main-derived messages and persists terminal state before renderer completion', async () => {
+    const order: string[] = []
+    const prepared = preparedTurn()
+    const coordinator = {
+      prepare: vi.fn(async () => {
+        order.push('durable:pending')
+        return prepared
+      }),
+      complete: vi.fn(async () => {
+        order.push('durable:complete')
+      }),
+      cancel: vi.fn(),
+      fail: vi.fn(),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockImplementation(async ({ request }: { request: NyxChatRequest }) => {
+      order.push(`provider:${request.messages[0]?.content}`)
+      return { finalContent: 'Done' }
+    })
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done')
+    })
+
+    expect(order).toEqual([
+      'durable:pending',
+      'event:chat:start',
+      'provider:Durable hello',
+      'durable:complete',
+      'event:chat:done',
+    ])
+  })
+
+  it('fails closed before provider work when durable request validation fails', async () => {
+    const coordinator = {
+      prepare: vi.fn(async () => {
+        throw new CurrentThreadSessionError('invalid_request', 'Durable messages differ.')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        error: { code: 'invalid_request', retryable: false },
+      })
+    })
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('resets durable state even when no runtime client was started', async () => {
+    const coordinator = {
+      reset: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    await manager.reset(mockSender())
+
+    expect(coordinator.reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists a runtime terminal failure before emitting the renderer error', async () => {
+    const order: string[] = []
+    const runtimeClient = fakeRuntimeChatStateClient(order)
+    vi.mocked(runtimeClient.fail).mockImplementationOnce(async () => {
+      order.push('runtime:fail')
+      throw new RuntimeChatStateClientError('Runtime fail failed')
+    })
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      fail: vi.fn(async () => {
+        order.push('durable:fail')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockRejectedValueOnce(new Error('Provider failed'))
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        error: { message: 'Runtime fail failed', retryable: false },
+      })
+    })
+    expect(order.indexOf('runtime:fail')).toBeLessThan(order.indexOf('durable:fail'))
+    expect(order.indexOf('durable:fail')).toBeLessThan(order.indexOf('event:chat:error'))
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists a failed terminal record when runtime cancel rejects', async () => {
+    const runtimeClient = fakeRuntimeChatStateClient()
+    vi.mocked(runtimeClient.cancel).mockRejectedValueOnce(
+      new RuntimeChatStateClientError('Runtime cancel failed'),
+    )
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      fail: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockImplementationOnce(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(abortError()), { once: true })
+        }),
+    )
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+    manager.cancel({ requestId: 'request-1' })
+
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        error: { message: 'Runtime cancel failed', retryable: false },
+      })
+    })
+    expect(coordinator.fail).toHaveBeenCalledTimes(1)
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards an existing runtime when config failure advances only durable state', async () => {
+    const runtimeClient = fakeRuntimeChatStateClient()
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      complete: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const resolveProviderConfig = vi
+      .fn()
+      .mockReturnValueOnce({ baseUrl: 'https://example.com/v1/', token: 'token', model: 'model' })
+      .mockImplementationOnce(() => {
+        throw new Error('Config failed')
+      })
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done' })
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+      resolveProviderConfig,
+    })
+
+    manager.start(sender, validRequest())
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done')
+    })
+
+    manager.start(
+      sender,
+      requestWithIds({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        content: 'Continue',
+      }),
+    )
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        error: { message: 'Config failed' },
+      })
+    })
+
+    expect(coordinator.fail).toHaveBeenCalledTimes(1)
     expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 })

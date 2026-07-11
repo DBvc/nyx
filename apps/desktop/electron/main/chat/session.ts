@@ -8,6 +8,12 @@ import {
 } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import type { ChatProviderConfigResolver } from '../connections/provider-resolver'
+import { replayCurrentThread } from '../current-thread/runtime-replay'
+import {
+  CurrentThreadSessionCoordinator,
+  CurrentThreadSessionError,
+  type PreparedCurrentThreadTurn,
+} from '../current-thread/session-coordinator'
 import { streamChatCompletion } from './client'
 import { readChatProviderConfig, type ChatProviderConfig } from './env'
 import { isAbortError, toChatError } from './errors'
@@ -23,16 +29,20 @@ interface ActiveChatSession {
   userMessageId: string
   assistantMessageId: string
   turnIntent: NyxChatRequest['turnIntent']
+  request: NyxChatRequest
   sender: WebContents
   abortController: AbortController
   finalContent: string
   runtimeChatStateClient?: RuntimeChatStateClient
+  currentThreadSession?: CurrentThreadSessionCoordinator
+  preparedCurrentThread?: PreparedCurrentThreadTurn
 }
 
 interface RuntimeChatStateSession {
   sender: WebContents
   client: RuntimeChatStateClient
   onSenderDestroyed: () => void
+  hydratedThreadId?: string
 }
 
 interface ChatSessionEnv {
@@ -44,6 +54,7 @@ interface ChatSessionManagerOptions {
   env?: ChatSessionEnv
   createRuntimeChatStateClient?: () => RuntimeChatStateClient
   resolveProviderConfig?: ChatProviderConfigResolver
+  resolveCurrentThreadSession?: () => CurrentThreadSessionCoordinator
 }
 
 export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
@@ -131,16 +142,19 @@ export class ChatSessionManager {
   private readonly runtimeChatStateEnabled: boolean
   private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
   private readonly resolveProviderConfig: ChatProviderConfigResolver
+  private readonly resolveCurrentThreadSession: (() => CurrentThreadSessionCoordinator) | undefined
   private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
 
   constructor({
     env = process.env,
     createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
     resolveProviderConfig = readChatProviderConfig,
+    resolveCurrentThreadSession,
   }: ChatSessionManagerOptions = {}) {
     this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
     this.createRuntimeChatStateClient = createRuntimeChatStateClient
     this.resolveProviderConfig = resolveProviderConfig
+    this.resolveCurrentThreadSession = resolveCurrentThreadSession
   }
 
   start(sender: WebContents, request: NyxChatRequest) {
@@ -165,6 +179,7 @@ export class ChatSessionManager {
       userMessageId: request.userMessageId,
       assistantMessageId: request.assistantMessageId,
       turnIntent: request.turnIntent,
+      request,
       sender,
       abortController: new AbortController(),
       finalContent: '',
@@ -172,12 +187,58 @@ export class ChatSessionManager {
 
     this.activeSession = session
 
+    if (this.resolveCurrentThreadSession) {
+      void this.prepareDurableSession(session, request)
+      return
+    }
+
+    this.resolveConfigAndStart(session, request)
+  }
+
+  private async prepareDurableSession(session: ActiveChatSession, request: NyxChatRequest) {
+    const currentThreadSession = this.resolveCurrentThreadSession!()
+    session.currentThreadSession = currentThreadSession
+
+    try {
+      const preparedCurrentThread = await currentThreadSession.prepare(request)
+
+      if (this.activeSession !== session) {
+        return
+      }
+
+      session.preparedCurrentThread = preparedCurrentThread
+      const durableRequest = {
+        ...request,
+        messages: preparedCurrentThread.providerMessages,
+      }
+      session.request = durableRequest
+      this.resolveConfigAndStart(session, durableRequest)
+    } catch (error) {
+      if (this.activeSession !== session) {
+        return
+      }
+
+      const chatError =
+        error instanceof CurrentThreadSessionError && error.code === 'invalid_request'
+          ? {
+              code: 'invalid_request' as const,
+              message: error.message,
+              retryable: false,
+            }
+          : toNonRetryableRuntimeChatError(error)
+
+      this.emitError(session.sender, request, chatError)
+      this.activeSession = undefined
+    }
+  }
+
+  private resolveConfigAndStart(session: ActiveChatSession, request: NyxChatRequest) {
     let configResult
 
     try {
       configResult = this.resolveProviderConfig()
     } catch (error) {
-      this.handleProviderConfigError(session, request, error)
+      void this.handleProviderConfigError(session, request, error)
       return
     }
 
@@ -197,7 +258,7 @@ export class ChatSessionManager {
     try {
       this.startWithProviderConfig(session, await configResult, request)
     } catch (error) {
-      this.handleProviderConfigError(session, request, error)
+      await this.handleProviderConfigError(session, request, error)
     }
   }
 
@@ -219,7 +280,7 @@ export class ChatSessionManager {
     void this.prepareRuntimeAndRunSession(session, config, request)
   }
 
-  private handleProviderConfigError(
+  private async handleProviderConfigError(
     session: ActiveChatSession,
     request: NyxChatRequest,
     error: unknown,
@@ -228,7 +289,13 @@ export class ChatSessionManager {
       return
     }
 
-    this.emitError(session.sender, request, toChatError(error))
+    const chatError = toChatError(error)
+
+    if (!(await this.persistFailure(session, chatError))) {
+      return
+    }
+
+    this.emitError(session.sender, request, chatError)
     this.activeSession = undefined
   }
 
@@ -248,18 +315,20 @@ export class ChatSessionManager {
 
     const runtimeChatStateSession = this.runtimeChatStateSessions.get(sender)
 
-    if (!runtimeChatStateSession) {
-      return
+    if (runtimeChatStateSession) {
+      this.detachRuntimeChatStateSession(runtimeChatStateSession)
+
+      try {
+        await runtimeChatStateSession.client.clear()
+      } catch {
+        // Reset detaches the old runtime client so the next turn starts from a fresh session.
+      } finally {
+        runtimeChatStateSession.client.close()
+      }
     }
 
-    this.detachRuntimeChatStateSession(runtimeChatStateSession)
-
-    try {
-      await runtimeChatStateSession.client.clear()
-    } catch {
-      // Reset detaches the old runtime client so the next turn starts from a fresh session.
-    } finally {
-      runtimeChatStateSession.client.close()
+    if (this.resolveCurrentThreadSession) {
+      await this.resolveCurrentThreadSession().reset()
     }
   }
 
@@ -269,9 +338,23 @@ export class ChatSessionManager {
     request: NyxChatRequest,
   ) {
     try {
-      const runtimeChatStateClient = this.getRuntimeChatStateClient(session.sender)
+      const runtimeChatStateSession = this.getRuntimeChatStateSession(session.sender)
+      const runtimeChatStateClient = runtimeChatStateSession.client
 
       session.runtimeChatStateClient = runtimeChatStateClient
+
+      if (
+        session.preparedCurrentThread &&
+        runtimeChatStateSession.hydratedThreadId !==
+          session.preparedCurrentThread.pendingRecord.threadId
+      ) {
+        await replayCurrentThread(
+          runtimeChatStateClient,
+          session.preparedCurrentThread.replayRecord,
+        )
+        runtimeChatStateSession.hydratedThreadId =
+          session.preparedCurrentThread.pendingRecord.threadId
+      }
 
       await this.startRuntimeTurn(runtimeChatStateClient, request)
 
@@ -287,7 +370,10 @@ export class ChatSessionManager {
           assistantMessageId: session.assistantMessageId,
           finalContent: session.finalContent,
         })
-        this.emitDone(session, 'cancelled')
+
+        if (await this.persistCancelled(session)) {
+          this.emitDone(session, 'cancelled')
+        }
         this.activeSession = undefined
         return
       }
@@ -299,16 +385,20 @@ export class ChatSessionManager {
       }
 
       this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-      this.emitError(session.sender, request, toNonRetryableRuntimeChatError(error))
+      const chatError = toNonRetryableRuntimeChatError(error)
+
+      if (await this.persistFailure(session, chatError)) {
+        this.emitError(session.sender, request, chatError)
+      }
       this.activeSession = undefined
     }
   }
 
-  private getRuntimeChatStateClient(sender: WebContents) {
+  private getRuntimeChatStateSession(sender: WebContents) {
     const existingSession = this.runtimeChatStateSessions.get(sender)
 
     if (existingSession && !sender.isDestroyed()) {
-      return existingSession.client
+      return existingSession
     }
 
     if (existingSession) {
@@ -323,7 +413,7 @@ export class ChatSessionManager {
 
     this.runtimeChatStateSessions.set(sender, runtimeChatStateSession)
 
-    return runtimeChatStateClient
+    return runtimeChatStateSession
   }
 
   private discardRuntimeChatStateClient(runtimeChatStateClient?: RuntimeChatStateClient) {
@@ -339,6 +429,14 @@ export class ChatSessionManager {
     }
 
     runtimeChatStateClient.close()
+  }
+
+  private discardRuntimeChatStateForSender(sender: WebContents) {
+    const runtimeChatStateSession = this.runtimeChatStateSessions.get(sender)
+
+    if (runtimeChatStateSession) {
+      this.closeRuntimeChatStateSession(runtimeChatStateSession)
+    }
   }
 
   private createRuntimeChatStateSession(
@@ -467,7 +565,7 @@ export class ChatSessionManager {
           finalContent: session.finalContent,
         })
 
-        if (this.activeSession === session) {
+        if (this.activeSession === session && (await this.persistCompleted(session))) {
           this.emitDone(session, 'completed')
         }
       }
@@ -478,7 +576,11 @@ export class ChatSessionManager {
 
       if (error instanceof RuntimeChatStateClientError) {
         this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-        this.emitError(session.sender, request, toNonRetryableRuntimeChatError(error))
+        const chatError = toNonRetryableRuntimeChatError(error)
+
+        if (await this.persistFailure(session, chatError)) {
+          this.emitError(session.sender, request, chatError)
+        }
         return
       }
 
@@ -491,11 +593,17 @@ export class ChatSessionManager {
           })
         } catch (runtimeError) {
           this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          this.emitError(session.sender, request, toNonRetryableRuntimeChatError(runtimeError))
+          const chatError = toNonRetryableRuntimeChatError(runtimeError)
+
+          if (await this.persistFailure(session, chatError)) {
+            this.emitError(session.sender, request, chatError)
+          }
           return
         }
 
-        this.emitDone(session, 'cancelled')
+        if (await this.persistCancelled(session)) {
+          this.emitDone(session, 'cancelled')
+        }
       } else {
         const chatError = toChatError(error)
 
@@ -507,16 +615,78 @@ export class ChatSessionManager {
           })
         } catch (runtimeError) {
           this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          this.emitError(session.sender, request, toNonRetryableRuntimeChatError(runtimeError))
+          const runtimeChatError = toNonRetryableRuntimeChatError(runtimeError)
+
+          if (await this.persistFailure(session, runtimeChatError)) {
+            this.emitError(session.sender, request, runtimeChatError)
+          }
           return
         }
 
-        this.emitError(session.sender, request, chatError)
+        if (await this.persistFailure(session, chatError)) {
+          this.emitError(session.sender, request, chatError)
+        }
       }
     } finally {
       if (this.activeSession === session) {
         this.activeSession = undefined
       }
+    }
+  }
+
+  private persistCompleted(session: ActiveChatSession) {
+    return this.persistTerminal(session, () =>
+      session.currentThreadSession!.complete(
+        session.requestId,
+        session.assistantMessageId,
+        session.finalContent,
+      ),
+    )
+  }
+
+  private persistCancelled(session: ActiveChatSession) {
+    return this.persistTerminal(session, () =>
+      session.currentThreadSession!.cancel(
+        session.requestId,
+        session.assistantMessageId,
+        session.finalContent,
+      ),
+    )
+  }
+
+  private async persistFailure(session: ActiveChatSession, error: NyxChatErrorEvent['error']) {
+    const persisted = await this.persistTerminal(session, () =>
+      session.currentThreadSession!.fail(
+        session.requestId,
+        session.assistantMessageId,
+        session.finalContent,
+        error,
+      ),
+    )
+
+    if (persisted && session.currentThreadSession && session.preparedCurrentThread) {
+      this.discardRuntimeChatStateForSender(session.sender)
+    }
+
+    return persisted
+  }
+
+  private async persistTerminal(session: ActiveChatSession, persist: () => Promise<unknown>) {
+    if (!session.currentThreadSession || !session.preparedCurrentThread) {
+      return true
+    }
+
+    try {
+      await persist()
+      return true
+    } catch {
+      this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+      this.emitError(session.sender, session.request, {
+        code: 'unknown',
+        message: 'Nyx could not save the current thread.',
+        retryable: false,
+      })
+      return false
     }
   }
 

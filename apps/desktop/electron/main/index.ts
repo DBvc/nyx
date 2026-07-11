@@ -20,6 +20,7 @@ import {
   CurrentThreadSnapshotService,
   type CurrentThreadSnapshotController,
 } from './current-thread/snapshot'
+import { CurrentThreadSessionCoordinator } from './current-thread/session-coordinator'
 import { CurrentThreadStore } from './current-thread/store'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 import { configureMainAutoUpdate } from './update/service'
@@ -86,12 +87,26 @@ function createMainCurrentThreadStoreResolver() {
   }
 }
 
+function createMainCurrentThreadSessionResolver(
+  resolveStore: ReturnType<typeof createMainCurrentThreadStoreResolver>,
+) {
+  let session: CurrentThreadSessionCoordinator | undefined
+
+  return () => {
+    session ??= new CurrentThreadSessionCoordinator({ store: resolveStore() })
+    return session
+  }
+}
+
+const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
+const resolveCurrentThreadSession =
+  createMainCurrentThreadSessionResolver(resolveCurrentThreadStore)
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
   resolveProviderConfig: createMainChatProviderConfigResolver(),
+  resolveCurrentThreadSession,
 })
 const connectionsService = createMainConnectionsService()
-const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
 const currentThreadSnapshotService = new CurrentThreadSnapshotService({
   resolveReader: resolveCurrentThreadStore,
 })

@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { WebContents } from 'electron'
@@ -7,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxChatRequest } from '../../../shared/chat/types'
+import { CurrentThreadSessionCoordinator } from '../current-thread/session-coordinator'
+import { CurrentThreadStore } from '../current-thread/store'
 import {
   createRuntimeChatStateClient,
   type RuntimeChatReducerState,
@@ -478,6 +482,155 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       })
     } finally {
       await manager.reset(sender)
+    }
+  })
+
+  integrationIt(
+    'replays a durable completed turn into a fresh runtime before continuing',
+    async () => {
+      checkedRuntimeArtifactPath()
+      const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-replay-'))
+      const store = new CurrentThreadStore({
+        filePath: join(tempDir, 'current-thread.json'),
+        generateId: () => 'thread-durable-1',
+      })
+      const coordinator = new CurrentThreadSessionCoordinator({ store })
+      const firstSender = mockSender()
+      const secondSender = mockSender()
+      streamChatCompletion
+        .mockImplementationOnce(
+          async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
+            await onDelta('First answer', 'First answer')
+            return { finalContent: 'First answer' }
+          },
+        )
+        .mockImplementationOnce(
+          async ({
+            request,
+            onDelta,
+          }: {
+            request: NyxChatRequest
+            onDelta: (delta: string, snapshot: string) => Promise<void>
+          }) => {
+            expect(request.messages).toEqual([
+              { role: 'user', content: 'Hello Nyx' },
+              { role: 'assistant', content: 'First answer' },
+              { role: 'user', content: 'Continue' },
+            ])
+            await onDelta('Second answer', 'Second answer')
+            return { finalContent: 'Second answer' }
+          },
+        )
+      const firstManager = new ChatSessionManager({
+        resolveCurrentThreadSession: () => coordinator,
+      })
+
+      try {
+        firstManager.start(firstSender, chatRequest({ requestId: 'request-durable-1' }))
+        await waitForAssertion(() => {
+          expect(sentChatEvents(firstSender).at(-1)).toMatchObject({
+            type: 'chat:done',
+            finalContent: 'First answer',
+          })
+        })
+        firstSender.emitDestroyed()
+
+        const secondManager = new ChatSessionManager({
+          resolveCurrentThreadSession: () => coordinator,
+        })
+        secondManager.start(secondSender, {
+          requestId: 'request-durable-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          turnIntent: 'new_user_message',
+          turnUserMessage: { id: 'user-2', content: 'Continue' },
+          messages: [
+            { role: 'user', content: 'Hello Nyx' },
+            { role: 'assistant', content: 'First answer' },
+            { role: 'user', content: 'Continue' },
+          ],
+        })
+
+        await waitForAssertion(() => {
+          expect(sentChatEvents(secondSender).at(-1)).toMatchObject({
+            type: 'chat:done',
+            finalContent: 'Second answer',
+          })
+        })
+        secondSender.emitDestroyed()
+
+        await expect(store.read()).resolves.toMatchObject({
+          turns: [
+            { assistantStatus: 'completed', assistantContent: 'First answer' },
+            { assistantStatus: 'completed', assistantContent: 'Second answer' },
+          ],
+        })
+      } finally {
+        await rm(tempDir, { recursive: true, force: true })
+      }
+    },
+  )
+
+  integrationIt('replays a durable failure into a fresh runtime before retrying', async () => {
+    checkedRuntimeArtifactPath()
+    const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-retry-'))
+    const store = new CurrentThreadStore({
+      filePath: join(tempDir, 'current-thread.json'),
+      generateId: () => 'thread-durable-retry-1',
+    })
+    const coordinator = new CurrentThreadSessionCoordinator({ store })
+    const firstSender = mockSender()
+    const secondSender = mockSender()
+    streamChatCompletion
+      .mockRejectedValueOnce(new Error('Provider failed'))
+      .mockImplementationOnce(
+        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
+          await onDelta('Retried answer', 'Retried answer')
+          return { finalContent: 'Retried answer' }
+        },
+      )
+    const firstManager = new ChatSessionManager({
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    try {
+      firstManager.start(firstSender, chatRequest({ requestId: 'request-durable-fail-1' }))
+      await waitForAssertion(() => {
+        expect(sentChatEvents(firstSender).at(-1)).toMatchObject({ type: 'chat:error' })
+      })
+      firstSender.emitDestroyed()
+
+      const secondManager = new ChatSessionManager({
+        resolveCurrentThreadSession: () => coordinator,
+      })
+      secondManager.start(
+        secondSender,
+        chatRequest({
+          requestId: 'request-durable-retry-1',
+          turnIntent: 'retry_failed_response',
+        }),
+      )
+
+      await waitForAssertion(() => {
+        expect(sentChatEvents(secondSender).at(-1)).toMatchObject({
+          type: 'chat:done',
+          requestId: 'request-durable-retry-1',
+          finalContent: 'Retried answer',
+        })
+      })
+      secondSender.emitDestroyed()
+
+      await expect(store.read()).resolves.toMatchObject({
+        turns: [
+          {
+            attemptRequestId: 'request-durable-retry-1',
+            assistantStatus: 'completed',
+            assistantContent: 'Retried answer',
+          },
+        ],
+      })
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
     }
   })
 })
