@@ -4,6 +4,7 @@ interface ChatComposerProps {
   input: string
   isBusy: boolean
   canSend: boolean
+  disabled: boolean
   onInputChange: (value: string) => void
   onSend: () => void | Promise<void>
   onStop: () => void | Promise<void>
@@ -33,6 +34,7 @@ export function ChatComposer({
   input,
   isBusy,
   canSend,
+  disabled,
   onInputChange,
   onSend,
   onStop,
@@ -58,6 +60,7 @@ export function ChatComposer({
           <textarea
             aria-label='Tell Nyx what to do'
             className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[14px] leading-6 text-nyx-ink outline-none'
+            disabled={disabled}
             onChange={(event) => {
               onInputChange(event.target.value)
             }}

@@ -16,6 +16,11 @@ import { createConnectionsSettingsPaths } from './connections/config-file'
 import { registerConnectionsIpcHandlers } from './connections/ipc-handlers'
 import { createLazyChatProviderConfigResolver } from './connections/provider-resolver'
 import { createSafeStorageSecretCrypto, SecretStore } from './connections/secret-store'
+import {
+  CurrentThreadSnapshotService,
+  type CurrentThreadSnapshotController,
+} from './current-thread/snapshot'
+import { CurrentThreadStore } from './current-thread/store'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 import { configureMainAutoUpdate } from './update/service'
 
@@ -69,28 +74,47 @@ function createMainConnectionsService() {
   })
 }
 
+function createMainCurrentThreadStoreResolver() {
+  let store: CurrentThreadStore | undefined
+
+  return () => {
+    store ??= new CurrentThreadStore({
+      filePath: join(app.getPath('userData'), 'threads', 'current-thread.json'),
+    })
+
+    return store
+  }
+}
+
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
   resolveProviderConfig: createMainChatProviderConfigResolver(),
 })
 const connectionsService = createMainConnectionsService()
+const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
+const currentThreadSnapshotService = new CurrentThreadSnapshotService({
+  resolveReader: resolveCurrentThreadStore,
+})
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
 
 export interface RegisterIpcHandlersOptions {
   chatSessionManager?: ChatSessionController
   connections?: ConnectionsController
+  currentThreadSnapshot?: CurrentThreadSnapshotController
   providerStatusReader?: typeof readProviderStatus
 }
 
 export function registerIpcHandlers({
   chatSessionManager: manager = chatSessionManager,
   connections = connectionsService,
+  currentThreadSnapshot = currentThreadSnapshotService,
   providerStatusReader = readProviderStatus,
 }: RegisterIpcHandlersOptions = {}) {
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.reset)
+  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot)
   ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
@@ -103,6 +127,10 @@ export function registerIpcHandlers({
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.reset, (event) => {
     return manager.reset(event.sender)
+  })
+
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot, () => {
+    return currentThreadSnapshot.getSnapshot()
   })
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())

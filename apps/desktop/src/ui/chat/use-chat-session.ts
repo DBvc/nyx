@@ -1,6 +1,7 @@
 import { useEffect, useReducer } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
+import type { NyxCurrentThreadSnapshotError } from '../../../shared/chat/snapshot'
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
 import { chatReducer } from './chat-reducer'
 import { initialChatState } from './chat-types'
@@ -18,6 +19,13 @@ function normalizeBridgeError(error: unknown): NyxChatError {
     code: 'unknown',
     message: 'Nyx could not start this chat request.',
     retryable: true,
+  }
+}
+
+function currentThreadSnapshotBridgeError(): NyxCurrentThreadSnapshotError {
+  return {
+    code: 'load_failed',
+    message: 'Nyx could not load the current thread.',
   }
 }
 
@@ -58,7 +66,9 @@ export function useChatSession() {
       return
     }
 
-    return window.nyx.chat.subscribe((event: NyxChatEvent) => {
+    let disposed = false
+    const chat = window.nyx.chat
+    const unsubscribe = chat.subscribe((event: NyxChatEvent) => {
       switch (event.type) {
         case 'chat:start':
           dispatch({
@@ -96,12 +106,46 @@ export function useChatSession() {
           })
       }
     })
+
+    void chat
+      .getCurrentThreadSnapshot()
+      .then((result) => {
+        if (disposed) {
+          return
+        }
+
+        if (result.ok) {
+          dispatch({
+            type: 'current-thread-hydrated',
+            snapshot: result.value,
+          })
+          return
+        }
+
+        dispatch({
+          type: 'current-thread-hydration-failed',
+          error: result.error,
+        })
+      })
+      .catch(() => {
+        if (!disposed) {
+          dispatch({
+            type: 'current-thread-hydration-failed',
+            error: currentThreadSnapshotBridgeError(),
+          })
+        }
+      })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
   }, [])
 
   async function sendCurrentInput() {
     const prompt = state.input.trim()
 
-    if (!prompt || state.activeRequestId || !window.nyx) {
+    if (!prompt || state.hydrationStatus !== 'ready' || state.activeRequestId || !window.nyx) {
       return
     }
 
@@ -159,6 +203,7 @@ export function useChatSession() {
   async function retryMessage(messageId: string) {
     if (
       state.activeRequestId ||
+      state.hydrationStatus !== 'ready' ||
       !window.nyx ||
       !state.retryableTurn ||
       state.retryableTurn.assistantMessageId !== messageId
@@ -208,6 +253,10 @@ export function useChatSession() {
   }
 
   async function startNewChat() {
+    if (state.hydrationStatus !== 'ready') {
+      return
+    }
+
     if (!window.nyx) {
       dispatch({ type: 'clear-chat' })
       return
@@ -221,7 +270,8 @@ export function useChatSession() {
   return {
     state,
     isBusy: Boolean(state.activeRequestId),
-    canSend: state.input.trim().length > 0 && !state.activeRequestId,
+    canSend:
+      state.hydrationStatus === 'ready' && state.input.trim().length > 0 && !state.activeRequestId,
     setInput(value: string) {
       dispatch({
         type: 'set-input',

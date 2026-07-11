@@ -1,5 +1,6 @@
 import type { NyxChatCancellationRequest, NyxChatRequest } from '../chat/types'
 import type { NyxChatEventListener } from '../chat/events'
+import type { NyxCurrentThreadSnapshotResult } from '../chat/snapshot'
 import type {
   NyxConnectionDeleteProviderInput,
   NyxConnectionDeleteProviderResult,
@@ -22,6 +23,7 @@ export interface NyxDesktopChatApi {
   startChat(request: NyxChatRequest): Promise<void>
   cancelChat(request: NyxChatCancellationRequest): Promise<void>
   resetChatSession(): Promise<void>
+  getCurrentThreadSnapshot(): Promise<NyxCurrentThreadSnapshotResult>
   subscribe(listener: NyxChatEventListener): () => void
 }
 

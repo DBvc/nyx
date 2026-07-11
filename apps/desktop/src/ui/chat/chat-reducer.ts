@@ -4,10 +4,22 @@ import type {
   NyxChatMessage,
   NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
+import type {
+  NyxCurrentThreadSnapshot,
+  NyxCurrentThreadSnapshotError,
+} from '../../../shared/chat/snapshot'
 import type { ChatState } from './chat-types'
 import { initialChatState } from './chat-types'
 
 type ChatAction =
+  | {
+      type: 'current-thread-hydrated'
+      snapshot: NyxCurrentThreadSnapshot | null
+    }
+  | {
+      type: 'current-thread-hydration-failed'
+      error: NyxCurrentThreadSnapshotError
+    }
   | {
       type: 'set-input'
       value: string
@@ -79,6 +91,42 @@ function isActiveAssistantTurn(state: ChatState, requestId: string, assistantMes
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
+    case 'current-thread-hydrated': {
+      const readyState = {
+        ...initialChatState,
+        hydrationStatus: 'ready',
+      } as const satisfies ChatState
+
+      if (!action.snapshot) {
+        return readyState
+      }
+
+      return {
+        ...readyState,
+        messages: action.snapshot.messages.map((message) => ({
+          ...message,
+          ...(message.error ? { error: { ...message.error } } : {}),
+        })),
+        runStatus: action.snapshot.runStatus,
+        retryableTurn: action.snapshot.retryableTurn
+          ? {
+              ...action.snapshot.retryableTurn,
+              turnUserMessage: { ...action.snapshot.retryableTurn.turnUserMessage },
+              submittedMessages: action.snapshot.retryableTurn.submittedMessages.map((message) => ({
+                ...message,
+              })),
+            }
+          : null,
+      }
+    }
+
+    case 'current-thread-hydration-failed':
+      return {
+        ...initialChatState,
+        hydrationStatus: 'error',
+        hydrationError: { ...action.error },
+      }
+
     case 'set-input':
       return {
         ...state,
@@ -209,6 +257,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
     case 'clear-chat':
-      return initialChatState
+      return {
+        ...initialChatState,
+        hydrationStatus: 'ready',
+      }
   }
 }

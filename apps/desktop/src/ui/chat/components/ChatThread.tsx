@@ -2,6 +2,8 @@ import type { RefObject, UIEventHandler } from 'react'
 import type { ComponentProps } from 'react'
 
 import type { ThreadStreamItem } from '../thread-items'
+import type { ChatHydrationStatus } from '../chat-types'
+import type { NyxCurrentThreadSnapshotError } from '../../../../shared/chat/snapshot'
 import { ChatEmptyState } from './ChatEmptyState'
 import { ChatMessage } from './ChatMessage'
 import { ConnectionSetupNotice, shouldShowConnectionNotice } from './ConnectionSetupNotice'
@@ -14,6 +16,8 @@ interface ChatThreadProps {
   connectionStatus: ComponentProps<typeof ConnectionSetupNotice>['status']
   onOpenConnectionsSettings: () => void
   onRefreshConnectionStatus: () => void
+  hydrationStatus: ChatHydrationStatus
+  hydrationError: NyxCurrentThreadSnapshotError | null
 }
 
 export function ChatThread({
@@ -24,8 +28,10 @@ export function ChatThread({
   connectionStatus,
   onOpenConnectionsSettings,
   onRefreshConnectionStatus,
+  hydrationStatus,
+  hydrationError,
 }: ChatThreadProps) {
-  const hasItems = items.length > 0
+  const hasItems = hydrationStatus === 'ready' && items.length > 0
 
   return (
     <div
@@ -38,7 +44,18 @@ export function ChatThread({
           hasItems ? 'max-w-[44rem] gap-7 py-7' : 'max-w-[37.5rem] justify-center pb-28'
         }`}
       >
-        {!hasItems ? (
+        {hydrationStatus === 'loading' ? (
+          <section className='space-y-2' aria-live='polite'>
+            <p className='text-[12px] font-medium text-nyx-subtle'>Current thread</p>
+            <h2 className='text-[22px] font-semibold text-nyx-ink'>Loading conversation</h2>
+          </section>
+        ) : hydrationStatus === 'error' ? (
+          <section className='space-y-2' role='alert'>
+            <p className='text-[12px] font-medium text-red-700'>Current thread unavailable</p>
+            <h2 className='text-[22px] font-semibold text-nyx-ink'>Conversation could not load</h2>
+            <p className='text-[14px] leading-6 text-nyx-muted'>{hydrationError?.message}</p>
+          </section>
+        ) : !hasItems ? (
           <ChatEmptyState
             connectionStatus={connectionStatus}
             onOpenConnectionsSettings={onOpenConnectionsSettings}

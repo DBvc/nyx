@@ -4,6 +4,9 @@ import type {
   NyxChatRunStatus,
   NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
+import type { NyxCurrentThreadSnapshotError } from '../../../shared/chat/snapshot'
+
+export type ChatHydrationStatus = 'loading' | 'ready' | 'error'
 
 export interface ChatTurnRequest {
   requestId: string
@@ -28,6 +31,8 @@ export interface ChatState {
   activeAssistantMessageId: string | undefined
   activeTurn: ChatTurnRequest | null
   retryableTurn: RetryableChatTurn | null
+  hydrationStatus: ChatHydrationStatus
+  hydrationError: NyxCurrentThreadSnapshotError | null
 }
 
 export const initialChatState: ChatState = {
@@ -38,4 +43,6 @@ export const initialChatState: ChatState = {
   activeAssistantMessageId: undefined,
   activeTurn: null,
   retryableTurn: null,
+  hydrationStatus: 'loading',
+  hydrationError: null,
 }

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { NyxChatEvent } from '../../shared/chat/events'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
+import type { NyxCurrentThreadSnapshotResult } from '../../shared/chat/snapshot'
 import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../shared/connections/ipc'
 import type {
   NyxConnectionDeleteProviderInput,
@@ -36,6 +37,10 @@ const api: NyxDesktopApi = {
     cancelChat: (request) =>
       ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.cancel, request) as Promise<void>,
     resetChatSession: () => ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.reset) as Promise<void>,
+    getCurrentThreadSnapshot: () =>
+      ipcRenderer.invoke(
+        NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot,
+      ) as Promise<NyxCurrentThreadSnapshotResult>,
     subscribe: (listener) => {
       const subscription = (_event: Electron.IpcRendererEvent, chatEvent: NyxChatEvent) => {
         listener(chatEvent)

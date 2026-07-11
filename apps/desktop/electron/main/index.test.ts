@@ -100,6 +100,26 @@ describe('registerIpcHandlers', () => {
     expect(result).toBe(resetPromise)
   })
 
+  it('returns the safe current thread snapshot promise to ipcRenderer.invoke callers', () => {
+    const snapshotResult = {
+      ok: true,
+      value: null,
+    } as const
+    const snapshotPromise = Promise.resolve(snapshotResult)
+    const currentThreadSnapshot = {
+      getSnapshot: vi.fn(() => snapshotPromise),
+    }
+
+    registerIpcHandlers({ currentThreadSnapshot })
+
+    const result = registeredHandler(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot)({
+      sender: {} as WebContents,
+    })
+
+    expect(currentThreadSnapshot.getSnapshot).toHaveBeenCalledTimes(1)
+    expect(result).toBe(snapshotPromise)
+  })
+
   it('returns connection IPC handler promises to ipcRenderer.invoke callers', () => {
     const overviewResult: NyxConnectionsOverviewResult = {
       ok: true,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
+import type { NyxCurrentThreadSnapshot } from '../../../shared/chat/snapshot'
 import { chatReducer } from './chat-reducer'
 import { initialChatState } from './chat-types'
 
@@ -78,6 +79,75 @@ function assistantFrom(messages: ReadonlyArray<NyxChatMessage>) {
 }
 
 describe('chatReducer', () => {
+  it('starts with current thread hydration blocking the renderer projection', () => {
+    expect(initialChatState.hydrationStatus).toBe('loading')
+    expect(initialChatState.hydrationError).toBeNull()
+  })
+
+  it('hydrates an empty current thread into a ready state with no active identity', () => {
+    const state = chatReducer(
+      {
+        ...initialChatState,
+        input: 'must be cleared',
+        activeRequestId: 'stale-request',
+      },
+      {
+        type: 'current-thread-hydrated',
+        snapshot: null,
+      },
+    )
+
+    expect(state).toEqual({
+      ...initialChatState,
+      hydrationStatus: 'ready',
+    })
+  })
+
+  it('hydrates terminal messages and retry metadata without restoring active ids or input', () => {
+    const snapshot: NyxCurrentThreadSnapshot = {
+      messages: [userMessage, { ...assistantMessage, status: 'failed', error: retryableError }],
+      runStatus: 'failed',
+      retryableTurn: {
+        userMessageId,
+        assistantMessageId,
+        turnUserMessage,
+        submittedMessages,
+      },
+    }
+    const state = chatReducer(initialChatState, {
+      type: 'current-thread-hydrated',
+      snapshot,
+    })
+
+    expect(state.messages).toEqual(snapshot.messages)
+    expect(state.runStatus).toBe('failed')
+    expect(state.retryableTurn).toEqual(snapshot.retryableTurn)
+    expect(state.input).toBe('')
+    expect(state.activeRequestId).toBeUndefined()
+    expect(state.activeAssistantMessageId).toBeUndefined()
+    expect(state.activeTurn).toBeNull()
+    expect(state.hydrationStatus).toBe('ready')
+    expect(state.hydrationError).toBeNull()
+  })
+
+  it('stores only the safe current thread load error and remains blocked', () => {
+    const state = chatReducer(initialChatState, {
+      type: 'current-thread-hydration-failed',
+      error: {
+        code: 'load_failed',
+        message: 'Nyx could not load the current thread.',
+      },
+    })
+
+    expect(state.hydrationStatus).toBe('error')
+    expect(state.hydrationError).toEqual({
+      code: 'load_failed',
+      message: 'Nyx could not load the current thread.',
+    })
+    expect(state.messages).toEqual([])
+    expect(state.activeRequestId).toBeUndefined()
+  })
+
   it('records a submitted request and appends user and assistant messages', () => {
     const state = submittedState()
 
@@ -326,6 +396,9 @@ describe('chatReducer', () => {
       type: 'clear-chat',
     })
 
-    expect(state).toBe(initialChatState)
+    expect(state).toEqual({
+      ...initialChatState,
+      hydrationStatus: 'ready',
+    })
   })
 })

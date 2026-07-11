@@ -66,6 +66,8 @@ export function ChatWorkspace() {
               />
               <ChatThread
                 connectionStatus={connectionSetup.status}
+                hydrationError={state.hydrationError}
+                hydrationStatus={state.hydrationStatus}
                 containerRef={containerRef}
                 items={threadItems}
                 onOpenConnectionsSettings={() => {
@@ -79,6 +81,7 @@ export function ChatWorkspace() {
               />
               <ChatComposer
                 canSend={canSend}
+                disabled={state.hydrationStatus !== 'ready'}
                 input={state.input}
                 isBusy={isBusy}
                 onInputChange={setInput}
