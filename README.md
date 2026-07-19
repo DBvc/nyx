@@ -29,7 +29,7 @@ The current desktop milestone has a real, manually verified `v1 min chat` loop:
 
 - redacted provider setup status in the renderer
 - OpenAI-compatible provider streaming through Electron main
-- plain-text in-memory chat with `Stop`, `Retry`, and `New chat`
+- plain-text chat with `Stop`, `Retry`, and `New thread`
 - unit coverage for chat reducer lifecycle, provider status parsing, provider
   streaming helpers, and chat presenter helpers
 - real provider runthrough recorded in
@@ -44,9 +44,21 @@ cancellation handles stay in Electron main. The OCaml runtime owns only the
 main-side chat state reducer semantics for this path; it does not call
 providers, read provider env, own credentials, or talk to the renderer.
 
+Electron main also owns one versioned local current-thread record. Renderer
+state remains an in-memory projection loaded through a safe typed snapshot, and
+the OCaml runtime remains a rebuildable semantic projection that is replayed
+only when the next real turn starts. This is durability for the current thread,
+not a thread history collection.
+
 ## Current Product Scope
 
-The active source of truth is [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md).
+The completed baseline source of truth is
+[docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md).
+Implemented gated workstreams in
+[docs/next/agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md)
+are narrow, additive sources of truth for their exact shipped behavior. They
+supersede conflicting baseline statements only for those implemented additions
+and do not broaden unrelated work.
 
 If [PRD.md](./PRD.md), [DESIGN.md](./DESIGN.md), or older background docs disagree with the min-chat plan, follow the min-chat plan.
 
@@ -56,16 +68,17 @@ In scope:
 - plain text messages
 - real model traffic through the Electron main process
 - real streaming output
-- temporary in-memory multi-turn conversation
+- one durable current multi-turn conversation
+- complete app restart recovery for that current thread
 - `Stop`
 - `Retry`
-- `New chat`
+- `New thread`
 - environment-based provider configuration
 - provider secrets kept in Electron main only
 
 Out of scope for this phase:
 
-- persistent conversation history
+- Recent, thread switching, and persistent multi-thread history
 - settings UI
 - model picker UI
 - Markdown or code highlighting
@@ -102,6 +115,22 @@ It still does not implement tools, MCP, terminal execution, browser automation,
 permission approval cards, artifacts, persistent thread history, projects/file
 context, thread IPC, or OCaml thread runtime wiring.
 
+The implemented second gated workstream behavior adds only current-thread
+durability:
+
+- Electron main owns one plaintext local current-thread record with owner-only
+  file permissions
+- completed, cancelled, and failed terminal state can be restored after a full
+  app restart
+- an abandoned pending turn restores as a safe retryable interrupted failure
+- New thread clears the runtime projections and durable record before renderer
+  state is cleared
+- malformed storage fails closed and remains untouched until explicit New
+  thread/Start fresh
+
+It does not add Recent, thread switching, a hidden history collection,
+conversation encryption, or an OCaml Thread domain.
+
 The product direction for that gated workstream is recorded in
 [agent-workbench-direction.md](./docs/next/agent-workbench-direction.md).
 
@@ -115,6 +144,7 @@ The product direction for that gated workstream is recorded in
 - environment variables and provider credentials
 - OS-facing side effects
 - current `v1 min chat` behavior
+- the one durable current-thread record and its recovery/reset lifecycle
 
 `runtime/ocaml` owns:
 
@@ -255,5 +285,5 @@ mise run build
 - Renderer code must not read environment variables or provider credentials.
 - Provider calls and cancellation handles belong in Electron main.
 - Runtime code should stay pure and tiny until a concrete runtime behavior requires more.
-- Do not add tools, agents, plugin UI, persistence, or settings UI outside an
-  explicit agent-workbench slice that allows it.
+- Do not add tools, agents, plugin UI, broader persistence, or settings UI
+  outside an explicit agent-workbench slice that allows it.

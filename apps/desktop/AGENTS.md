@@ -67,17 +67,18 @@ Allowed:
 
 - single-page chat UI
 - real streaming output
-- temporary in-memory conversation
+- one durable current thread owned by Electron main
+- an in-memory renderer projection of that current thread
 - stop
 - retry
-- new chat
+- new thread
 - plain text messages
 
 Not allowed in this phase:
 
 - settings UI
 - model picker UI
-- persistent history
+- Recent, thread switching, or persistent multi-thread history
 - markdown rendering
 - tool UI
 - agent UI
@@ -103,7 +104,7 @@ Still not allowed in that first workstream:
 - thread IPC
 - OCaml thread runtime domain or Electron wiring
 
-Explicit second `current-thread-durability` workstream additions:
+Completed second `current-thread-durability` workstream additions:
 
 - one versioned current-thread record owned by Electron main
 - one safe current-thread snapshot method under the existing `window.nyx.chat`
@@ -113,6 +114,11 @@ Explicit second `current-thread-durability` workstream additions:
 - lazy replay through the existing runtime chat state client before the next
   real turn
 - interrupted-turn recovery and explicit New thread/Start fresh reset
+
+The current thread survives a complete app restart. Completed, cancelled, and
+failed terminal turns restore from the main-owned record; an abandoned pending
+turn restores as the existing retryable interrupted failure. Renderer and
+runtime state remain rebuildable projections.
 
 Still not allowed in that second workstream:
 

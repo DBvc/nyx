@@ -13,6 +13,7 @@ with a familiar app shell:
 - plain-text messages
 - real streaming feedback
 - stop, retry, and new-chat controls
+- one real current thread that can be restored after a complete app restart
 
 Nyx is not a general AI workbench by default. Do not introduce visual patterns
 that imply:
@@ -31,6 +32,12 @@ That workstream still must not imply fake tools, fake artifacts, fake history,
 fake file context, approval cards, a multi-agent dashboard, or a permanent
 third workspace region. A future details pane is not part of the first
 workstream; if introduced later, it must be contextual and backed by real data.
+
+The completed current-thread durability workstream does not change this visual
+model. The sidebar still represents one current thread, while Electron main
+owns its durable record. Renderer messages are a safe in-memory projection,
+not a hidden history collection. Do not add Recent, thread switching, archive,
+search, or per-message history controls.
 
 ## 2. Visual Theme and Atmosphere
 
@@ -134,7 +141,7 @@ Connections, but it must not turn the main surface into a dashboard.
 
 - quiet and useful
 - contains product identity, `New chat`, and lightweight session context
-- may show temporary thread items only when they reflect real state
+- may show the current thread item only when it reflects real durable state
 - should not pretend there is a full history system if one does not exist
 - should feel like a standard chat sidebar, not a dashboard
 
@@ -170,6 +177,8 @@ Connections, but it must not turn the main surface into a dashboard.
 - inline and contained
 - respectful tone
 - clear retry affordance
+- current-thread load/reset failure must remain blocked and safe
+- malformed local data may offer only explicit New thread/Start fresh recovery
 - avoid high-alarm visual treatment
 
 ### Empty State
@@ -220,6 +229,7 @@ Do:
 - favor subtle refinement over dramatic redesign
 - design for long reading sessions
 - make streaming, stop, retry, and new-chat actions feel clear
+- keep restart recovery visually indistinguishable from a valid terminal thread
 
 Do not:
 
@@ -236,6 +246,8 @@ When editing Nyx UI:
 - follow `AGENTS.md` and the current min-chat implementation plan
 - preserve the single-page, plain-text chat scope unless implementing a named
   agent-workbench slice
+- treat Electron main as the durable current-thread owner and renderer state as
+  a rebuildable projection
 - use a lightweight sidebar plus main chat pane layout
 - keep the app ordinary and dependable, not flashy
 - use the full window, not a centered child shell

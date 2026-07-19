@@ -104,12 +104,24 @@ reducer preserves the committed transcript, does not commit the failed assistant
 draft, and starts the fresh turn from the new user message. Renderer
 `resetChatSession()` awaits Electron main's async runtime clear/close cleanup.
 
-The runtime chat state client is scoped to the owning Electron `WebContents`
-that starts the runtime-backed chat path. A reset clears only that owner's
-runtime state. Each `WebContents` gets its own runtime session, and a destroyed
-owner closes its runtime session and aborts any active turn. This keeps runtime
-state tied to the current desktop chat owner instead of becoming process-global
-state.
+Electron main separately owns one durable current-thread record. That record,
+not the runtime reducer, is authoritative for provider context and restart
+recovery. The renderer and each runtime client hold only rebuildable
+projections. A fresh runtime client lazily replays existing reducer actions when
+the next real turn begins; snapshot loading never starts the runtime.
+
+Runtime clients remain scoped to their Electron `WebContents` during normal
+operation, and destroying an owner closes its runtime session. New thread is a
+manager-global reset because the durable current thread is process-global: it
+aborts and settles the active turn, clears and closes every runtime projection,
+removes the durable record, and only then lets renderer state clear. This is not
+multi-window synchronization or persistent thread history.
+
+The OCaml reducer does not commit a failed assistant draft, but Electron main's
+durable record preserves the safe terminal draft for renderer recovery and
+Retry. An abandoned pending record becomes the existing retryable interrupted
+failure on the next store load. Malformed storage fails closed and is not
+automatically overwritten.
 
 When `NYX_RUNTIME_CHAT_STATE` is unset, desktop chat must use the runtime-backed
 chat state path. `NYX_RUNTIME_CHAT_STATE=0` is the only diagnostic disable. In
@@ -126,12 +138,12 @@ Ownership rules:
 
 - Electron main owns provider configuration, provider credentials, environment
   variable reads, provider calls, abort/cancel handles, runtime child process
-  lifecycle, and OS side effects.
+  lifecycle, the durable current-thread record, and OS side effects.
 - OCaml runtime owns only the typed chat reducer semantics exposed through the
   existing local protocol. It does not own provider integration, environment
   access, preload, renderer, or UI.
 - preload and renderer do not read runtime state, provider secrets, provider
-  configuration, or environment variables.
+  configuration, persisted record details, or environment variables.
 - renderer never talks to the runtime directly.
 
 This is not runtime provider integration. The runtime must not call model

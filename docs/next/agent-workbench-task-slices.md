@@ -49,8 +49,10 @@ Use relative documentation links. Do not add local absolute paths.
 
 - `A0` through `A7` define the completed first foundation workstream. Do not
   rerun them as permission to redesign existing behavior.
-- `B0` through `B5` define the explicit second `current-thread-durability`
-  workstream.
+- `B0` through `B5` define the completed second
+  `current-thread-durability` workstream. Do not rerun them as permission to
+  broaden persistence behavior. Their implemented boundary is one durable
+  current thread, not a thread collection.
 - The B workstream permits one durable current thread only. It does not permit
   persistent thread history, a thread collection, or a parallel Thread runtime
   domain.
@@ -619,6 +621,25 @@ Type: documentation and final verification.
 
 Goal: document the implemented current-thread ownership and prove the bounded
 end-to-end behavior.
+
+Implemented behavior review:
+
+- completed restart/continue restores prior messages, derives provider context
+  from the main-owned record, and lazily replays a fresh runtime projection
+- failed restart/retry restores the safe terminal error and assistant draft,
+  then reuses stable user/assistant identity with a new attempt request id
+- cancelled partial content is terminal durable content and restores as
+  cancelled
+- process exit during a pending turn restores as the existing `unknown`,
+  retryable interrupted failure; crash-time partial draft recovery is not
+  promised
+- New thread waits for active work to settle, clears all runtime projections,
+  removes the current-thread record, and stays empty after restart
+- malformed or schema-invalid storage returns one safe load error, remains
+  untouched, and can be removed only by explicit New thread/Start fresh
+
+This review does not cover multi-thread switching, active renderer reload,
+large-history performance, or conversation encryption.
 
 Allowed files:
 

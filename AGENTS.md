@@ -43,18 +43,26 @@ The agent-workbench task slices in this repository supersede earlier external
 draft task ordering. Do not follow older AGW-00..13 draft ordering unless a
 current repository document reintroduces it.
 
+`docs/v1-min-chat-implementation-plan.md` is the completed baseline. The
+implemented additions recorded in this file and in
+`docs/next/agent-workbench-task-slices.md` supersede conflicting baseline lines
+only for those exact additions. Ordinary work must preserve the implemented
+Connections, thread-first, and current-thread durability behavior without using
+it as permission to broaden product scope.
+
 The current desktop product remains a minimal single-page chat client:
 
 - plain text messages
 - real streaming
-- temporary in-memory conversation
+- one Electron-main-owned durable current thread
+- renderer-local in-memory projection of that current thread
 - stop
 - retry
-- new chat
+- new thread
 
 Still out of scope:
 
-- persistent history
+- Recent, thread switching, or persistent multi-thread history
 - settings UI
 - model picker UI
 - markdown rendering
@@ -88,8 +96,7 @@ Still out of scope for that first workstream:
 - thread IPC replacing chat IPC
 - OCaml thread runtime domain or Electron wiring
 
-For the explicit second `current-thread-durability` workstream, only the
-following additions are allowed:
+The completed second `current-thread-durability` workstream added only:
 
 - one Electron-main-owned durable current thread record
 - a narrow typed current-thread snapshot on the existing chat bridge
@@ -119,8 +126,7 @@ This second workstream is not persistent thread history. Still out of scope:
 - provider credentials
 - OS side effects
 - current v1 min chat behavior
-- explicit current-thread durable storage and recovery when a named second
-  workstream slice authorizes it
+- the current-thread durable record, recovery, and explicit reset lifecycle
 
 `runtime/ocaml` owns:
 

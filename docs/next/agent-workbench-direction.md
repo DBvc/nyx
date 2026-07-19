@@ -1,7 +1,6 @@
 # Nyx Thread-First Agent Workbench Direction
 
-Status: First foundation workstream completed; current-thread durability is the
-explicit second workstream.
+Status: First foundation and current-thread durability workstreams completed.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -94,9 +93,9 @@ The main surface remains one input box and one current thread. Simple questions
 and task requests both happen in the same thread. Later runtime states may show
 activity, approvals, or results only when backed by real implementation.
 
-After the second workstream is implemented, that one current thread may survive
-a complete app restart. This does not authorize a Recent list or switching
-between multiple threads.
+The completed second workstream lets that one current thread survive a complete
+app restart. This does not authorize a Recent list or switching between
+multiple threads.
 
 ### No Fake Capability Panels
 
@@ -151,6 +150,24 @@ commands, own UI, or talk to renderer/preload.
 The durable record is not stored in OCaml. A fresh runtime client may replay the
 existing chat reducer actions only when the next real turn starts. Snapshot
 loading must not spawn the runtime or add protocol messages.
+
+## Current Thread Lifecycle
+
+Electron main writes a pending turn before provider work and writes one terminal
+record after the runtime transition. Completed and cancelled turns restore with
+their final content. A normal provider failure restores its safe error and last
+terminal draft so Retry can reuse stable message identity.
+
+If the process exits while a turn is pending, the next store load normalizes it
+to the existing `unknown`, retryable interrupted failure. Streaming deltas are
+not persisted, so this does not promise recovery of a partial draft lost at
+process exit.
+
+New thread/Start fresh is a manager-global reset for the one current thread. It
+aborts and settles active work, clears and closes runtime projections, removes
+the durable record, and only then clears renderer state. Malformed or
+schema-invalid storage is never overwritten automatically; the safe load error
+remains blocked until this explicit reset succeeds.
 
 ## First Workstream Success Criteria
 
