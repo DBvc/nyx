@@ -16,6 +16,10 @@ set -a
 [ ! -f .env ] || . ./.env
 set +a
 
+# Node fetch reads proxy settings only when this opt-in is present before
+# Electron starts.
+export NODE_USE_ENV_PROXY="${NODE_USE_ENV_PROXY:-1}"
+
 if [ "${NYX_RUNTIME_CHAT_STATE:-}" != "0" ]; then
   scripts/prepare-runtime-artifact.sh
 fi
