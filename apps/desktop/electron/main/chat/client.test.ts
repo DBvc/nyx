@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
-import { buildChatCompletionsUrl, buildProviderMessages, iterateSseData } from './client'
+import type { ChatProviderConfig } from './env'
+import {
+  buildChatCompletionsUrl,
+  buildProviderMessages,
+  iterateSseData,
+  streamChatCompletion,
+} from './client'
 
 function requestWithMessages(messages: NyxChatRequest['messages']): NyxChatRequest {
   return {
@@ -30,6 +36,52 @@ function streamFromChunks(chunks: ReadonlyArray<string>) {
     },
   })
 }
+
+function responseFromPayloads(payloads: ReadonlyArray<unknown>) {
+  return new Response(
+    streamFromChunks(
+      payloads.map((payload) =>
+        typeof payload === 'string'
+          ? `data: ${payload}\n\n`
+          : `data: ${JSON.stringify(payload)}\n\n`,
+      ),
+    ),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+      },
+      status: 200,
+    },
+  )
+}
+
+const providerConfig: ChatProviderConfig = {
+  baseUrl: 'https://api.example.test/v1/',
+  token: 'secret-token',
+  model: 'glm-5.2',
+}
+
+async function streamWithResponse(response: Response, signal = new AbortController().signal) {
+  const onDelta = vi.fn()
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => response),
+  )
+
+  const result = await streamChatCompletion({
+    config: providerConfig,
+    request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
+    signal,
+    onDelta,
+  })
+
+  return { onDelta, result }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 async function collectSseData(chunks: ReadonlyArray<string>) {
   const payloads: string[] = []
@@ -173,5 +225,157 @@ describe('iterateSseData', () => {
     await expect(collectSseData(['data: {"message":"trailing"}'])).resolves.toEqual([
       '{"message":"trailing"}',
     ])
+  })
+})
+
+describe('streamChatCompletion', () => {
+  it('recognizes reasoning activity without exposing it as assistant content', async () => {
+    const { onDelta, result } = await streamWithResponse(
+      responseFromPayloads([
+        {
+          choices: [{ delta: { reasoning_content: 'private reasoning' }, finish_reason: null }],
+        },
+        { choices: [{ delta: { content: 'Hello' }, finish_reason: null }] },
+        { choices: [{ delta: { content: ' world' }, finish_reason: 'stop' }] },
+      ]),
+    )
+
+    expect(result).toEqual({ finalContent: 'Hello world' })
+    expect(onDelta).toHaveBeenNthCalledWith(1, 'Hello', 'Hello')
+    expect(onDelta).toHaveBeenNthCalledWith(2, ' world', 'Hello world')
+  })
+
+  it('fails when a provider finishes reasoning without answer text', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([
+          {
+            choices: [{ delta: { reasoning_content: 'private reasoning' }, finish_reason: null }],
+          },
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        ]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=stop; reasoning_received=true',
+        retryable: true,
+      },
+    })
+  })
+
+  it('fails clearly when reasoning exhausts the provider output limit', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([
+          {
+            choices: [
+              { delta: { reasoning_content: 'private reasoning' }, finish_reason: 'length' },
+            ],
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=length; reasoning_received=true',
+        retryable: true,
+      },
+    })
+  })
+
+  it('maps a provider error delivered inside the stream', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([
+          {
+            choices: [{ delta: {}, finish_reason: null }],
+            error: { message: 'Provider overloaded.' },
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'stream_error=true',
+        retryable: true,
+      },
+    })
+  })
+
+  it('maps an error finish reason without a top-level error', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([{ choices: [{ delta: {}, finish_reason: 'error' }] }]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=error',
+        retryable: true,
+      },
+    })
+  })
+
+  it('fails when a provider returns an empty terminal response', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([{ choices: [{ delta: {}, finish_reason: 'stop' }] }]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=stop; reasoning_received=false',
+        message: 'The provider returned an empty response.',
+        retryable: true,
+      },
+    })
+  })
+
+  it('maps malformed stream data to a safe upstream error', async () => {
+    await expect(streamWithResponse(responseFromPayloads(['{"choices":[']))).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'stream_parse_error=true',
+        retryable: true,
+      },
+    })
+  })
+
+  it('preserves abort semantics while reasoning is streaming', async () => {
+    const abortController = new AbortController()
+    const encoder = new TextEncoder()
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                choices: [
+                  { delta: { reasoning_content: 'private reasoning' }, finish_reason: null },
+                ],
+              })}\n\n`,
+            ),
+          )
+          abortController.signal.addEventListener(
+            'abort',
+            () => {
+              controller.error(new DOMException('The operation was aborted.', 'AbortError'))
+            },
+            { once: true },
+          )
+        },
+      }),
+      { status: 200 },
+    )
+
+    const operation = streamWithResponse(response, abortController.signal)
+
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledOnce()
+    })
+    abortController.abort()
+
+    await expect(operation).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

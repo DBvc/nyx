@@ -15,9 +15,11 @@ interface ChatCompletionChunk {
   choices?: Array<{
     delta?: {
       content?: string
+      reasoning_content?: string
     }
     finish_reason?: string | null
   }>
+  error?: unknown
 }
 
 export function buildChatCompletionsUrl(baseUrl: string) {
@@ -96,6 +98,65 @@ function toUpstreamError(response: Response, details: string) {
     retryable: true,
     details,
   })
+}
+
+function createProviderStreamError(message: string, details?: string, retryable = true) {
+  return createChatBridgeError({
+    code: 'upstream_error',
+    message,
+    retryable,
+    ...(details ? { details } : {}),
+  })
+}
+
+function normalizeFinishReason(value: string) {
+  return /^[a-z0-9_.-]{1,64}$/i.test(value) ? value : 'unknown'
+}
+
+function parseChatCompletionChunk(payload: string) {
+  try {
+    return JSON.parse(payload) as ChatCompletionChunk
+  } catch {
+    throw createProviderStreamError(
+      'The provider returned an invalid streaming response.',
+      'stream_parse_error=true',
+    )
+  }
+}
+
+function createEmptyProviderResponseError({
+  finishReason,
+  reasoningReceived,
+}: {
+  finishReason: string | null
+  reasoningReceived: boolean
+}) {
+  const details = [
+    finishReason ? `finish_reason=${finishReason}` : null,
+    `reasoning_received=${reasoningReceived}`,
+  ]
+    .filter((detail): detail is string => Boolean(detail))
+    .join('; ')
+
+  if (finishReason === 'length') {
+    return createProviderStreamError(
+      'The provider reached its output limit before returning an answer.',
+      details,
+    )
+  }
+
+  if (reasoningReceived) {
+    return createProviderStreamError(
+      'The provider finished reasoning without returning an answer.',
+      details,
+    )
+  }
+
+  return createProviderStreamError(
+    'The provider returned an empty response.',
+    details,
+    finishReason !== 'content_filter',
+  )
 }
 
 export async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
@@ -179,24 +240,52 @@ export async function streamChatCompletion({
   }
 
   let finalContent = ''
+  let finishReason: string | null = null
+  let reasoningReceived = false
 
   for await (const payload of iterateSseData(response.body)) {
     if (payload === '[DONE]') {
       break
     }
 
-    const chunk = JSON.parse(payload) as ChatCompletionChunk
+    const chunk = parseChatCompletionChunk(payload)
+
+    if (chunk.error) {
+      throw createProviderStreamError(
+        'The provider returned an error while streaming.',
+        'stream_error=true',
+      )
+    }
+
     const choice = chunk.choices?.[0]
     const delta = choice?.delta?.content
+    const reasoningDelta = choice?.delta?.reasoning_content
+
+    if (typeof reasoningDelta === 'string' && reasoningDelta.length > 0) {
+      reasoningReceived = true
+    }
 
     if (typeof delta === 'string' && delta.length > 0) {
       finalContent += delta
       await onDelta(delta, finalContent)
     }
 
-    if (choice?.finish_reason) {
+    if (typeof choice?.finish_reason === 'string' && choice.finish_reason.length > 0) {
+      finishReason = normalizeFinishReason(choice.finish_reason)
+
+      if (finishReason === 'error') {
+        throw createProviderStreamError(
+          'The provider returned an error while streaming.',
+          'finish_reason=error',
+        )
+      }
+
       break
     }
+  }
+
+  if (finalContent.trim().length === 0) {
+    throw createEmptyProviderResponseError({ finishReason, reasoningReceived })
   }
 
   return {

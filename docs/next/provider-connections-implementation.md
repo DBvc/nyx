@@ -7,6 +7,13 @@ slices in [agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
 For ordinary work, the active product scope remains
 [v1-min-chat-implementation-plan.md](../v1-min-chat-implementation-plan.md).
 
+The first workstream deliberately implements one bounded
+`openai-compatible` transport path. The follow-up architecture for explicit
+provider identity, capability profiles, and main-only adapters is documented in
+[provider-adapter-direction.md](./provider-adapter-direction.md). That direction
+document is not permission to implement the follow-up work before it is split
+into separately approved task slices.
+
 ## Outcome
 
 Users can configure provider access inside Nyx instead of editing `.env`:
@@ -161,6 +168,12 @@ Renderer-facing errors must not expose:
 
 `Test connection` is implemented only when it can perform a real tiny
 non-streaming OpenAI-compatible chat completion through Electron main.
+
+This first-workstream test proves endpoint reachability, authentication, and
+basic request acceptance. It does not certify full streaming compatibility,
+reasoning-field handling, tool calling, or every model capability. A later
+adapter-aware test must report those capabilities separately instead of
+overloading one success state.
 
 `Refresh models` is implemented only when it can call `/v1/models` and merge
 discovered models without deleting manual models.

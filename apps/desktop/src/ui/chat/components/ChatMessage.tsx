@@ -8,6 +8,8 @@ interface ChatMessageProps {
 export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isWaiting = message.status === 'pending' || message.status === 'streaming'
+  const displayContent = message.content || (isWaiting ? 'Thinking...' : null)
+  const isEmptyCompleted = message.status === 'completed' && !message.content
 
   if (isUser) {
     return (
@@ -21,7 +23,13 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
   return (
     <article className='max-w-[43rem] text-[14px] leading-6 text-nyx-ink'>
-      <div className='whitespace-pre-wrap'>{message.content || 'Thinking...'}</div>
+      {displayContent ? <div className='whitespace-pre-wrap'>{displayContent}</div> : null}
+
+      {isEmptyCompleted ? (
+        <p className='text-xs text-nyx-subtle' role='status'>
+          No response was returned.
+        </p>
+      ) : null}
 
       {isWaiting ? (
         <p className='mt-3 flex items-center gap-2 text-xs text-nyx-subtle'>
