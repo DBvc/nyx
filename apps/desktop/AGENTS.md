@@ -5,9 +5,9 @@ This directory contains the Nyx Electron desktop app.
 The desktop app is currently the only user-facing product surface. Its default
 scope remains `v1 min chat`.
 
-Connections settings, thread-first UI work, and current-thread durability are
-allowed only when the user explicitly asks to execute the corresponding gated
-agent-workbench workstream or a named slice from
+Connections settings, thread-first UI work, current-thread durability, and the
+provider compatibility core are allowed only when the user explicitly asks to
+execute the corresponding gated agent-workbench workstream or a named slice from
 `../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
@@ -60,6 +60,10 @@ This subproject owns:
 - Current-thread durability slices may replay only the existing runtime chat
   reducer protocol. They must not add a Thread reducer, new runtime protocol
   messages, runtime startup during snapshot load, or renderer/runtime contact.
+- Provider compatibility slices must keep target identity, credentials, raw
+  provider payloads, and reasoning activity inside Electron main. They must not
+  add shared/preload/renderer contracts or infer runtime behavior from hostnames
+  or model names.
 
 ## Current Scope
 
@@ -127,6 +131,23 @@ Still not allowed in that second workstream:
 - OCaml Thread domain, new runtime protocol actions, or provider calls in OCaml
 - tools, MCP, activity, approvals, artifacts, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
+
+Planned third `provider-compatibility-core` workstream additions:
+
+- preserve provider identity in one Electron-main-only resolved chat target
+- extract the current generic request mapping without changing its wire shape
+- normalize only text, reasoning activity, finish, and provider error events
+- make output-limit and empty-final behavior explicit and retryable where
+  approved
+
+Still not allowed in that third workstream:
+
+- provider-specific request parameters or automatic host/model detection
+- adapter registries, capability profiles, or Connections store migrations
+- Settings UI, model picker UI, or new shared/preload/renderer APIs
+- raw reasoning display, persistence, or reuse as assistant content
+- tools, usage, sources, files, structured output, or native protocol adapters
+- provider calls, credentials, or adapter execution in OCaml
 
 ## Contract Rules
 

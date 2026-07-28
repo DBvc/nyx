@@ -19,7 +19,8 @@ broaden unrelated tasks.
 - `docs/architecture`: architecture notes and runtime boundary documents.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
-  thread-first Agent Workbench foundation and current-thread durability tasks.
+  thread-first Agent Workbench foundation, current-thread durability, and
+  provider compatibility core tasks.
 
 ## Source of Truth
 
@@ -35,8 +36,9 @@ For explicit agent-workbench workstream tasks only, follow this order:
 
 1. `docs/next/agent-workbench-task-slices.md`
 2. `docs/next/agent-workbench-direction.md`
-3. `docs/next/provider-connections-implementation.md`
-4. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
+3. `docs/next/provider-adapter-direction.md`
+4. `docs/next/provider-connections-implementation.md`
+5. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
    existing behavior must be preserved
 
 The agent-workbench task slices in this repository supersede earlier external
@@ -114,6 +116,19 @@ This second workstream is not persistent thread history. Still out of scope:
 - OCaml thread runtime domain or new runtime protocol messages
 - activity, approvals, artifacts, tools, MCP, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
+
+The planned third `provider-compatibility-core` workstream may add only the
+named C slices authorized by `docs/next/agent-workbench-task-slices.md`:
+
+- one Electron-main-only resolved chat target that preserves provider identity
+- one pure OpenAI-compatible request mapping with current generic request parity
+- one small normalized text/reasoning-activity/finish/error stream
+- provider stream fixtures and explicit terminal-response semantics
+
+This third workstream does not authorize provider-specific request parameters,
+an adapter registry, capability profiles, Connections schema changes, Settings
+or model-picker UI, new shared/IPC contracts, raw reasoning exposure or
+persistence, renderer/OCaml provider integration, tools, or structured output.
 
 ## Workspace Boundary
 

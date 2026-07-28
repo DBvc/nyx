@@ -1,10 +1,12 @@
 # Provider Compatibility And Adapter Direction
 
-Status: Follow-up architecture direction only. Not yet an executable task plan.
+Status: Approved architecture direction. Execution is allowed only through the
+named C slices in
+[agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
 
 This document records the complete direction for expanding Nyx beyond its
-bounded first `openai-compatible` connection path. It must be split into
-separately reviewed and approved task slices before implementation.
+bounded first `openai-compatible` connection path. Its approved implementation
+boundary is split into the separately reviewed C slices.
 
 The active product scope and workstream gates remain defined by
 [agent-workbench-task-slices.md](./agent-workbench-task-slices.md). This document
@@ -114,12 +116,17 @@ type ProviderStreamEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'reasoning-activity' }
   | { type: 'finish'; reason: NormalizedFinishReason; nativeReason: string | null }
-  | { type: 'error'; error: SafeProviderError }
+  | { type: 'error'; diagnostic: 'provider_error' | 'invalid_payload' }
 ```
 
 This is the complete event set for the first extraction. Usage, tools, sources,
 files, and structured output must not be reserved in this contract before an
 approved product slice needs them.
+
+The decoder owns wire-payload recognition only. The existing
+`streamChatCompletion` path remains the sole owner of content aggregation,
+terminal policy, and mapping failures into the existing `ChatBridgeError`
+contract. Do not introduce a second public or shared provider-error taxonomy.
 
 Normalized finish reasons should include at least:
 
@@ -230,19 +237,19 @@ safe errors, and no reasoning disclosure.
 
 ## Suggested Task Boundaries
 
-The follow-up should be planned as narrow commits or slices in this order:
+The approved compatibility-core slices are:
 
-1. Define the minimal text, reasoning-activity, finish, and error event contract.
-2. Preserve provider and protocol identity through main resolution.
-3. Extract the current generic request and parser into pure main-only functions.
-4. Cover Ark/GLM extensions with redacted request and stream fixtures.
-5. Prove whether a second runtime-selected implementation exists.
-6. Only then consider a registry, capability profile, or persisted selection.
-7. Make connection testing and model discovery capability-aware when a proven
-   provider difference requires it.
-8. Add a preset/profile selector in Connections Settings only if required.
-9. Run generic OpenAI-compatible, Ark/GLM, cancellation, error, restart, and
-   secret-boundary acceptance checks.
+1. `C0` locks scope, decisions, non-goals, validation, and stop conditions.
+2. `C1` defines the minimal stream contract and immediately wires its pure
+   decoder into the existing chat client.
+3. `C2` preserves target identity and extracts the current generic request
+   mapping without changing request fields.
+4. `C3` adds redacted fixtures and hardens terminal semantics.
+5. `C4` runs acceptance checks and synchronizes truthful documentation.
+
+Registry, capability-profile, persisted selection, capability-aware connection
+testing, and Settings controls require a later separately reviewed workstream.
+They are not deferred tasks inside C0-C4.
 
 Each step must keep the existing generic provider path usable. Do not combine a
 parser extraction, storage migration, and Settings redesign in one commit.
@@ -277,6 +284,12 @@ The compatibility workstream is not finished until tests cover:
 - no secrets or reasoning text crossing the renderer bridge
 - retry, current-thread persistence, and runtime-backed chat state remaining
   behaviorally intact
+
+For this workstream, `finish_reason=length` is always a retryable failure. When
+text arrived first, the existing current-thread failure path must preserve that
+latest assistant draft and expose the existing Retry action. This rule handles
+output exhaustion safely; it does not prevent a reasoning model from exhausting
+its provider-side output budget.
 
 ## Non-Goals
 

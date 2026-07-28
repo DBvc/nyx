@@ -1,6 +1,8 @@
 # Nyx Thread-First Agent Workbench Direction
 
 Status: First foundation and current-thread durability workstreams completed.
+Provider compatibility core scope gate completed; implementation remains gated
+by the C slices.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -84,6 +86,35 @@ Out of scope:
 - OCaml Thread domain or new runtime protocol messages
 - activity, approvals, artifacts, tools, MCP, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
+
+## Third Workstream: Provider Compatibility Core
+
+The third workstream extracts the smallest proven compatibility boundary from
+the existing OpenAI-compatible chat path. It does not create a general provider
+platform.
+
+In scope:
+
+- preserve provider identity in an Electron-main-only resolved chat target
+- keep the generic OpenAI-compatible request wire shape unchanged
+- normalize text, reasoning activity, finish reasons, and provider stream errors
+- make empty-final and output-length terminal behavior deterministic
+- preserve failed partial assistant drafts for the existing Retry path
+- cover generic, Ark, and GLM response shapes with redacted fixtures
+
+Out of scope:
+
+- provider-specific request parameters such as `thinking`,
+  `reasoning_effort`, or output-token controls
+- automatic adapter selection from provider hostnames or model names
+- adapter registries, capability profiles, or persisted adapter selection
+- Connections schema migration, Settings UI, or model picker UI
+- new shared, preload, renderer, IPC, or OCaml provider contracts
+- raw reasoning display, persistence, or reuse
+- tools, usage, sources, files, structured output, or native protocol adapters
+
+This workstream can detect and report a reasoning model exhausting its output
+budget. It does not claim to prevent that exhaustion.
 
 ## Product Rules
 
@@ -198,3 +229,20 @@ The current-thread durability workstream is successful when:
 - New thread/Start fresh explicitly clears the durable record and runtime state
 - no Recent list, thread switching, hidden history, new Thread reducer, or fake
   agent capability is introduced
+
+## Third Workstream Success Criteria
+
+The provider compatibility core is successful when:
+
+- persisted Connections and `.env` fallback both resolve to the same explicit
+  main-only protocol target shape
+- the generic request preserves the same represented fields and values
+- generic text and GLM-style reasoning-then-text streams use one normalized
+  decoder without exposing reasoning
+- reasoning-only, output-length, provider-error, unknown-finish, and
+  cancellation paths have deterministic tests
+- any `finish_reason=length` result fails; a partial assistant draft remains
+  durable and retryable through the existing Retry path
+- existing Connections version-1 records remain usable without migration
+- no registry, capability schema, UI, new public error code, or renderer/OCaml
+  provider surface is introduced
