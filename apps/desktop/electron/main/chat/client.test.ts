@@ -284,6 +284,19 @@ describe('streamChatCompletion', () => {
     })
   })
 
+  it('preserves the current partial-text length behavior during extraction', async () => {
+    const { onDelta, result } = await streamWithResponse(
+      responseFromPayloads([
+        {
+          choices: [{ delta: { content: 'Partial answer' }, finish_reason: 'length' }],
+        },
+      ]),
+    )
+
+    expect(result).toEqual({ finalContent: 'Partial answer' })
+    expect(onDelta).toHaveBeenCalledWith('Partial answer', 'Partial answer')
+  })
+
   it('maps a provider error delivered inside the stream', async () => {
     await expect(
       streamWithResponse(
@@ -332,6 +345,34 @@ describe('streamChatCompletion', () => {
     })
   })
 
+  it('preserves non-retryable empty content-filter termination', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([{ choices: [{ delta: {}, finish_reason: 'content_filter' }] }]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=content_filter; reasoning_received=false',
+        retryable: false,
+      },
+    })
+  })
+
+  it('retains a safe unknown finish reason in main-owned diagnostics', async () => {
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([{ choices: [{ delta: {}, finish_reason: 'provider_specific' }] }]),
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=provider_specific; reasoning_received=false',
+        retryable: true,
+      },
+    })
+  })
+
   it('maps malformed stream data to a safe upstream error', async () => {
     await expect(streamWithResponse(responseFromPayloads(['{"choices":[']))).rejects.toMatchObject({
       chatError: {
@@ -342,7 +383,10 @@ describe('streamChatCompletion', () => {
     })
   })
 
-  it('preserves abort semantics while reasoning is streaming', async () => {
+  it.each([
+    ['reasoning', { reasoning_content: 'private reasoning' }],
+    ['text', { content: 'Partial answer' }],
+  ])('preserves abort semantics while %s is streaming', async (_streamKind, delta) => {
     const abortController = new AbortController()
     const encoder = new TextEncoder()
     const response = new Response(
@@ -351,9 +395,7 @@ describe('streamChatCompletion', () => {
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
-                choices: [
-                  { delta: { reasoning_content: 'private reasoning' }, finish_reason: null },
-                ],
+                choices: [{ delta, finish_reason: null }],
               })}\n\n`,
             ),
           )

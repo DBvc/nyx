@@ -1,6 +1,11 @@
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { createChatBridgeError } from './errors'
 import type { ChatProviderConfig } from './env'
+import {
+  decodeOpenAiCompatibleStream,
+  type NormalizedFinishReason,
+  type ProviderStreamEvent,
+} from './provider-stream'
 
 const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI assistant.'
 
@@ -9,17 +14,6 @@ interface StreamChatCompletionOptions {
   request: NyxChatRequest
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
-}
-
-interface ChatCompletionChunk {
-  choices?: Array<{
-    delta?: {
-      content?: string
-      reasoning_content?: string
-    }
-    finish_reason?: string | null
-  }>
-  error?: unknown
 }
 
 export function buildChatCompletionsUrl(baseUrl: string) {
@@ -109,30 +103,34 @@ function createProviderStreamError(message: string, details?: string, retryable 
   })
 }
 
-function normalizeFinishReason(value: string) {
-  return /^[a-z0-9_.-]{1,64}$/i.test(value) ? value : 'unknown'
-}
-
-function parseChatCompletionChunk(payload: string) {
-  try {
-    return JSON.parse(payload) as ChatCompletionChunk
-  } catch {
-    throw createProviderStreamError(
+function toProviderStreamEventError(
+  diagnostic: Extract<ProviderStreamEvent, { type: 'error' }>['diagnostic'],
+) {
+  if (diagnostic === 'invalid_payload') {
+    return createProviderStreamError(
       'The provider returned an invalid streaming response.',
       'stream_parse_error=true',
     )
   }
+
+  return createProviderStreamError(
+    'The provider returned an error while streaming.',
+    'stream_error=true',
+  )
 }
 
 function createEmptyProviderResponseError({
   finishReason,
+  nativeFinishReason,
   reasoningReceived,
 }: {
-  finishReason: string | null
+  finishReason: NormalizedFinishReason | null
+  nativeFinishReason: string | null
   reasoningReceived: boolean
 }) {
+  const diagnosticFinishReason = nativeFinishReason ?? finishReason
   const details = [
-    finishReason ? `finish_reason=${finishReason}` : null,
+    diagnosticFinishReason ? `finish_reason=${diagnosticFinishReason}` : null,
     `reasoning_received=${reasoningReceived}`,
   ]
     .filter((detail): detail is string => Boolean(detail))
@@ -240,52 +238,48 @@ export async function streamChatCompletion({
   }
 
   let finalContent = ''
-  let finishReason: string | null = null
+  let finishReason: NormalizedFinishReason | null = null
+  let nativeFinishReason: string | null = null
   let reasoningReceived = false
 
-  for await (const payload of iterateSseData(response.body)) {
+  providerStream: for await (const payload of iterateSseData(response.body)) {
     if (payload === '[DONE]') {
       break
     }
 
-    const chunk = parseChatCompletionChunk(payload)
+    for (const event of decodeOpenAiCompatibleStream(payload)) {
+      switch (event.type) {
+        case 'reasoning-activity':
+          reasoningReceived = true
+          break
+        case 'text-delta':
+          finalContent += event.text
+          await onDelta(event.text, finalContent)
+          break
+        case 'error':
+          throw toProviderStreamEventError(event.diagnostic)
+        case 'finish':
+          finishReason = event.reason
+          nativeFinishReason = event.nativeReason
 
-    if (chunk.error) {
-      throw createProviderStreamError(
-        'The provider returned an error while streaming.',
-        'stream_error=true',
-      )
-    }
+          if (finishReason === 'error') {
+            throw createProviderStreamError(
+              'The provider returned an error while streaming.',
+              'finish_reason=error',
+            )
+          }
 
-    const choice = chunk.choices?.[0]
-    const delta = choice?.delta?.content
-    const reasoningDelta = choice?.delta?.reasoning_content
-
-    if (typeof reasoningDelta === 'string' && reasoningDelta.length > 0) {
-      reasoningReceived = true
-    }
-
-    if (typeof delta === 'string' && delta.length > 0) {
-      finalContent += delta
-      await onDelta(delta, finalContent)
-    }
-
-    if (typeof choice?.finish_reason === 'string' && choice.finish_reason.length > 0) {
-      finishReason = normalizeFinishReason(choice.finish_reason)
-
-      if (finishReason === 'error') {
-        throw createProviderStreamError(
-          'The provider returned an error while streaming.',
-          'finish_reason=error',
-        )
+          break providerStream
       }
-
-      break
     }
   }
 
   if (finalContent.trim().length === 0) {
-    throw createEmptyProviderResponseError({ finishReason, reasoningReceived })
+    throw createEmptyProviderResponseError({
+      finishReason,
+      nativeFinishReason,
+      reasoningReceived,
+    })
   }
 
   return {
