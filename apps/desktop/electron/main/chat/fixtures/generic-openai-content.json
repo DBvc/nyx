@@ -1,0 +1,39 @@
+{
+  "name": "generic-openai-content",
+  "source": {
+    "kind": "official-contract-derived",
+    "url": "https://developers.openai.com/api/reference/resources/chat",
+    "retrievedAt": "2026-07-29",
+    "redaction": "Identifiers, model names, and generated text were replaced; only fields consumed by the stream decoder remain."
+  },
+  "payloads": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hello"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": " world"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ]
+    }
+  ]
+}

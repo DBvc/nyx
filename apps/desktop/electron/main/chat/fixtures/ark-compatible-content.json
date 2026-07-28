@@ -1,0 +1,39 @@
+{
+  "name": "ark-compatible-content",
+  "source": {
+    "kind": "official-contract-derived",
+    "url": "https://api.volcengine.com/api-docs/view?action=ChatCompletions&serviceCode=ark&version=2024-01-01",
+    "retrievedAt": "2026-07-29",
+    "redaction": "Identifiers, model names, and generated text were replaced; only fields consumed by the stream decoder remain."
+  },
+  "payloads": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Ark"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": " compatible"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ]
+    }
+  ]
+}

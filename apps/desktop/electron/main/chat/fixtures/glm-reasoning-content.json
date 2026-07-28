@@ -1,0 +1,39 @@
+{
+  "name": "glm-reasoning-content",
+  "source": {
+    "kind": "official-contract-derived",
+    "url": "https://docs.bigmodel.cn/cn/guide/capabilities/streaming",
+    "retrievedAt": "2026-07-29",
+    "redaction": "Identifiers, model names, generated text, and reasoning text were replaced; only fields consumed by the stream decoder remain."
+  },
+  "payloads": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "reasoning_content": "[redacted reasoning activity]"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Final answer"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ]
+    }
+  ]
+}

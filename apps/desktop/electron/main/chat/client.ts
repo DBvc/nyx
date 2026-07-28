@@ -147,7 +147,7 @@ function toProviderStreamEventError(
   )
 }
 
-function createEmptyProviderResponseError({
+function createProviderTerminalError({
   finishReason,
   nativeFinishReason,
   reasoningReceived,
@@ -166,7 +166,7 @@ function createEmptyProviderResponseError({
 
   if (finishReason === 'length') {
     return createProviderStreamError(
-      'The provider reached its output limit before returning an answer.',
+      'The provider reached its output limit before completing the answer.',
       details,
     )
   }
@@ -294,8 +294,8 @@ export async function streamChatCompletion({
     }
   }
 
-  if (finalContent.trim().length === 0) {
-    throw createEmptyProviderResponseError({
+  if (finishReason === 'length' || finalContent.trim().length === 0) {
+    throw createProviderTerminalError({
       finishReason,
       nativeFinishReason,
       reasoningReceived,

@@ -64,9 +64,11 @@ const resolvedTarget: ResolvedChatTarget = {
   protocol: 'openai-chat-completions',
 }
 
-async function streamWithResponse(response: Response, signal = new AbortController().signal) {
-  const onDelta = vi.fn()
-
+async function streamWithResponse(
+  response: Response,
+  signal = new AbortController().signal,
+  onDelta = vi.fn(),
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => response),
@@ -318,16 +320,28 @@ describe('streamChatCompletion', () => {
     })
   })
 
-  it('preserves the current partial-text length behavior during extraction', async () => {
-    const { onDelta, result } = await streamWithResponse(
-      responseFromPayloads([
-        {
-          choices: [{ delta: { content: 'Partial answer' }, finish_reason: 'length' }],
-        },
-      ]),
-    )
+  it('fails retryably after preserving partial text when output length is exhausted', async () => {
+    const onDelta = vi.fn()
 
-    expect(result).toEqual({ finalContent: 'Partial answer' })
+    await expect(
+      streamWithResponse(
+        responseFromPayloads([
+          {
+            choices: [{ delta: { content: 'Partial answer' }, finish_reason: 'length' }],
+          },
+        ]),
+        new AbortController().signal,
+        onDelta,
+      ),
+    ).rejects.toMatchObject({
+      chatError: {
+        code: 'upstream_error',
+        details: 'finish_reason=length; reasoning_received=false',
+        message: 'The provider reached its output limit before completing the answer.',
+        retryable: true,
+      },
+    })
+
     expect(onDelta).toHaveBeenCalledWith('Partial answer', 'Partial answer')
   })
 

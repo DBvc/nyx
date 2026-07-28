@@ -1241,7 +1241,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     ])
   })
 
-  it('persists the latest assistant draft when the provider fails', async () => {
+  it('persists the latest assistant draft when the provider reaches its output limit', async () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       fail: vi.fn(async () => undefined),
@@ -1249,7 +1249,12 @@ describe('ChatSessionManager durable current thread ordering', () => {
     streamChatCompletion.mockImplementationOnce(
       async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
         await onDelta('Partial', 'Partial draft')
-        throw new Error('Provider failed')
+        throw createChatBridgeError({
+          code: 'upstream_error',
+          message: 'The provider reached its output limit before completing the answer.',
+          retryable: true,
+          details: 'finish_reason=length; reasoning_received=false',
+        })
       },
     )
     const sender = mockSender()
@@ -1261,13 +1266,24 @@ describe('ChatSessionManager durable current thread ordering', () => {
     manager.start(sender, validRequest())
 
     await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({ type: 'chat:error' })
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        error: {
+          code: 'upstream_error',
+          details: 'finish_reason=length; reasoning_received=false',
+          retryable: true,
+        },
+      })
     })
     expect(coordinator.fail).toHaveBeenCalledWith(
       'request-1',
       'assistant-1',
       'Partial draft',
-      expect.objectContaining({ message: 'Provider failed' }),
+      expect.objectContaining({
+        message: 'The provider reached its output limit before completing the answer.',
+        retryable: true,
+        details: 'finish_reason=length; reasoning_received=false',
+      }),
     )
   })
 

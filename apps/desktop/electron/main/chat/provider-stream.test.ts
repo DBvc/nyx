@@ -1,11 +1,76 @@
 import { describe, expect, it } from 'vitest'
 
+import arkCompatibleContentFixture from './fixtures/ark-compatible-content.json'
+import genericOpenAiContentFixture from './fixtures/generic-openai-content.json'
+import glmReasoningContentFixture from './fixtures/glm-reasoning-content.json'
 import {
   decodeOpenAiCompatibleStream,
   normalizeOpenAiCompatibleFinishReason,
 } from './provider-stream'
 
+interface ProviderStreamFixture {
+  name: string
+  source: {
+    kind: string
+    url: string
+    retrievedAt: string
+    redaction: string
+  }
+  payloads: unknown[]
+}
+
+const providerStreamFixtures: ProviderStreamFixture[] = [
+  genericOpenAiContentFixture,
+  arkCompatibleContentFixture,
+  glmReasoningContentFixture,
+]
+
+function decodeFixture(fixture: ProviderStreamFixture) {
+  return fixture.payloads.flatMap((payload) => decodeOpenAiCompatibleStream(payload))
+}
+
 describe('decodeOpenAiCompatibleStream', () => {
+  it.each(providerStreamFixtures)('records redacted official provenance for $name', (fixture) => {
+    expect(fixture.source).toMatchObject({
+      kind: 'official-contract-derived',
+      retrievedAt: '2026-07-29',
+    })
+    expect(fixture.source.url).toMatch(/^https:\/\//)
+    expect(fixture.source.redaction).toContain('replaced')
+
+    const serializedPayloads = JSON.stringify(fixture.payloads)
+    expect(serializedPayloads).not.toMatch(
+      /authorization|bearer|api[_-]?key|prompt|localhost|127\.0\.0\.1/i,
+    )
+  })
+
+  it('decodes generic OpenAI-compatible content fixture', () => {
+    expect(decodeFixture(genericOpenAiContentFixture)).toEqual([
+      { type: 'text-delta', text: 'Hello' },
+      { type: 'text-delta', text: ' world' },
+      { type: 'finish', reason: 'stop', nativeReason: 'stop' },
+    ])
+  })
+
+  it('decodes Ark-compatible content fixture', () => {
+    expect(decodeFixture(arkCompatibleContentFixture)).toEqual([
+      { type: 'text-delta', text: 'Ark' },
+      { type: 'text-delta', text: ' compatible' },
+      { type: 'finish', reason: 'stop', nativeReason: 'stop' },
+    ])
+  })
+
+  it('redacts GLM reasoning while preserving activity and final text', () => {
+    const events = decodeFixture(glmReasoningContentFixture)
+
+    expect(events).toEqual([
+      { type: 'reasoning-activity' },
+      { type: 'text-delta', text: 'Final answer' },
+      { type: 'finish', reason: 'stop', nativeReason: 'stop' },
+    ])
+    expect(JSON.stringify(events)).not.toContain('[redacted reasoning activity]')
+  })
+
   it('normalizes reasoning, text, and finish data in wire order', () => {
     expect(
       decodeOpenAiCompatibleStream(
