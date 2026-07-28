@@ -478,17 +478,19 @@ describe('ChatSessionManager provider resolver', () => {
     streamChatCompletion.mockReset()
   })
 
-  it('uses the injected provider config resolver for chat streaming', async () => {
-    const config = {
+  it('uses the injected chat target resolver for chat streaming', async () => {
+    const target = {
+      providerId: 'provider-1',
       baseUrl: 'https://persisted.example.com/v1/',
       token: 'stored-token',
-      model: 'stored-model',
+      modelId: 'stored-model',
+      protocol: 'openai-chat-completions' as const,
     }
-    const resolveProviderConfig = vi.fn(() => config)
+    const resolveChatTarget = vi.fn(() => target)
     const sender = mockSender()
     const manager = new ChatSessionManager({
       env: runtimeChatStateDisabledEnv,
-      resolveProviderConfig,
+      resolveChatTarget,
     })
 
     streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
@@ -497,12 +499,12 @@ describe('ChatSessionManager provider resolver', () => {
     await waitForAssertion(() => {
       expect(streamChatCompletion).toHaveBeenCalledTimes(1)
     })
-    expect(resolveProviderConfig).toHaveBeenCalledTimes(1)
-    expect(streamChatCompletion.mock.calls[0]?.[0]).toMatchObject({ config })
+    expect(resolveChatTarget).toHaveBeenCalledTimes(1)
+    expect(streamChatCompletion.mock.calls[0]?.[0]).toMatchObject({ target })
   })
 
   it('emits a config error without calling the provider and clears the active session', async () => {
-    const resolveProviderConfig = vi
+    const resolveChatTarget = vi
       .fn()
       .mockRejectedValueOnce(
         createChatBridgeError({
@@ -512,14 +514,16 @@ describe('ChatSessionManager provider resolver', () => {
         }),
       )
       .mockReturnValueOnce({
+        providerId: 'provider-1',
         baseUrl: 'https://persisted.example.com/v1/',
         token: 'stored-token',
-        model: 'stored-model',
+        modelId: 'stored-model',
+        protocol: 'openai-chat-completions',
       })
     const sender = mockSender()
     const manager = new ChatSessionManager({
       env: runtimeChatStateDisabledEnv,
-      resolveProviderConfig,
+      resolveChatTarget,
     })
 
     manager.start(sender, validRequest())
@@ -1381,9 +1385,15 @@ describe('ChatSessionManager durable current thread ordering', () => {
       complete: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
-    const resolveProviderConfig = vi
+    const resolveChatTarget = vi
       .fn()
-      .mockReturnValueOnce({ baseUrl: 'https://example.com/v1/', token: 'token', model: 'model' })
+      .mockReturnValueOnce({
+        providerId: 'provider-1',
+        baseUrl: 'https://example.com/v1/',
+        token: 'token',
+        modelId: 'model',
+        protocol: 'openai-chat-completions',
+      })
       .mockImplementationOnce(() => {
         throw new Error('Config failed')
       })
@@ -1393,7 +1403,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
       env: {},
       createRuntimeChatStateClient: () => runtimeClient,
       resolveCurrentThreadSession: () => coordinator,
-      resolveProviderConfig,
+      resolveChatTarget,
     })
 
     manager.start(sender, validRequest())

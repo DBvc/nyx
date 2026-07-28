@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
-import type { ChatProviderConfig } from './env'
+import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import {
   buildChatCompletionsUrl,
+  buildOpenAiCompatibleChatRequest,
   buildProviderMessages,
   iterateSseData,
   streamChatCompletion,
@@ -55,10 +56,12 @@ function responseFromPayloads(payloads: ReadonlyArray<unknown>) {
   )
 }
 
-const providerConfig: ChatProviderConfig = {
+const resolvedTarget: ResolvedChatTarget = {
+  providerId: 'provider-1',
   baseUrl: 'https://api.example.test/v1/',
   token: 'secret-token',
-  model: 'glm-5.2',
+  modelId: 'glm-5.2',
+  protocol: 'openai-chat-completions',
 }
 
 async function streamWithResponse(response: Response, signal = new AbortController().signal) {
@@ -70,7 +73,7 @@ async function streamWithResponse(response: Response, signal = new AbortControll
   )
 
   const result = await streamChatCompletion({
-    config: providerConfig,
+    target: resolvedTarget,
     request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
     signal,
     onDelta,
@@ -188,6 +191,37 @@ describe('buildProviderMessages', () => {
         content: 'Provider context only.',
       },
     ])
+  })
+})
+
+describe('buildOpenAiCompatibleChatRequest', () => {
+  it('preserves the existing generic request mapping', () => {
+    const request = requestWithMessages([{ role: 'user', content: 'Hello' }])
+
+    expect(buildOpenAiCompatibleChatRequest(resolvedTarget, request)).toEqual({
+      url: 'https://api.example.test/v1/chat/completions',
+      options: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer secret-token',
+        },
+        body: JSON.stringify({
+          model: 'glm-5.2',
+          stream: true,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are Nyx, a concise and reliable desktop AI assistant.',
+            },
+            {
+              role: 'user',
+              content: 'Hello',
+            },
+          ],
+        }),
+      },
+    })
   })
 })
 

@@ -1,6 +1,6 @@
 import type { NyxChatRequest } from '../../../shared/chat/types'
+import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import { createChatBridgeError } from './errors'
-import type { ChatProviderConfig } from './env'
 import {
   decodeOpenAiCompatibleStream,
   type NormalizedFinishReason,
@@ -10,7 +10,7 @@ import {
 const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI assistant.'
 
 interface StreamChatCompletionOptions {
-  config: ChatProviderConfig
+  target: ResolvedChatTarget
   request: NyxChatRequest
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
@@ -47,6 +47,34 @@ export function buildProviderMessages(request: NyxChatRequest) {
     },
     ...request.messages,
   ]
+}
+
+export function buildOpenAiCompatibleChatRequest(
+  target: ResolvedChatTarget,
+  request: NyxChatRequest,
+) {
+  return {
+    url: buildChatCompletionsUrl(target.baseUrl),
+    options: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${target.token}`,
+      },
+      body: JSON.stringify({
+        model: target.modelId,
+        stream: true,
+        messages: buildProviderMessages(request),
+      }),
+    } satisfies RequestInit,
+  }
+}
+
+function buildChatProviderRequest(target: ResolvedChatTarget, request: NyxChatRequest) {
+  switch (target.protocol) {
+    case 'openai-chat-completions':
+      return buildOpenAiCompatibleChatRequest(target, request)
+  }
 }
 
 async function readErrorDetails(response: Response) {
@@ -206,22 +234,14 @@ export async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
 }
 
 export async function streamChatCompletion({
-  config,
+  target,
   request,
   signal,
   onDelta,
 }: StreamChatCompletionOptions) {
-  const response = await fetch(buildChatCompletionsUrl(config.baseUrl), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.token}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      stream: true,
-      messages: buildProviderMessages(request),
-    }),
+  const providerRequest = buildChatProviderRequest(target, request)
+  const response = await fetch(providerRequest.url, {
+    ...providerRequest.options,
     signal,
   })
 

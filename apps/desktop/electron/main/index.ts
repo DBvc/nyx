@@ -14,7 +14,7 @@ import {
 import { ConnectionStore } from './connections/connection-store'
 import { createConnectionsSettingsPaths } from './connections/config-file'
 import { registerConnectionsIpcHandlers } from './connections/ipc-handlers'
-import { createLazyChatProviderConfigResolver } from './connections/provider-resolver'
+import { createLazyChatTargetResolver } from './connections/provider-resolver'
 import { createSafeStorageSecretCrypto, SecretStore } from './connections/secret-store'
 import {
   CurrentThreadSnapshotService,
@@ -43,8 +43,8 @@ function createMainRuntimeChatStateClient() {
   })
 }
 
-function createMainChatProviderConfigResolver() {
-  return createLazyChatProviderConfigResolver({
+function createMainChatTargetResolver() {
+  return createLazyChatTargetResolver({
     createDependencies: () => {
       const paths = createConnectionsSettingsPaths(app.getPath('userData'))
 
@@ -103,7 +103,7 @@ const resolveCurrentThreadSession =
   createMainCurrentThreadSessionResolver(resolveCurrentThreadStore)
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
-  resolveProviderConfig: createMainChatProviderConfigResolver(),
+  resolveChatTarget: createMainChatTargetResolver(),
   resolveCurrentThreadSession,
 })
 const connectionsService = createMainConnectionsService()

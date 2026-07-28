@@ -8,7 +8,11 @@ import {
   type NyxChatRequest,
 } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
-import type { ChatProviderConfigResolver } from '../connections/provider-resolver'
+import {
+  readEnvChatTarget,
+  type ChatTargetResolver,
+  type ResolvedChatTarget,
+} from '../connections/provider-resolver'
 import { replayCurrentThread } from '../current-thread/runtime-replay'
 import {
   CurrentThreadSessionCoordinator,
@@ -16,7 +20,6 @@ import {
   type PreparedCurrentThreadTurn,
 } from '../current-thread/session-coordinator'
 import { streamChatCompletion } from './client'
-import { readChatProviderConfig, type ChatProviderConfig } from './env'
 import { isAbortError, toChatError } from './errors'
 import {
   createRuntimeChatStateClient as createRuntimeChatStateClientDefault,
@@ -55,7 +58,7 @@ interface ChatSessionEnv {
 interface ChatSessionManagerOptions {
   env?: ChatSessionEnv
   createRuntimeChatStateClient?: () => RuntimeChatStateClient
-  resolveProviderConfig?: ChatProviderConfigResolver
+  resolveChatTarget?: ChatTargetResolver
   resolveCurrentThreadSession?: () => CurrentThreadSessionCoordinator
 }
 
@@ -153,7 +156,7 @@ export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
   private readonly runtimeChatStateEnabled: boolean
   private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
-  private readonly resolveProviderConfig: ChatProviderConfigResolver
+  private readonly resolveChatTarget: ChatTargetResolver
   private readonly resolveCurrentThreadSession: (() => CurrentThreadSessionCoordinator) | undefined
   private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
   private resetOperation: Promise<NyxCurrentThreadResetResult> | undefined
@@ -161,12 +164,12 @@ export class ChatSessionManager {
   constructor({
     env = process.env,
     createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
-    resolveProviderConfig = readChatProviderConfig,
+    resolveChatTarget = readEnvChatTarget,
     resolveCurrentThreadSession,
   }: ChatSessionManagerOptions = {}) {
     this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
     this.createRuntimeChatStateClient = createRuntimeChatStateClient
-    this.resolveProviderConfig = resolveProviderConfig
+    this.resolveChatTarget = resolveChatTarget
     this.resolveCurrentThreadSession = resolveCurrentThreadSession
   }
 
@@ -211,7 +214,7 @@ export class ChatSessionManager {
 
     const operation = this.resolveCurrentThreadSession
       ? this.prepareDurableSession(session, request)
-      : this.resolveConfigAndStart(session, request)
+      : this.resolveTargetAndStart(session, request)
 
     session.operation = operation
     void operation
@@ -234,7 +237,7 @@ export class ChatSessionManager {
         messages: preparedCurrentThread.providerMessages,
       }
       session.request = durableRequest
-      await this.resolveConfigAndStart(session, durableRequest)
+      await this.resolveTargetAndStart(session, durableRequest)
     } catch (error) {
       if (this.activeSession !== session) {
         return
@@ -254,40 +257,40 @@ export class ChatSessionManager {
     }
   }
 
-  private resolveConfigAndStart(
+  private resolveTargetAndStart(
     session: ActiveChatSession,
     request: NyxChatRequest,
   ): Promise<void> {
-    let configResult
+    let targetResult
 
     try {
-      configResult = this.resolveProviderConfig()
+      targetResult = this.resolveChatTarget()
     } catch (error) {
-      return this.handleProviderConfigError(session, request, error)
+      return this.handleChatTargetError(session, request, error)
     }
 
-    if (isPromiseLike(configResult)) {
-      return this.startAfterAsyncProviderConfig(session, configResult, request)
+    if (isPromiseLike(targetResult)) {
+      return this.startAfterAsyncChatTarget(session, targetResult, request)
     }
 
-    return this.startWithProviderConfig(session, configResult, request)
+    return this.startWithChatTarget(session, targetResult, request)
   }
 
-  private async startAfterAsyncProviderConfig(
+  private async startAfterAsyncChatTarget(
     session: ActiveChatSession,
-    configResult: Promise<ChatProviderConfig>,
+    targetResult: Promise<ResolvedChatTarget>,
     request: NyxChatRequest,
   ) {
     try {
-      await this.startWithProviderConfig(session, await configResult, request)
+      await this.startWithChatTarget(session, await targetResult, request)
     } catch (error) {
-      await this.handleProviderConfigError(session, request, error)
+      await this.handleChatTargetError(session, request, error)
     }
   }
 
-  private startWithProviderConfig(
+  private startWithChatTarget(
     session: ActiveChatSession,
-    config: ChatProviderConfig,
+    target: ResolvedChatTarget,
     request: NyxChatRequest,
   ): Promise<void> {
     if (this.activeSession !== session) {
@@ -296,13 +299,13 @@ export class ChatSessionManager {
 
     if (!this.runtimeChatStateEnabled) {
       this.emitStart(session)
-      return this.runSession(session, config, request)
+      return this.runSession(session, target, request)
     }
 
-    return this.prepareRuntimeAndRunSession(session, config, request)
+    return this.prepareRuntimeAndRunSession(session, target, request)
   }
 
-  private async handleProviderConfigError(
+  private async handleChatTargetError(
     session: ActiveChatSession,
     request: NyxChatRequest,
     error: unknown,
@@ -384,7 +387,7 @@ export class ChatSessionManager {
 
   private async prepareRuntimeAndRunSession(
     session: ActiveChatSession,
-    config: ChatProviderConfig,
+    target: ResolvedChatTarget,
     request: NyxChatRequest,
   ) {
     try {
@@ -428,7 +431,7 @@ export class ChatSessionManager {
         return
       }
 
-      await this.runSession(session, config, request)
+      await this.runSession(session, target, request)
     } catch (error) {
       if (this.activeSession !== session) {
         return
@@ -572,12 +575,12 @@ export class ChatSessionManager {
 
   private async runSession(
     session: ActiveChatSession,
-    config: ChatProviderConfig,
+    target: ResolvedChatTarget,
     request: NyxChatRequest,
   ) {
     try {
       const result = await streamChatCompletion({
-        config,
+        target,
         request,
         signal: session.abortController.signal,
         onDelta: async (delta, snapshot) => {

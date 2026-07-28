@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ChatProviderConfig } from '../chat/env'
 import {
-  createChatProviderConfigResolver,
-  createLazyChatProviderConfigResolver,
+  createChatTargetResolver,
+  createLazyChatTargetResolver,
+  type ResolvedChatTarget,
 } from './provider-resolver'
 import type { ConnectionStoreState } from './schemas'
 
@@ -50,10 +51,20 @@ function envConfig(): ChatProviderConfig {
   }
 }
 
-describe('createChatProviderConfigResolver', () => {
+function envTarget(): ResolvedChatTarget {
+  return {
+    providerId: null,
+    baseUrl: 'https://env.example.com/v1/',
+    token: 'env-token',
+    modelId: 'env-model',
+    protocol: 'openai-chat-completions',
+  }
+}
+
+describe('createChatTargetResolver', () => {
   it('resolves the persisted default target before using the env fallback', async () => {
     const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => providerState()),
       },
@@ -64,15 +75,17 @@ describe('createChatProviderConfigResolver', () => {
     })
 
     await expect(resolver()).resolves.toEqual({
+      providerId: 'provider-1',
       baseUrl: 'https://api.example.com/custom/v1/',
       token: 'stored-secret',
-      model: 'model-1',
+      modelId: 'model-1',
+      protocol: 'openai-chat-completions',
     })
     expect(envConfigReader).not.toHaveBeenCalled()
   })
 
   it('strips credentials and query secrets from persisted provider base URLs', async () => {
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () =>
           providerState({
@@ -101,7 +114,7 @@ describe('createChatProviderConfigResolver', () => {
       readSecret: vi.fn(async () => 'stored-secret'),
     }
     const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => providerState({ defaultTarget: null })),
       },
@@ -109,14 +122,43 @@ describe('createChatProviderConfigResolver', () => {
       envConfigReader,
     })
 
-    await expect(resolver()).resolves.toEqual(envConfig())
+    await expect(resolver()).resolves.toEqual(envTarget())
     expect(secretStore.readSecret).not.toHaveBeenCalled()
     expect(envConfigReader).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves an explicit Connections target identity', async () => {
+    const envConfigReader = vi.fn(envConfig)
+    const resolver = createChatTargetResolver({
+      connectionStore: {
+        readState: vi.fn(async () => providerState({ defaultTarget: null })),
+      },
+      secretStore: {
+        readSecret: vi.fn(async () => 'stored-secret'),
+      },
+      envConfigReader,
+    })
+
+    await expect(
+      resolver({
+        target: {
+          providerId: 'provider-1',
+          modelId: 'model-1',
+        },
+      }),
+    ).resolves.toEqual({
+      providerId: 'provider-1',
+      baseUrl: 'https://api.example.com/custom/v1/',
+      token: 'stored-secret',
+      modelId: 'model-1',
+      protocol: 'openai-chat-completions',
+    })
+    expect(envConfigReader).not.toHaveBeenCalled()
+  })
+
   it('fails closed when persisted settings cannot be read', async () => {
     const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => {
           throw new Error('raw persisted provider failure')
@@ -140,7 +182,7 @@ describe('createChatProviderConfigResolver', () => {
 
   it('maps a missing persisted secret to config_missing without falling back to env', async () => {
     const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => providerState()),
       },
@@ -160,7 +202,7 @@ describe('createChatProviderConfigResolver', () => {
   })
 
   it('maps secret decrypt failures to config_missing without leaking the raw failure', async () => {
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => providerState()),
       },
@@ -191,7 +233,7 @@ describe('createChatProviderConfigResolver', () => {
   })
 
   it('maps invalid persisted default targets to config_missing', async () => {
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () =>
           providerState({
@@ -220,7 +262,7 @@ describe('createChatProviderConfigResolver', () => {
 
   it('maps a missing future explicit target to invalid_request', async () => {
     const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatProviderConfigResolver({
+    const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => providerState({ defaultTarget: null })),
       },
@@ -247,7 +289,7 @@ describe('createChatProviderConfigResolver', () => {
   })
 })
 
-describe('createLazyChatProviderConfigResolver', () => {
+describe('createLazyChatTargetResolver', () => {
   it('creates store dependencies only on first resolution and then reuses them', async () => {
     const createDependencies = vi.fn(() => ({
       connectionStore: {
@@ -258,12 +300,12 @@ describe('createLazyChatProviderConfigResolver', () => {
       },
       envConfigReader: vi.fn(envConfig),
     }))
-    const resolver = createLazyChatProviderConfigResolver({ createDependencies })
+    const resolver = createLazyChatTargetResolver({ createDependencies })
 
     expect(createDependencies).not.toHaveBeenCalled()
 
-    await expect(resolver()).resolves.toEqual(envConfig())
-    await expect(resolver()).resolves.toEqual(envConfig())
+    await expect(resolver()).resolves.toEqual(envTarget())
+    await expect(resolver()).resolves.toEqual(envTarget())
     expect(createDependencies).toHaveBeenCalledTimes(1)
   })
 })

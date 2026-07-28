@@ -7,22 +7,30 @@ import type { ConnectionProviderRecord, ConnectionStoreState } from './schemas'
 import type { SecretStore } from './secret-store'
 import { normalizeConnectionBaseUrl } from './url'
 
-export interface ResolveChatProviderConfigInput {
+export interface ResolveChatTargetInput {
   target?: NyxConnectionTarget
 }
 
-export type ChatProviderConfigResolver = (
-  input?: ResolveChatProviderConfigInput,
-) => ChatProviderConfig | Promise<ChatProviderConfig>
+export interface ResolvedChatTarget {
+  providerId: string | null
+  baseUrl: string
+  token: string
+  modelId: string
+  protocol: 'openai-chat-completions'
+}
 
-export interface ChatProviderResolverDependencies {
+export type ChatTargetResolver = (
+  input?: ResolveChatTargetInput,
+) => ResolvedChatTarget | Promise<ResolvedChatTarget>
+
+export interface ChatTargetResolverDependencies {
   connectionStore: Pick<ConnectionStore, 'readState'>
   secretStore: Pick<SecretStore, 'readSecret'>
   envConfigReader?: () => ChatProviderConfig
 }
 
-export interface LazyChatProviderConfigResolverOptions {
-  createDependencies: () => ChatProviderResolverDependencies
+export interface LazyChatTargetResolverOptions {
+  createDependencies: () => ChatTargetResolverDependencies
 }
 
 type TargetSource = 'explicit' | 'persisted_default'
@@ -99,7 +107,15 @@ async function readSecret(secretStore: Pick<SecretStore, 'readSecret'>, provider
 
 function readEnvFallback(envConfigReader: () => ChatProviderConfig) {
   try {
-    return envConfigReader()
+    const config = envConfigReader()
+
+    return {
+      providerId: null,
+      baseUrl: config.baseUrl,
+      token: config.token,
+      modelId: config.model,
+      protocol: 'openai-chat-completions',
+    } satisfies ResolvedChatTarget
   } catch (error) {
     if (error instanceof ChatBridgeError && error.chatError.code === 'config_missing') {
       throw error
@@ -119,17 +135,23 @@ async function resolvePersistedTarget({
   secretStore: Pick<SecretStore, 'readSecret'>
 }) {
   return {
+    providerId: provider.id,
     baseUrl: normalizeBaseUrl(provider.baseUrl),
     token: await readSecret(secretStore, provider.id),
-    model: model.id,
-  } satisfies ChatProviderConfig
+    modelId: model.id,
+    protocol: 'openai-chat-completions',
+  } satisfies ResolvedChatTarget
 }
 
-export function createChatProviderConfigResolver({
+export function readEnvChatTarget() {
+  return readEnvFallback(readChatProviderConfig)
+}
+
+export function createChatTargetResolver({
   connectionStore,
   secretStore,
   envConfigReader = readChatProviderConfig,
-}: ChatProviderResolverDependencies): ChatProviderConfigResolver {
+}: ChatTargetResolverDependencies): ChatTargetResolver {
   return async (input = {}) => {
     const state = await readState(connectionStore)
 
@@ -151,14 +173,14 @@ export function createChatProviderConfigResolver({
   }
 }
 
-export function createLazyChatProviderConfigResolver({
+export function createLazyChatTargetResolver({
   createDependencies,
-}: LazyChatProviderConfigResolverOptions): ChatProviderConfigResolver {
-  let resolver: ChatProviderConfigResolver | undefined
+}: LazyChatTargetResolverOptions): ChatTargetResolver {
+  let resolver: ChatTargetResolver | undefined
 
   return (input) => {
     try {
-      resolver ??= createChatProviderConfigResolver(createDependencies())
+      resolver ??= createChatTargetResolver(createDependencies())
     } catch {
       throw createConfigMissingError()
     }
