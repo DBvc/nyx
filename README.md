@@ -29,6 +29,10 @@ The current desktop milestone has a real, manually verified `v1 min chat` loop:
 
 - redacted provider setup status in the renderer
 - OpenAI-compatible provider streaming through Electron main
+- Connections profiles with main-owned encrypted credentials and `.env`
+  fallback
+- one main-only provider compatibility path for generic text, GLM-style
+  reasoning activity, explicit finish reasons, and safe stream failures
 - plain-text chat with `Stop`, `Retry`, and `New thread`
 - unit coverage for chat reducer lifecycle, provider status parsing, provider
   streaming helpers, and chat presenter helpers
@@ -89,14 +93,14 @@ Out of scope for this phase:
 - cloud sync
 - multimodal features
 
-## Next Product Workstream
+## Implemented Gated Workstreams
 
-An explicit first agent-workbench workstream is tracked in
+Explicit agent-workbench workstreams are tracked in
 [docs/next/agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md).
-It applies only when a user asks to execute that workstream or one of its named
-slices. Ordinary work still follows the `v1 min chat` source of truth above.
+They applied only when the user requested their named slices. Ordinary work
+still follows the `v1 min chat` source of truth above.
 
-The first agent-workbench workstream allows only the foundation needed for a
+The first agent-workbench workstream added only the foundation needed for a
 thread-first shell and local provider setup:
 
 - Connections settings for OpenAI-compatible provider profiles
@@ -130,6 +134,21 @@ durability:
 
 It does not add Recent, thread switching, a hidden history collection,
 conversation encryption, or an OCaml Thread domain.
+
+The completed third gated workstream adds only a main-owned provider
+compatibility core:
+
+- explicit provider identity and protocol in the resolved chat target
+- the existing generic OpenAI-compatible request mapping as a pure function
+- normalized text, reasoning-activity, finish, and stream-error events
+- deterministic reasoning-only, empty-final, and output-length failures
+- preservation of a partial failed draft for the existing Retry path
+- redacted generic, Ark-compatible, and GLM-style stream fixtures
+
+It handles output exhaustion safely but does not prevent it. It does not add
+provider-specific request parameters, an adapter registry, capability profiles,
+Connections schema changes, new UI or IPC, raw reasoning exposure, tools, or
+native protocol adapters.
 
 The product direction for that gated workstream is recorded in
 [agent-workbench-direction.md](./docs/next/agent-workbench-direction.md).

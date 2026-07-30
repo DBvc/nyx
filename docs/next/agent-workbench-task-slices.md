@@ -56,9 +56,9 @@ Use relative documentation links. Do not add local absolute paths.
 - The B workstream permits one durable current thread only. It does not permit
   persistent thread history, a thread collection, or a parallel Thread runtime
   domain.
-- `C0` is the completed scope gate for the planned
-  `provider-compatibility-core` workstream. `C1` through `C4` are not implemented
-  and may run only as separately requested, sequential slices.
+- `C0` through `C4` define the completed third
+  `provider-compatibility-core` workstream. Do not rerun them as permission to
+  add provider-specific policy or a general adapter platform.
 - The C workstream extracts one Electron-main-only OpenAI-compatible
   compatibility path. It does not authorize a general adapter platform,
   provider-specific request policy, schema/UI expansion, or a new renderer or
@@ -690,6 +690,9 @@ git diff --check
 
 ## C Workstream: Provider Compatibility Core
 
+Status: Completed on 2026-07-30. Acceptance evidence is recorded in
+[llm-chat-runthrough.md](./llm-chat-runthrough.md).
+
 The bounded implementation path is:
 
 ```text
@@ -960,6 +963,11 @@ Type: acceptance verification and documentation sync.
 
 Goal: verify the completed compatibility core against its evidence boundary and
 document only behavior that was actually proven.
+
+Completion: accepted on 2026-07-30 using the required automated checks, a live
+Ark/GLM path, and isolated local fixtures for terminal cases that could not be
+reliably induced on the live provider. See
+[llm-chat-runthrough.md](./llm-chat-runthrough.md).
 
 Allowed files:
 

@@ -49,8 +49,8 @@ current repository document reintroduces it.
 implemented additions recorded in this file and in
 `docs/next/agent-workbench-task-slices.md` supersede conflicting baseline lines
 only for those exact additions. Ordinary work must preserve the implemented
-Connections, thread-first, and current-thread durability behavior without using
-it as permission to broaden product scope.
+Connections, thread-first, current-thread durability, and provider compatibility
+core behavior without using them as permission to broaden product scope.
 
 The current desktop product remains a minimal single-page chat client:
 
@@ -117,18 +117,18 @@ This second workstream is not persistent thread history. Still out of scope:
 - activity, approvals, artifacts, tools, MCP, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
 
-The planned third `provider-compatibility-core` workstream may add only the
-named C slices authorized by `docs/next/agent-workbench-task-slices.md`:
+The completed third `provider-compatibility-core` workstream added only:
 
 - one Electron-main-only resolved chat target that preserves provider identity
 - one pure OpenAI-compatible request mapping with current generic request parity
 - one small normalized text/reasoning-activity/finish/error stream
 - provider stream fixtures and explicit terminal-response semantics
 
-This third workstream does not authorize provider-specific request parameters,
-an adapter registry, capability profiles, Connections schema changes, Settings
-or model-picker UI, new shared/IPC contracts, raw reasoning exposure or
-persistence, renderer/OCaml provider integration, tools, or structured output.
+This completed third workstream does not authorize provider-specific request
+parameters, an adapter registry, capability profiles, Connections schema
+changes, Settings or model-picker UI, new shared/IPC contracts, raw reasoning
+exposure or persistence, renderer/OCaml provider integration, tools, or
+structured output.
 
 ## Workspace Boundary
 

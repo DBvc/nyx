@@ -1,8 +1,7 @@
 # Nyx Thread-First Agent Workbench Direction
 
-Status: First foundation and current-thread durability workstreams completed.
-Provider compatibility core scope gate completed; implementation remains gated
-by the C slices.
+Status: First foundation, current-thread durability, and provider compatibility
+core workstreams completed.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -87,9 +86,9 @@ Out of scope:
 - activity, approvals, artifacts, tools, MCP, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
 
-## Third Workstream: Provider Compatibility Core
+## Third Workstream: Provider Compatibility Core (Completed)
 
-The third workstream extracts the smallest proven compatibility boundary from
+The third workstream extracted the smallest proven compatibility boundary from
 the existing OpenAI-compatible chat path. It does not create a general provider
 platform.
 
@@ -232,7 +231,7 @@ The current-thread durability workstream is successful when:
 
 ## Third Workstream Success Criteria
 
-The provider compatibility core is successful when:
+The provider compatibility core was accepted on 2026-07-30 after:
 
 - persisted Connections and `.env` fallback both resolve to the same explicit
   main-only protocol target shape
@@ -246,3 +245,8 @@ The provider compatibility core is successful when:
 - existing Connections version-1 records remain usable without migration
 - no registry, capability schema, UI, new public error code, or renderer/OCaml
   provider surface is introduced
+
+The live and fixture-backed evidence boundary is recorded in
+[llm-chat-runthrough.md](./llm-chat-runthrough.md). The completed compatibility
+core handles output exhaustion safely; it does not prevent provider-side
+exhaustion or optimize provider-specific request parameters.

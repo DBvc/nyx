@@ -132,7 +132,7 @@ Still not allowed in that second workstream:
 - tools, MCP, activity, approvals, artifacts, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
 
-Planned third `provider-compatibility-core` workstream additions:
+Completed third `provider-compatibility-core` workstream additions:
 
 - preserve provider identity in one Electron-main-only resolved chat target
 - extract the current generic request mapping without changing its wire shape
@@ -140,7 +140,7 @@ Planned third `provider-compatibility-core` workstream additions:
 - make output-limit and empty-final behavior explicit and retryable where
   approved
 
-Still not allowed in that third workstream:
+Still not allowed after that third workstream:
 
 - provider-specific request parameters or automatic host/model detection
 - adapter registries, capability profiles, or Connections store migrations

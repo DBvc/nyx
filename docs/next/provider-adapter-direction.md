@@ -1,7 +1,7 @@
 # Provider Compatibility And Adapter Direction
 
-Status: Approved architecture direction. Execution is allowed only through the
-named C slices in
+Status: Approved architecture direction. The bounded C0-C4 compatibility core
+is completed. Any follow-up execution requires a new named slice in
 [agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
 
 This document records the complete direction for expanding Nyx beyond its
@@ -56,10 +56,10 @@ failure mode, but it deliberately does not:
 - add provider-specific settings UI
 - establish a general adapter registry
 
-Future work should first extract the proven stream behavior below. It must not
-accumulate hostname checks and model-name conditionals in the generic chat
-client, but it also must not introduce a registry before a second real adapter
-needs runtime selection.
+The completed C workstream extracted the proven stream behavior below. Future
+work must not accumulate hostname checks and model-name conditionals in the
+generic chat client, but it also must not introduce a registry before a second
+real adapter needs runtime selection.
 
 ## Semantic Layers
 
@@ -93,7 +93,7 @@ interface ResolvedChatTarget {
 The token remains Electron-main-only. Renderer-facing status continues to use
 redacted summaries.
 
-The first implementation should extract pure main-only request and stream
+The completed compatibility core uses pure main-only request and stream
 functions from the current chat client:
 
 ```ts
@@ -237,7 +237,7 @@ safe errors, and no reasoning disclosure.
 
 ## Suggested Task Boundaries
 
-The approved compatibility-core slices are:
+The completed compatibility-core slices are:
 
 1. `C0` locks scope, decisions, non-goals, validation, and stop conditions.
 2. `C1` defines the minimal stream contract and immediately wires its pure
@@ -270,7 +270,7 @@ Re-evaluate a maintained provider SDK when at least one of these becomes true:
 
 ## Acceptance Matrix
 
-The compatibility workstream is not finished until tests cover:
+The completed compatibility workstream covers:
 
 - generic `delta.content` streaming
 - reasoning followed by final text
@@ -290,6 +290,13 @@ text arrived first, the existing current-thread failure path must preserve that
 latest assistant draft and expose the existing Retry action. This rule handles
 output exhaustion safely; it does not prevent a reasoning model from exhausting
 its provider-side output budget.
+
+C4 acceptance used a live saved version-1 Ark connection with a GLM reasoning
+model, plus isolated local fixtures for reasoning-only and output-length
+terminal cases. The exact evidence boundary is recorded in
+[llm-chat-runthrough.md](./llm-chat-runthrough.md). This is compatibility-core
+evidence only, not provider-specific request optimization or proof of a general
+adapter platform.
 
 ## Non-Goals
 
