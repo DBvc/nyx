@@ -182,7 +182,7 @@ never talk to the OCaml runtime directly.
 
 ## Tooling
 
-Root tooling is managed through `mise` tasks. `mise` currently manages Node for the workspace; `pnpm` and `opam` are expected to be available on the machine.
+Root tooling is managed through `mise` tasks. `mise` manages Node and pnpm for the workspace, `packageManager` keeps Corepack-based environments such as CI on the same pnpm version, and `opam` is expected to be available on the machine.
 
 Initial setup:
 

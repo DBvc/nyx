@@ -1,13 +1,11 @@
 packages:
   - 'apps/*'
 
-ignoredBuiltDependencies:
-  - electron-winstaller
-
-onlyBuiltDependencies:
-  - electron
-  - esbuild
-  - lefthook
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  lefthook: true
 
 packageExtensions:
   'electron-vite@*':
