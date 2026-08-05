@@ -1,7 +1,8 @@
 # Nyx Thread-First Agent Workbench Direction
 
 Status: First foundation, current-thread durability, and provider compatibility
-core workstreams completed.
+core workstreams completed. Composer target-selection scope gate approved;
+implementation slices remain pending.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -114,6 +115,48 @@ Out of scope:
 
 This workstream can detect and report a reasoning model exhausting its output
 budget. It does not claim to prevent that exhaustion.
+
+## Fourth Workstream: Composer Target Selection (Scope Gated)
+
+The fourth workstream lets the user choose a configured provider/model target
+from the existing Composer without turning the main surface into a routing
+dashboard. It reuses Connections, the one durable current thread, and the
+existing chat bridge.
+
+In scope:
+
+- a safe catalog of configured selectable targets and an explicit `.env`
+  fallback option
+- an in-memory Composer draft selection whose latest submitted value becomes
+  sticky for the current thread
+- a required safe target selection on each Send or Retry request
+- Electron-main validation and resolution with no silent fallback
+- versioned current-thread selection and actual-target attribution
+- compact target selection in the Composer and compact attribution on assistant
+  responses
+- deterministic restart, New thread, active-generation, unavailable-target,
+  and Retry behavior
+
+Out of scope:
+
+- changing the global Connections default from the Composer
+- persisting an unsent Composer draft
+- exposing credentials, resolved targets, full base URLs, raw provider
+  configuration, or provider execution through D-added Composer, catalog, chat,
+  snapshot, or attribution surfaces; the existing typed Connections Settings
+  provider-detail editing contract remains unchanged
+- migrating the Connections store, adding provider-specific request policy, or
+  inferring behavior from provider hostnames or model ids
+- adapter registries, capability profiles, model roles, or automatic routing
+- attempt history, persistent multi-thread history, tools, or new runtime
+  protocol messages
+
+Within the D-added Composer and chat surfaces, the renderer may hold safe
+selection ids and labels only. The current-thread record owns committed
+per-turn selection and attribution. Electron main remains the sole owner of
+resolved targets and provider execution. The existing Connections Settings form
+may continue to edit full provider configuration through its typed detail API.
+OCaml continues to receive only the existing message-level runtime actions.
 
 ## Product Rules
 

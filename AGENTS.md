@@ -20,7 +20,8 @@ broaden unrelated tasks.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
   thread-first Agent Workbench foundation, current-thread durability, and
-  provider compatibility core tasks.
+  provider compatibility core tasks, plus the bounded Composer target-selection
+  workstream.
 
 ## Source of Truth
 
@@ -129,6 +130,29 @@ parameters, an adapter registry, capability profiles, Connections schema
 changes, Settings or model-picker UI, new shared/IPC contracts, raw reasoning
 exposure or persistence, renderer/OCaml provider integration, tools, or
 structured output.
+
+The explicit fourth `composer-target-selection` workstream may add only:
+
+- one redacted catalog of configured selectable targets on the existing
+  Connections overview bridge
+- one renderer-local Composer target draft that never owns credentials or raw
+  provider configuration
+- one required safe target selection on each chat request, validated and
+  resolved by Electron main
+- one version-2 current-thread record that preserves the latest committed
+  selection and safe per-turn target attribution
+- one compact Composer target selector and compact assistant-response
+  attribution
+- deterministic restart, New thread, Retry, unavailable-target, and `.env`
+  fallback behavior defined by the D slices
+
+This fourth workstream does not authorize changing the Connections persisted
+schema or global default when the Composer selection changes. It also does not
+authorize provider-specific parameters, capability profiles, an adapter
+registry, attempt history, persistent multi-thread history, a new IPC channel,
+or provider identity in OCaml. Safe provider/model selection ids and display
+labels may cross the existing typed desktop bridge; resolved base URLs,
+credentials, protocols, and provider execution remain Electron-main-only.
 
 ## Workspace Boundary
 

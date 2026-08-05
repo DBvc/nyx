@@ -5,10 +5,10 @@ This directory contains the Nyx Electron desktop app.
 The desktop app is currently the only user-facing product surface. Its default
 scope remains `v1 min chat`.
 
-Connections settings, thread-first UI work, current-thread durability, and the
-provider compatibility core are allowed only when the user explicitly asks to
-execute the corresponding gated agent-workbench workstream or a named slice from
-`../../docs/next/agent-workbench-task-slices.md`.
+Connections settings, thread-first UI work, current-thread durability, provider
+compatibility core, and Composer target selection are allowed only when the user
+explicitly asks to execute the corresponding gated agent-workbench workstream or
+a named slice from `../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
 
@@ -64,6 +64,10 @@ This subproject owns:
   provider payloads, and reasoning activity inside Electron main. They must not
   add shared/preload/renderer contracts or infer runtime behavior from hostnames
   or model names.
+- Composer target-selection slices may expose only safe provider/model selection
+  ids, current display labels, availability, and safe attribution through typed
+  shared contracts. Electron main must still own resolved targets, base URLs,
+  credentials, protocols, provider calls, and fail-closed validation.
 
 ## Current Scope
 
@@ -148,6 +152,33 @@ Still not allowed after that third workstream:
 - raw reasoning display, persistence, or reuse as assistant content
 - tools, usage, sources, files, structured output, or native protocol adapters
 - provider calls, credentials, or adapter execution in OCaml
+
+Explicit fourth `composer-target-selection` workstream additions:
+
+- a redacted selectable-target catalog on the existing Connections overview
+- a renderer-local, unsent Composer target draft
+- an explicit safe target selection on each chat request
+- Electron-main validation, resolution, and durable target binding before
+  runtime or provider side effects
+- a version-2 current-thread record with safe selection and attribution
+  metadata
+- a compact Composer target selector and compact assistant attribution
+- deterministic hydration, New thread, Retry, unavailable-target, and `.env`
+  fallback behavior
+
+Still not allowed in that fourth workstream:
+
+- full base URLs, credentials, raw provider configuration, or provider calls in
+  D-added Composer, target-catalog, chat, snapshot, or attribution surfaces;
+  the existing typed Connections Settings provider-detail editing contract is
+  unchanged
+- changing the Connections persisted schema or global default as a side effect
+  of Composer selection
+- provider-specific request parameters, hostname/model inference, adapter
+  registries, or capability profiles
+- attempt history, Recent, thread switching, or persistent multi-thread history
+- a new chat/thread IPC namespace or new OCaml runtime protocol messages
+- tools, usage, sources, files, structured output, or native protocol adapters
 
 ## Contract Rules
 
