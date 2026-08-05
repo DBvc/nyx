@@ -34,6 +34,17 @@ export function resolveDevServerUrl(env: NodeJS.ProcessEnv) {
   return env.ELECTRON_RENDERER_URL || env.VITE_DEV_SERVER_URL
 }
 
+export function resolveMainWindowChromeOptions(platform: NodeJS.Platform) {
+  if (platform !== 'darwin') {
+    return {}
+  }
+
+  return {
+    titleBarStyle: 'hidden' as const,
+    trafficLightPosition: { x: 18, y: 18 },
+  }
+}
+
 function createMainRuntimeChatStateClient() {
   return createRuntimeChatStateClient({
     path: {
@@ -164,6 +175,7 @@ function createMainWindow() {
     minHeight: 720,
     title: 'Nyx',
     backgroundColor: '#131417',
+    ...resolveMainWindowChromeOptions(process.platform),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

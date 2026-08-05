@@ -46,7 +46,7 @@ vi.mock('electron', () => ({
   safeStorage: electronMock.safeStorage,
 }))
 
-import { registerIpcHandlers, resolveDevServerUrl } from './index'
+import { registerIpcHandlers, resolveDevServerUrl, resolveMainWindowChromeOptions } from './index'
 
 const appGetPathCallCountAfterImport = electronMock.app.getPath.mock.calls.length
 const safeStorageAvailabilityCallCountAfterImport =
@@ -78,6 +78,17 @@ describe('resolveDevServerUrl', () => {
         VITE_DEV_SERVER_URL: 'http://127.0.0.1:3000/',
       }),
     ).toBe('http://127.0.0.1:3000/')
+  })
+})
+
+describe('resolveMainWindowChromeOptions', () => {
+  it('integrates native window controls into the app shell on macOS only', () => {
+    expect(resolveMainWindowChromeOptions('darwin')).toEqual({
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 18, y: 18 },
+    })
+    expect(resolveMainWindowChromeOptions('win32')).toEqual({})
+    expect(resolveMainWindowChromeOptions('linux')).toEqual({})
   })
 })
 

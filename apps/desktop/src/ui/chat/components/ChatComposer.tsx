@@ -70,10 +70,10 @@ export function ChatComposer({
   return (
     <footer className='shrink-0 bg-nyx-canvas px-6 pb-5 pt-4'>
       <form className='mx-auto w-full max-w-[48rem]' onSubmit={handleSubmit}>
-        <div className='rounded-2xl border border-nyx-line bg-nyx-panel px-3.5 pb-2.5 pt-3.5 shadow-sm focus-within:border-nyx-accent'>
+        <div className='rounded-2xl border border-nyx-line bg-nyx-panel px-3.5 pb-2.5 pt-3.5 shadow-sm focus-within:border-nyx-subtle'>
           <textarea
             aria-label='Tell Nyx what to do'
-            className='min-h-6 max-h-36 w-full resize-none overflow-y-auto border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none [field-sizing:content]'
+            className='chat-composer-input min-h-6 max-h-36 w-full resize-none overflow-y-auto border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none [field-sizing:content]'
             disabled={disabled}
             onChange={(event) => {
               onInputChange(event.target.value)

@@ -5,7 +5,8 @@ export function App() {
 
   if (!desktopApi) {
     return (
-      <main className='flex min-h-screen items-center justify-center bg-nyx-canvas px-6 py-12 text-nyx-ink'>
+      <main className='relative flex min-h-screen items-center justify-center bg-nyx-canvas px-6 py-12 text-nyx-ink'>
+        <div aria-hidden='true' className='window-drag-region absolute inset-x-0 top-0 h-12' />
         <section className='w-full max-w-xl rounded-xl border border-nyx-danger/35 bg-nyx-danger-soft px-6 py-6'>
           <p className='text-xs font-medium text-nyx-danger'>Startup error</p>
           <h1 className='mt-2 text-xl font-semibold'>Nyx desktop bridge is unavailable</h1>

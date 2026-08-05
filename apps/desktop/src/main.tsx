@@ -5,6 +5,10 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
 import './styles/index.css'
 
+if (navigator.platform.startsWith('Mac') && navigator.userAgent.includes('Electron')) {
+  document.documentElement.classList.add('macos-window-shell')
+}
+
 const root = document.getElementById('root')
 
 if (!root) {

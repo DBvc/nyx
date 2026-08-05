@@ -49,7 +49,7 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   return (
     <aside className='flex w-[16.5rem] shrink-0 flex-col border-r border-nyx-line bg-nyx-sidebar px-2 py-2'>
-      <div className='flex h-10 items-center px-2 text-[13px] font-semibold tracking-[-0.01em] text-nyx-ink'>
+      <div className='window-drag-region sidebar-titlebar flex h-10 items-center px-2 text-[13px] font-semibold tracking-[-0.01em] text-nyx-ink'>
         Nyx
       </div>
 
