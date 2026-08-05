@@ -68,9 +68,9 @@ export function ChatComposer({
   }
 
   return (
-    <footer className='shrink-0 bg-nyx-canvas px-6 pb-6 pt-3'>
-      <form className='mx-auto w-full max-w-[46rem]' onSubmit={handleSubmit}>
-        <div className='rounded-2xl border border-nyx-line-strong bg-nyx-panel px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.14)] focus-within:border-nyx-accent'>
+    <footer className='shrink-0 bg-nyx-canvas px-6 pb-5 pt-4'>
+      <form className='mx-auto w-full max-w-[48rem]' onSubmit={handleSubmit}>
+        <div className='rounded-2xl border border-nyx-line bg-nyx-panel px-3.5 pb-2.5 pt-3.5 shadow-sm focus-within:border-nyx-accent'>
           <textarea
             aria-label='Tell Nyx what to do'
             className='min-h-6 max-h-36 w-full resize-none overflow-y-auto border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none [field-sizing:content]'
@@ -88,7 +88,7 @@ export function ChatComposer({
           <div className='mt-2 flex h-8 items-center justify-end gap-2'>
             {isBusy ? (
               <button
-                className='h-8 rounded-full border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
+                className='h-8 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
                 onClick={() => {
                   void onStop()
                 }}

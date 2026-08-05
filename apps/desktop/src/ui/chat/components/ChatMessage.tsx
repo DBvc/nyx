@@ -14,7 +14,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   if (isUser) {
     return (
       <article className='flex justify-end'>
-        <div className='max-w-[32rem] whitespace-pre-wrap break-words rounded-xl bg-nyx-solid px-4 py-3 text-[15px] leading-6 text-nyx-ink'>
+        <div className='max-w-[min(78%,32rem)] whitespace-pre-wrap break-words rounded-[14px_14px_4px_14px] bg-nyx-solid px-3.5 py-2.5 text-[14.5px] leading-[1.55] text-nyx-ink'>
           {message.content}
         </div>
       </article>
@@ -22,7 +22,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   }
 
   return (
-    <article className='max-w-[46rem] text-[15px] leading-6 text-nyx-ink'>
+    <article className='max-w-[48rem] text-[15px] leading-6 text-nyx-ink'>
       {displayContent ? (
         <div className='whitespace-pre-wrap break-words'>{displayContent}</div>
       ) : null}
@@ -39,7 +39,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
       {message.status === 'failed' && message.error ? (
         <div
-          className='mt-4 rounded-xl border border-nyx-danger/35 bg-nyx-danger-soft px-4 py-3 text-sm text-nyx-danger'
+          className='mt-3 rounded-xl border border-nyx-danger/35 bg-nyx-danger-soft/60 px-3 py-2.5 text-[13px] text-nyx-danger'
           role='alert'
         >
           <p className='text-xs font-semibold uppercase text-nyx-danger/80'>Request failed</p>
@@ -49,7 +49,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
           ) : null}
           {message.canRetry ? (
             <button
-              className='mt-3 h-8 rounded-lg border border-nyx-danger/40 px-3 text-xs font-medium text-nyx-danger hover:bg-nyx-danger/10'
+              className='mt-3 h-7 rounded-lg border border-nyx-danger/40 px-2.5 text-xs font-medium text-nyx-danger hover:bg-nyx-danger/10'
               onClick={() => {
                 onRetry(message.id)
               }}

@@ -51,7 +51,7 @@ export function ChatThread({
       >
         <div
           className={`mx-auto flex min-h-full w-full flex-col px-6 ${
-            hasItems ? 'max-w-[46rem] gap-8 py-8' : 'max-w-[40rem] justify-center pb-28'
+            hasItems ? 'max-w-[48rem] gap-5 py-6' : 'max-w-[40rem] justify-center pb-28'
           }`}
         >
           {hydrationStatus === 'loading' ? (

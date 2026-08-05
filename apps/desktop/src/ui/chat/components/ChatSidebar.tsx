@@ -54,7 +54,7 @@ export function ChatSidebar({
       </div>
 
       <button
-        className='mt-1 flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] text-nyx-ink hover:bg-nyx-solid'
+        className='mt-1 flex h-8 items-center gap-2 rounded-lg bg-nyx-accent px-3 text-left text-[13px] font-medium text-nyx-canvas hover:opacity-90'
         disabled={newThreadDisabled}
         onClick={onNewThread}
         type='button'
@@ -67,7 +67,7 @@ export function ChatSidebar({
         <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Current thread</div>
         <button
           className={`w-full rounded-lg px-3 py-2.5 text-left ${
-            activeView === 'chat' ? 'bg-nyx-accent-soft' : 'hover:bg-nyx-solid'
+            activeView === 'chat' ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
           }`}
           onClick={onOpenChat}
           type='button'
@@ -84,8 +84,8 @@ export function ChatSidebar({
         <button
           className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
             activeView === 'connections'
-              ? 'bg-nyx-accent-soft text-nyx-ink'
-              : 'text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
+              ? 'bg-nyx-canvas text-nyx-ink'
+              : 'text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
           }`}
           onClick={onOpenConnectionsSettings}
           type='button'
