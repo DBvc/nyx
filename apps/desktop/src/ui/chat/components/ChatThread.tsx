@@ -16,6 +16,8 @@ interface ChatThreadProps {
   containerRef: RefObject<HTMLDivElement | null>
   onScroll: UIEventHandler<HTMLDivElement>
   onRetry: (messageId: string) => void
+  onJumpToLatest: () => void
+  isFollowing: boolean
   connectionStatus: ComponentProps<typeof ConnectionSetupNotice>['status']
   onOpenConnectionsSettings: () => void
   onRefreshConnectionStatus: () => void
@@ -29,6 +31,8 @@ export function ChatThread({
   containerRef,
   onScroll,
   onRetry,
+  onJumpToLatest,
+  isFollowing,
   connectionStatus,
   onOpenConnectionsSettings,
   onRefreshConnectionStatus,
@@ -39,53 +43,65 @@ export function ChatThread({
   const hasItems = hydrationStatus === 'ready' && items.length > 0
 
   return (
-    <div
-      className={`min-h-0 flex-1 ${hasItems ? 'overflow-y-auto' : 'overflow-hidden'}`}
-      onScroll={onScroll}
-      ref={containerRef}
-    >
+    <div className='relative min-h-0 flex-1'>
       <div
-        className={`mx-auto flex min-h-full w-full flex-col px-6 ${
-          hasItems ? 'max-w-[46rem] gap-8 py-8' : 'max-w-[40rem] justify-center pb-28'
-        }`}
+        className={`h-full min-h-0 ${hasItems ? 'overflow-y-auto' : 'overflow-hidden'}`}
+        onScroll={onScroll}
+        ref={containerRef}
       >
-        {hydrationStatus === 'loading' ? (
-          <section className='space-y-2' aria-live='polite'>
-            <p className='text-[12px] font-medium text-nyx-subtle'>Current thread</p>
-            <h2 className='text-[22px] font-semibold text-nyx-ink'>Loading conversation</h2>
-          </section>
-        ) : hydrationStatus === 'error' ? (
-          <section className='space-y-2' role='alert'>
-            <p className='text-[12px] font-medium text-nyx-danger'>Current thread unavailable</p>
-            <h2 className='text-[22px] font-semibold text-nyx-ink'>
-              {resetError ? 'Fresh thread could not start' : 'Conversation could not load'}
-            </h2>
-            <p className='text-[15px] leading-6 text-nyx-muted'>
-              {resetError?.message ?? hydrationError?.message}
-            </p>
-          </section>
-        ) : !hasItems ? (
-          <ChatEmptyState
-            connectionStatus={connectionStatus}
-            onOpenConnectionsSettings={onOpenConnectionsSettings}
-            onRefreshConnectionStatus={onRefreshConnectionStatus}
-          />
-        ) : (
-          <>
-            {shouldShowConnectionNotice(connectionStatus) ? (
-              <ConnectionSetupNotice
-                compact
-                onOpenSettings={onOpenConnectionsSettings}
-                onRefresh={onRefreshConnectionStatus}
-                status={connectionStatus}
-              />
-            ) : null}
-            {items.map((item) => (
-              <ChatMessage key={item.id} message={item.message} onRetry={onRetry} />
-            ))}
-          </>
-        )}
+        <div
+          className={`mx-auto flex min-h-full w-full flex-col px-6 ${
+            hasItems ? 'max-w-[46rem] gap-8 py-8' : 'max-w-[40rem] justify-center pb-28'
+          }`}
+        >
+          {hydrationStatus === 'loading' ? (
+            <section className='space-y-2' aria-live='polite'>
+              <p className='text-[12px] font-medium text-nyx-subtle'>Current thread</p>
+              <h2 className='text-[22px] font-semibold text-nyx-ink'>Loading conversation</h2>
+            </section>
+          ) : hydrationStatus === 'error' ? (
+            <section className='space-y-2' role='alert'>
+              <p className='text-[12px] font-medium text-nyx-danger'>Current thread unavailable</p>
+              <h2 className='text-[22px] font-semibold text-nyx-ink'>
+                {resetError ? 'Fresh thread could not start' : 'Conversation could not load'}
+              </h2>
+              <p className='text-[15px] leading-6 text-nyx-muted'>
+                {resetError?.message ?? hydrationError?.message}
+              </p>
+            </section>
+          ) : !hasItems ? (
+            <ChatEmptyState
+              connectionStatus={connectionStatus}
+              onOpenConnectionsSettings={onOpenConnectionsSettings}
+              onRefreshConnectionStatus={onRefreshConnectionStatus}
+            />
+          ) : (
+            <>
+              {shouldShowConnectionNotice(connectionStatus) ? (
+                <ConnectionSetupNotice
+                  compact
+                  onOpenSettings={onOpenConnectionsSettings}
+                  onRefresh={onRefreshConnectionStatus}
+                  status={connectionStatus}
+                />
+              ) : null}
+              {items.map((item) => (
+                <ChatMessage key={item.id} message={item.message} onRetry={onRetry} />
+              ))}
+            </>
+          )}
+        </div>
       </div>
+
+      {!isFollowing && hasItems ? (
+        <button
+          className='absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 py-2 text-[12px] font-medium text-nyx-ink hover:bg-nyx-solid'
+          onClick={onJumpToLatest}
+          type='button'
+        >
+          Jump to latest
+        </button>
+      ) : null}
     </div>
   )
 }

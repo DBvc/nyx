@@ -32,10 +32,35 @@ export function ChatWorkspace() {
   const latestMessageItem = threadItems.at(-1)
   const currentThreadTitle = threadTitle(state.messages)
   const currentThreadPreview = threadPreview(state.messages)
-  const { containerRef, handleScroll } = useAutoScroll(
+  const { containerRef, followLatest, handleScroll, isFollowing } = useAutoScroll(
     threadItems.length,
     latestMessageItem?.message.content ?? state.runStatus,
+    state.projectionGeneration,
+    activeView === 'chat',
   )
+
+  function handleSend() {
+    if (!canSend) {
+      return
+    }
+
+    followLatest()
+    return sendCurrentInput()
+  }
+
+  function handleRetry(messageId: string) {
+    if (
+      state.hydrationStatus !== 'ready' ||
+      isBusy ||
+      isResetting ||
+      state.retryableTurn?.assistantMessageId !== messageId
+    ) {
+      return
+    }
+
+    followLatest()
+    void retryMessage(messageId)
+  }
 
   return (
     <main className='h-screen overflow-hidden bg-nyx-canvas text-nyx-ink'>
@@ -69,16 +94,16 @@ export function ChatWorkspace() {
                 connectionStatus={connectionSetup.status}
                 hydrationError={state.hydrationError}
                 hydrationStatus={state.hydrationStatus}
+                isFollowing={isFollowing}
                 resetError={state.resetError}
                 containerRef={containerRef}
                 items={threadItems}
+                onJumpToLatest={followLatest}
                 onOpenConnectionsSettings={() => {
                   setActiveView('connections')
                 }}
                 onRefreshConnectionStatus={connectionSetup.refresh}
-                onRetry={(messageId) => {
-                  void retryMessage(messageId)
-                }}
+                onRetry={handleRetry}
                 onScroll={handleScroll}
               />
               <ChatComposer
@@ -87,7 +112,7 @@ export function ChatWorkspace() {
                 input={state.input}
                 isBusy={isBusy}
                 onInputChange={setInput}
-                onSend={sendCurrentInput}
+                onSend={handleSend}
                 onStop={stopActiveResponse}
               />
             </>

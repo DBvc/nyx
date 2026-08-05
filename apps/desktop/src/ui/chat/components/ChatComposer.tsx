@@ -10,6 +10,10 @@ interface ChatComposerProps {
   onStop: () => void | Promise<void>
 }
 
+export function shouldSendComposerKey(key: string, shiftKey: boolean, isComposing: boolean) {
+  return key === 'Enter' && !shiftKey && !isComposing
+}
+
 function SendIcon() {
   return (
     <svg
@@ -41,15 +45,25 @@ export function ChatComposer({
 }: ChatComposerProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (!canSend) {
+      return
+    }
+
     void onSend()
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== 'Enter' || event.shiftKey) {
+    if (!shouldSendComposerKey(event.key, event.shiftKey, event.nativeEvent.isComposing)) {
       return
     }
 
     event.preventDefault()
+
+    if (!canSend) {
+      return
+    }
+
     void onSend()
   }
 
@@ -59,13 +73,14 @@ export function ChatComposer({
         <div className='rounded-2xl border border-nyx-line-strong bg-nyx-panel px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.14)] focus-within:border-nyx-accent'>
           <textarea
             aria-label='Tell Nyx what to do'
-            className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none'
+            className='min-h-6 max-h-36 w-full resize-none overflow-y-auto border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none [field-sizing:content]'
             disabled={disabled}
             onChange={(event) => {
               onInputChange(event.target.value)
             }}
             onKeyDown={handleKeyDown}
             placeholder='Tell Nyx what to do...'
+            rows={1}
             spellCheck={false}
             value={input}
           />
