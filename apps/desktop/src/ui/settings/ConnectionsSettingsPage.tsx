@@ -531,7 +531,7 @@ export function ConnectionsSettingsPage({
         </div>
       </header>
 
-      <div className='min-h-0 flex-1 overflow-y-auto px-6 py-6'>
+      <div className='nyx-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-6'>
         <div className='mx-auto grid w-full max-w-[64rem] grid-cols-[14rem_minmax(0,1fr)] gap-4'>
           <aside className='rounded-[14px] border border-nyx-line bg-nyx-sidebar p-2'>
             <div className='flex items-center justify-between px-2 py-2'>
