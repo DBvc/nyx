@@ -97,11 +97,11 @@ cd runtime/ocaml
 opam update
 
 if [ ! -d _opam ]; then
-  opam switch create . 5.5.0 --yes
+  opam switch create . 5.5.0 --no-install --yes
 fi
 
-opam install . --deps-only --with-test --with-doc --yes
-opam install alcotest ocamlformat.0.29.0 odoc --yes
+opam reinstall . --with-test --with-doc --yes
+opam install ocamlformat.0.29.0 --yes
 """
 
 [tasks."runtime:build"]
