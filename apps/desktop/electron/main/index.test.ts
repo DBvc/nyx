@@ -27,6 +27,9 @@ const electronMock = vi.hoisted(() => {
         handlers.set(channel, handler)
       }),
     },
+    nativeTheme: {
+      themeSource: 'system',
+    },
     safeStorage: {
       isEncryptionAvailable: vi.fn(() => true),
       encryptString: vi.fn((value: string) => Buffer.from(value)),
@@ -39,6 +42,7 @@ vi.mock('electron', () => ({
   app: electronMock.app,
   BrowserWindow: electronMock.BrowserWindow,
   ipcMain: electronMock.ipcMain,
+  nativeTheme: electronMock.nativeTheme,
   safeStorage: electronMock.safeStorage,
 }))
 

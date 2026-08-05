@@ -54,12 +54,12 @@ export function ChatComposer({
   }
 
   return (
-    <footer className='shrink-0 bg-nyx-canvas px-4 pb-6 pt-2'>
-      <form className='mx-auto w-full max-w-[44rem]' onSubmit={handleSubmit}>
-        <div className='rounded-[1.35rem] border border-nyx-line bg-nyx-composer px-4 py-3 shadow-[0_8px_28px_rgba(0,0,0,0.08)] focus-within:border-[#c7c7c2]'>
+    <footer className='shrink-0 bg-nyx-canvas px-6 pb-6 pt-3'>
+      <form className='mx-auto w-full max-w-[46rem]' onSubmit={handleSubmit}>
+        <div className='rounded-2xl border border-nyx-line-strong bg-nyx-panel px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.14)] focus-within:border-nyx-accent'>
           <textarea
             aria-label='Tell Nyx what to do'
-            className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[14px] leading-6 text-nyx-ink outline-none'
+            className='min-h-[3.3rem] w-full resize-none border-none bg-transparent px-0 py-0 text-[15px] leading-6 text-nyx-ink outline-none'
             disabled={disabled}
             onChange={(event) => {
               onInputChange(event.target.value)
@@ -73,7 +73,7 @@ export function ChatComposer({
           <div className='mt-2 flex h-8 items-center justify-end gap-2'>
             {isBusy ? (
               <button
-                className='h-8 rounded-full border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover'
+                className='h-8 rounded-full border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
                 onClick={() => {
                   void onStop()
                 }}
@@ -87,8 +87,8 @@ export function ChatComposer({
               aria-label='Send message'
               className={`flex h-8 w-8 items-center justify-center rounded-full ${
                 canSend
-                  ? 'bg-nyx-accent text-white hover:opacity-90'
-                  : 'bg-nyx-panel text-nyx-subtle'
+                  ? 'bg-nyx-accent text-nyx-canvas hover:opacity-90'
+                  : 'bg-nyx-solid text-nyx-subtle'
               }`}
               disabled={!canSend}
               type='submit'

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -163,7 +163,7 @@ function createMainWindow() {
     minWidth: 1080,
     minHeight: 720,
     title: 'Nyx',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#131417',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -191,6 +191,7 @@ function configureAutoUpdate() {
 }
 
 app.whenReady().then(() => {
+  nativeTheme.themeSource = 'dark'
   registerIpcHandlers()
   createMainWindow()
   configureAutoUpdate()

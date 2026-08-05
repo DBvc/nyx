@@ -4,11 +4,11 @@ import { shouldShowStatus, statusLabel } from '../chat-presenters'
 function dotClass(runStatus: NyxChatRunStatus) {
   switch (runStatus) {
     case 'submitting':
-      return 'bg-amber-500'
+      return 'bg-nyx-warning'
     case 'streaming':
-      return 'bg-emerald-600'
+      return 'bg-nyx-success'
     case 'failed':
-      return 'bg-red-600'
+      return 'bg-nyx-danger'
     case 'cancelled':
       return 'bg-nyx-subtle'
     case 'idle':
@@ -25,7 +25,7 @@ export function ChatStatusPill({ runStatus }: { runStatus: NyxChatRunStatus }) {
   return (
     <div
       aria-live='polite'
-      className='flex items-center gap-1.5 rounded-full bg-nyx-panel px-2.5 py-1 text-xs text-nyx-muted'
+      className='flex items-center gap-1.5 rounded-full border border-nyx-line bg-nyx-panel px-2.5 py-1 text-xs text-nyx-muted'
     >
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass(runStatus)}`} />
       {statusLabel(runStatus)}

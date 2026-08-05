@@ -11,27 +11,27 @@ function toneClass(tone: ConnectionStatusTone) {
   switch (tone) {
     case 'ready':
       return {
-        section: 'border-emerald-200 bg-emerald-50',
-        title: 'text-emerald-950',
-        body: 'text-emerald-900/75',
-        dot: 'bg-emerald-600',
-        button: 'border-emerald-200 bg-white text-emerald-950 hover:bg-emerald-50',
+        section: 'border-nyx-success/35 bg-nyx-success-soft',
+        title: 'text-nyx-success',
+        body: 'text-nyx-success/80',
+        dot: 'bg-nyx-success',
+        button: 'border-nyx-success/40 text-nyx-success hover:bg-nyx-success/10',
       }
     case 'error':
       return {
-        section: 'border-red-200 bg-red-50',
-        title: 'text-red-950',
-        body: 'text-red-900/70',
-        dot: 'bg-red-600',
-        button: 'border-red-200 bg-white text-red-950 hover:bg-red-50',
+        section: 'border-nyx-danger/35 bg-nyx-danger-soft',
+        title: 'text-nyx-danger',
+        body: 'text-nyx-danger/80',
+        dot: 'bg-nyx-danger',
+        button: 'border-nyx-danger/40 text-nyx-danger hover:bg-nyx-danger/10',
       }
     case 'warning':
       return {
-        section: 'border-amber-200 bg-amber-50',
-        title: 'text-amber-950',
-        body: 'text-amber-900/75',
-        dot: 'bg-amber-500',
-        button: 'border-amber-200 bg-white text-amber-950 hover:bg-amber-50',
+        section: 'border-nyx-warning/35 bg-nyx-warning-soft',
+        title: 'text-nyx-warning',
+        body: 'text-nyx-warning/80',
+        dot: 'bg-nyx-warning',
+        button: 'border-nyx-warning/40 text-nyx-warning hover:bg-nyx-warning/10',
       }
   }
 }
@@ -52,7 +52,7 @@ export function ConnectionSetupNotice({
     return (
       <section
         aria-live='polite'
-        className={`rounded-xl border border-nyx-line-soft bg-nyx-panel/70 ${padding}`}
+        className={`rounded-xl border border-nyx-line bg-nyx-panel ${padding}`}
       >
         <div className='flex items-center gap-2 text-[13px] font-medium text-nyx-ink'>
           <span className='h-2 w-2 rounded-full bg-nyx-subtle' />
@@ -66,15 +66,17 @@ export function ConnectionSetupNotice({
     return (
       <section
         aria-live='polite'
-        className={`rounded-xl border border-red-200 bg-red-50 ${padding}`}
+        className={`rounded-xl border border-nyx-danger/35 bg-nyx-danger-soft ${padding}`}
       >
         <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div>
-            <p className='text-[13px] font-semibold text-red-950'>Connection status unavailable</p>
-            <p className='mt-1 text-[12px] leading-5 text-red-900/70'>{status.message}</p>
+            <p className='text-[13px] font-semibold text-nyx-danger'>
+              Connection status unavailable
+            </p>
+            <p className='mt-1 text-[12px] leading-5 text-nyx-danger/80'>{status.message}</p>
           </div>
           <button
-            className='h-8 shrink-0 rounded-md border border-red-200 bg-white px-3 text-[12px] font-medium text-red-950 hover:bg-red-50'
+            className='h-8 shrink-0 rounded-lg border border-nyx-danger/40 px-3 text-[12px] font-medium text-nyx-danger hover:bg-nyx-danger/10'
             onClick={onRefresh}
             type='button'
           >

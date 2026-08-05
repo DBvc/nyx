@@ -3,11 +3,11 @@ import type { ConnectionStatusState, ConnectionStatusTone } from '../connection-
 function dotClass(tone: ConnectionStatusTone | 'loading') {
   switch (tone) {
     case 'ready':
-      return 'bg-emerald-600'
+      return 'bg-nyx-success'
     case 'warning':
-      return 'bg-amber-500'
+      return 'bg-nyx-warning'
     case 'error':
-      return 'bg-red-600'
+      return 'bg-nyx-danger'
     case 'loading':
       return 'bg-nyx-subtle'
   }
@@ -39,7 +39,7 @@ export function ConnectionStatusPill({ status }: { status: ConnectionStatusState
   return (
     <div
       aria-live='polite'
-      className='flex max-w-[18rem] items-center gap-1.5 rounded-full bg-nyx-panel px-2.5 py-1 text-xs text-nyx-muted'
+      className='flex max-w-[18rem] items-center gap-1.5 rounded-full border border-nyx-line bg-nyx-panel px-2.5 py-1 text-xs text-nyx-muted'
       title={status.kind === 'ready' ? status.summary.detail : undefined}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(tone)}`} />

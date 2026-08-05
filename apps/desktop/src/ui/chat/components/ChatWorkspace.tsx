@@ -39,7 +39,7 @@ export function ChatWorkspace() {
 
   return (
     <main className='h-screen overflow-hidden bg-nyx-canvas text-nyx-ink'>
-      <div className='flex h-full w-full flex-col lg:flex-row'>
+      <div className='flex h-full w-full'>
         <ChatSidebar
           activeView={activeView}
           newThreadDisabled={state.hydrationStatus === 'loading' || isResetting}
@@ -54,7 +54,6 @@ export function ChatWorkspace() {
             setActiveView('connections')
           }}
           preview={currentThreadPreview}
-          runStatus={state.runStatus}
           title={currentThreadTitle}
         />
 

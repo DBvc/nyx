@@ -8,13 +8,13 @@ interface ChatMessageProps {
 export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const isWaiting = message.status === 'pending' || message.status === 'streaming'
-  const displayContent = message.content || (isWaiting ? 'Thinking...' : null)
+  const displayContent = message.content || (isWaiting ? 'Thinking…' : null)
   const isEmptyCompleted = message.status === 'completed' && !message.content
 
   if (isUser) {
     return (
       <article className='flex justify-end'>
-        <div className='max-w-[32rem] rounded-xl bg-nyx-panel px-4 py-3 text-[14px] leading-6 text-nyx-ink'>
+        <div className='max-w-[32rem] whitespace-pre-wrap break-words rounded-xl bg-nyx-solid px-4 py-3 text-[15px] leading-6 text-nyx-ink'>
           {message.content}
         </div>
       </article>
@@ -22,8 +22,10 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   }
 
   return (
-    <article className='max-w-[43rem] text-[14px] leading-6 text-nyx-ink'>
-      {displayContent ? <div className='whitespace-pre-wrap'>{displayContent}</div> : null}
+    <article className='max-w-[46rem] text-[15px] leading-6 text-nyx-ink'>
+      {displayContent ? (
+        <div className='whitespace-pre-wrap break-words'>{displayContent}</div>
+      ) : null}
 
       {isEmptyCompleted ? (
         <p className='text-xs text-nyx-subtle' role='status'>
@@ -31,30 +33,23 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
         </p>
       ) : null}
 
-      {isWaiting ? (
-        <p className='mt-3 flex items-center gap-2 text-xs text-nyx-subtle'>
-          <span className='h-1.5 w-1.5 rounded-full bg-nyx-subtle' />
-          {message.content ? 'Streaming' : 'Waiting for response'}
-        </p>
-      ) : null}
-
       {message.status === 'cancelled' ? (
-        <p className='mt-3 text-xs text-nyx-subtle'>Response stopped</p>
+        <p className='mt-3 text-xs text-nyx-muted'>Response stopped</p>
       ) : null}
 
       {message.status === 'failed' && message.error ? (
         <div
-          className='mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950'
+          className='mt-4 rounded-xl border border-nyx-danger/35 bg-nyx-danger-soft px-4 py-3 text-sm text-nyx-danger'
           role='alert'
         >
-          <p className='text-xs font-semibold uppercase text-red-900/70'>Request failed</p>
+          <p className='text-xs font-semibold uppercase text-nyx-danger/80'>Request failed</p>
           <p className='mt-1 font-medium'>{message.error.message}</p>
           {message.error.details ? (
-            <p className='mt-1 text-xs leading-5 text-red-900/70'>{message.error.details}</p>
+            <p className='mt-1 text-xs leading-5 text-nyx-danger/80'>{message.error.details}</p>
           ) : null}
           {message.canRetry ? (
             <button
-              className='mt-3 h-8 rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-950 hover:bg-red-50'
+              className='mt-3 h-8 rounded-lg border border-nyx-danger/40 px-3 text-xs font-medium text-nyx-danger hover:bg-nyx-danger/10'
               onClick={() => {
                 onRetry(message.id)
               }}

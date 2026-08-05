@@ -515,10 +515,10 @@ export function ConnectionsSettingsPage({
 
   return (
     <div className='flex min-h-0 flex-1 flex-col bg-nyx-canvas'>
-      <header className='flex h-12 shrink-0 items-center justify-between border-b border-nyx-line-soft px-4'>
+      <header className='flex h-12 shrink-0 items-center justify-between border-b border-nyx-line px-6'>
         <div className='flex min-w-0 items-center gap-2'>
           <button
-            className='h-8 rounded-md px-2 text-[13px] text-nyx-muted hover:bg-nyx-hover hover:text-nyx-ink'
+            className='h-8 rounded-lg px-2 text-[13px] text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
             onClick={onBackToChat}
             type='button'
           >
@@ -531,13 +531,13 @@ export function ConnectionsSettingsPage({
         </div>
       </header>
 
-      <div className='min-h-0 flex-1 overflow-y-auto px-5 py-5'>
-        <div className='mx-auto grid w-full max-w-[70rem] gap-4 lg:grid-cols-[19rem_1fr]'>
-          <aside className='rounded-xl border border-nyx-line-soft bg-nyx-sidebar p-2'>
+      <div className='min-h-0 flex-1 overflow-y-auto px-6 py-6'>
+        <div className='mx-auto grid w-full max-w-[64rem] grid-cols-[14rem_minmax(0,1fr)] gap-4'>
+          <aside className='rounded-xl border border-nyx-line bg-nyx-sidebar p-2'>
             <div className='flex items-center justify-between px-2 py-2'>
               <h2 className='text-[12px] font-semibold text-nyx-ink'>Providers</h2>
               <button
-                className='h-7 rounded-md border border-nyx-line bg-white px-2 text-[12px] text-nyx-ink hover:bg-nyx-hover'
+                className='h-7 rounded-lg border border-nyx-line-strong bg-nyx-panel px-2 text-[12px] text-nyx-ink hover:bg-nyx-solid'
                 onClick={() => {
                   setSelectedProviderId(null)
                   setForm(createEmptyForm())
@@ -554,11 +554,13 @@ export function ConnectionsSettingsPage({
             ) : null}
 
             {loadState.kind === 'failed' ? (
-              <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-3'>
-                <p className='text-[12px] font-medium text-red-950'>Could not load connections</p>
-                <p className='mt-1 text-[12px] leading-5 text-red-900/70'>{loadState.message}</p>
+              <div className='rounded-lg border border-nyx-danger/35 bg-nyx-danger-soft px-3 py-3'>
+                <p className='text-[12px] font-medium text-nyx-danger'>
+                  Could not load connections
+                </p>
+                <p className='mt-1 text-[12px] leading-5 text-nyx-danger/80'>{loadState.message}</p>
                 <button
-                  className='mt-3 h-7 rounded-md border border-red-200 bg-white px-2 text-[12px] text-red-950 hover:bg-red-50'
+                  className='mt-3 h-7 rounded-lg border border-nyx-danger/40 px-2 text-[12px] text-nyx-danger hover:bg-nyx-danger/10'
                   onClick={() => {
                     void refreshOverview()
                   }}
@@ -583,7 +585,7 @@ export function ConnectionsSettingsPage({
                   return (
                     <button
                       className={`w-full rounded-lg px-3 py-2 text-left ${
-                        isSelected ? 'bg-nyx-panel-strong' : 'hover:bg-nyx-hover'
+                        isSelected ? 'bg-nyx-accent-soft' : 'hover:bg-nyx-solid'
                       }`}
                       key={provider.id}
                       onClick={() => {
@@ -600,11 +602,11 @@ export function ConnectionsSettingsPage({
                       </span>
                       <span className='mt-2 flex flex-wrap gap-1.5'>
                         {isDefault ? (
-                          <span className='rounded-full bg-white px-2 py-0.5 text-[11px] text-nyx-ink'>
+                          <span className='rounded-full bg-nyx-accent-soft px-2 py-0.5 text-[11px] text-nyx-ink'>
                             Default
                           </span>
                         ) : null}
-                        <span className='rounded-full bg-white px-2 py-0.5 text-[11px] text-nyx-muted'>
+                        <span className='rounded-full bg-nyx-solid px-2 py-0.5 text-[11px] text-nyx-muted'>
                           {provider.credentialStatus === 'stored' ? 'Key stored' : 'No key'}
                         </span>
                       </span>
@@ -615,8 +617,8 @@ export function ConnectionsSettingsPage({
             ) : null}
           </aside>
 
-          <section className='rounded-xl border border-nyx-line-soft bg-white'>
-            <div className='border-b border-nyx-line-soft px-5 py-4'>
+          <section className='rounded-xl border border-nyx-line bg-nyx-panel'>
+            <div className='border-b border-nyx-line px-5 py-4'>
               <p className='text-[12px] font-medium text-nyx-subtle'>
                 {form.providerId ? 'OpenAI-compatible provider' : 'New OpenAI-compatible provider'}
               </p>
@@ -637,8 +639,8 @@ export function ConnectionsSettingsPage({
                 <div
                   className={`rounded-lg border px-3 py-2 text-[12px] ${
                     notice.kind === 'success'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
-                      : 'border-red-200 bg-red-50 text-red-950'
+                      ? 'border-nyx-success/35 bg-nyx-success-soft text-nyx-success'
+                      : 'border-nyx-danger/35 bg-nyx-danger-soft text-nyx-danger'
                   }`}
                 >
                   {notice.message}
@@ -649,7 +651,7 @@ export function ConnectionsSettingsPage({
                 <label className='space-y-1.5'>
                   <span className='text-[12px] font-medium text-nyx-ink'>Provider name</span>
                   <input
-                    className='h-9 w-full rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink outline-none focus:border-[#bdbdb8]'
+                    className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
                     onChange={(event) => {
                       updateForm({ displayName: event.target.value })
                     }}
@@ -661,7 +663,7 @@ export function ConnectionsSettingsPage({
                 <label className='space-y-1.5'>
                   <span className='text-[12px] font-medium text-nyx-ink'>Base URL</span>
                   <input
-                    className='h-9 w-full rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink outline-none focus:border-[#bdbdb8]'
+                    className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
                     onChange={(event) => {
                       updateForm({ baseUrl: event.target.value })
                     }}
@@ -675,7 +677,7 @@ export function ConnectionsSettingsPage({
                   <span className='text-[12px] font-medium text-nyx-ink'>API key</span>
                   <input
                     autoComplete='off'
-                    className='h-9 w-full rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink outline-none focus:border-[#bdbdb8]'
+                    className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
                     onChange={(event) => {
                       updateForm({ apiKey: event.target.value })
                     }}
@@ -694,7 +696,7 @@ export function ConnectionsSettingsPage({
                 <div className='flex items-center justify-between'>
                   <h3 className='text-[13px] font-semibold text-nyx-ink'>Models</h3>
                   <button
-                    className='h-8 rounded-md border border-nyx-line bg-white px-3 text-[12px] text-nyx-ink hover:bg-nyx-hover'
+                    className='h-8 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[12px] text-nyx-ink hover:bg-nyx-solid'
                     onClick={addModel}
                     type='button'
                   >
@@ -704,12 +706,12 @@ export function ConnectionsSettingsPage({
                 <div className='mt-3 space-y-2'>
                   {form.models.map((model, index) => (
                     <div
-                      className='grid gap-2 rounded-lg border border-nyx-line-soft bg-nyx-panel/50 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]'
+                      className='grid gap-2 rounded-lg border border-nyx-line bg-nyx-canvas p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]'
                       key={index}
                     >
                       <input
                         aria-label={`Model ${index + 1} id`}
-                        className='h-8 rounded-md border border-nyx-line bg-white px-2 text-[13px] outline-none focus:border-[#bdbdb8]'
+                        className='h-8 rounded-lg border border-nyx-line-strong bg-nyx-canvas px-2 text-[13px] text-nyx-ink focus:border-nyx-accent'
                         onChange={(event) => {
                           updateModel(index, { id: event.target.value })
                         }}
@@ -719,7 +721,7 @@ export function ConnectionsSettingsPage({
                       />
                       <input
                         aria-label={`Model ${index + 1} display name`}
-                        className='h-8 rounded-md border border-nyx-line bg-white px-2 text-[13px] outline-none focus:border-[#bdbdb8]'
+                        className='h-8 rounded-lg border border-nyx-line-strong bg-nyx-canvas px-2 text-[13px] text-nyx-ink focus:border-nyx-accent'
                         onChange={(event) => {
                           updateModel(index, { displayName: event.target.value })
                         }}
@@ -737,7 +739,7 @@ export function ConnectionsSettingsPage({
                         Enabled
                       </label>
                       <button
-                        className='h-8 rounded-md px-2 text-[12px] text-nyx-muted hover:bg-white hover:text-nyx-ink disabled:opacity-40'
+                        className='h-8 rounded-lg px-2 text-[12px] text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
                         disabled={form.models.length <= 1}
                         onClick={() => {
                           removeModel(index)
@@ -755,7 +757,7 @@ export function ConnectionsSettingsPage({
                 <label className='space-y-1.5'>
                   <span className='text-[12px] font-medium text-nyx-ink'>Default model</span>
                   <select
-                    className='h-9 w-full rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink outline-none focus:border-[#bdbdb8]'
+                    className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
                     onChange={(event) => {
                       updateForm({ defaultModelId: event.target.value })
                     }}
@@ -795,10 +797,10 @@ export function ConnectionsSettingsPage({
                 Provider enabled
               </label>
 
-              <div className='flex flex-col gap-2 border-t border-nyx-line-soft pt-4 sm:flex-row sm:items-center sm:justify-between'>
+              <div className='flex flex-col gap-2 border-t border-nyx-line pt-4 sm:flex-row sm:items-center sm:justify-between'>
                 <div className='flex flex-wrap gap-2'>
                   <button
-                    className='h-9 rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:opacity-45'
+                    className='h-9 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
                     disabled={!form.providerId || isBusy}
                     onClick={() => {
                       void handleTestConnection()
@@ -808,7 +810,7 @@ export function ConnectionsSettingsPage({
                     {isTesting ? 'Testing...' : 'Test connection'}
                   </button>
                   <button
-                    className='h-9 rounded-md border border-nyx-line bg-white px-3 text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:opacity-45'
+                    className='h-9 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
                     disabled={!form.providerId || isBusy}
                     onClick={() => {
                       void handleRefreshModels()
@@ -821,7 +823,7 @@ export function ConnectionsSettingsPage({
 
                 <div className='flex flex-wrap gap-2 sm:justify-end'>
                   <button
-                    className='h-9 rounded-md bg-nyx-accent px-4 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-45'
+                    className='h-9 rounded-lg bg-nyx-accent px-4 text-[13px] font-medium text-nyx-canvas hover:opacity-90'
                     disabled={isBusy}
                     onClick={() => {
                       void handleSave()
@@ -833,7 +835,7 @@ export function ConnectionsSettingsPage({
 
                   {form.providerId ? (
                     <button
-                      className='h-9 rounded-md px-3 text-[13px] text-red-700 hover:bg-red-50 disabled:opacity-45'
+                      className='h-9 rounded-lg px-3 text-[13px] text-nyx-danger hover:bg-nyx-danger-soft'
                       disabled={isBusy}
                       onClick={() => {
                         void handleDelete()

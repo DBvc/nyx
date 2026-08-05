@@ -20,8 +20,24 @@ function renderAssistant(message: Partial<NyxChatMessage>) {
 }
 
 describe('ChatMessage', () => {
-  it('shows Thinking only while an empty assistant message is active', () => {
-    expect(renderAssistant({ status: 'streaming' })).toContain('Thinking...')
+  it.each(['pending', 'streaming'] as const)(
+    'shows Thinking while an empty assistant message is %s',
+    (status) => {
+      const markup = renderAssistant({ status })
+
+      expect(markup).toContain('Thinking…')
+      expect(markup).not.toContain('Waiting for response')
+      expect(markup).not.toContain('>Streaming<')
+    },
+  )
+
+  it('shows streaming content without a second status line', () => {
+    const markup = renderAssistant({ content: 'Hello', status: 'streaming' })
+
+    expect(markup).toContain('Hello')
+    expect(markup).not.toContain('Thinking…')
+    expect(markup).not.toContain('Waiting for response')
+    expect(markup).not.toContain('>Streaming<')
   })
 
   it('does not present an empty completed message as active thinking', () => {
@@ -30,7 +46,7 @@ describe('ChatMessage', () => {
     expect(markup).toContain('No response was returned.')
     expect(markup).toContain('role="status"')
     expect(markup).not.toContain('whitespace-pre-wrap">No response was returned.')
-    expect(markup).not.toContain('Thinking...')
+    expect(markup).not.toContain('Thinking…')
   })
 
   it('does not present an empty failed message as active thinking', () => {
@@ -44,6 +60,6 @@ describe('ChatMessage', () => {
     })
 
     expect(markup).toContain('The provider returned an empty response.')
-    expect(markup).not.toContain('Thinking...')
+    expect(markup).not.toContain('Thinking…')
   })
 })

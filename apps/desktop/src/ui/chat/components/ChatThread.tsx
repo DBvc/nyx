@@ -45,8 +45,8 @@ export function ChatThread({
       ref={containerRef}
     >
       <div
-        className={`mx-auto flex min-h-full w-full flex-col px-5 ${
-          hasItems ? 'max-w-[44rem] gap-7 py-7' : 'max-w-[37.5rem] justify-center pb-28'
+        className={`mx-auto flex min-h-full w-full flex-col px-6 ${
+          hasItems ? 'max-w-[46rem] gap-8 py-8' : 'max-w-[40rem] justify-center pb-28'
         }`}
       >
         {hydrationStatus === 'loading' ? (
@@ -56,11 +56,11 @@ export function ChatThread({
           </section>
         ) : hydrationStatus === 'error' ? (
           <section className='space-y-2' role='alert'>
-            <p className='text-[12px] font-medium text-red-700'>Current thread unavailable</p>
+            <p className='text-[12px] font-medium text-nyx-danger'>Current thread unavailable</p>
             <h2 className='text-[22px] font-semibold text-nyx-ink'>
               {resetError ? 'Fresh thread could not start' : 'Conversation could not load'}
             </h2>
-            <p className='text-[14px] leading-6 text-nyx-muted'>
+            <p className='text-[15px] leading-6 text-nyx-muted'>
               {resetError?.message ?? hydrationError?.message}
             </p>
           </section>

@@ -47,7 +47,7 @@ The aesthetic should be dark, plain, geeky, and utilitarian. Think closer to Cha
 
 The interface should communicate restraint:
 
-- dark default theme
+- one deliberate dark theme
 - low saturation surfaces
 - small to medium radii
 - thin borders and quiet separators
@@ -78,15 +78,22 @@ Design guidance:
 - avoid rainbow accents, purple gradients, and neon glows
 - error states should stay readable and calm
 
-Theme configuration can come later. For now, ship one solid dark default.
+Nyx is dark-only in the current product scope. Do not add a parallel light
+palette, theme store, or system-theme switch until the product explicitly asks
+for one. Executable color values live in `apps/desktop/src/styles/index.css`;
+this document owns role and usage guidance rather than a second value table.
 
 ## 4. Typography
 
-Preferred typefaces:
+Use the native system sans stack:
 
-- Sans: `IBM Plex Sans`
+- Apple platforms: `-apple-system`, `BlinkMacSystemFont`
+- Windows: `Segoe UI`
 - Chinese fallback: `PingFang SC`
-- Mono: `IBM Plex Mono`
+- General fallback: `system-ui`, `sans-serif`
+
+Do not assume IBM Plex, Inter, or another downloaded font is installed. Add a
+font asset only when the product explicitly chooses to own and ship it.
 
 Typography should feel precise, quiet, and technical rather than expressive.
 
@@ -95,7 +102,7 @@ Rules:
 - headings should be compact and understated
 - body copy should optimize for long reading comfort
 - status labels should be crisp and quiet
-- mono should be used sparingly for technical hints, not as the dominant UI voice
+- use the platform mono stack sparingly for technical hints, not as the dominant UI voice
 - avoid giant marketing headlines
 - avoid decorative editorial styling
 
@@ -109,11 +116,11 @@ application shape.
 Core structure:
 
 - one full-window app shell
-- one left sidebar, roughly `240px` to `280px`
+- one `264px` left sidebar
 - one main pane for the current conversation
-- one comfortable message column inside the main pane
+- one message and composer column no wider than `46rem`
 - one anchored composer near the bottom
-- one quiet top bar inside the main pane
+- one quiet `48px` top bar inside the main pane
 
 Layout behavior:
 
@@ -140,7 +147,7 @@ Connections, but it must not turn the main surface into a dashboard.
 ### Sidebar
 
 - quiet and useful
-- contains product identity, `New chat`, and lightweight session context
+- contains product identity, `New thread`, and lightweight session context
 - may show the current thread item only when it reflects real durable state
 - should not pretend there is a full history system if one does not exist
 - should feel like a standard chat sidebar, not a dashboard
@@ -148,7 +155,9 @@ Connections, but it must not turn the main surface into a dashboard.
 ### Main Header
 
 - compact and supportive
-- may contain page title and one lightweight status chip
+- contains the page title and at most one lightweight status chip
+- active submitting/streaming status may temporarily replace connection status;
+  terminal turn status remains inline with the message
 - should not become a command center
 
 ### Message List
@@ -165,6 +174,7 @@ Connections, but it must not turn the main surface into a dashboard.
 - tactile and padded
 - clear send and stop actions
 - should feel dependable, not decorative
+- may use the interface's only soft elevation shadow
 
 ### Status Pills
 
@@ -198,6 +208,8 @@ Rules:
 - avoid glossy surfaces
 - avoid heavy translucency
 - avoid oversized blur
+- use filled neutral surfaces for hover and user messages; reserve the accent
+  for primary actions and focus
 
 Motion should be subtle and purposeful:
 
@@ -205,19 +217,20 @@ Motion should be subtle and purposeful:
 - transitions should support clarity
 - avoid motion that makes the app feel like a landing page
 
-## 8. Responsive Behavior
+## 8. Window Behavior
 
-Nyx should preserve the same chat-first mental model across sizes.
+The current Electron window has a minimum size of `1080px × 720px`. This phase
+keeps the desktop layout fixed within that supported range.
 
 Guidelines:
 
 - desktop keeps the sidebar and main pane
-- on narrower widths, the sidebar may collapse to a compact rail or temporary drawer
-- keep the composer comfortable on small screens
-- keep touch targets generous
+- do not add a compact rail, drawer, or mobile-specific navigation
+- keep the composer comfortable at the minimum supported window size
 - the main pane remains the primary focus at every size
 
-The small-screen version should feel like the same product, not a different app.
+A smaller-screen product can be designed when Nyx supports a smaller runtime
+viewport; do not pre-build it in the current desktop client.
 
 ## 9. Do and Do Not
 

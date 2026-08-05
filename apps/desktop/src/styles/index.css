@@ -1,24 +1,28 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-nyx-canvas: #ffffff;
-  --color-nyx-sidebar: #f7f7f4;
-  --color-nyx-panel: #f1f1ee;
-  --color-nyx-panel-strong: #ececea;
-  --color-nyx-composer: #ffffff;
-  --color-nyx-hover: #ededeb;
-  --color-nyx-line: #dededb;
-  --color-nyx-line-soft: #ebebe8;
-  --color-nyx-ink: #20201d;
-  --color-nyx-muted: #6f6f69;
-  --color-nyx-subtle: #9a9a94;
-  --color-nyx-accent: #111111;
-  --font-sans: 'IBM Plex Sans', 'PingFang SC', 'Helvetica Neue', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  --color-nyx-canvas: #131417;
+  --color-nyx-sidebar: #181a1e;
+  --color-nyx-panel: #1c1e22;
+  --color-nyx-solid: #2e3138;
+  --color-nyx-line: #2a2d33;
+  --color-nyx-line-strong: #3a3e46;
+  --color-nyx-ink: #e6e8eb;
+  --color-nyx-muted: #9aa1ab;
+  --color-nyx-subtle: #808791;
+  --color-nyx-accent: #4c8dff;
+  --color-nyx-accent-soft: #1c2a44;
+  --color-nyx-success: #58b07f;
+  --color-nyx-success-soft: #1a2b21;
+  --color-nyx-warning: #e8b04b;
+  --color-nyx-warning-soft: #36280f;
+  --color-nyx-danger: #f07067;
+  --color-nyx-danger-soft: #3d2422;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: var(--font-sans);
   background-color: var(--color-nyx-canvas);
 }
@@ -44,7 +48,8 @@ body {
 
 button,
 textarea,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -52,26 +57,45 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
+button:disabled,
+textarea:disabled,
+input:disabled,
+select:disabled {
   cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button:disabled {
+  pointer-events: none;
 }
 
 textarea::placeholder {
-  color: #b8b8b3;
+  color: var(--color-nyx-subtle);
+}
+
+input::placeholder {
+  color: var(--color-nyx-subtle);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-nyx-accent);
 }
 
 ::selection {
-  background: #d8d8d3;
+  background: var(--color-nyx-accent-soft);
 }
 
 :focus-visible {
-  outline: 2px solid #8f8f88;
+  outline: 2px solid var(--color-nyx-accent);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   button,
-  textarea {
+  textarea,
+  input,
+  select {
     transition:
       background-color 140ms ease,
       border-color 140ms ease,

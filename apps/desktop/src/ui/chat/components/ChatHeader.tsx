@@ -10,12 +10,17 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({ title, runStatus, connectionStatus }: ChatHeaderProps) {
+  const isRunning = runStatus === 'submitting' || runStatus === 'streaming'
+
   return (
-    <header className='flex h-12 shrink-0 items-center justify-between border-b border-nyx-line-soft px-4'>
+    <header className='flex h-12 shrink-0 items-center justify-between border-b border-nyx-line px-6'>
       <h1 className='min-w-0 truncate text-[13px] font-semibold text-nyx-ink'>{title}</h1>
-      <div className='ml-4 flex shrink-0 items-center gap-2'>
-        <ConnectionStatusPill status={connectionStatus} />
-        <ChatStatusPill runStatus={runStatus} />
+      <div className='ml-4 shrink-0'>
+        {isRunning ? (
+          <ChatStatusPill runStatus={runStatus} />
+        ) : (
+          <ConnectionStatusPill status={connectionStatus} />
+        )}
       </div>
     </header>
   )

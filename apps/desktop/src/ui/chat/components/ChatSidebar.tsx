@@ -1,10 +1,6 @@
-import type { NyxChatRunStatus } from '../../../../shared/chat/types'
-import { shouldShowStatus, statusLabel } from '../chat-presenters'
-
 interface ChatSidebarProps {
   title: string
   preview: string
-  runStatus: NyxChatRunStatus
   activeView: 'chat' | 'connections'
   newThreadDisabled: boolean
   onNewThread: () => void
@@ -45,7 +41,6 @@ function SettingsIcon() {
 export function ChatSidebar({
   title,
   preview,
-  runStatus,
   activeView,
   newThreadDisabled,
   onNewThread,
@@ -53,9 +48,13 @@ export function ChatSidebar({
   onOpenConnectionsSettings,
 }: ChatSidebarProps) {
   return (
-    <aside className='flex w-full shrink-0 flex-col border-b border-nyx-line-soft bg-nyx-sidebar px-2 py-2 lg:w-[18rem] lg:border-b-0 lg:border-r'>
+    <aside className='flex w-[16.5rem] shrink-0 flex-col border-r border-nyx-line bg-nyx-sidebar px-2 py-2'>
+      <div className='flex h-10 items-center px-2 text-[13px] font-semibold tracking-[-0.01em] text-nyx-ink'>
+        Nyx
+      </div>
+
       <button
-        className='flex h-8 items-center gap-2 rounded-md px-2 text-left text-[13px] text-nyx-ink hover:bg-nyx-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
+        className='mt-1 flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] text-nyx-ink hover:bg-nyx-solid'
         disabled={newThreadDisabled}
         onClick={onNewThread}
         type='button'
@@ -64,32 +63,29 @@ export function ChatSidebar({
         New thread
       </button>
 
-      <div className='mt-3 flex-1 overflow-hidden'>
-        <div className='px-2 pb-1 text-[11px] font-medium text-nyx-subtle'>Threads</div>
+      <div className='mt-4 flex-1 overflow-hidden'>
+        <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Current thread</div>
         <button
-          className={`grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-md px-3 py-2 text-left ${
-            activeView === 'chat' ? 'bg-nyx-panel-strong' : 'hover:bg-nyx-hover'
+          className={`w-full rounded-lg px-3 py-2.5 text-left ${
+            activeView === 'chat' ? 'bg-nyx-accent-soft' : 'hover:bg-nyx-solid'
           }`}
           onClick={onOpenChat}
           type='button'
         >
-          <span className='min-w-0 truncate text-[13px] font-medium text-nyx-ink'>{title}</span>
-          {shouldShowStatus(runStatus) ? (
-            <span className='text-[11px] text-nyx-subtle'>{statusLabel(runStatus)}</span>
-          ) : null}
-          <span className='col-span-2 mt-1 min-w-0 truncate text-[12px] text-nyx-muted'>
-            {preview}
+          <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+            {title}
           </span>
+          <span className='mt-1 block min-w-0 truncate text-[12px] text-nyx-muted'>{preview}</span>
         </button>
       </div>
 
-      <div className='mt-3 border-t border-nyx-line-soft pt-2'>
-        <div className='px-2 pb-1 text-[11px] font-medium text-nyx-subtle'>Settings</div>
+      <div className='mt-3 border-t border-nyx-line pt-2'>
+        <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Settings</div>
         <button
-          className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] ${
+          className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
             activeView === 'connections'
-              ? 'bg-nyx-panel-strong text-nyx-ink'
-              : 'text-nyx-muted hover:bg-nyx-hover hover:text-nyx-ink'
+              ? 'bg-nyx-accent-soft text-nyx-ink'
+              : 'text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
           }`}
           onClick={onOpenConnectionsSettings}
           type='button'
