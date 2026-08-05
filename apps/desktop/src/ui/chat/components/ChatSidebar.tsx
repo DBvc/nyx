@@ -1,3 +1,4 @@
+import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
 import type { RefObject } from 'react'
 
 interface ChatSidebarProps {
@@ -9,74 +10,6 @@ interface ChatSidebarProps {
   onOpenChat: () => void
   onOpenConnectionsSettings: () => void
   settingsPopoverRef: RefObject<HTMLDivElement | null>
-}
-
-function NewThreadIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-3.5 w-3.5'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path d='M8 3.5V12.5M3.5 8H12.5' stroke='currentColor' strokeLinecap='round' />
-    </svg>
-  )
-}
-
-function UserIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-4 w-4'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <circle cx='8' cy='5.25' r='2.25' stroke='currentColor' />
-      <path
-        d='M3.75 13C4.2 10.8 5.62 9.5 8 9.5C10.38 9.5 11.8 10.8 12.25 13'
-        stroke='currentColor'
-        strokeLinecap='round'
-      />
-    </svg>
-  )
-}
-
-function ChevronIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-3.5 w-3.5'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path
-        d='M4.5 6L8 9.5L11.5 6'
-        stroke='currentColor'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-    </svg>
-  )
-}
-
-function ConnectionsIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-3.5 w-3.5'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path d='M6.75 3.25H13M3 8H13M3 12.75H9.25' stroke='currentColor' strokeLinecap='round' />
-      <circle cx='4.75' cy='3.25' r='1.25' stroke='currentColor' />
-      <circle cx='11.25' cy='12.75' r='1.25' stroke='currentColor' />
-    </svg>
-  )
 }
 
 export function ChatSidebar({
@@ -91,8 +24,8 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   return (
     <aside className='flex h-full w-[16.5rem] shrink-0 flex-col border-r border-nyx-line bg-nyx-sidebar px-2 py-2'>
-      <div className='window-drag-region sidebar-titlebar flex h-10 items-center text-[15px] font-semibold tracking-[-0.01em] text-nyx-ink'>
-        Nyx
+      <div className='sidebar-titlebar mb-1 flex h-9 items-center text-[15px] font-semibold tracking-[-0.01em] text-nyx-ink'>
+        <span className='window-drag-region flex h-full flex-1 items-center'>Nyx</span>
       </div>
 
       <button
@@ -101,7 +34,7 @@ export function ChatSidebar({
         onClick={onNewThread}
         type='button'
       >
-        <NewThreadIcon />
+        <Plus aria-hidden='true' className='h-3.5 w-3.5' strokeWidth={1.75} />
         New thread
       </button>
 
@@ -129,14 +62,14 @@ export function ChatSidebar({
           type='button'
         >
           <span className='flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-nyx-solid text-nyx-muted'>
-            <UserIcon />
+            <UserRound aria-hidden='true' className='h-4 w-4' strokeWidth={1.75} />
           </span>
           <span className='min-w-0 flex-1'>
             <span className='block truncate text-[13px] font-medium text-nyx-ink'>Local user</span>
             <span className='block truncate text-[11px] text-nyx-subtle'>On this device</span>
           </span>
           <span className='text-nyx-subtle'>
-            <ChevronIcon />
+            <ChevronDown aria-hidden='true' className='h-3.5 w-3.5' strokeWidth={1.75} />
           </span>
         </button>
 
@@ -161,7 +94,7 @@ export function ChatSidebar({
             onClick={onOpenConnectionsSettings}
             type='button'
           >
-            <ConnectionsIcon />
+            <SlidersHorizontal aria-hidden='true' className='h-3.5 w-3.5' strokeWidth={1.75} />
             Connections
           </button>
         </div>

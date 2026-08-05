@@ -515,8 +515,8 @@ export function ConnectionsSettingsPage({
 
   return (
     <div className='flex min-h-0 flex-1 flex-col bg-nyx-canvas'>
-      <header className='window-drag-region workspace-header flex h-12 shrink-0 items-center justify-between border-b border-nyx-line px-6'>
-        <div className='flex min-w-0 items-center gap-2'>
+      <header className='workspace-header flex h-12 shrink-0 items-center justify-between border-b border-nyx-line px-6'>
+        <div className='window-drag-region flex min-w-0 flex-1 self-stretch items-center gap-2'>
           <button
             className='h-8 rounded-lg px-2 text-[13px] text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
             onClick={onBackToChat}

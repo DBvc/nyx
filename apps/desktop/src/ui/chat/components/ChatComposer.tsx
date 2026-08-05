@@ -1,3 +1,4 @@
+import { ArrowUp, Square } from 'lucide-react'
 import type { FormEvent, KeyboardEvent } from 'react'
 
 interface ChatComposerProps {
@@ -12,26 +13,6 @@ interface ChatComposerProps {
 
 export function shouldSendComposerKey(key: string, shiftKey: boolean, isComposing: boolean) {
   return key === 'Enter' && !shiftKey && !isComposing
-}
-
-function SendIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-4 w-4'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path
-        d='M8 12.5V3.5M8 3.5L4.75 6.75M8 3.5L11.25 6.75'
-        stroke='currentColor'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth='1.7'
-      />
-    </svg>
-  )
 }
 
 export function ChatComposer({
@@ -85,30 +66,32 @@ export function ChatComposer({
             value={input}
           />
 
-          <div className='mt-2 flex h-8 items-center justify-end gap-2'>
-            {isBusy ? (
-              <button
-                className='h-8 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[13px] text-nyx-ink hover:bg-nyx-solid'
-                onClick={() => {
-                  void onStop()
-                }}
-                type='button'
-              >
-                Stop
-              </button>
-            ) : null}
-
+          <div className='mt-2 flex h-8 items-center justify-end'>
             <button
-              aria-label='Send message'
+              aria-label={isBusy ? 'Stop response' : 'Send message'}
               className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                canSend
-                  ? 'bg-nyx-accent text-nyx-canvas hover:opacity-90'
-                  : 'bg-nyx-solid text-nyx-subtle'
+                isBusy
+                  ? 'bg-nyx-ink text-nyx-canvas hover:opacity-90'
+                  : canSend
+                    ? 'bg-nyx-accent text-nyx-canvas hover:opacity-90'
+                    : 'bg-nyx-solid text-nyx-subtle'
               }`}
-              disabled={!canSend}
-              type='submit'
+              disabled={!isBusy && !canSend}
+              onClick={
+                isBusy
+                  ? () => {
+                      void onStop()
+                    }
+                  : undefined
+              }
+              title={isBusy ? 'Stop response' : undefined}
+              type={isBusy ? 'button' : 'submit'}
             >
-              <SendIcon />
+              {isBusy ? (
+                <Square aria-hidden='true' fill='currentColor' size={10} strokeWidth={0} />
+              ) : (
+                <ArrowUp aria-hidden='true' className='h-4 w-4' strokeWidth={2} />
+              )}
             </button>
           </div>
         </div>

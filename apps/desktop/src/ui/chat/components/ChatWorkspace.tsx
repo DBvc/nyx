@@ -1,3 +1,4 @@
+import { PanelLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ConnectionsSettingsPage } from '../../settings/ConnectionsSettingsPage'
@@ -50,21 +51,6 @@ function initialSidebarCollapsed() {
   } catch {
     return false
   }
-}
-
-function SidebarToggleIcon() {
-  return (
-    <svg
-      aria-hidden='true'
-      className='h-4 w-4'
-      fill='none'
-      viewBox='0 0 16 16'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <rect height='12' rx='2.5' stroke='currentColor' width='12' x='2' y='2' />
-      <path d='M6 2.5V13.5' stroke='currentColor' />
-    </svg>
-  )
 }
 
 export function ChatWorkspace() {
@@ -174,7 +160,7 @@ export function ChatWorkspace() {
         title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
         type='button'
       >
-        <SidebarToggleIcon />
+        <PanelLeft aria-hidden='true' className='h-4 w-4' strokeWidth={1.75} />
       </button>
 
       <div className='flex h-full w-full'>

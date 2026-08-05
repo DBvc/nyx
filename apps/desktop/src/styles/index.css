@@ -102,8 +102,10 @@ input[type='radio'] {
 
 .sidebar-toggle {
   position: absolute;
-  top: 0.625rem;
+  top: 0.75rem;
   left: 0.75rem;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 .sidebar-titlebar {
