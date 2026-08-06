@@ -1,6 +1,117 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { isSidebarShortcut, readSidebarCollapsed } from './ChatWorkspace'
+import {
+  composerTargetPresentation,
+  isSidebarShortcut,
+  readSidebarCollapsed,
+} from './ChatWorkspace'
+
+const readyTarget = {
+  isResetting: false,
+  hydrationStatus: 'ready' as const,
+  connectionStatusKind: 'ready' as const,
+  connectionRequestEpoch: 1,
+  targetInitialized: true,
+  targetCatalogEpoch: 1,
+  hasTargetDraft: true,
+  targetAvailable: true,
+  availableOptionCount: 1,
+}
+
+describe('composer target presentation', () => {
+  it.each([
+    [
+      'pending ready catalog',
+      { connectionRequestEpoch: 2, targetCatalogEpoch: 1 },
+      { status: 'Refreshing targets…', disabled: false, action: null },
+    ],
+    [
+      'consumed ready catalog',
+      { connectionRequestEpoch: 2, targetCatalogEpoch: 2 },
+      {
+        status: 'Selected target unavailable. Choose another target.',
+        disabled: false,
+        action: null,
+      },
+    ],
+  ] as const)('maps an unavailable target with a %s', (_name, epochs, expected) => {
+    expect(
+      composerTargetPresentation({
+        ...readyTarget,
+        ...epochs,
+        targetAvailable: false,
+      }),
+    ).toEqual(expected)
+  })
+
+  it.each([
+    ['loading', { status: 'Loading targets…', disabled: true, action: null }],
+    ['error', { status: null, disabled: true, action: null }],
+  ] as const)('maps uninitialized targets after hydration is %s', (hydrationStatus, expected) => {
+    expect(
+      composerTargetPresentation({
+        ...readyTarget,
+        hydrationStatus,
+        targetInitialized: false,
+      }),
+    ).toEqual(expected)
+  })
+
+  it.each([
+    [
+      'resetting before failure',
+      { isResetting: true, connectionStatusKind: 'failed', targetInitialized: false },
+      { status: 'Starting fresh…', disabled: true, action: null },
+    ],
+    [
+      'refresh failure before initialization',
+      { connectionStatusKind: 'failed', targetInitialized: false },
+      { status: 'Couldn’t refresh targets.', disabled: true, action: 'refresh' },
+    ],
+    [
+      'refresh failure with retained targets',
+      { connectionStatusKind: 'failed' },
+      { status: 'Couldn’t refresh targets.', disabled: false, action: 'refresh' },
+    ],
+    [
+      'initial loading',
+      { connectionStatusKind: 'loading', targetInitialized: false },
+      { status: 'Loading targets…', disabled: true, action: null },
+    ],
+    [
+      'background refresh',
+      { connectionStatusKind: 'loading' },
+      { status: 'Refreshing targets…', disabled: false, action: null },
+    ],
+    [
+      'missing selection with choices',
+      { hasTargetDraft: false },
+      { status: 'Choose a target.', disabled: false, action: null },
+    ],
+    [
+      'missing selection without choices',
+      { hasTargetDraft: false, availableOptionCount: 0 },
+      { status: 'No target available.', disabled: true, action: 'connections' },
+    ],
+    [
+      'unavailable selection with a replacement',
+      { targetAvailable: false },
+      {
+        status: 'Selected target unavailable. Choose another target.',
+        disabled: false,
+        action: null,
+      },
+    ],
+    [
+      'unavailable selection without a replacement',
+      { targetAvailable: false, availableOptionCount: 0 },
+      { status: 'Selected target unavailable.', disabled: true, action: 'connections' },
+    ],
+    ['ready target', {}, { status: null, disabled: false, action: null }],
+  ] as const)('maps %s', (_name, overrides, expected) => {
+    expect(composerTargetPresentation({ ...readyTarget, ...overrides })).toEqual(expected)
+  })
+})
 
 describe('sidebar workspace helpers', () => {
   it.each([

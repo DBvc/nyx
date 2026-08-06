@@ -62,4 +62,53 @@ describe('ChatMessage', () => {
     expect(markup).toContain('The provider returned an empty response.')
     expect(markup).not.toContain('Thinking…')
   })
+
+  it('shows the confirmed connection target on a failed assistant response', () => {
+    const markup = renderAssistant({
+      status: 'failed',
+      error: {
+        code: 'network_error',
+        message: 'The connection was interrupted.',
+        retryable: true,
+      },
+      targetAttribution: {
+        kind: 'connection',
+        providerId: 'provider-1',
+        providerDisplayName: 'Provider One',
+        modelId: 'model-1',
+        modelDisplayName: 'Model One',
+      },
+    })
+
+    expect(markup).toContain('Provider One · Model One')
+    expect(markup).not.toContain('provider-1')
+    expect(markup).not.toContain('model-1')
+  })
+
+  it('shows the confirmed environment fallback model', () => {
+    const markup = renderAssistant({
+      content: 'Hello',
+      status: 'completed',
+      targetAttribution: {
+        kind: 'env_fallback',
+        modelId: 'env-model',
+      },
+    })
+
+    expect(markup).toContain('.env · env-model')
+  })
+
+  it('does not guess a target for a pre-bind failure', () => {
+    const markup = renderAssistant({
+      status: 'failed',
+      error: {
+        code: 'target_unavailable',
+        message: 'The selected target is unavailable.',
+        retryable: true,
+      },
+    })
+
+    expect(markup).not.toContain('.env ·')
+    expect(markup).not.toContain('Provider One · Model One')
+  })
 })

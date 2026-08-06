@@ -27,6 +27,89 @@ interface SidebarShortcutInput {
   repeat: boolean
 }
 
+type ComposerTargetAction = 'refresh' | 'connections' | null
+
+interface ComposerTargetPresentation {
+  status: string | null
+  disabled: boolean
+  action: ComposerTargetAction
+}
+
+export function composerTargetPresentation({
+  isResetting,
+  hydrationStatus,
+  connectionStatusKind,
+  connectionRequestEpoch,
+  targetInitialized,
+  targetCatalogEpoch,
+  hasTargetDraft,
+  targetAvailable,
+  availableOptionCount,
+}: {
+  isResetting: boolean
+  hydrationStatus: 'loading' | 'ready' | 'error'
+  connectionStatusKind: 'loading' | 'ready' | 'failed'
+  connectionRequestEpoch: number
+  targetInitialized: boolean
+  targetCatalogEpoch: number
+  hasTargetDraft: boolean
+  targetAvailable: boolean
+  availableOptionCount: number
+}): ComposerTargetPresentation {
+  if (isResetting) {
+    return { status: 'Starting fresh…', disabled: true, action: null }
+  }
+
+  if (hydrationStatus === 'error' && !targetInitialized) {
+    return { status: null, disabled: true, action: null }
+  }
+
+  if (connectionStatusKind === 'failed') {
+    return {
+      status: 'Couldn’t refresh targets.',
+      disabled: !targetInitialized || availableOptionCount === 0,
+      action: 'refresh',
+    }
+  }
+
+  if (!targetInitialized) {
+    return { status: 'Loading targets…', disabled: true, action: null }
+  }
+
+  if (
+    connectionStatusKind === 'loading' ||
+    (connectionStatusKind === 'ready' && connectionRequestEpoch > targetCatalogEpoch)
+  ) {
+    return {
+      status: 'Refreshing targets…',
+      disabled: availableOptionCount === 0,
+      action: null,
+    }
+  }
+
+  if (!hasTargetDraft) {
+    return availableOptionCount > 0
+      ? { status: 'Choose a target.', disabled: false, action: null }
+      : { status: 'No target available.', disabled: true, action: 'connections' }
+  }
+
+  if (!targetAvailable) {
+    return availableOptionCount > 0
+      ? {
+          status: 'Selected target unavailable. Choose another target.',
+          disabled: false,
+          action: null,
+        }
+      : {
+          status: 'Selected target unavailable.',
+          disabled: true,
+          action: 'connections',
+        }
+  }
+
+  return { status: null, disabled: false, action: null }
+}
+
 export function readSidebarCollapsed(storage?: Pick<Storage, 'getItem'>) {
   try {
     return storage?.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true'
@@ -129,6 +212,17 @@ export function ChatWorkspace() {
 
     return options
   }, [connectionSetup.status.overview, state.targetDraft])
+  const targetPresentation = composerTargetPresentation({
+    isResetting,
+    hydrationStatus: state.hydrationStatus,
+    connectionStatusKind: connectionSetup.status.kind,
+    connectionRequestEpoch: connectionSetup.status.requestEpoch,
+    targetInitialized: state.targetInitialized,
+    targetCatalogEpoch: state.targetCatalogEpoch,
+    hasTargetDraft: Boolean(state.targetDraft),
+    targetAvailable: state.targetAvailable,
+    availableOptionCount: targetOptions.filter((option) => !option.disabled).length,
+  })
 
   const threadItems = useMemo(() => toThreadStreamItems(state.messages), [state.messages])
   const latestMessageItem = threadItems.at(-1)
@@ -280,6 +374,23 @@ export function ChatWorkspace() {
                 input={state.input}
                 isBusy={isBusy}
                 onInputChange={setInput}
+                targetAction={
+                  targetPresentation.action === 'refresh'
+                    ? {
+                        label: 'Refresh targets',
+                        run: () => {
+                          void connectionSetup.refresh()
+                        },
+                      }
+                    : targetPresentation.action === 'connections'
+                      ? {
+                          label: 'Open Connections',
+                          run: () => {
+                            setActiveView('connections')
+                          },
+                        }
+                      : null
+                }
                 onTargetChange={(value) => {
                   const option = targetOptions.find((candidate) => candidate.value === value)
 
@@ -289,8 +400,9 @@ export function ChatWorkspace() {
                 }}
                 onSend={handleSend}
                 onStop={stopActiveResponse}
-                targetDisabled={!state.targetInitialized || isResetting}
+                targetDisabled={targetPresentation.disabled}
                 targetOptions={targetOptions}
+                targetStatus={targetPresentation.status}
                 targetValue={state.targetDraft ? chatTargetSelectionKey(state.targetDraft) : ''}
               />
             </>

@@ -10,6 +10,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   const isWaiting = message.status === 'pending' || message.status === 'streaming'
   const displayContent = message.content || (isWaiting ? 'Thinking…' : null)
   const isEmptyCompleted = message.status === 'completed' && !message.content
+  const attribution = message.targetAttribution
 
   if (isUser) {
     return (
@@ -23,6 +24,14 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
   return (
     <article className='max-w-[48rem] text-[15px] leading-6 text-nyx-ink'>
+      {attribution ? (
+        <p className='mb-1 text-[11px] font-medium leading-4 text-nyx-subtle'>
+          {attribution.kind === 'connection'
+            ? `${attribution.providerDisplayName} · ${attribution.modelDisplayName}`
+            : `.env · ${attribution.modelId}`}
+        </p>
+      ) : null}
+
       {displayContent ? (
         <div className='whitespace-pre-wrap break-words'>{displayContent}</div>
       ) : null}

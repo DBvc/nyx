@@ -12,6 +12,11 @@ interface ChatComposerProps {
     label: string
     disabled?: boolean
   }>
+  targetAction: {
+    label: string
+    run: () => void
+  } | null
+  targetStatus: string | null
   targetValue: string
   onInputChange: (value: string) => void
   onTargetChange: (value: string) => void
@@ -30,6 +35,8 @@ export function ChatComposer({
   disabled,
   targetDisabled,
   targetOptions,
+  targetAction,
+  targetStatus,
   targetValue,
   onInputChange,
   onTargetChange,
@@ -78,27 +85,52 @@ export function ChatComposer({
             value={input}
           />
 
-          <div className='mt-2 flex h-8 items-center justify-between gap-3'>
-            <select
-              aria-label='Chat target'
-              className='min-w-0 max-w-[22rem] rounded-md border border-nyx-line bg-nyx-panel px-2 py-1 text-xs text-nyx-muted outline-none focus:border-nyx-subtle disabled:opacity-60'
-              disabled={targetDisabled || targetOptions.length === 0}
-              onChange={(event) => {
-                onTargetChange(event.target.value)
-              }}
-              value={targetValue}
-            >
-              {targetValue === '' ? (
-                <option disabled value=''>
-                  No target available
-                </option>
+          <div className='mt-2 flex min-h-8 items-end justify-between gap-3'>
+            <div className='min-w-0 flex-1'>
+              <div className='flex min-w-0 items-center gap-2'>
+                <select
+                  aria-describedby={targetStatus ? 'chat-target-status' : undefined}
+                  aria-label='Chat target'
+                  className='min-w-0 max-w-[22rem] flex-1 rounded-md border border-nyx-line bg-nyx-panel px-2 py-1 text-xs text-nyx-muted outline-none focus:border-nyx-subtle disabled:opacity-60'
+                  disabled={targetDisabled || targetOptions.length === 0}
+                  onChange={(event) => {
+                    onTargetChange(event.target.value)
+                  }}
+                  value={targetValue}
+                >
+                  {targetValue === '' ? (
+                    <option disabled value=''>
+                      No target available
+                    </option>
+                  ) : null}
+                  {targetOptions.map((option) => (
+                    <option disabled={option.disabled} key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                {targetAction ? (
+                  <button
+                    className='shrink-0 text-xs font-medium text-nyx-muted hover:text-nyx-ink'
+                    onClick={targetAction.run}
+                    type='button'
+                  >
+                    {targetAction.label}
+                  </button>
+                ) : null}
+              </div>
+
+              {targetStatus ? (
+                <p
+                  aria-live='polite'
+                  className='mt-1 text-[11px] leading-4 text-nyx-subtle'
+                  id='chat-target-status'
+                >
+                  {targetStatus}
+                </p>
               ) : null}
-              {targetOptions.map((option) => (
-                <option disabled={option.disabled} key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            </div>
 
             <button
               aria-label={isBusy ? 'Stop response' : 'Send message'}
