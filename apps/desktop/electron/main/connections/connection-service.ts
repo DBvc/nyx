@@ -282,12 +282,14 @@ export class ConnectionsService implements ConnectionsController {
 
   private async readOverview(): Promise<NyxConnectionsOverview> {
     const state = await this.connectionStore.readState()
-    const providers = await Promise.all(
-      state.providers.map((provider) => this.toProviderSummary(provider)),
-    )
+    const providerStatus = this.providerStatusReader()
+    const [providers, connectionTargetGroups] = await Promise.all([
+      Promise.all(state.providers.map((provider) => this.toProviderSummary(provider))),
+      Promise.all(state.providers.map((provider) => this.toConnectionTargets(provider))),
+    ])
     const defaultTargetSource: NyxConnectionDefaultTargetSource = state.defaultTarget
       ? 'persisted_default'
-      : this.providerStatusReader().configured
+      : providerStatus.configured
         ? 'env_fallback'
         : 'missing'
 
@@ -295,7 +297,45 @@ export class ConnectionsService implements ConnectionsController {
       providers,
       defaultTarget: state.defaultTarget ? { ...state.defaultTarget } : null,
       defaultTargetSource,
+      targetCatalog: {
+        connectionTargets: connectionTargetGroups.flat(),
+        envFallback:
+          providerStatus.configured && providerStatus.model
+            ? { modelId: providerStatus.model }
+            : null,
+      },
     }
+  }
+
+  private async toConnectionTargets(provider: ConnectionProviderRecord) {
+    if (!provider.enabled) {
+      return []
+    }
+
+    const enabledModels = provider.models.filter((model) => model.enabled)
+
+    if (enabledModels.length === 0) {
+      return []
+    }
+
+    let secret: string | null
+
+    try {
+      secret = await this.secretStore.readSecret(provider.id)
+    } catch {
+      return []
+    }
+
+    if (!secret?.trim()) {
+      return []
+    }
+
+    return enabledModels.map((model) => ({
+      providerId: provider.id,
+      providerDisplayName: provider.displayName,
+      modelId: model.id,
+      modelDisplayName: model.displayName,
+    }))
   }
 
   private async toProviderSummary(

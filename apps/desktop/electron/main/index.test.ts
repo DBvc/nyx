@@ -142,6 +142,10 @@ describe('registerIpcHandlers', () => {
         providers: [],
         defaultTarget: null,
         defaultTargetSource: 'missing',
+        targetCatalog: {
+          connectionTargets: [],
+          envFallback: null,
+        },
       },
     }
     const overviewPromise = Promise.resolve(overviewResult)

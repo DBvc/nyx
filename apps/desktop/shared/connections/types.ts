@@ -52,6 +52,18 @@ export interface NyxConnectionTarget {
   modelId: string
 }
 
+export interface NyxConnectionTargetCatalog {
+  connectionTargets: ReadonlyArray<{
+    providerId: string
+    providerDisplayName: string
+    modelId: string
+    modelDisplayName: string
+  }>
+  envFallback: {
+    modelId: string
+  } | null
+}
+
 export interface NyxConnectionModelProfile {
   id: string
   displayName: string
@@ -83,6 +95,7 @@ export interface NyxConnectionsOverview {
   providers: ReadonlyArray<NyxConnectionProviderSummary>
   defaultTarget: NyxConnectionTarget | null
   defaultTargetSource: NyxConnectionDefaultTargetSource
+  targetCatalog: NyxConnectionTargetCatalog
 }
 
 export type NyxConnectionsOverviewResult = NyxConnectionsResult<NyxConnectionsOverview>

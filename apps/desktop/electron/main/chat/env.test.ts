@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readProviderStatus } from './env'
+import { readChatProviderConfig, readProviderStatus } from './env'
 
 const ENV_KEYS = ['NYX_API_BASE_URL', 'NYX_API_TOKEN', 'NYX_MODEL'] as const
 const ORIGINAL_ENV = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
@@ -63,6 +63,32 @@ describe('readProviderStatus', () => {
     })
     expect(JSON.stringify(status)).not.toContain('super-secret-token')
     expect(JSON.stringify(status)).not.toContain('api_key=hidden')
+  })
+
+  it('uses the effective chat model when configured without an explicit model', () => {
+    setEnv({
+      NYX_API_BASE_URL: 'https://api.example.com/v1',
+      NYX_API_TOKEN: 'super-secret-token',
+    })
+
+    expect(readProviderStatus()).toMatchObject({
+      configured: true,
+      model: 'gpt-5.4',
+    })
+    expect(readChatProviderConfig()).toMatchObject({
+      model: 'gpt-5.4',
+    })
+  })
+
+  it('preserves an explicit model while required provider configuration is missing', () => {
+    setEnv({
+      NYX_MODEL: ' offline-model ',
+    })
+
+    expect(readProviderStatus()).toMatchObject({
+      configured: false,
+      model: 'offline-model',
+    })
   })
 
   it('treats an invalid base URL as not configured without returning the raw value', () => {

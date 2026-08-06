@@ -25,6 +25,10 @@ function overview(overrides: Partial<NyxConnectionsOverview> = {}): NyxConnectio
       modelId: 'model-1',
     },
     defaultTargetSource: 'persisted_default',
+    targetCatalog: {
+      connectionTargets: [],
+      envFallback: null,
+    },
     ...overrides,
   }
 }

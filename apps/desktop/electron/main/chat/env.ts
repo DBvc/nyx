@@ -7,6 +7,16 @@ export interface ChatProviderConfig {
   model: string
 }
 
+const DEFAULT_CHAT_MODEL = 'gpt-5.4'
+
+function readOptionalModel() {
+  return process.env.NYX_MODEL?.trim() || null
+}
+
+function resolveEffectiveModel(model = readOptionalModel()) {
+  return model ?? DEFAULT_CHAT_MODEL
+}
+
 function readRequiredEnv(name: 'NYX_API_BASE_URL' | 'NYX_API_TOKEN') {
   const value = process.env[name]?.trim()
 
@@ -44,6 +54,7 @@ function normalizeBaseUrl(rawBaseUrl: string) {
 export function readProviderStatus(): NyxProviderStatus {
   const rawBaseUrl = process.env.NYX_API_BASE_URL?.trim()
   const token = process.env.NYX_API_TOKEN?.trim()
+  const model = readOptionalModel()
   const missingEnv: NyxProviderMissingEnv[] = []
   let baseUrlHost: string | null = null
   let hasValidBaseUrl = false
@@ -63,9 +74,11 @@ export function readProviderStatus(): NyxProviderStatus {
     missingEnv.push('NYX_API_TOKEN')
   }
 
+  const configured = hasValidBaseUrl && Boolean(token)
+
   return {
-    configured: hasValidBaseUrl && Boolean(token),
-    model: process.env.NYX_MODEL?.trim() || null,
+    configured,
+    model: configured ? resolveEffectiveModel(model) : model,
     baseUrlHost,
     missingEnv,
   }
@@ -75,6 +88,6 @@ export function readChatProviderConfig(): ChatProviderConfig {
   return {
     baseUrl: normalizeBaseUrl(readRequiredEnv('NYX_API_BASE_URL')),
     token: readRequiredEnv('NYX_API_TOKEN'),
-    model: process.env.NYX_MODEL?.trim() || 'gpt-5.4',
+    model: resolveEffectiveModel(),
   }
 }

@@ -219,6 +219,17 @@ describe('ConnectionsService', () => {
           modelId: 'model-1',
         },
         defaultTargetSource: 'persisted_default',
+        targetCatalog: {
+          connectionTargets: [
+            {
+              providerId: 'provider-1',
+              providerDisplayName: 'Provider One',
+              modelId: 'model-1',
+              modelDisplayName: 'Model One',
+            },
+          ],
+          envFallback: null,
+        },
       },
     })
     expect(JSON.stringify(result)).not.toContain('sk-super-secret')
@@ -269,8 +280,163 @@ describe('ConnectionsService', () => {
         providers: [],
         defaultTarget: null,
         defaultTargetSource: 'env_fallback',
+        targetCatalog: {
+          connectionTargets: [],
+          envFallback: {
+            modelId: 'env-model',
+          },
+        },
       },
     })
+  })
+
+  it('preserves provider and model order while exposing env fallback independently', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [
+        providerRecord({
+          models: [
+            {
+              id: 'model-1',
+              displayName: 'Model One',
+              enabled: true,
+              source: 'manual',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+            {
+              id: 'model-disabled',
+              displayName: 'Model Disabled',
+              enabled: false,
+              source: 'manual',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+            {
+              id: 'model-2',
+              displayName: 'Model Two',
+              enabled: true,
+              source: 'manual',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ],
+        }),
+        providerRecord({
+          id: 'provider-2',
+          displayName: 'Provider Two',
+          models: [
+            {
+              id: 'model-3',
+              displayName: 'Model Three',
+              enabled: true,
+              source: 'manual',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ],
+          defaultModelId: 'model-3',
+        }),
+      ],
+      defaultTarget: {
+        providerId: 'provider-1',
+        modelId: 'model-1',
+      },
+    })
+    harness.secrets.set('provider-1', 'sk-one')
+    harness.secrets.set('provider-2', 'sk-two')
+    const service = new ConnectionsService({
+      connectionStore: harness.connectionStore,
+      secretStore: harness.secretStore,
+      providerStatusReader: () => ({
+        configured: true,
+        model: 'env-model',
+        baseUrlHost: 'env.example.com',
+        missingEnv: [],
+      }),
+    })
+
+    await expect(service.overview()).resolves.toMatchObject({
+      ok: true,
+      value: {
+        defaultTargetSource: 'persisted_default',
+        targetCatalog: {
+          connectionTargets: [
+            {
+              providerId: 'provider-1',
+              providerDisplayName: 'Provider One',
+              modelId: 'model-1',
+              modelDisplayName: 'Model One',
+            },
+            {
+              providerId: 'provider-1',
+              providerDisplayName: 'Provider One',
+              modelId: 'model-2',
+              modelDisplayName: 'Model Two',
+            },
+            {
+              providerId: 'provider-2',
+              providerDisplayName: 'Provider Two',
+              modelId: 'model-3',
+              modelDisplayName: 'Model Three',
+            },
+          ],
+          envFallback: {
+            modelId: 'env-model',
+          },
+        },
+      },
+    })
+  })
+
+  it('isolates unusable provider credentials while keeping the overview available', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [
+        providerRecord(),
+        providerRecord({
+          id: 'provider-disabled',
+          displayName: 'Provider Disabled',
+          enabled: false,
+        }),
+        providerRecord({ id: 'provider-missing', displayName: 'Provider Missing' }),
+        providerRecord({ id: 'provider-blank', displayName: 'Provider Blank' }),
+        providerRecord({ id: 'provider-broken', displayName: 'Provider Broken' }),
+      ],
+      defaultTarget: null,
+    })
+    harness.secrets.set('provider-1', 'sk-usable')
+    harness.secrets.set('provider-disabled', 'sk-disabled')
+    harness.secrets.set('provider-blank', '   ')
+    vi.mocked(harness.secretStore.readSecret).mockImplementation(async (providerId) => {
+      if (providerId === 'provider-broken') {
+        throw new Error('raw decrypt detail')
+      }
+
+      return harness.secrets.get(providerId) ?? null
+    })
+
+    const result = await harness.service.overview()
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        targetCatalog: {
+          connectionTargets: [
+            {
+              providerId: 'provider-1',
+              providerDisplayName: 'Provider One',
+              modelId: 'model-1',
+              modelDisplayName: 'Model One',
+            },
+          ],
+          envFallback: null,
+        },
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain('raw decrypt detail')
+    expect(JSON.stringify(result)).not.toContain('sk-usable')
+    expect(JSON.stringify(result)).not.toContain('sk-disabled')
   })
 
   it('saves provider settings and writes credentials without returning the credential', async () => {
