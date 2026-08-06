@@ -2,6 +2,7 @@ import type {
   NyxConnectionProviderSummary,
   NyxConnectionsOverview,
 } from '../../../shared/connections/types'
+import type { NyxChatTargetSelection } from '../../../shared/chat/types'
 import type { NyxProviderStatus } from '../../../shared/provider/types'
 
 export type ConnectionStatusSource = 'persisted_default' | 'env_fallback' | 'missing'
@@ -16,9 +17,59 @@ export interface ConnectionStatusSummary {
 }
 
 export type ConnectionStatusState =
-  | { kind: 'loading' }
-  | { kind: 'ready'; overview: NyxConnectionsOverview; summary: ConnectionStatusSummary }
-  | { kind: 'failed'; message: string }
+  | { kind: 'loading'; requestEpoch: number; overview: NyxConnectionsOverview | null }
+  | {
+      kind: 'ready'
+      requestEpoch: number
+      overview: NyxConnectionsOverview
+      summary: ConnectionStatusSummary
+    }
+  | {
+      kind: 'failed'
+      requestEpoch: number
+      overview: NyxConnectionsOverview | null
+      message: string
+    }
+
+export function selectInitialChatTarget(
+  committedTarget: NyxChatTargetSelection | null,
+  overview: NyxConnectionsOverview,
+): NyxChatTargetSelection | null {
+  if (committedTarget) {
+    return { ...committedTarget }
+  }
+
+  if (overview.defaultTarget) {
+    return {
+      kind: 'connection',
+      providerId: overview.defaultTarget.providerId,
+      modelId: overview.defaultTarget.modelId,
+    }
+  }
+
+  return overview.targetCatalog.envFallback ? { kind: 'env_fallback' } : null
+}
+
+export function isChatTargetAvailable(
+  selection: NyxChatTargetSelection | null,
+  overview: NyxConnectionsOverview,
+) {
+  if (!selection) {
+    return false
+  }
+
+  if (selection.kind === 'env_fallback') {
+    return overview.targetCatalog.envFallback !== null
+  }
+
+  return overview.targetCatalog.connectionTargets.some(
+    (target) => target.providerId === selection.providerId && target.modelId === selection.modelId,
+  )
+}
+
+export function chatTargetSelectionKey(selection: NyxChatTargetSelection) {
+  return JSON.stringify(selection)
+}
 
 function findDefaultProvider(overview: NyxConnectionsOverview) {
   if (!overview.defaultTarget) {

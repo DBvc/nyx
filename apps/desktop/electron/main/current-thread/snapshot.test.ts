@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createSafeThreadErrorRecordV1, parseCurrentThreadRecordV1 } from './schemas'
+import {
+  createSafeThreadErrorRecordV1,
+  parseCurrentThreadRecordV1,
+  parseCurrentThreadRecordV2,
+  upgradeCurrentThreadRecordForMutation,
+} from './schemas'
 import { CurrentThreadSnapshotService, toCurrentThreadSnapshot } from './snapshot'
 
 function completedThenFailedRecord() {
@@ -74,9 +79,50 @@ describe('toCurrentThreadSnapshot', () => {
       },
     ])
     expect(snapshot.runStatus).toBe('failed')
+    expect(snapshot.selectedTarget).toBeNull()
     expect(snapshot).not.toHaveProperty('threadId')
     expect(snapshot).not.toHaveProperty('version')
     expect(snapshot).not.toHaveProperty('updatedAt')
+  })
+
+  it('derives the latest selection and safe assistant attribution from version 2 bindings', () => {
+    const upgraded = upgradeCurrentThreadRecordForMutation(completedThenFailedRecord())
+    const connectionAttribution = {
+      kind: 'connection',
+      providerId: 'provider-1',
+      providerDisplayName: 'Provider One',
+      modelId: 'model-1',
+      modelDisplayName: 'Model One',
+    } as const
+    const record = parseCurrentThreadRecordV2({
+      ...upgraded,
+      turns: [
+        {
+          ...upgraded.turns[0]!,
+          targetBinding: {
+            selection: { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' },
+            attribution: connectionAttribution,
+          },
+        },
+        {
+          ...upgraded.turns[1]!,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'env-model' },
+          },
+        },
+      ],
+    })
+
+    const snapshot = toCurrentThreadSnapshot(record)
+
+    expect(snapshot.selectedTarget).toEqual({ kind: 'env_fallback' })
+    expect(snapshot.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
+      targetAttribution: connectionAttribution,
+    })
+    expect(snapshot.messages.find((message) => message.id === 'assistant-2')).toMatchObject({
+      targetAttribution: { kind: 'env_fallback', modelId: 'env-model' },
+    })
   })
 
   it('rebuilds retry metadata while excluding the failed assistant from provider messages', () => {

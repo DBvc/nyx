@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
-import type { NyxChatCancellationRequest, NyxChatRequest } from '../../shared/chat/types'
+import type { NyxChatCancellationRequest } from '../../shared/chat/types'
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
@@ -143,7 +143,7 @@ export function registerIpcHandlers({
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot)
   ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
-  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: NyxChatRequest) => {
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: unknown) => {
     manager.start(event.sender, request)
   })
 

@@ -85,6 +85,7 @@ function chatRequest({
         content,
       },
     ],
+    targetSelection: { kind: 'env_fallback' },
   }
 }
 
@@ -216,6 +217,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
             requestId: 'request-complete-1',
             assistantMessageId: 'assistant-1',
             status: 'streaming',
+            targetAttribution: {
+              kind: 'env_fallback',
+              modelId: 'model',
+            },
           },
           {
             type: 'chat:delta',
@@ -320,6 +325,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
             requestId: 'request-fail-1',
             assistantMessageId: 'assistant-1',
             status: 'failed',
+            targetAttribution: {
+              kind: 'env_fallback',
+              modelId: 'model',
+            },
             error: {
               code: 'unknown',
               message: 'Provider exploded',
@@ -373,6 +382,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
           requestId: 'request-fail-new-1',
           assistantMessageId: 'assistant-1',
           status: 'failed',
+          targetAttribution: {
+            kind: 'env_fallback',
+            modelId: 'model',
+          },
           error: {
             code: 'unknown',
             message: 'Provider exploded',
@@ -631,6 +644,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
             { role: 'assistant', content: 'First answer' },
             { role: 'user', content: 'Continue' },
           ],
+          targetSelection: { kind: 'env_fallback' },
         })
 
         await waitForAssertion(() => {

@@ -6,7 +6,15 @@ interface ChatComposerProps {
   isBusy: boolean
   canSend: boolean
   disabled: boolean
+  targetDisabled: boolean
+  targetOptions: ReadonlyArray<{
+    value: string
+    label: string
+    disabled?: boolean
+  }>
+  targetValue: string
   onInputChange: (value: string) => void
+  onTargetChange: (value: string) => void
   onSend: () => void | Promise<void>
   onStop: () => void | Promise<void>
 }
@@ -20,7 +28,11 @@ export function ChatComposer({
   isBusy,
   canSend,
   disabled,
+  targetDisabled,
+  targetOptions,
+  targetValue,
   onInputChange,
+  onTargetChange,
   onSend,
   onStop,
 }: ChatComposerProps) {
@@ -66,7 +78,28 @@ export function ChatComposer({
             value={input}
           />
 
-          <div className='mt-2 flex h-8 items-center justify-end'>
+          <div className='mt-2 flex h-8 items-center justify-between gap-3'>
+            <select
+              aria-label='Chat target'
+              className='min-w-0 max-w-[22rem] rounded-md border border-nyx-line bg-nyx-panel px-2 py-1 text-xs text-nyx-muted outline-none focus:border-nyx-subtle disabled:opacity-60'
+              disabled={targetDisabled || targetOptions.length === 0}
+              onChange={(event) => {
+                onTargetChange(event.target.value)
+              }}
+              value={targetValue}
+            >
+              {targetValue === '' ? (
+                <option disabled value=''>
+                  No target available
+                </option>
+              ) : null}
+              {targetOptions.map((option) => (
+                <option disabled={option.disabled} key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
             <button
               aria-label={isBusy ? 'Stop response' : 'Send message'}
               className={`flex h-8 w-8 items-center justify-center rounded-full ${

@@ -5,10 +5,10 @@ import type {
   NyxCurrentThreadSnapshotResult,
 } from '../../../shared/chat/snapshot'
 import type { NyxChatInputMessage } from '../../../shared/chat/types'
-import type { CurrentThreadRecordV1 } from './schemas'
+import type { CurrentThreadRecord } from './schemas'
 
 export interface CurrentThreadRecordReader {
-  read(): Promise<CurrentThreadRecordV1 | null>
+  read(): Promise<CurrentThreadRecord | null>
 }
 
 export interface CurrentThreadSnapshotController {
@@ -24,13 +24,16 @@ const snapshotLoadError = {
   message: 'Nyx could not load the current thread.',
 } as const
 
-export function toCurrentThreadSnapshot(record: CurrentThreadRecordV1): NyxCurrentThreadSnapshot {
+export function toCurrentThreadSnapshot(record: CurrentThreadRecord): NyxCurrentThreadSnapshot {
   const messages: NyxCurrentThreadMessage[] = []
   const submittedMessages: NyxChatInputMessage[] = []
   let retryableTurn: NyxCurrentThreadRetryableTurn | null = null
+  let selectedTarget: NyxCurrentThreadSnapshot['selectedTarget'] = null
   let runStatus: NyxCurrentThreadSnapshot['runStatus'] = 'completed'
 
   for (const [index, turn] of record.turns.entries()) {
+    const targetBinding = record.version === 2 ? record.turns[index]!.targetBinding : null
+
     if (turn.assistantStatus === 'pending') {
       throw new Error('Pending current thread records must be recovered before snapshot mapping.')
     }
@@ -53,6 +56,13 @@ export function toCurrentThreadSnapshot(record: CurrentThreadRecordV1): NyxCurre
       content: turn.assistantContent,
       status: turn.assistantStatus,
       ...(turn.error ? { error: { ...turn.error }, canRetry: isRetryableTurn } : {}),
+      ...(targetBinding?.attribution
+        ? { targetAttribution: { ...targetBinding.attribution } }
+        : {}),
+    }
+
+    if (targetBinding) {
+      selectedTarget = { ...targetBinding.selection }
     }
 
     messages.push(userMessage, assistantMessage)
@@ -79,6 +89,7 @@ export function toCurrentThreadSnapshot(record: CurrentThreadRecordV1): NyxCurre
     messages,
     runStatus,
     retryableTurn,
+    selectedTarget,
   }
 }
 

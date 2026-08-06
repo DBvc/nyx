@@ -1,4 +1,4 @@
-import type { NyxChatError, NyxChatRunStatus } from './types'
+import type { NyxChatError, NyxChatRunStatus, NyxChatTargetAttribution } from './types'
 
 export const nyxChatEventTypes = ['chat:start', 'chat:delta', 'chat:done', 'chat:error'] as const
 
@@ -12,6 +12,7 @@ interface NyxChatEventBase {
 export interface NyxChatStartEvent extends NyxChatEventBase {
   type: 'chat:start'
   status: Extract<NyxChatRunStatus, 'streaming'>
+  targetAttribution: NyxChatTargetAttribution
 }
 
 export interface NyxChatDeltaEvent extends NyxChatEventBase {
@@ -30,6 +31,7 @@ export interface NyxChatErrorEvent extends NyxChatEventBase {
   type: 'chat:error'
   status: Extract<NyxChatRunStatus, 'failed'>
   error: NyxChatError
+  targetAttribution?: NyxChatTargetAttribution
 }
 
 export type NyxChatEvent =

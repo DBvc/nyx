@@ -36,6 +36,7 @@ export function isNyxChatTurnIntent(value: unknown): value is NyxChatTurnIntent 
 export const nyxChatErrorCodes = [
   'config_missing',
   'invalid_request',
+  'target_unavailable',
   'auth_failed',
   'network_error',
   'rate_limited',
@@ -63,6 +64,29 @@ export interface NyxChatTurnUserMessage {
   content: string
 }
 
+export type NyxChatTargetSelection =
+  | {
+      kind: 'connection'
+      providerId: string
+      modelId: string
+    }
+  | {
+      kind: 'env_fallback'
+    }
+
+export type NyxChatTargetAttribution =
+  | {
+      kind: 'connection'
+      providerId: string
+      providerDisplayName: string
+      modelId: string
+      modelDisplayName: string
+    }
+  | {
+      kind: 'env_fallback'
+      modelId: string
+    }
+
 export interface NyxChatMessage {
   id: string
   role: NyxChatRole
@@ -70,6 +94,7 @@ export interface NyxChatMessage {
   status: NyxChatMessageStatus
   error?: NyxChatError
   canRetry?: boolean
+  targetAttribution?: NyxChatTargetAttribution
 }
 
 export interface NyxChatRequest {
@@ -79,6 +104,7 @@ export interface NyxChatRequest {
   turnIntent: NyxChatTurnIntent
   turnUserMessage: NyxChatTurnUserMessage
   messages: ReadonlyArray<NyxChatInputMessage>
+  targetSelection: NyxChatTargetSelection
   systemPrompt?: string
 }
 

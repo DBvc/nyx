@@ -7,8 +7,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
 import {
   createSafeThreadErrorRecordV1,
+  createSafeThreadErrorRecordV2,
   parseCurrentThreadRecordV1,
+  parseCurrentThreadRecordV2,
+  upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecordV1,
+  type CurrentThreadRecordV2,
 } from './schemas'
 import { CurrentThreadStore, CurrentThreadStoreError } from './store'
 
@@ -35,7 +39,40 @@ function createStore(
   })
 }
 
-function pendingRecord(overrides: Partial<CurrentThreadRecordV1> = {}) {
+const targetSelection = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  modelId: 'model-1',
+} as const
+
+function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
+  return parseCurrentThreadRecordV2({
+    version: 2,
+    threadId: 'thread-1',
+    turns: [
+      {
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: 'Hello',
+        assistantContent: '',
+        assistantStatus: 'pending',
+        error: null,
+        targetBinding: {
+          selection: targetSelection,
+          attribution: null,
+        },
+        createdAt: '2026-07-10T00:00:00.000Z',
+        updatedAt: '2026-07-10T00:00:00.000Z',
+      },
+    ],
+    createdAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:00:00.000Z',
+    ...overrides,
+  })
+}
+
+function pendingRecordV1(overrides: Partial<CurrentThreadRecordV1> = {}) {
   return parseCurrentThreadRecordV1({
     version: 1,
     threadId: 'thread-1',
@@ -64,7 +101,25 @@ function completedRecord(requestId: string, content: string) {
   return completeRecord(record, requestId, content)
 }
 
-function completeRecord(record: CurrentThreadRecordV1, requestId: string, content: string) {
+function completeRecord(record: CurrentThreadRecordV2, requestId: string, content: string) {
+  return parseCurrentThreadRecordV2({
+    ...record,
+    turns: [
+      {
+        ...record.turns[0]!,
+        attemptRequestId: requestId,
+        assistantContent: content,
+        assistantStatus: 'completed',
+        updatedAt: '2026-07-11T00:00:00.000Z',
+      },
+    ],
+    updatedAt: '2026-07-11T00:00:00.000Z',
+  })
+}
+
+function completedRecordV1(requestId: string, content: string) {
+  const record = pendingRecordV1()
+
   return parseCurrentThreadRecordV1({
     ...record,
     turns: [
@@ -101,14 +156,15 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
-    const failed = parseCurrentThreadRecordV1({
+    const failed = parseCurrentThreadRecordV2({
       ...created,
       turns: [
         {
           ...created.turns[0]!,
           assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV1({
+          error: createSafeThreadErrorRecordV2({
             code: 'network_error',
             retryable: true,
           }),
@@ -146,10 +202,11 @@ describe('CurrentThreadStore', () => {
     const filePath = await createTempFilePath()
     const adapter = createCurrentThreadFileAdapter()
     await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, `${JSON.stringify(pendingRecord())}\n`, 'utf8')
+    await writeFile(filePath, `${JSON.stringify(pendingRecordV1())}\n`, 'utf8')
     const store = createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' })
 
     await expect(store.read()).resolves.toMatchObject({
+      version: 2,
       updatedAt: '2026-07-11T01:00:00.000Z',
       turns: [
         {
@@ -161,14 +218,44 @@ describe('CurrentThreadStore', () => {
             message: 'The previous response was interrupted before it finished.',
             retryable: true,
           },
+          targetBinding: null,
           updatedAt: '2026-07-11T01:00:00.000Z',
         },
       ],
     })
 
     expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({
-      turns: [{ assistantStatus: 'failed' }],
+      version: 2,
+      turns: [{ assistantStatus: 'failed', targetBinding: null }],
     })
+  })
+
+  it('reads a stable version-1 record without rewriting it', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    const record = completedRecordV1('request-1', 'Done')
+    const contents = `${JSON.stringify(record, null, 2)}\n`
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, contents, 'utf8')
+
+    await expect(createStore(filePath).read()).resolves.toEqual(record)
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
+  })
+
+  it('rejects a pure version-1 to version-2 rewrite without a real mutation', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    const record = completedRecordV1('request-1', 'Done')
+    const contents = `${JSON.stringify(record, null, 2)}\n`
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, contents, 'utf8')
+    const store = createStore(filePath)
+    const loaded = await store.read()
+
+    await expect(store.write(upgradeCurrentThreadRecordForMutation(loaded!))).rejects.toMatchObject(
+      { code: 'invalid_transition' },
+    )
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
   })
 
   it('does not reinterpret a pending turn created by the live store as interrupted', async () => {
@@ -179,6 +266,7 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
 
     await expect(store.read()).resolves.toMatchObject({
@@ -193,6 +281,7 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
 
     await expect(store.write({ ...created, threadId: 'replacement-thread' })).rejects.toMatchObject(
@@ -228,6 +317,7 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
     const completed = completeRecord(created, 'request-1', 'Done')
     await store.write(completed)
@@ -250,14 +340,15 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
-    const failed = parseCurrentThreadRecordV1({
+    const failed = parseCurrentThreadRecordV2({
       ...retryCreated,
       turns: [
         {
           ...retryCreated.turns[0]!,
           assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV1({ code: 'unknown', retryable: true }),
+          error: createSafeThreadErrorRecordV2({ code: 'unknown', retryable: true }),
         },
       ],
     })
@@ -287,10 +378,11 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'First',
+      targetSelection,
     })
     const firstCompleted = completeRecord(created, 'request-1', 'First answer')
     await store.write(firstCompleted)
-    const secondPending = parseCurrentThreadRecordV1({
+    const secondPending = parseCurrentThreadRecordV2({
       ...firstCompleted,
       turns: [
         ...firstCompleted.turns,
@@ -302,6 +394,10 @@ describe('CurrentThreadStore', () => {
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
+          targetBinding: {
+            selection: targetSelection,
+            attribution: null,
+          },
           createdAt: '2026-07-11T01:00:00.000Z',
           updatedAt: '2026-07-11T01:00:00.000Z',
         },
@@ -309,7 +405,7 @@ describe('CurrentThreadStore', () => {
       updatedAt: '2026-07-11T01:00:00.000Z',
     })
     await store.write(secondPending)
-    const secondCompleted = parseCurrentThreadRecordV1({
+    const secondCompleted = parseCurrentThreadRecordV2({
       ...secondPending,
       turns: [
         secondPending.turns[0]!,
@@ -370,6 +466,21 @@ describe('CurrentThreadStore', () => {
     await expect(readFile(filePath, 'utf8')).resolves.toBe(invalidJson)
   })
 
+  it('leaves an unknown future record untouched until explicit reset', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    const unknownRecord = `${JSON.stringify({ version: 99, future: true })}\n`
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, unknownRecord, 'utf8')
+    const store = createStore(filePath)
+
+    await expect(store.read()).rejects.toMatchObject({ code: 'schema_invalid' })
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(unknownRecord)
+
+    await store.reset()
+    await expect(stat(filePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('serializes concurrent writes in call order', async () => {
     const filePath = await createTempFilePath()
     const baseAdapter = createCurrentThreadFileAdapter()
@@ -396,18 +507,19 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
-    const failed = parseCurrentThreadRecordV1({
+    const failed = parseCurrentThreadRecordV2({
       ...created,
       turns: [
         {
           ...created.turns[0]!,
           assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV1({ code: 'network_error', retryable: true }),
+          error: createSafeThreadErrorRecordV2({ code: 'network_error', retryable: true }),
         },
       ],
     })
-    const retried = parseCurrentThreadRecordV1({
+    const retried = parseCurrentThreadRecordV2({
       ...failed,
       turns: [
         {
@@ -451,6 +563,7 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
 
     expect(writes).toEqual([{ filePath: `${filePath}.fixed.tmp`, mode: 0o600 }])
@@ -481,6 +594,7 @@ describe('CurrentThreadStore', () => {
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
+      targetSelection,
     })
     const completed = completeRecord(created, 'request-1', 'Done')
 
@@ -515,7 +629,7 @@ describe('CurrentThreadStore', () => {
 
 describe('CurrentThreadRecordV1 schema', () => {
   it('projects errors to fixed safe messages and rejects unsafe persisted content', () => {
-    const record = completedRecord('request-1', '')
+    const record = completedRecordV1('request-1', '')
     const rawError = {
       code: 'unknown' as const,
       message: 'Authorization: Bearer secret',
@@ -554,11 +668,11 @@ describe('CurrentThreadRecordV1 schema', () => {
   })
 
   it('rejects duplicate message identities', () => {
-    const first = completedRecord('request-1', 'First').turns[0]!
+    const first = completedRecordV1('request-1', 'First').turns[0]!
 
     expect(() =>
       parseCurrentThreadRecordV1({
-        ...completedRecord('request-1', 'First'),
+        ...completedRecordV1('request-1', 'First'),
         turns: [
           first,
           {
@@ -571,11 +685,11 @@ describe('CurrentThreadRecordV1 schema', () => {
   })
 
   it('rejects a pending turn before the final position', () => {
-    const first = pendingRecord().turns[0]!
+    const first = pendingRecordV1().turns[0]!
 
     expect(() =>
       parseCurrentThreadRecordV1({
-        ...pendingRecord(),
+        ...pendingRecordV1(),
         turns: [
           first,
           {
@@ -588,5 +702,40 @@ describe('CurrentThreadRecordV1 schema', () => {
         ],
       }),
     ).toThrow()
+  })
+})
+
+describe('CurrentThreadRecordV2 schema', () => {
+  it('keeps selection and resolved attribution identity aligned', () => {
+    const record = pendingRecord()
+
+    expect(() =>
+      parseCurrentThreadRecordV2({
+        ...record,
+        turns: [
+          {
+            ...record.turns[0]!,
+            targetBinding: {
+              selection: targetSelection,
+              attribution: {
+                kind: 'connection',
+                providerId: 'other-provider',
+                providerDisplayName: 'Other Provider',
+                modelId: 'other-model',
+                modelDisplayName: 'Other Model',
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow()
+  })
+
+  it('persists target_unavailable with one fixed safe message', () => {
+    expect(createSafeThreadErrorRecordV2({ code: 'target_unavailable', retryable: true })).toEqual({
+      code: 'target_unavailable',
+      message: 'The selected chat target is unavailable.',
+      retryable: true,
+    })
   })
 })

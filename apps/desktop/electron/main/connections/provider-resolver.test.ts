@@ -9,6 +9,12 @@ import {
 import type { ConnectionStoreState } from './schemas'
 
 const timestamp = '2026-01-01T00:00:00.000Z'
+const connectionSelection = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  modelId: 'model-1',
+} as const
+const envSelection = { kind: 'env_fallback' } as const
 
 function providerState(overrides: Partial<ConnectionStoreState> = {}): ConnectionStoreState {
   return {
@@ -58,11 +64,15 @@ function envTarget(): ResolvedChatTarget {
     token: 'env-token',
     modelId: 'env-model',
     protocol: 'openai-chat-completions',
+    targetAttribution: {
+      kind: 'env_fallback',
+      modelId: 'env-model',
+    },
   }
 }
 
 describe('createChatTargetResolver', () => {
-  it('resolves the persisted default target before using the env fallback', async () => {
+  it('resolves the explicitly selected connection target', async () => {
     const envConfigReader = vi.fn(envConfig)
     const resolver = createChatTargetResolver({
       connectionStore: {
@@ -74,12 +84,19 @@ describe('createChatTargetResolver', () => {
       envConfigReader,
     })
 
-    await expect(resolver()).resolves.toEqual({
+    await expect(resolver(connectionSelection)).resolves.toEqual({
       providerId: 'provider-1',
       baseUrl: 'https://api.example.com/custom/v1/',
       token: 'stored-secret',
       modelId: 'model-1',
       protocol: 'openai-chat-completions',
+      targetAttribution: {
+        kind: 'connection',
+        providerId: 'provider-1',
+        providerDisplayName: 'Provider One',
+        modelId: 'model-1',
+        modelDisplayName: 'Model One',
+      },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
   })
@@ -104,12 +121,12 @@ describe('createChatTargetResolver', () => {
       envConfigReader: vi.fn(envConfig),
     })
 
-    await expect(resolver()).resolves.toMatchObject({
+    await expect(resolver(connectionSelection)).resolves.toMatchObject({
       baseUrl: 'https://api.example.com/custom/v1/',
     })
   })
 
-  it('falls back to env config when no persisted default target exists', async () => {
+  it('resolves the explicit env fallback without consulting persisted defaults', async () => {
     const secretStore = {
       readSecret: vi.fn(async () => 'stored-secret'),
     }
@@ -122,9 +139,29 @@ describe('createChatTargetResolver', () => {
       envConfigReader,
     })
 
-    await expect(resolver()).resolves.toEqual(envTarget())
+    await expect(resolver(envSelection)).resolves.toEqual(envTarget())
     expect(secretStore.readSecret).not.toHaveBeenCalled()
     expect(envConfigReader).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails the explicit env fallback closed when it is no longer configured', async () => {
+    const readState = vi.fn(async () => providerState())
+    const resolver = createChatTargetResolver({
+      connectionStore: { readState },
+      secretStore: { readSecret: vi.fn(async () => 'stored-secret') },
+      envConfigReader: vi.fn(() => {
+        throw new Error('raw env detail')
+      }),
+    })
+
+    await expect(resolver(envSelection)).rejects.toMatchObject({
+      chatError: {
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
+      },
+    })
+    expect(readState).not.toHaveBeenCalled()
   })
 
   it('preserves an explicit Connections target identity', async () => {
@@ -139,19 +176,19 @@ describe('createChatTargetResolver', () => {
       envConfigReader,
     })
 
-    await expect(
-      resolver({
-        target: {
-          providerId: 'provider-1',
-          modelId: 'model-1',
-        },
-      }),
-    ).resolves.toEqual({
+    await expect(resolver(connectionSelection)).resolves.toEqual({
       providerId: 'provider-1',
       baseUrl: 'https://api.example.com/custom/v1/',
       token: 'stored-secret',
       modelId: 'model-1',
       protocol: 'openai-chat-completions',
+      targetAttribution: {
+        kind: 'connection',
+        providerId: 'provider-1',
+        providerDisplayName: 'Provider One',
+        modelId: 'model-1',
+        modelDisplayName: 'Model One',
+      },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
   })
@@ -170,17 +207,17 @@ describe('createChatTargetResolver', () => {
       envConfigReader,
     })
 
-    await expect(resolver()).rejects.toMatchObject({
+    await expect(resolver(connectionSelection)).rejects.toMatchObject({
       chatError: {
-        code: 'config_missing',
-        message: 'No usable chat provider configuration is available.',
-        retryable: false,
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
       },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
   })
 
-  it('maps a missing persisted secret to config_missing without falling back to env', async () => {
+  it('maps a missing persisted secret to target_unavailable without falling back to env', async () => {
     const envConfigReader = vi.fn(envConfig)
     const resolver = createChatTargetResolver({
       connectionStore: {
@@ -192,10 +229,10 @@ describe('createChatTargetResolver', () => {
       envConfigReader,
     })
 
-    await expect(resolver()).rejects.toMatchObject({
+    await expect(resolver(connectionSelection)).rejects.toMatchObject({
       chatError: {
-        code: 'config_missing',
-        retryable: false,
+        code: 'target_unavailable',
+        retryable: true,
       },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
@@ -217,22 +254,22 @@ describe('createChatTargetResolver', () => {
     let caughtError: unknown
 
     try {
-      await resolver()
+      await resolver(connectionSelection)
     } catch (error) {
       caughtError = error
     }
 
     expect(caughtError).toMatchObject({
       chatError: {
-        code: 'config_missing',
-        message: 'No usable chat provider configuration is available.',
-        retryable: false,
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
       },
     })
     expect(JSON.stringify(caughtError)).not.toContain('raw secret context')
   })
 
-  it('maps invalid persisted default targets to config_missing', async () => {
+  it('maps disabled selected targets to target_unavailable', async () => {
     const resolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () =>
@@ -252,15 +289,15 @@ describe('createChatTargetResolver', () => {
       envConfigReader: vi.fn(envConfig),
     })
 
-    await expect(resolver()).rejects.toMatchObject({
+    await expect(resolver(connectionSelection)).rejects.toMatchObject({
       chatError: {
-        code: 'config_missing',
-        retryable: false,
+        code: 'target_unavailable',
+        retryable: true,
       },
     })
   })
 
-  it('maps a missing future explicit target to invalid_request', async () => {
+  it('maps a missing selected target to target_unavailable', async () => {
     const envConfigReader = vi.fn(envConfig)
     const resolver = createChatTargetResolver({
       connectionStore: {
@@ -274,15 +311,14 @@ describe('createChatTargetResolver', () => {
 
     await expect(
       resolver({
-        target: {
-          providerId: 'missing-provider',
-          modelId: 'missing-model',
-        },
+        kind: 'connection',
+        providerId: 'missing-provider',
+        modelId: 'missing-model',
       }),
     ).rejects.toMatchObject({
       chatError: {
-        code: 'invalid_request',
-        retryable: false,
+        code: 'target_unavailable',
+        retryable: true,
       },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
@@ -304,8 +340,29 @@ describe('createLazyChatTargetResolver', () => {
 
     expect(createDependencies).not.toHaveBeenCalled()
 
-    await expect(resolver()).resolves.toEqual(envTarget())
-    await expect(resolver()).resolves.toEqual(envTarget())
+    await expect(resolver(envSelection)).resolves.toEqual(envTarget())
+    await expect(resolver(envSelection)).resolves.toEqual(envTarget())
     expect(createDependencies).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports unavailable when resolver dependencies cannot be created', () => {
+    const resolver = createLazyChatTargetResolver({
+      createDependencies: () => {
+        throw new Error('Storage unavailable')
+      },
+    })
+
+    expect.assertions(1)
+
+    try {
+      resolver(envSelection)
+    } catch (error) {
+      expect(error).toMatchObject({
+        chatError: {
+          code: 'target_unavailable',
+          retryable: true,
+        },
+      })
+    }
   })
 })

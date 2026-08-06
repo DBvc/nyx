@@ -10,6 +10,18 @@ const userMessageId = 'user-1'
 const assistantMessageId = 'assistant-1'
 const staleRequestId = 'request-stale'
 const staleAssistantMessageId = 'assistant-stale'
+const targetSelection = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  modelId: 'model-1',
+} as const
+const targetAttribution = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  providerDisplayName: 'Provider One',
+  modelId: 'model-1',
+  modelDisplayName: 'Model One',
+} as const
 
 const submittedMessages: ReadonlyArray<NyxChatInputMessage> = [
   {
@@ -58,6 +70,7 @@ function submittedState() {
       submittedMessages,
       userMessage,
       assistantMessage,
+      targetSelection,
     },
   )
 }
@@ -67,6 +80,7 @@ function streamingState() {
     type: 'request-started',
     requestId,
     assistantMessageId,
+    targetAttribution,
   })
 }
 
@@ -117,6 +131,7 @@ describe('chatReducer', () => {
         turnUserMessage,
         submittedMessages,
       },
+      selectedTarget: targetSelection,
     }
     const state = chatReducer(initialChatState, {
       type: 'current-thread-hydrated',
@@ -154,8 +169,74 @@ describe('chatReducer', () => {
     expect(state.activeRequestId).toBeUndefined()
   })
 
+  it('seeds once and lets later catalog updates change availability without changing the draft', () => {
+    const hydrated = chatReducer(initialChatState, {
+      type: 'current-thread-hydrated',
+      generation: 0,
+      snapshot: null,
+    })
+    const seeded = chatReducer(hydrated, {
+      type: 'target-context-ready',
+      generation: 0,
+      catalogEpoch: 2,
+      selection: targetSelection,
+      available: true,
+    })
+    const refreshed = chatReducer(seeded, {
+      type: 'target-catalog-updated',
+      generation: 0,
+      catalogEpoch: 3,
+      available: false,
+    })
+    const stale = chatReducer(refreshed, {
+      type: 'target-catalog-updated',
+      generation: 0,
+      catalogEpoch: 2,
+      available: true,
+    })
+
+    expect(refreshed.targetDraft).toEqual(targetSelection)
+    expect(refreshed.targetAvailable).toBe(false)
+    expect(stale).toBe(refreshed)
+  })
+
+  it('accepts only the registered post-reset catalog epoch for a new seed', () => {
+    const resetting = chatReducer(initialChatState, {
+      type: 'reset-started',
+      generation: 1,
+      minimumCatalogEpoch: 6,
+    })
+    const cleared = chatReducer(resetting, {
+      type: 'clear-chat',
+      generation: 1,
+      minimumCatalogEpoch: 6,
+    })
+    const stale = chatReducer(cleared, {
+      type: 'target-context-ready',
+      generation: 1,
+      catalogEpoch: 5,
+      selection: targetSelection,
+      available: true,
+    })
+    const seeded = chatReducer(stale, {
+      type: 'target-context-ready',
+      generation: 1,
+      catalogEpoch: 6,
+      selection: { kind: 'env_fallback' },
+      available: true,
+    })
+
+    expect(stale).toBe(cleared)
+    expect(seeded.targetDraft).toEqual({ kind: 'env_fallback' })
+    expect(seeded.targetInitialized).toBe(true)
+  })
+
   it('blocks the projection while reset is in progress', () => {
-    const state = chatReducer(submittedState(), { type: 'reset-started', generation: 1 })
+    const state = chatReducer(submittedState(), {
+      type: 'reset-started',
+      generation: 1,
+      minimumCatalogEpoch: 2,
+    })
 
     expect(state.resetStatus).toBe('resetting')
     expect(state.resetError).toBeNull()
@@ -170,6 +251,7 @@ describe('chatReducer', () => {
     const resettingState = chatReducer(submittedState(), {
       type: 'reset-started',
       generation: 1,
+      minimumCatalogEpoch: 2,
     })
     const state = chatReducer(resettingState, {
       type: 'current-thread-hydrated',
@@ -186,6 +268,7 @@ describe('chatReducer', () => {
     const resettingState = chatReducer(submittedState(), {
       type: 'reset-started',
       generation: 1,
+      minimumCatalogEpoch: 2,
     })
     const state = chatReducer(resettingState, {
       type: 'reset-failed',
@@ -194,6 +277,9 @@ describe('chatReducer', () => {
         code: 'reset_failed',
         message: 'Nyx could not start a fresh thread.',
       },
+      restoreTargetInitialized: true,
+      restoreTargetAvailable: true,
+      restoreMinimumCatalogEpoch: 0,
     })
 
     expect(state.hydrationStatus).toBe('error')
@@ -221,9 +307,27 @@ describe('chatReducer', () => {
       assistantMessageId,
       turnUserMessage,
       submittedMessages,
+      targetSelection,
     })
     expect(state.retryableTurn).toBeNull()
     expect(state.messages).toEqual([userMessage, assistantMessage])
+  })
+
+  it('keeps the active selection immutable when the Composer draft changes', () => {
+    const submitted = {
+      ...submittedState(),
+      targetInitialized: true,
+      targetAvailable: true,
+      targetDraft: targetSelection,
+    }
+    const changed = chatReducer(submitted, {
+      type: 'target-draft-changed',
+      selection: { kind: 'env_fallback' },
+      available: true,
+    })
+
+    expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
+    expect(changed.targetDraft).toEqual({ kind: 'env_fallback' })
   })
 
   it('marks the pending assistant message as streaming when the request starts', () => {
@@ -231,6 +335,7 @@ describe('chatReducer', () => {
 
     expect(state.runStatus).toBe('streaming')
     expect(assistantFrom(state.messages).status).toBe('streaming')
+    expect(assistantFrom(state.messages).targetAttribution).toEqual(targetAttribution)
   })
 
   it('stores streaming snapshots on request deltas', () => {
@@ -299,6 +404,7 @@ describe('chatReducer', () => {
         type: 'request-started' as const,
         requestId: staleRequestId,
         assistantMessageId,
+        targetAttribution,
       },
       {
         type: 'request-delta' as const,
@@ -334,6 +440,7 @@ describe('chatReducer', () => {
         type: 'request-started',
         requestId,
         assistantMessageId: staleAssistantMessageId,
+        targetAttribution,
       }),
     ).toBe(submitted)
 
@@ -390,6 +497,18 @@ describe('chatReducer', () => {
     expect(assistant.canRetry).toBe(true)
   })
 
+  it('retains attribution on a post-bind failure even when chat:start was not observed', () => {
+    const state = chatReducer(submittedState(), {
+      type: 'request-failed',
+      requestId,
+      assistantMessageId,
+      error: retryableError,
+      targetAttribution,
+    })
+
+    expect(assistantFrom(state.messages).targetAttribution).toEqual(targetAttribution)
+  })
+
   it('does not allow retry for non-retryable failures', () => {
     const nonRetryableError: NyxChatError = {
       code: 'auth_failed',
@@ -429,6 +548,7 @@ describe('chatReducer', () => {
       assistantMessageId,
       turnUserMessage,
       submittedMessages,
+      targetSelection,
     })
 
     const assistant = assistantFrom(state.messages)
@@ -442,6 +562,7 @@ describe('chatReducer', () => {
       assistantMessageId,
       turnUserMessage,
       submittedMessages,
+      targetSelection,
     })
     expect(state.retryableTurn).toBeNull()
     expect(assistant.id).toBe(assistantMessageId)
@@ -449,22 +570,26 @@ describe('chatReducer', () => {
     expect(assistant.status).toBe('pending')
     expect(assistant.error).toBeUndefined()
     expect(assistant.canRetry).toBe(false)
+    expect(assistant.targetAttribution).toBeUndefined()
   })
 
   it('clears the chat back to the initial state', () => {
     const resettingState = chatReducer(submittedState(), {
       type: 'reset-started',
       generation: 1,
+      minimumCatalogEpoch: 2,
     })
     const state = chatReducer(resettingState, {
       type: 'clear-chat',
       generation: 1,
+      minimumCatalogEpoch: 3,
     })
 
     expect(state).toEqual({
       ...initialChatState,
       hydrationStatus: 'ready',
       projectionGeneration: 1,
+      targetMinimumCatalogEpoch: 3,
     })
   })
 })

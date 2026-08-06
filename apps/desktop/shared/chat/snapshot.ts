@@ -3,6 +3,7 @@ import type {
   NyxChatInputMessage,
   NyxChatMessage,
   NyxChatRunStatus,
+  NyxChatTargetSelection,
   NyxChatTurnUserMessage,
 } from './types'
 
@@ -21,6 +22,7 @@ export interface NyxCurrentThreadSnapshot {
   messages: ReadonlyArray<NyxCurrentThreadMessage>
   runStatus: Extract<NyxChatRunStatus, 'completed' | 'cancelled' | 'failed'>
   retryableTurn: NyxCurrentThreadRetryableTurn | null
+  selectedTarget: NyxChatTargetSelection | null
 }
 
 export interface NyxCurrentThreadSnapshotError {

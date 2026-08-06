@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { RuntimeChatStateClient } from '../runtime/chat-state-client'
-import { createSafeThreadErrorRecordV1, parseCurrentThreadRecordV1 } from './schemas'
+import {
+  createSafeThreadErrorRecordV1,
+  parseCurrentThreadRecordV1,
+  parseCurrentThreadRecordV2,
+  upgradeCurrentThreadRecordForMutation,
+} from './schemas'
 import { replayCurrentThread } from './runtime-replay'
 
 function client(order: string[]) {
@@ -82,5 +87,46 @@ describe('replayCurrentThread', () => {
       'append',
       'fail',
     ])
+  })
+
+  it('ignores version-2 target metadata and replays only message-level fields', async () => {
+    const order: string[] = []
+    const runtime = client(order)
+    const v1 = parseCurrentThreadRecordV1({
+      version: 1,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: 'Question',
+          assistantContent: 'Answer',
+          assistantStatus: 'completed',
+          error: null,
+          createdAt: '2026-07-11T00:00:00.000Z',
+          updatedAt: '2026-07-11T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    })
+    const upgraded = upgradeCurrentThreadRecordForMutation(v1)
+    const record = parseCurrentThreadRecordV2({
+      ...upgraded,
+      turns: [
+        {
+          ...upgraded.turns[0]!,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'env-model' },
+          },
+        },
+      ],
+    })
+
+    await replayCurrentThread(runtime, record)
+
+    expect(order).toEqual(['submit', 'start', 'append', 'complete'])
   })
 })

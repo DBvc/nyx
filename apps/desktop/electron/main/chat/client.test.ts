@@ -21,6 +21,7 @@ function requestWithMessages(messages: NyxChatRequest['messages']): NyxChatReque
       content: 'Hello',
     },
     messages,
+    targetSelection: { kind: 'env_fallback' },
   }
 }
 
@@ -62,6 +63,13 @@ const resolvedTarget: ResolvedChatTarget = {
   token: 'secret-token',
   modelId: 'glm-5.2',
   protocol: 'openai-chat-completions',
+  targetAttribution: {
+    kind: 'connection',
+    providerId: 'provider-1',
+    providerDisplayName: 'Provider One',
+    modelId: 'glm-5.2',
+    modelDisplayName: 'GLM 5.2',
+  },
 }
 
 async function streamWithResponse(

@@ -35,6 +35,13 @@ import { ChatSessionManager, validateChatRequest } from './session'
 const runtimeChatStateDisabledEnv = {
   NYX_RUNTIME_CHAT_STATE: '0',
 }
+const targetSelection = {
+  kind: 'env_fallback',
+} as const
+const targetAttribution = {
+  kind: 'env_fallback',
+  modelId: 'model',
+} as const
 
 function validRequest(): NyxChatRequest {
   return {
@@ -52,6 +59,7 @@ function validRequest(): NyxChatRequest {
         content: 'Hello Nyx',
       },
     ],
+    targetSelection,
   }
 }
 
@@ -198,12 +206,25 @@ function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadT
     providerMessages: [{ role: 'user', content: providerContent }],
     replayRecord: null,
     pendingRecord: {
-      version: 1,
+      version: 2,
       threadId: 'thread-1',
-      turns: [],
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: providerContent,
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: { selection: targetSelection, attribution: null },
+          createdAt: '2026-07-11T00:00:00.000Z',
+          updatedAt: '2026-07-11T00:00:00.000Z',
+        },
+      ],
       createdAt: '2026-07-11T00:00:00.000Z',
       updatedAt: '2026-07-11T00:00:00.000Z',
-    } as PreparedCurrentThreadTurn['pendingRecord'],
+    },
   }
 }
 
@@ -297,6 +318,22 @@ describe('validateChatRequest', () => {
       retryable: false,
     })
   })
+
+  it.each([
+    null,
+    { ...validRequest(), targetSelection: null },
+    { ...validRequest(), targetSelection: { kind: 'env_fallback', token: 'secret' } },
+    { ...validRequest(), baseUrl: 'https://secret.example.test' },
+    {
+      ...validRequest(),
+      messages: [{ role: 'user', content: 'Hello Nyx', token: 'secret' }],
+    },
+  ])('rejects malformed or secret-bearing trust-boundary input', (request) => {
+    expect(validateChatRequest(request)).toMatchObject({
+      code: 'invalid_request',
+      retryable: false,
+    })
+  })
 })
 
 describe('ChatSessionManager reset', () => {
@@ -329,6 +366,7 @@ describe('ChatSessionManager reset', () => {
       requestId: 'request-1',
       assistantMessageId: 'assistant-1',
       status: 'streaming',
+      targetAttribution,
     })
 
     manager.start(sender, {
@@ -416,6 +454,7 @@ describe('ChatSessionManager reset', () => {
     const runtimeClient = fakeRuntimeChatStateClient(order)
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
       reset: vi.fn(async () => {
         order.push('durable:reset')
       }),
@@ -478,6 +517,40 @@ describe('ChatSessionManager provider resolver', () => {
     streamChatCompletion.mockReset()
   })
 
+  it('rejects malformed target input before any durable or execution side effect', () => {
+    const prepare = vi.fn()
+    const resolveChatTarget = vi.fn()
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      resolveChatTarget,
+      resolveCurrentThreadSession: () =>
+        ({ prepare }) as unknown as CurrentThreadSessionCoordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      targetSelection: { kind: 'env_fallback', token: 'must-not-cross' },
+    })
+    manager.start(sender, null)
+
+    expect(sentChatEvents(sender)).toEqual([
+      {
+        type: 'chat:error',
+        requestId: 'request-1',
+        assistantMessageId: 'assistant-1',
+        status: 'failed',
+        error: {
+          code: 'invalid_request',
+          message: 'Chat requests must include one valid target selection.',
+          retryable: false,
+        },
+      },
+    ])
+    expect(prepare).not.toHaveBeenCalled()
+    expect(resolveChatTarget).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
   it('uses the injected chat target resolver for chat streaming', async () => {
     const target = {
       providerId: 'provider-1',
@@ -485,6 +558,7 @@ describe('ChatSessionManager provider resolver', () => {
       token: 'stored-token',
       modelId: 'stored-model',
       protocol: 'openai-chat-completions' as const,
+      targetAttribution,
     }
     const resolveChatTarget = vi.fn(() => target)
     const sender = mockSender()
@@ -519,6 +593,7 @@ describe('ChatSessionManager provider resolver', () => {
         token: 'stored-token',
         modelId: 'stored-model',
         protocol: 'openai-chat-completions',
+        targetAttribution,
       })
     const sender = mockSender()
     const manager = new ChatSessionManager({
@@ -586,11 +661,13 @@ describe('ChatSessionManager runtime chat state gate', () => {
     manager.start(sender, validRequest())
 
     expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    await waitForAssertion(() => expect(sender.send).toHaveBeenCalled())
     expect(sender.send).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, {
       type: 'chat:start',
       requestId: 'request-1',
       assistantMessageId: 'assistant-1',
       status: 'streaming',
+      targetAttribution,
     })
 
     await waitForAssertion(() => {
@@ -774,6 +851,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
         requestId: 'request-1',
         assistantMessageId: 'assistant-1',
         status: 'failed',
+        targetAttribution,
         error: {
           code: 'unknown',
           message: 'Provider exploded',
@@ -1088,6 +1166,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
           requestId: 'request-1',
           assistantMessageId: 'assistant-1',
           status: 'failed',
+          targetAttribution,
           error: {
             code: 'unknown',
             message: 'Runtime failed',
@@ -1125,6 +1204,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
         requestId: 'request-1',
         assistantMessageId: 'assistant-1',
         status: 'failed',
+        targetAttribution,
         error: {
           code: 'unknown',
           message: 'Runtime setup failed',
@@ -1184,6 +1264,7 @@ describe('ChatSessionManager runtime chat state gate', () => {
         requestId: 'request-1',
         assistantMessageId: 'assistant-1',
         status: 'failed',
+        targetAttribution,
         error: {
           code: 'unknown',
           message: 'Runtime append failed',
@@ -1210,12 +1291,26 @@ describe('ChatSessionManager durable current thread ordering', () => {
         order.push('durable:pending')
         return prepared
       }),
+      bindResolvedTarget: vi.fn(async () => {
+        order.push('durable:bind')
+      }),
       complete: vi.fn(async () => {
         order.push('durable:complete')
       }),
       cancel: vi.fn(),
       fail: vi.fn(),
     } as unknown as CurrentThreadSessionCoordinator
+    const resolveChatTarget = vi.fn(() => {
+      order.push('main:resolve')
+      return {
+        providerId: null,
+        baseUrl: 'https://example.com/v1/',
+        token: 'token',
+        modelId: 'model',
+        protocol: 'openai-chat-completions' as const,
+        targetAttribution,
+      }
+    })
     streamChatCompletion.mockImplementation(async ({ request }: { request: NyxChatRequest }) => {
       order.push(`provider:${request.messages[0]?.content}`)
       return { finalContent: 'Done' }
@@ -1224,6 +1319,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const manager = new ChatSessionManager({
       env: runtimeChatStateDisabledEnv,
       resolveCurrentThreadSession: () => coordinator,
+      resolveChatTarget,
     })
 
     manager.start(sender, validRequest())
@@ -1234,6 +1330,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
 
     expect(order).toEqual([
       'durable:pending',
+      'main:resolve',
+      'durable:bind',
       'event:chat:start',
       'provider:Durable hello',
       'durable:complete',
@@ -1241,9 +1339,107 @@ describe('ChatSessionManager durable current thread ordering', () => {
     ])
   })
 
+  it('settles target resolution failure before the renderer error without starting runtime', async () => {
+    const order: string[] = []
+    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient(order))
+    const coordinator = {
+      prepare: vi.fn(async () => {
+        order.push('durable:pending')
+        return preparedTurn()
+      }),
+      bindResolvedTarget: vi.fn(),
+      fail: vi.fn(async () => {
+        order.push('durable:fail')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const resolveChatTarget = vi.fn(() => {
+      order.push('main:resolve')
+      throw createChatBridgeError({
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
+      })
+    })
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: runtimeFactory,
+      resolveCurrentThreadSession: () => coordinator,
+      resolveChatTarget,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(order).toEqual(['durable:pending', 'main:resolve', 'durable:fail', 'event:chat:error'])
+    expect(sentChatEvents(sender).at(-1)).not.toHaveProperty('targetAttribution')
+    expect(coordinator.bindResolvedTarget).not.toHaveBeenCalled()
+    expect(runtimeFactory).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('stops after a durable attribution bind failure and leaves recovery to the store', async () => {
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => {
+        throw new CurrentThreadSessionError('store_error', 'bind failed')
+      }),
+      fail: vi.fn(),
+    } as unknown as CurrentThreadSessionCoordinator
+    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: runtimeFactory,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(sentChatEvents(sender).at(-1)).toMatchObject({
+      error: { code: 'unknown', retryable: false },
+    })
+    expect(sentChatEvents(sender).at(-1)).not.toHaveProperty('targetAttribution')
+    expect(coordinator.fail).not.toHaveBeenCalled()
+    expect(runtimeFactory).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('keeps bound attribution on a durable terminal write failure', async () => {
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      complete: vi.fn(async () => {
+        throw new CurrentThreadSessionError('store_error', 'complete failed')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done' })
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, validRequest())
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(sentChatEvents(sender).at(-1)).toMatchObject({
+      type: 'chat:error',
+      targetAttribution,
+      error: {
+        code: 'unknown',
+        message: 'Nyx could not save the current thread.',
+        retryable: false,
+      },
+    })
+    expect(sentChatEvents(sender).some((event) => event.type === 'chat:done')).toBe(false)
+  })
+
   it('persists the latest assistant draft when the provider reaches its output limit', async () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
     streamChatCompletion.mockImplementationOnce(
@@ -1333,6 +1529,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     })
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
       fail: vi.fn(async () => {
         order.push('durable:fail')
       }),
@@ -1365,6 +1562,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     )
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
     streamChatCompletion.mockImplementationOnce(
@@ -1398,6 +1596,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
       complete: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
@@ -1409,6 +1608,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
         token: 'token',
         modelId: 'model',
         protocol: 'openai-chat-completions',
+        targetAttribution,
       })
       .mockImplementationOnce(() => {
         throw new Error('Config failed')

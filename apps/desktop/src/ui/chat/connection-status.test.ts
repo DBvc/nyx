@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { NyxConnectionsOverview } from '../../../shared/connections/types'
 import type { NyxProviderStatus } from '../../../shared/provider/types'
-import { summarizeConnectionsOverview } from './connection-status'
+import {
+  isChatTargetAvailable,
+  selectInitialChatTarget,
+  summarizeConnectionsOverview,
+} from './connection-status'
 
 const provider = {
   id: 'provider-1',
@@ -94,6 +98,18 @@ describe('connection status presenters', () => {
     })
   })
 
+  it('uses a generic env fallback summary without provider status', () => {
+    const summary = summarizeConnectionsOverview(
+      overview({
+        providers: [],
+        defaultTarget: null,
+        defaultTargetSource: 'env_fallback',
+      }),
+    )
+
+    expect(summary.detail).toBe('Using .env provider settings')
+  })
+
   it('marks missing connection setup as not configured', () => {
     const summary = summarizeConnectionsOverview(
       overview({
@@ -108,5 +124,53 @@ describe('connection status presenters', () => {
       source: 'missing',
       tone: 'warning',
     })
+  })
+})
+
+describe('Composer target projection', () => {
+  it('keeps a committed unavailable target ahead of the global default', () => {
+    const committed = {
+      kind: 'connection',
+      providerId: 'deleted-provider',
+      modelId: 'deleted-model',
+    } as const
+    const currentOverview = overview({
+      targetCatalog: {
+        connectionTargets: [
+          {
+            providerId: 'provider-1',
+            providerDisplayName: 'Local Relay',
+            modelId: 'model-1',
+            modelDisplayName: 'Model One',
+          },
+        ],
+        envFallback: { modelId: 'env-model' },
+      },
+    })
+
+    expect(selectInitialChatTarget(committed, currentOverview)).toEqual(committed)
+    expect(isChatTargetAvailable(committed, currentOverview)).toBe(false)
+  })
+
+  it('seeds the persisted default, then env fallback, only when no target is committed', () => {
+    expect(selectInitialChatTarget(null, overview())).toEqual({
+      kind: 'connection',
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    })
+
+    expect(
+      selectInitialChatTarget(
+        null,
+        overview({
+          defaultTarget: null,
+          defaultTargetSource: 'env_fallback',
+          targetCatalog: {
+            connectionTargets: [],
+            envFallback: { modelId: 'env-model' },
+          },
+        }),
+      ),
+    ).toEqual({ kind: 'env_fallback' })
   })
 })

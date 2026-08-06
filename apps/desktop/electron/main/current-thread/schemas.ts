@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import type { NyxChatTargetAttribution, NyxChatTargetSelection } from '../../../shared/chat/types'
+
 export const currentThreadAssistantStatusesV1 = [
   'pending',
   'completed',
@@ -157,6 +159,211 @@ export type SafeThreadErrorRecordV1 = z.infer<typeof safeThreadErrorRecordV1Sche
 export type TurnRecordV1 = z.infer<typeof turnRecordV1Schema>
 export type CurrentThreadRecordV1 = z.infer<typeof currentThreadRecordV1Schema>
 
+export const currentThreadErrorCodesV2 = [
+  ...currentThreadErrorCodesV1,
+  'target_unavailable',
+] as const
+
+export type CurrentThreadErrorCodeV2 = (typeof currentThreadErrorCodesV2)[number]
+
+export const safeThreadErrorMessagesV2 = {
+  ...safeThreadErrorMessagesV1,
+  target_unavailable: 'The selected chat target is unavailable.',
+} as const satisfies Record<CurrentThreadErrorCodeV2, string>
+
+const safeErrorMessageV2Schema = z.enum([
+  ...Object.values(safeThreadErrorMessagesV2),
+  interruptedThreadErrorMessageV1,
+])
+
+export const safeThreadErrorRecordV2Schema = z
+  .object({
+    code: z.enum(currentThreadErrorCodesV2),
+    message: safeErrorMessageV2Schema,
+    retryable: z.boolean(),
+  })
+  .strict()
+  .superRefine((error, context) => {
+    const expectedMessage = safeThreadErrorMessagesV2[error.code]
+    const isInterrupted =
+      error.code === 'unknown' && error.message === interruptedThreadErrorMessageV1
+
+    if (error.message !== expectedMessage && !isInterrupted) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A persisted chat error must use its fixed safe message.',
+        path: ['message'],
+      })
+    }
+  })
+
+export const chatTargetSelectionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('connection'),
+      providerId: nonEmptyStringSchema,
+      modelId: nonEmptyStringSchema,
+    })
+    .strict(),
+  z.object({ kind: z.literal('env_fallback') }).strict(),
+]) satisfies z.ZodType<NyxChatTargetSelection>
+
+export const chatTargetAttributionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('connection'),
+      providerId: nonEmptyStringSchema,
+      providerDisplayName: nonEmptyStringSchema,
+      modelId: nonEmptyStringSchema,
+      modelDisplayName: nonEmptyStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('env_fallback'),
+      modelId: nonEmptyStringSchema,
+    })
+    .strict(),
+]) satisfies z.ZodType<NyxChatTargetAttribution>
+
+export const targetBindingV2Schema = z
+  .object({
+    selection: chatTargetSelectionSchema,
+    attribution: chatTargetAttributionSchema.nullable(),
+  })
+  .strict()
+  .superRefine((binding, context) => {
+    const attribution = binding.attribution
+
+    if (!attribution) {
+      return
+    }
+
+    if (binding.selection.kind !== attribution.kind) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Target selection and attribution kinds must match.',
+        path: ['attribution'],
+      })
+      return
+    }
+
+    if (
+      binding.selection.kind === 'connection' &&
+      attribution.kind === 'connection' &&
+      (binding.selection.providerId !== attribution.providerId ||
+        binding.selection.modelId !== attribution.modelId)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Resolved target attribution must preserve the selected ids.',
+        path: ['attribution'],
+      })
+    }
+  })
+
+export const turnRecordV2Schema = z
+  .object({
+    attemptRequestId: nonEmptyStringSchema,
+    userMessageId: nonEmptyStringSchema,
+    assistantMessageId: nonEmptyStringSchema,
+    userContent: nonEmptyStringSchema,
+    assistantContent: z.string(),
+    assistantStatus: z.enum(currentThreadAssistantStatusesV1),
+    error: safeThreadErrorRecordV2Schema.nullable(),
+    targetBinding: targetBindingV2Schema.nullable(),
+    createdAt: nonEmptyStringSchema,
+    updatedAt: nonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((turn, context) => {
+    if (turn.assistantStatus === 'pending') {
+      if (turn.assistantContent !== '') {
+        context.addIssue({
+          code: 'custom',
+          message: 'A pending assistant must not persist streaming content.',
+          path: ['assistantContent'],
+        })
+      }
+
+      if (turn.error !== null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A pending assistant must not have an error.',
+          path: ['error'],
+        })
+      }
+    } else if (turn.assistantStatus === 'failed') {
+      if (turn.error === null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A failed assistant must have a safe error.',
+          path: ['error'],
+        })
+      }
+    } else if (turn.error !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a failed assistant may have an error.',
+        path: ['error'],
+      })
+    }
+  })
+
+export const currentThreadRecordV2Schema = z
+  .object({
+    version: z.literal(2),
+    threadId: nonEmptyStringSchema,
+    turns: z.array(turnRecordV2Schema).min(1),
+    createdAt: nonEmptyStringSchema,
+    updatedAt: nonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((record, context) => {
+    const messageIds = record.turns.flatMap((turn) => [turn.userMessageId, turn.assistantMessageId])
+    const requestIds = record.turns.map((turn) => turn.attemptRequestId)
+    const pendingIndexes = record.turns.flatMap((turn, index) =>
+      turn.assistantStatus === 'pending' ? [index] : [],
+    )
+
+    if (new Set(messageIds).size !== messageIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread message ids must be unique.',
+        path: ['turns'],
+      })
+    }
+
+    if (new Set(requestIds).size !== requestIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread latest attempt request ids must be unique.',
+        path: ['turns'],
+      })
+    }
+
+    if (
+      pendingIndexes.length > 1 ||
+      pendingIndexes.some((index) => index !== record.turns.length - 1)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only the final turn may be pending.',
+        path: ['turns'],
+      })
+    }
+  })
+
+export type SafeThreadErrorRecordV2 = z.infer<typeof safeThreadErrorRecordV2Schema>
+export type TurnRecordV2 = z.infer<typeof turnRecordV2Schema>
+export type CurrentThreadRecordV2 = z.infer<typeof currentThreadRecordV2Schema>
+export type CurrentThreadRecord = CurrentThreadRecordV1 | CurrentThreadRecordV2
+
+export const currentThreadRecordSchema = z.discriminatedUnion('version', [
+  currentThreadRecordV1Schema,
+  currentThreadRecordV2Schema,
+])
+
 export function createSafeThreadErrorRecordV1(input: {
   code: CurrentThreadErrorCodeV1
   retryable: boolean
@@ -176,6 +383,50 @@ export function createInterruptedThreadErrorRecordV1(): SafeThreadErrorRecordV1 
   }
 }
 
+export function createSafeThreadErrorRecordV2(input: {
+  code: CurrentThreadErrorCodeV2
+  retryable: boolean
+}): SafeThreadErrorRecordV2 {
+  return {
+    code: input.code,
+    message: safeThreadErrorMessagesV2[input.code],
+    retryable: input.retryable,
+  }
+}
+
+export function createInterruptedThreadErrorRecordV2(): SafeThreadErrorRecordV2 {
+  return {
+    code: 'unknown',
+    message: interruptedThreadErrorMessageV1,
+    retryable: true,
+  }
+}
+
 export function parseCurrentThreadRecordV1(value: unknown): CurrentThreadRecordV1 {
   return currentThreadRecordV1Schema.parse(value)
+}
+
+export function parseCurrentThreadRecordV2(value: unknown): CurrentThreadRecordV2 {
+  return currentThreadRecordV2Schema.parse(value)
+}
+
+export function parseCurrentThreadRecord(value: unknown): CurrentThreadRecord {
+  return currentThreadRecordSchema.parse(value)
+}
+
+export function upgradeCurrentThreadRecordForMutation(
+  record: CurrentThreadRecord,
+): CurrentThreadRecordV2 {
+  if (record.version === 2) {
+    return parseCurrentThreadRecordV2(record)
+  }
+
+  return parseCurrentThreadRecordV2({
+    ...record,
+    version: 2,
+    turns: record.turns.map((turn) => ({
+      ...turn,
+      targetBinding: null,
+    })),
+  })
 }

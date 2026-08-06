@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto'
 
+import type { NyxChatTargetSelection } from '../../../shared/chat/types'
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
 import {
-  createInterruptedThreadErrorRecordV1,
-  parseCurrentThreadRecordV1,
-  type CurrentThreadRecordV1,
-  type TurnRecordV1,
+  createInterruptedThreadErrorRecordV2,
+  parseCurrentThreadRecord,
+  parseCurrentThreadRecordV2,
+  upgradeCurrentThreadRecordForMutation,
+  type CurrentThreadRecord,
+  type CurrentThreadRecordV2,
+  type TurnRecordV2,
 } from './schemas'
 
 export type CurrentThreadStoreErrorCode =
@@ -39,14 +43,15 @@ export interface CreateCurrentThreadInput {
   userMessageId: string
   assistantMessageId: string
   userContent: string
+  targetSelection: NyxChatTargetSelection
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
 }
 
-function cloneRecord(record: CurrentThreadRecordV1): CurrentThreadRecordV1 {
-  return parseCurrentThreadRecordV1(record)
+function cloneRecord(record: CurrentThreadRecord): CurrentThreadRecord {
+  return parseCurrentThreadRecord(record)
 }
 
 function parseStoredRecord(raw: string) {
@@ -59,30 +64,33 @@ function parseStoredRecord(raw: string) {
   }
 
   try {
-    return parseCurrentThreadRecordV1(value)
+    return parseCurrentThreadRecord(value)
   } catch {
     throw new CurrentThreadStoreError('schema_invalid', 'Current thread file shape is invalid.')
   }
 }
 
-function recoverInterruptedTurn(record: CurrentThreadRecordV1, now: string) {
+function recoverInterruptedTurn(record: CurrentThreadRecord, now: string) {
   const pendingIndex = record.turns.findIndex((turn) => turn.assistantStatus === 'pending')
 
   if (pendingIndex < 0) {
     return null
   }
 
-  const pendingTurn = record.turns[pendingIndex]!
+  const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
+  const pendingTurn = upgradedRecord.turns[pendingIndex]!
   const recoveredTurn = {
     ...pendingTurn,
     assistantStatus: 'failed',
-    error: createInterruptedThreadErrorRecordV1(),
+    error: createInterruptedThreadErrorRecordV2(),
     updatedAt: now,
-  } satisfies TurnRecordV1
-  const turns = record.turns.map((turn, index) => (index === pendingIndex ? recoveredTurn : turn))
+  } satisfies TurnRecordV2
+  const turns = upgradedRecord.turns.map((turn, index) =>
+    index === pendingIndex ? recoveredTurn : turn,
+  )
 
-  return parseCurrentThreadRecordV1({
-    ...record,
+  return parseCurrentThreadRecordV2({
+    ...upgradedRecord,
     turns,
     updatedAt: now,
   })
@@ -93,8 +101,8 @@ function recordsEqual(left: unknown, right: unknown) {
 }
 
 function assertStableIdentity(
-  currentRecord: CurrentThreadRecordV1,
-  nextRecord: CurrentThreadRecordV1,
+  currentRecord: CurrentThreadRecord,
+  nextRecord: CurrentThreadRecordV2,
 ) {
   const identityChanged =
     currentRecord.threadId !== nextRecord.threadId ||
@@ -120,17 +128,39 @@ function assertStableIdentity(
   }
 }
 
+function isResolvedTargetBindingTransition(currentTurn: TurnRecordV2, nextTurn: TurnRecordV2) {
+  if (
+    currentTurn.assistantStatus !== 'pending' ||
+    nextTurn.assistantStatus !== 'pending' ||
+    !currentTurn.targetBinding ||
+    currentTurn.targetBinding.attribution ||
+    !nextTurn.targetBinding?.attribution
+  ) {
+    return false
+  }
+
+  return recordsEqual(nextTurn, {
+    ...currentTurn,
+    targetBinding: {
+      ...currentTurn.targetBinding,
+      attribution: nextTurn.targetBinding.attribution,
+    },
+    updatedAt: nextTurn.updatedAt,
+  })
+}
+
 function assertValidTransition(
-  currentRecord: CurrentThreadRecordV1,
-  nextRecord: CurrentThreadRecordV1,
+  currentRecord: CurrentThreadRecord,
+  nextRecord: CurrentThreadRecordV2,
 ) {
   assertStableIdentity(currentRecord, nextRecord)
+  const upgradedCurrent = upgradeCurrentThreadRecordForMutation(currentRecord)
 
-  if (recordsEqual(currentRecord, nextRecord)) {
+  if (currentRecord.version === 2 && recordsEqual(currentRecord, nextRecord)) {
     return
   }
 
-  const currentTurns = currentRecord.turns
+  const currentTurns = upgradedCurrent.turns
   const nextTurns = nextRecord.turns
 
   if (nextTurns.length === currentTurns.length + 1) {
@@ -139,7 +169,12 @@ function assertValidTransition(
     )
     const appendedTurn = nextTurns.at(-1)
 
-    if (previousTurnsUnchanged && appendedTurn?.assistantStatus === 'pending') {
+    if (
+      previousTurnsUnchanged &&
+      appendedTurn?.assistantStatus === 'pending' &&
+      appendedTurn.targetBinding !== null &&
+      appendedTurn.targetBinding.attribution === null
+    ) {
       return
     }
   } else if (nextTurns.length === currentTurns.length) {
@@ -151,20 +186,25 @@ function assertValidTransition(
     const settlesPending =
       currentTurn.assistantStatus === 'pending' &&
       nextTurn.attemptRequestId === currentTurn.attemptRequestId &&
-      nextTurn.assistantStatus !== 'pending'
+      nextTurn.assistantStatus !== 'pending' &&
+      recordsEqual(currentTurn.targetBinding, nextTurn.targetBinding)
+    const bindsResolvedTarget = isResolvedTargetBindingTransition(currentTurn, nextTurn)
     const retriesFailed =
       currentTurn.assistantStatus === 'failed' &&
+      Boolean(currentTurn.error?.retryable) &&
       nextTurn.assistantStatus === 'pending' &&
-      nextTurn.attemptRequestId !== currentTurn.attemptRequestId
+      nextTurn.attemptRequestId !== currentTurn.attemptRequestId &&
+      nextTurn.targetBinding !== null &&
+      nextTurn.targetBinding.attribution === null
 
-    if (previousTurnsUnchanged && (settlesPending || retriesFailed)) {
+    if (previousTurnsUnchanged && (settlesPending || bindsResolvedTarget || retriesFailed)) {
       return
     }
   }
 
   throw new CurrentThreadStoreError(
     'invalid_transition',
-    'Current thread update is not a valid append, settlement, or retry.',
+    'Current thread update is not a valid append, target bind, settlement, or retry.',
   )
 }
 
@@ -175,7 +215,7 @@ export class CurrentThreadStore {
   private readonly fileAdapter: CurrentThreadFileAdapter
   private operationQueue: Promise<void> = Promise.resolve()
   private loaded = false
-  private currentRecord: CurrentThreadRecordV1 | null = null
+  private currentRecord: CurrentThreadRecord | null = null
 
   constructor({
     filePath,
@@ -208,15 +248,20 @@ export class CurrentThreadStore {
       }
 
       const now = this.now()
-      const record = parseCurrentThreadRecordV1({
-        version: 1,
+      const { targetSelection, ...turnInput } = input
+      const record = parseCurrentThreadRecordV2({
+        version: 2,
         threadId: this.generateId(),
         turns: [
           {
-            ...input,
+            ...turnInput,
             assistantContent: '',
             assistantStatus: 'pending',
             error: null,
+            targetBinding: {
+              selection: targetSelection,
+              attribution: null,
+            },
             createdAt: now,
             updatedAt: now,
           },
@@ -228,15 +273,15 @@ export class CurrentThreadStore {
       await this.writeAtomic(record)
       this.currentRecord = record
 
-      return cloneRecord(record)
+      return parseCurrentThreadRecordV2(record)
     })
   }
 
-  write(record: CurrentThreadRecordV1) {
+  write(record: CurrentThreadRecordV2) {
     return this.enqueue(async () => {
       await this.ensureLoaded()
 
-      const parsedRecord = parseCurrentThreadRecordV1(record)
+      const parsedRecord = parseCurrentThreadRecordV2(record)
 
       if (!this.currentRecord) {
         throw new CurrentThreadStoreError(
@@ -250,7 +295,7 @@ export class CurrentThreadStore {
       await this.writeAtomic(parsedRecord)
       this.currentRecord = parsedRecord
 
-      return cloneRecord(parsedRecord)
+      return parseCurrentThreadRecordV2(parsedRecord)
     })
   }
 
@@ -308,7 +353,7 @@ export class CurrentThreadStore {
     this.loaded = true
   }
 
-  private async writeAtomic(record: CurrentThreadRecordV1) {
+  private async writeAtomic(record: CurrentThreadRecord) {
     const tempPath = this.fileAdapter.createTempPath(this.filePath)
     const contents = `${JSON.stringify(record, null, 2)}\n`
 

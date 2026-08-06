@@ -7,6 +7,8 @@ import { toThreadStreamItems } from '../thread-items'
 import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
 import { useConnectionStatus } from '../use-connection-status'
+import { chatTargetSelectionKey } from '../connection-status'
+import type { NyxChatTargetSelection } from '../../../../shared/chat/types'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
 import { ChatSidebar } from './ChatSidebar'
@@ -59,18 +61,74 @@ export function ChatWorkspace() {
   const settingsPopoverRef = useRef<HTMLDivElement>(null)
   const sidebarContentRef = useRef<HTMLDivElement>(null)
   const sidebarToggleRef = useRef<HTMLButtonElement>(null)
+  const connectionSetup = useConnectionStatus()
   const {
     state,
     isBusy,
     isResetting,
     canSend,
     setInput,
+    setTargetSelection,
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,
     startNewChat,
-  } = useChatSession()
-  const connectionSetup = useConnectionStatus()
+  } = useChatSession({
+    connectionStatus: connectionSetup.status,
+    refreshConnections: connectionSetup.refresh,
+    getLatestConnectionRequestEpoch: connectionSetup.getLatestRequestEpoch,
+  })
+
+  const targetOptions = useMemo(() => {
+    const overview = connectionSetup.status.overview
+    const options: Array<{
+      value: string
+      label: string
+      selection: NyxChatTargetSelection
+      disabled?: boolean
+    }> = []
+
+    for (const target of overview?.targetCatalog.connectionTargets ?? []) {
+      const selection = {
+        kind: 'connection',
+        providerId: target.providerId,
+        modelId: target.modelId,
+      } as const satisfies NyxChatTargetSelection
+
+      options.push({
+        value: chatTargetSelectionKey(selection),
+        label: `${target.providerDisplayName} · ${target.modelDisplayName}`,
+        selection,
+      })
+    }
+
+    if (overview?.targetCatalog.envFallback) {
+      const selection = { kind: 'env_fallback' } as const satisfies NyxChatTargetSelection
+      options.push({
+        value: chatTargetSelectionKey(selection),
+        label: `.env · ${overview.targetCatalog.envFallback.modelId}`,
+        selection,
+      })
+    }
+
+    if (state.targetDraft) {
+      const selectedValue = chatTargetSelectionKey(state.targetDraft)
+
+      if (!options.some((option) => option.value === selectedValue)) {
+        options.unshift({
+          value: selectedValue,
+          label:
+            state.targetDraft.kind === 'connection'
+              ? `${state.targetDraft.providerId} · ${state.targetDraft.modelId} (Unavailable)`
+              : '.env fallback (Unavailable)',
+          selection: state.targetDraft,
+          disabled: true,
+        })
+      }
+    }
+
+    return options
+  }, [connectionSetup.status.overview, state.targetDraft])
 
   const threadItems = useMemo(() => toThreadStreamItems(state.messages), [state.messages])
   const latestMessageItem = threadItems.at(-1)
@@ -222,8 +280,18 @@ export function ChatWorkspace() {
                 input={state.input}
                 isBusy={isBusy}
                 onInputChange={setInput}
+                onTargetChange={(value) => {
+                  const option = targetOptions.find((candidate) => candidate.value === value)
+
+                  if (option) {
+                    setTargetSelection(option.selection)
+                  }
+                }}
                 onSend={handleSend}
                 onStop={stopActiveResponse}
+                targetDisabled={!state.targetInitialized || isResetting}
+                targetOptions={targetOptions}
+                targetValue={state.targetDraft ? chatTargetSelectionKey(state.targetDraft) : ''}
               />
             </>
           ) : (

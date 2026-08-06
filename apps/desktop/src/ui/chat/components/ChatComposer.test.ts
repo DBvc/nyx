@@ -11,7 +11,11 @@ function renderComposer(isBusy: boolean) {
       isBusy,
       canSend: !isBusy,
       disabled: false,
+      targetDisabled: false,
+      targetOptions: [{ value: 'target-1', label: 'Provider One · Model One' }],
+      targetValue: 'target-1',
       onInputChange: () => undefined,
+      onTargetChange: () => undefined,
       onSend: () => undefined,
       onStop: () => undefined,
     }),
@@ -41,5 +45,7 @@ describe('ChatComposer', () => {
     expect(stopMarkup.match(/<button/g)).toHaveLength(1)
     expect(stopMarkup).toContain('aria-label="Stop response"')
     expect(stopMarkup).not.toContain('Send message')
+    expect(stopMarkup).toContain('aria-label="Chat target"')
+    expect(stopMarkup).not.toContain('aria-label="Chat target" disabled')
   })
 })

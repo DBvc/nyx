@@ -5,11 +5,14 @@ import type { NyxCurrentThreadResetResult } from '../../../shared/chat/snapshot'
 import {
   isNyxChatTurnIntent,
   type NyxChatCancellationRequest,
+  type NyxChatInputMessage,
   type NyxChatRequest,
+  type NyxChatTargetAttribution,
+  type NyxChatTargetSelection,
 } from '../../../shared/chat/types'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
-  readEnvChatTarget,
+  resolveEnvChatTargetSelection,
   type ChatTargetResolver,
   type ResolvedChatTarget,
 } from '../connections/provider-resolver'
@@ -40,6 +43,7 @@ interface ActiveChatSession {
   runtimeChatStateClient?: RuntimeChatStateClient
   currentThreadSession?: CurrentThreadSessionCoordinator
   preparedCurrentThread?: PreparedCurrentThreadTurn
+  boundTargetAttribution?: NyxChatTargetAttribution
   operation?: Promise<void>
 }
 
@@ -62,55 +66,183 @@ interface ChatSessionManagerOptions {
   resolveCurrentThreadSession?: () => CurrentThreadSessionCoordinator
 }
 
-export function validateChatRequest(request: NyxChatRequest): NyxChatErrorEvent['error'] | null {
-  const hasMessages = Array.isArray(request.messages) && request.messages.length > 0
-  const hasTurnUserMessage =
-    typeof request.turnUserMessage?.id === 'string' &&
-    request.turnUserMessage.id.length > 0 &&
-    typeof request.turnUserMessage?.content === 'string' &&
-    request.turnUserMessage.content.length > 0
+export function validateChatRequest(request: unknown): NyxChatErrorEvent['error'] | null {
+  const result = parseChatRequest(request)
+  return result.ok ? null : result.error
+}
 
-  if (
-    !request.requestId ||
-    !request.userMessageId ||
-    !request.assistantMessageId ||
-    !hasMessages ||
-    !hasTurnUserMessage
-  ) {
-    return {
-      code: 'invalid_request',
-      message:
-        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
-      retryable: false,
+type ChatRequestCorrelation = Pick<NyxChatRequest, 'requestId' | 'assistantMessageId'>
+
+type ChatRequestParseResult =
+  | { ok: true; request: NyxChatRequest; correlation: ChatRequestCorrelation }
+  | {
+      ok: false
+      error: NyxChatErrorEvent['error']
+      correlation: ChatRequestCorrelation | null
     }
+
+const requestKeys = new Set([
+  'requestId',
+  'userMessageId',
+  'assistantMessageId',
+  'turnIntent',
+  'turnUserMessage',
+  'messages',
+  'targetSelection',
+  'systemPrompt',
+])
+
+function invalidRequest(message: string): NyxChatErrorEvent['error'] {
+  return { code: 'invalid_request', message, retryable: false }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowedKeys: ReadonlySet<string>) {
+  return Object.keys(value).every((key) => allowedKeys.has(key))
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function requestCorrelation(value: unknown): ChatRequestCorrelation | null {
+  if (
+    !isRecord(value) ||
+    !nonEmptyString(value.requestId) ||
+    !nonEmptyString(value.assistantMessageId)
+  ) {
+    return null
   }
 
-  if (!isNyxChatTurnIntent(request.turnIntent)) {
-    return {
-      code: 'invalid_request',
-      message: 'Chat requests must use a known turn intent.',
-      retryable: false,
+  return {
+    requestId: value.requestId,
+    assistantMessageId: value.assistantMessageId,
+  }
+}
+
+function parseTargetSelection(value: unknown): NyxChatTargetSelection | null {
+  if (!isRecord(value) || typeof value.kind !== 'string') {
+    return null
+  }
+
+  if (value.kind === 'env_fallback') {
+    return hasOnlyKeys(value, new Set(['kind'])) ? { kind: 'env_fallback' } : null
+  }
+
+  if (
+    value.kind !== 'connection' ||
+    !hasOnlyKeys(value, new Set(['kind', 'providerId', 'modelId'])) ||
+    !nonEmptyString(value.providerId) ||
+    !value.providerId.trim() ||
+    !nonEmptyString(value.modelId) ||
+    !value.modelId.trim()
+  ) {
+    return null
+  }
+
+  return {
+    kind: 'connection',
+    providerId: value.providerId,
+    modelId: value.modelId,
+  }
+}
+
+function parseInputMessages(value: unknown): NyxChatInputMessage[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+
+  const messages: NyxChatInputMessage[] = []
+
+  for (const message of value) {
+    if (
+      !isRecord(message) ||
+      !hasOnlyKeys(message, new Set(['role', 'content'])) ||
+      (message.role !== 'system' && message.role !== 'user' && message.role !== 'assistant') ||
+      typeof message.content !== 'string'
+    ) {
+      return null
     }
+
+    messages.push({ role: message.role, content: message.content })
+  }
+
+  return messages
+}
+
+function parseChatRequest(value: unknown): ChatRequestParseResult {
+  const correlation = requestCorrelation(value)
+  const malformed = (message: string): ChatRequestParseResult => ({
+    ok: false,
+    error: invalidRequest(message),
+    correlation,
+  })
+
+  if (!isRecord(value) || !hasOnlyKeys(value, requestKeys)) {
+    return malformed('Chat request shape is invalid.')
+  }
+
+  const messages = parseInputMessages(value.messages)
+
+  if (
+    !nonEmptyString(value.requestId) ||
+    !nonEmptyString(value.userMessageId) ||
+    !nonEmptyString(value.assistantMessageId) ||
+    !messages ||
+    !isRecord(value.turnUserMessage) ||
+    !hasOnlyKeys(value.turnUserMessage, new Set(['id', 'content'])) ||
+    !nonEmptyString(value.turnUserMessage.id) ||
+    !nonEmptyString(value.turnUserMessage.content)
+  ) {
+    return malformed(
+      'Chat requests must include ids, intent, the current user message, and at least one provider message.',
+    )
+  }
+
+  if (!isNyxChatTurnIntent(value.turnIntent)) {
+    return malformed('Chat requests must use a known turn intent.')
+  }
+
+  const targetSelection = parseTargetSelection(value.targetSelection)
+
+  if (!targetSelection) {
+    return malformed('Chat requests must include one valid target selection.')
+  }
+
+  if (value.systemPrompt !== undefined && typeof value.systemPrompt !== 'string') {
+    return malformed('Chat request systemPrompt must be a string when provided.')
+  }
+
+  const request: NyxChatRequest = {
+    requestId: value.requestId,
+    userMessageId: value.userMessageId,
+    assistantMessageId: value.assistantMessageId,
+    turnIntent: value.turnIntent,
+    turnUserMessage: {
+      id: value.turnUserMessage.id,
+      content: value.turnUserMessage.content,
+    },
+    messages,
+    targetSelection,
+    ...(value.systemPrompt === undefined ? {} : { systemPrompt: value.systemPrompt }),
   }
 
   if (request.turnUserMessage.id !== request.userMessageId) {
-    return {
-      code: 'invalid_request',
-      message: 'Chat requests must keep the current user message id aligned with userMessageId.',
-      retryable: false,
-    }
+    return malformed(
+      'Chat requests must keep the current user message id aligned with userMessageId.',
+    )
   }
 
   if (latestProviderUserMessageContent(request) !== request.turnUserMessage.content) {
-    return {
-      code: 'invalid_request',
-      message:
-        'Chat requests must keep the current user message content aligned with provider messages.',
-      retryable: false,
-    }
+    return malformed(
+      'Chat requests must keep the current user message content aligned with provider messages.',
+    )
   }
 
-  return null
+  return { ok: true, request, correlation: correlation! }
 }
 
 function isRuntimeChatStateEnabled(env: ChatSessionEnv) {
@@ -138,10 +270,6 @@ function toNonRetryableRuntimeChatError(error: unknown): NyxChatErrorEvent['erro
   }
 }
 
-function isPromiseLike<TValue>(value: TValue | Promise<TValue>): value is Promise<TValue> {
-  return typeof (value as Promise<TValue>).then === 'function'
-}
-
 function currentThreadResetFailure(): NyxCurrentThreadResetResult {
   return {
     ok: false,
@@ -164,7 +292,7 @@ export class ChatSessionManager {
   constructor({
     env = process.env,
     createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
-    resolveChatTarget = readEnvChatTarget,
+    resolveChatTarget = resolveEnvChatTargetSelection,
     resolveCurrentThreadSession,
   }: ChatSessionManagerOptions = {}) {
     this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
@@ -173,13 +301,17 @@ export class ChatSessionManager {
     this.resolveCurrentThreadSession = resolveCurrentThreadSession
   }
 
-  start(sender: WebContents, request: NyxChatRequest) {
-    const validationError = validateChatRequest(request)
+  start(sender: WebContents, value: unknown) {
+    const parsedRequest = parseChatRequest(value)
 
-    if (validationError) {
-      this.emitError(sender, request, validationError)
+    if (!parsedRequest.ok) {
+      if (parsedRequest.correlation) {
+        this.emitError(sender, parsedRequest.correlation, parsedRequest.error)
+      }
       return
     }
+
+    const request = parsedRequest.request
 
     if (this.resetOperation) {
       this.emitError(sender, request, {
@@ -252,40 +384,51 @@ export class ChatSessionManager {
             }
           : toNonRetryableRuntimeChatError(error)
 
-      this.emitError(session.sender, request, chatError)
+      this.emitSessionError(session, chatError)
       this.activeSession = undefined
     }
   }
 
-  private resolveTargetAndStart(
-    session: ActiveChatSession,
-    request: NyxChatRequest,
-  ): Promise<void> {
-    let targetResult
+  private async resolveTargetAndStart(session: ActiveChatSession, request: NyxChatRequest) {
+    let target: ResolvedChatTarget
 
     try {
-      targetResult = this.resolveChatTarget()
-    } catch (error) {
-      return this.handleChatTargetError(session, request, error)
-    }
-
-    if (isPromiseLike(targetResult)) {
-      return this.startAfterAsyncChatTarget(session, targetResult, request)
-    }
-
-    return this.startWithChatTarget(session, targetResult, request)
-  }
-
-  private async startAfterAsyncChatTarget(
-    session: ActiveChatSession,
-    targetResult: Promise<ResolvedChatTarget>,
-    request: NyxChatRequest,
-  ) {
-    try {
-      await this.startWithChatTarget(session, await targetResult, request)
+      target = await this.resolveChatTarget(request.targetSelection)
     } catch (error) {
       await this.handleChatTargetError(session, request, error)
+      return
     }
+
+    if (this.activeSession !== session) {
+      return
+    }
+
+    if (session.currentThreadSession && session.preparedCurrentThread) {
+      try {
+        await session.currentThreadSession.bindResolvedTarget(
+          session.requestId,
+          session.assistantMessageId,
+          target.targetAttribution,
+        )
+      } catch {
+        if (this.activeSession === session) {
+          this.emitSessionError(session, {
+            code: 'unknown',
+            message: 'Nyx could not save the current thread.',
+            retryable: false,
+          })
+          this.activeSession = undefined
+        }
+        return
+      }
+    }
+
+    if (this.activeSession !== session) {
+      return
+    }
+
+    session.boundTargetAttribution = target.targetAttribution
+    await this.startWithChatTarget(session, target, request)
   }
 
   private startWithChatTarget(
@@ -320,7 +463,7 @@ export class ChatSessionManager {
       return
     }
 
-    this.emitError(session.sender, request, chatError)
+    this.emitSessionError(session, chatError)
     this.activeSession = undefined
   }
 
@@ -441,7 +584,7 @@ export class ChatSessionManager {
       const chatError = toNonRetryableRuntimeChatError(error)
 
       if (await this.persistFailure(session, chatError)) {
-        this.emitError(session.sender, request, chatError)
+        this.emitSessionError(session, chatError)
       }
       this.activeSession = undefined
     }
@@ -632,7 +775,7 @@ export class ChatSessionManager {
         const chatError = toNonRetryableRuntimeChatError(error)
 
         if (await this.persistFailure(session, chatError)) {
-          this.emitError(session.sender, request, chatError)
+          this.emitSessionError(session, chatError)
         }
         return
       }
@@ -649,7 +792,7 @@ export class ChatSessionManager {
           const chatError = toNonRetryableRuntimeChatError(runtimeError)
 
           if (await this.persistFailure(session, chatError)) {
-            this.emitError(session.sender, request, chatError)
+            this.emitSessionError(session, chatError)
           }
           return
         }
@@ -671,13 +814,13 @@ export class ChatSessionManager {
           const runtimeChatError = toNonRetryableRuntimeChatError(runtimeError)
 
           if (await this.persistFailure(session, runtimeChatError)) {
-            this.emitError(session.sender, request, runtimeChatError)
+            this.emitSessionError(session, runtimeChatError)
           }
           return
         }
 
         if (await this.persistFailure(session, chatError)) {
-          this.emitError(session.sender, request, chatError)
+          this.emitSessionError(session, chatError)
         }
       }
     } finally {
@@ -734,7 +877,7 @@ export class ChatSessionManager {
       return true
     } catch {
       this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-      this.emitError(session.sender, session.request, {
+      this.emitSessionError(session, {
         code: 'unknown',
         message: 'Nyx could not save the current thread.',
         retryable: false,
@@ -745,8 +888,9 @@ export class ChatSessionManager {
 
   private emitError(
     sender: WebContents,
-    request: NyxChatRequest,
+    request: ChatRequestCorrelation,
     error: NyxChatErrorEvent['error'],
+    targetAttribution?: NyxChatTargetAttribution,
   ) {
     this.emitEvent(sender, {
       type: 'chat:error',
@@ -754,7 +898,12 @@ export class ChatSessionManager {
       assistantMessageId: request.assistantMessageId,
       status: 'failed',
       error,
+      ...(targetAttribution ? { targetAttribution } : {}),
     })
+  }
+
+  private emitSessionError(session: ActiveChatSession, error: NyxChatErrorEvent['error']) {
+    this.emitError(session.sender, session.request, error, session.boundTargetAttribution)
   }
 
   private emitStart(session: ActiveChatSession) {
@@ -763,6 +912,7 @@ export class ChatSessionManager {
       requestId: session.requestId,
       assistantMessageId: session.assistantMessageId,
       status: 'streaming',
+      targetAttribution: session.boundTargetAttribution!,
     })
   }
 

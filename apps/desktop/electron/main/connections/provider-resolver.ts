@@ -1,4 +1,4 @@
-import type { NyxConnectionTarget } from '../../../shared/connections/types'
+import type { NyxChatTargetAttribution, NyxChatTargetSelection } from '../../../shared/chat/types'
 import type { ChatProviderConfig } from '../chat/env'
 import { readChatProviderConfig } from '../chat/env'
 import { ChatBridgeError, createChatBridgeError } from '../chat/errors'
@@ -7,20 +7,17 @@ import type { ConnectionProviderRecord, ConnectionStoreState } from './schemas'
 import type { SecretStore } from './secret-store'
 import { normalizeConnectionBaseUrl } from './url'
 
-export interface ResolveChatTargetInput {
-  target?: NyxConnectionTarget
-}
-
 export interface ResolvedChatTarget {
   providerId: string | null
   baseUrl: string
   token: string
   modelId: string
   protocol: 'openai-chat-completions'
+  targetAttribution: NyxChatTargetAttribution
 }
 
 export type ChatTargetResolver = (
-  input?: ResolveChatTargetInput,
+  selection: NyxChatTargetSelection,
 ) => ResolvedChatTarget | Promise<ResolvedChatTarget>
 
 export interface ChatTargetResolverDependencies {
@@ -33,8 +30,6 @@ export interface LazyChatTargetResolverOptions {
   createDependencies: () => ChatTargetResolverDependencies
 }
 
-type TargetSource = 'explicit' | 'persisted_default'
-
 function createConfigMissingError() {
   return createChatBridgeError({
     code: 'config_missing',
@@ -43,11 +38,11 @@ function createConfigMissingError() {
   })
 }
 
-function createInvalidTargetError() {
+function createTargetUnavailableError() {
   return createChatBridgeError({
-    code: 'invalid_request',
-    message: 'Requested provider target is not available.',
-    retryable: false,
+    code: 'target_unavailable',
+    message: 'The selected chat target is unavailable.',
+    retryable: true,
   })
 }
 
@@ -55,24 +50,19 @@ function normalizeBaseUrl(rawBaseUrl: string) {
   try {
     return normalizeConnectionBaseUrl(rawBaseUrl)
   } catch {
-    throw createConfigMissingError()
+    throw createTargetUnavailableError()
   }
 }
 
 function findTarget(
   state: ConnectionStoreState,
-  target: NyxConnectionTarget,
-  source: TargetSource,
+  target: Extract<NyxChatTargetSelection, { kind: 'connection' }>,
 ) {
   const provider = state.providers.find((candidate) => candidate.id === target.providerId)
   const model = provider?.models.find((candidate) => candidate.id === target.modelId)
 
   if (!provider || !provider.enabled || !model || !model.enabled) {
-    if (source === 'explicit') {
-      throw createInvalidTargetError()
-    }
-
-    throw createConfigMissingError()
+    throw createTargetUnavailableError()
   }
 
   return { provider, model }
@@ -82,7 +72,7 @@ async function readState(connectionStore: Pick<ConnectionStore, 'readState'>) {
   try {
     return await connectionStore.readState()
   } catch {
-    throw createConfigMissingError()
+    throw createTargetUnavailableError()
   }
 }
 
@@ -92,7 +82,7 @@ async function readSecret(secretStore: Pick<SecretStore, 'readSecret'>, provider
     const trimmedSecret = secret?.trim()
 
     if (!trimmedSecret) {
-      throw createConfigMissingError()
+      throw createTargetUnavailableError()
     }
 
     return trimmedSecret
@@ -101,7 +91,7 @@ async function readSecret(secretStore: Pick<SecretStore, 'readSecret'>, provider
       throw error
     }
 
-    throw createConfigMissingError()
+    throw createTargetUnavailableError()
   }
 }
 
@@ -115,6 +105,10 @@ function readEnvFallback(envConfigReader: () => ChatProviderConfig) {
       token: config.token,
       modelId: config.model,
       protocol: 'openai-chat-completions',
+      targetAttribution: {
+        kind: 'env_fallback',
+        modelId: config.model,
+      },
     } satisfies ResolvedChatTarget
   } catch (error) {
     if (error instanceof ChatBridgeError && error.chatError.code === 'config_missing') {
@@ -140,6 +134,13 @@ async function resolvePersistedTarget({
     token: await readSecret(secretStore, provider.id),
     modelId: model.id,
     protocol: 'openai-chat-completions',
+    targetAttribution: {
+      kind: 'connection',
+      providerId: provider.id,
+      providerDisplayName: provider.displayName,
+      modelId: model.id,
+      modelDisplayName: model.displayName,
+    },
   } satisfies ResolvedChatTarget
 }
 
@@ -147,27 +148,38 @@ export function readEnvChatTarget() {
   return readEnvFallback(readChatProviderConfig)
 }
 
+export function resolveEnvChatTargetSelection(
+  selection: NyxChatTargetSelection,
+): ResolvedChatTarget {
+  if (selection.kind !== 'env_fallback') {
+    throw createTargetUnavailableError()
+  }
+
+  try {
+    return readEnvChatTarget()
+  } catch {
+    throw createTargetUnavailableError()
+  }
+}
+
 export function createChatTargetResolver({
   connectionStore,
   secretStore,
   envConfigReader = readChatProviderConfig,
 }: ChatTargetResolverDependencies): ChatTargetResolver {
-  return async (input = {}) => {
+  return async (selection) => {
+    if (selection.kind === 'env_fallback') {
+      try {
+        return readEnvFallback(envConfigReader)
+      } catch {
+        throw createTargetUnavailableError()
+      }
+    }
+
     const state = await readState(connectionStore)
 
-    if (input.target) {
-      return resolvePersistedTarget({
-        ...findTarget(state, input.target, 'explicit'),
-        secretStore,
-      })
-    }
-
-    if (!state.defaultTarget) {
-      return readEnvFallback(envConfigReader)
-    }
-
     return resolvePersistedTarget({
-      ...findTarget(state, state.defaultTarget, 'persisted_default'),
+      ...findTarget(state, selection),
       secretStore,
     })
   }
@@ -178,13 +190,13 @@ export function createLazyChatTargetResolver({
 }: LazyChatTargetResolverOptions): ChatTargetResolver {
   let resolver: ChatTargetResolver | undefined
 
-  return (input) => {
+  return (selection) => {
     try {
       resolver ??= createChatTargetResolver(createDependencies())
     } catch {
-      throw createConfigMissingError()
+      throw createTargetUnavailableError()
     }
 
-    return resolver(input)
+    return resolver(selection)
   }
 }

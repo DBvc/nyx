@@ -1,9 +1,20 @@
 import type { RuntimeChatStateClient } from '../runtime/chat-state-client'
-import type { CurrentThreadRecordV1 } from './schemas'
+
+interface ReplayableCurrentThread {
+  turns: ReadonlyArray<{
+    attemptRequestId: string
+    userMessageId: string
+    assistantMessageId: string
+    userContent: string
+    assistantContent: string
+    assistantStatus: 'pending' | 'completed' | 'cancelled' | 'failed'
+    error: { message: string } | null
+  }>
+}
 
 export async function replayCurrentThread(
   client: RuntimeChatStateClient,
-  record: CurrentThreadRecordV1 | null,
+  record: ReplayableCurrentThread | null,
 ) {
   for (const turn of record?.turns ?? []) {
     await client.submitUserMessage({

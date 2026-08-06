@@ -2,6 +2,7 @@ import type {
   NyxChatInputMessage,
   NyxChatMessage,
   NyxChatRunStatus,
+  NyxChatTargetSelection,
   NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
 import type {
@@ -18,6 +19,7 @@ export interface ChatTurnRequest {
   assistantMessageId: string
   turnUserMessage: NyxChatTurnUserMessage
   submittedMessages: ReadonlyArray<NyxChatInputMessage>
+  targetSelection: NyxChatTargetSelection
 }
 
 export interface RetryableChatTurn {
@@ -40,6 +42,12 @@ export interface ChatState {
   projectionGeneration: number
   resetStatus: ChatResetStatus
   resetError: NyxCurrentThreadResetError | null
+  committedTarget: NyxChatTargetSelection | null
+  targetDraft: NyxChatTargetSelection | null
+  targetInitialized: boolean
+  targetAvailable: boolean
+  targetCatalogEpoch: number
+  targetMinimumCatalogEpoch: number
 }
 
 export const initialChatState: ChatState = {
@@ -55,4 +63,10 @@ export const initialChatState: ChatState = {
   projectionGeneration: 0,
   resetStatus: 'idle',
   resetError: null,
+  committedTarget: null,
+  targetDraft: null,
+  targetInitialized: false,
+  targetAvailable: false,
+  targetCatalogEpoch: 0,
+  targetMinimumCatalogEpoch: 0,
 }
