@@ -1273,6 +1273,7 @@ apps/desktop/electron/main/current-thread/schemas.ts
 apps/desktop/electron/main/current-thread/store.ts
 apps/desktop/electron/main/current-thread/session-coordinator.ts
 apps/desktop/electron/main/current-thread/snapshot.ts
+apps/desktop/electron/main/current-thread/runtime-replay.ts
 apps/desktop/electron/main/chat/session.ts
 apps/desktop/electron/main/index.ts
 apps/desktop/src/ui/chat/chat-types.ts
@@ -1287,6 +1288,7 @@ apps/desktop/electron/main/connections/provider-resolver.test.ts
 apps/desktop/electron/main/current-thread/store.test.ts
 apps/desktop/electron/main/current-thread/session-coordinator.test.ts
 apps/desktop/electron/main/current-thread/snapshot.test.ts
+apps/desktop/electron/main/current-thread/runtime-replay.test.ts
 apps/desktop/electron/main/chat/client.test.ts
 apps/desktop/electron/main/chat/session.test.ts
 apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts
@@ -1333,6 +1335,9 @@ Required:
 - keep target identity, selection, and attribution out of runtime actions and
   provider request bodies except for the resolved model id already owned by the
   provider request mapper
+- keep runtime replay independent of current-thread record versions by consuming
+  only the existing message-level turn fields and ignoring selection and
+  attribution metadata
 - retain safe attribution in renderer state for later presentation without
   deriving it from the current draft
 
