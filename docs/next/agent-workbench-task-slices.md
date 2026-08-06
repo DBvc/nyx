@@ -1220,8 +1220,10 @@ apps/desktop/electron/main/chat/env.test.ts
 apps/desktop/electron/main/connections/connection-service.ts
 apps/desktop/electron/main/connections/connection-service.test.ts
 apps/desktop/electron/main/connections/ipc-handlers.ts
+apps/desktop/electron/main/index.test.ts
 apps/desktop/electron/preload/index.ts
 apps/desktop/shared/contracts/desktop.ts
+apps/desktop/src/ui/chat/connection-status.test.ts
 ```
 
 Required:
