@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { CurrentThreadSessionCoordinator, CurrentThreadSessionError } from './session-coordinator'
 import { parseCurrentThreadRecordV1 } from './schemas'
+import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
 
 const tempDirs: string[] = []
@@ -17,6 +18,8 @@ const firstAttribution = {
   modelId: 'model-1',
   modelDisplayName: 'Model One',
 } as const
+const envAttributionA = { kind: 'env_fallback', modelId: 'env-model-a' } as const
+const envAttributionB = { kind: 'env_fallback', modelId: 'env-model-b' } as const
 
 async function createCoordinator() {
   const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-session-'))
@@ -196,10 +199,10 @@ describe('CurrentThreadSessionCoordinator', () => {
     })
   })
 
-  it('captures the failed replay record before writing a retry pending attempt', async () => {
-    const { coordinator } = await createCoordinator()
-    await coordinator.prepare(newRequest())
-    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+  it('replaces an env attempt binding on Retry without adding attempt history', async () => {
+    const { coordinator, store } = await createCoordinator()
+    await coordinator.prepare(newRequest({ targetSelection: { kind: 'env_fallback' } }))
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', envAttributionA)
     await coordinator.fail('request-1', 'assistant-1', 'Partial', {
       code: 'network_error',
       message: 'Raw network detail must not persist.',
@@ -222,7 +225,7 @@ describe('CurrentThreadSessionCoordinator', () => {
         message: 'Nyx could not reach the provider.',
       },
       targetBinding: {
-        attribution: firstAttribution,
+        attribution: envAttributionA,
       },
     })
     expect(prepared.pendingRecord.turns[0]).toMatchObject({
@@ -236,6 +239,30 @@ describe('CurrentThreadSessionCoordinator', () => {
         selection: { kind: 'env_fallback' },
         attribution: null,
       },
+    })
+
+    await coordinator.bindResolvedTarget('request-2', 'assistant-1', envAttributionB)
+    await coordinator.fail('request-2', 'assistant-1', '', {
+      code: 'network_error',
+      message: 'Retry failed.',
+      retryable: true,
+    })
+
+    const record = await store.read()
+
+    expect(record?.turns).toHaveLength(1)
+    expect(record?.turns[0]).toMatchObject({
+      attemptRequestId: 'request-2',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      targetBinding: {
+        selection: { kind: 'env_fallback' },
+        attribution: envAttributionB,
+      },
+    })
+    expect(record && toCurrentThreadSnapshot(record)).toMatchObject({
+      selectedTarget: { kind: 'env_fallback' },
+      messages: [{ id: 'user-1' }, { id: 'assistant-1', targetAttribution: envAttributionB }],
     })
   })
 

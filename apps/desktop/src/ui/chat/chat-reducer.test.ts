@@ -330,6 +330,30 @@ describe('chatReducer', () => {
     expect(changed.targetDraft).toEqual({ kind: 'env_fallback' })
   })
 
+  it('keeps active attribution after the Composer draft changes during generation', () => {
+    const streaming = {
+      ...streamingState(),
+      targetInitialized: true,
+      targetAvailable: true,
+      targetDraft: targetSelection,
+    }
+    const changed = chatReducer(streaming, {
+      type: 'target-draft-changed',
+      selection: { kind: 'env_fallback' },
+      available: true,
+    })
+    const completed = chatReducer(changed, {
+      type: 'request-completed',
+      requestId,
+      assistantMessageId,
+      status: 'completed',
+      finalContent: 'Final response',
+    })
+
+    expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
+    expect(assistantFrom(completed.messages).targetAttribution).toEqual(targetAttribution)
+  })
+
   it('marks the pending assistant message as streaming when the request starts', () => {
     const state = streamingState()
 
@@ -533,7 +557,7 @@ describe('chatReducer', () => {
     expect(assistant.canRetry).toBe(false)
   })
 
-  it('reuses the same user and assistant message identity when retrying', () => {
+  it('reuses message identity and binds the current Composer draft when retrying', () => {
     const failedState = chatReducer(streamingState(), {
       type: 'request-failed',
       requestId,
@@ -541,14 +565,27 @@ describe('chatReducer', () => {
       error: retryableError,
     })
 
-    const state = chatReducer(failedState, {
+    const selectedForRetry = chatReducer(
+      {
+        ...failedState,
+        targetInitialized: true,
+        targetDraft: targetSelection,
+      },
+      {
+        type: 'target-draft-changed',
+        selection: { kind: 'env_fallback' },
+        available: true,
+      },
+    )
+
+    const state = chatReducer(selectedForRetry, {
       type: 'retry-requested',
       requestId: 'request-2',
       userMessageId,
       assistantMessageId,
       turnUserMessage,
       submittedMessages,
-      targetSelection,
+      targetSelection: { kind: 'env_fallback' },
     })
 
     const assistant = assistantFrom(state.messages)
@@ -562,7 +599,7 @@ describe('chatReducer', () => {
       assistantMessageId,
       turnUserMessage,
       submittedMessages,
-      targetSelection,
+      targetSelection: { kind: 'env_fallback' },
     })
     expect(state.retryableTurn).toBeNull()
     expect(assistant.id).toBe(assistantMessageId)

@@ -577,6 +577,76 @@ describe('ChatSessionManager provider resolver', () => {
     expect(streamChatCompletion.mock.calls[0]?.[0]).toMatchObject({ target })
   })
 
+  it('attributes each env Retry attempt to the model resolved for that attempt', async () => {
+    const attributionA = { kind: 'env_fallback', modelId: 'env-model-a' } as const
+    const attributionB = { kind: 'env_fallback', modelId: 'env-model-b' } as const
+    const resolvedTarget = (modelId: string) => ({
+      providerId: null,
+      baseUrl: 'https://env.example.com/v1/',
+      token: 'env-token',
+      modelId,
+      protocol: 'openai-chat-completions' as const,
+      targetAttribution: { kind: 'env_fallback' as const, modelId },
+    })
+    const coordinator = {
+      prepare: vi.fn(async () => preparedTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+      complete: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const resolveChatTarget = vi
+      .fn()
+      .mockReturnValueOnce(resolvedTarget('env-model-a'))
+      .mockReturnValueOnce(resolvedTarget('env-model-b'))
+    streamChatCompletion
+      .mockRejectedValueOnce(new Error('Provider failed'))
+      .mockResolvedValueOnce({ finalContent: 'Retried answer' })
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+      resolveChatTarget,
+    })
+
+    manager.start(sender, validRequest())
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:error',
+        requestId: 'request-1',
+        targetAttribution: attributionA,
+      })
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      requestId: 'request-2',
+      turnIntent: 'retry_failed_response',
+    })
+    await waitForAssertion(() => {
+      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+        type: 'chat:done',
+        requestId: 'request-2',
+      })
+    })
+
+    expect(sentChatEvents(sender).filter((event) => event.type === 'chat:start')).toMatchObject([
+      { requestId: 'request-1', targetAttribution: attributionA },
+      { requestId: 'request-2', targetAttribution: attributionB },
+    ])
+    expect(coordinator.bindResolvedTarget).toHaveBeenNthCalledWith(
+      1,
+      'request-1',
+      'assistant-1',
+      attributionA,
+    )
+    expect(coordinator.bindResolvedTarget).toHaveBeenNthCalledWith(
+      2,
+      'request-2',
+      'assistant-1',
+      attributionB,
+    )
+  })
+
   it('emits a config error without calling the provider and clears the active session', async () => {
     const resolveChatTarget = vi
       .fn()

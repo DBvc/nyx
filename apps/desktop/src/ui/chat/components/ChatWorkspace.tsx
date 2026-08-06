@@ -9,6 +9,7 @@ import { useChatSession } from '../use-chat-session'
 import { useConnectionStatus } from '../use-connection-status'
 import { chatTargetSelectionKey } from '../connection-status'
 import type { NyxChatTargetSelection } from '../../../../shared/chat/types'
+import type { NyxConnectionsOverview } from '../../../../shared/connections/types'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
 import { ChatSidebar } from './ChatSidebar'
@@ -33,6 +34,61 @@ interface ComposerTargetPresentation {
   status: string | null
   disabled: boolean
   action: ComposerTargetAction
+}
+
+interface ComposerTargetOption {
+  value: string
+  label: string
+  selection: NyxChatTargetSelection
+  disabled?: boolean
+}
+
+export function buildComposerTargetOptions(
+  overview: NyxConnectionsOverview | null,
+  targetDraft: NyxChatTargetSelection | null,
+): ComposerTargetOption[] {
+  const options: ComposerTargetOption[] = []
+
+  for (const target of overview?.targetCatalog.connectionTargets ?? []) {
+    const selection = {
+      kind: 'connection',
+      providerId: target.providerId,
+      modelId: target.modelId,
+    } as const satisfies NyxChatTargetSelection
+
+    options.push({
+      value: chatTargetSelectionKey(selection),
+      label: `${target.providerDisplayName} · ${target.modelDisplayName}`,
+      selection,
+    })
+  }
+
+  if (overview?.targetCatalog.envFallback) {
+    const selection = { kind: 'env_fallback' } as const satisfies NyxChatTargetSelection
+    options.push({
+      value: chatTargetSelectionKey(selection),
+      label: `.env · ${overview.targetCatalog.envFallback.modelId}`,
+      selection,
+    })
+  }
+
+  if (targetDraft) {
+    const selectedValue = chatTargetSelectionKey(targetDraft)
+
+    if (!options.some((option) => option.value === selectedValue)) {
+      options.unshift({
+        value: selectedValue,
+        label:
+          targetDraft.kind === 'connection'
+            ? `${targetDraft.providerId} · ${targetDraft.modelId} (Unavailable)`
+            : '.env fallback (Unavailable)',
+        selection: targetDraft,
+        disabled: true,
+      })
+    }
+  }
+
+  return options
 }
 
 export function composerTargetPresentation({
@@ -162,56 +218,10 @@ export function ChatWorkspace() {
     getLatestConnectionRequestEpoch: connectionSetup.getLatestRequestEpoch,
   })
 
-  const targetOptions = useMemo(() => {
-    const overview = connectionSetup.status.overview
-    const options: Array<{
-      value: string
-      label: string
-      selection: NyxChatTargetSelection
-      disabled?: boolean
-    }> = []
-
-    for (const target of overview?.targetCatalog.connectionTargets ?? []) {
-      const selection = {
-        kind: 'connection',
-        providerId: target.providerId,
-        modelId: target.modelId,
-      } as const satisfies NyxChatTargetSelection
-
-      options.push({
-        value: chatTargetSelectionKey(selection),
-        label: `${target.providerDisplayName} · ${target.modelDisplayName}`,
-        selection,
-      })
-    }
-
-    if (overview?.targetCatalog.envFallback) {
-      const selection = { kind: 'env_fallback' } as const satisfies NyxChatTargetSelection
-      options.push({
-        value: chatTargetSelectionKey(selection),
-        label: `.env · ${overview.targetCatalog.envFallback.modelId}`,
-        selection,
-      })
-    }
-
-    if (state.targetDraft) {
-      const selectedValue = chatTargetSelectionKey(state.targetDraft)
-
-      if (!options.some((option) => option.value === selectedValue)) {
-        options.unshift({
-          value: selectedValue,
-          label:
-            state.targetDraft.kind === 'connection'
-              ? `${state.targetDraft.providerId} · ${state.targetDraft.modelId} (Unavailable)`
-              : '.env fallback (Unavailable)',
-          selection: state.targetDraft,
-          disabled: true,
-        })
-      }
-    }
-
-    return options
-  }, [connectionSetup.status.overview, state.targetDraft])
+  const targetOptions = useMemo(
+    () => buildComposerTargetOptions(connectionSetup.status.overview, state.targetDraft),
+    [connectionSetup.status.overview, state.targetDraft],
+  )
   const targetPresentation = composerTargetPresentation({
     isResetting,
     hydrationStatus: state.hydrationStatus,

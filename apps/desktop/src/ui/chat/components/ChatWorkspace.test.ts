@@ -1,10 +1,41 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { NyxConnectionsOverview } from '../../../../shared/connections/types'
+
 import {
+  buildComposerTargetOptions,
   composerTargetPresentation,
   isSidebarShortcut,
   readSidebarCollapsed,
 } from './ChatWorkspace'
+
+const targetDraft = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  modelId: 'model-1',
+} as const
+
+function targetOverview(
+  providerDisplayName: string,
+  modelDisplayName: string,
+): NyxConnectionsOverview {
+  return {
+    providers: [],
+    defaultTarget: null,
+    defaultTargetSource: 'missing',
+    targetCatalog: {
+      connectionTargets: [
+        {
+          providerId: 'provider-1',
+          providerDisplayName,
+          modelId: 'model-1',
+          modelDisplayName,
+        },
+      ],
+      envFallback: null,
+    },
+  }
+}
 
 const readyTarget = {
   isResetting: false,
@@ -110,6 +141,54 @@ describe('composer target presentation', () => {
     ['ready target', {}, { status: null, disabled: false, action: null }],
   ] as const)('maps %s', (_name, overrides, expected) => {
     expect(composerTargetPresentation({ ...readyTarget, ...overrides })).toEqual(expected)
+  })
+})
+
+describe('Composer target options', () => {
+  it('refreshes labels without changing selection identity or duplicating the draft', () => {
+    const before = buildComposerTargetOptions(
+      targetOverview('Provider One', 'Model One'),
+      targetDraft,
+    )
+    const after = buildComposerTargetOptions(
+      targetOverview('Provider Renamed', 'Model Renamed'),
+      targetDraft,
+    )
+
+    expect(before).toHaveLength(1)
+    expect(after).toHaveLength(1)
+    expect(before[0]?.label).toBe('Provider One · Model One')
+    expect(after[0]?.label).toBe('Provider Renamed · Model Renamed')
+    expect(after[0]?.value).toBe(before[0]?.value)
+    expect(after[0]?.selection).toEqual(targetDraft)
+    expect(targetDraft).toEqual({
+      kind: 'connection',
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    })
+  })
+
+  it('prepends one disabled unavailable option when the draft leaves the catalog', () => {
+    const overview = targetOverview('Provider One', 'Model One')
+    const options = buildComposerTargetOptions(
+      {
+        ...overview,
+        targetCatalog: {
+          ...overview.targetCatalog,
+          connectionTargets: [],
+        },
+      },
+      targetDraft,
+    )
+
+    expect(options).toEqual([
+      {
+        value: JSON.stringify(targetDraft),
+        label: 'provider-1 · model-1 (Unavailable)',
+        selection: targetDraft,
+        disabled: true,
+      },
+    ])
   })
 })
 

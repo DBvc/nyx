@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { CurrentThreadSessionCoordinator } from '../current-thread/session-coordinator'
+import { CurrentThreadSnapshotService } from '../current-thread/snapshot'
 import { CurrentThreadStore } from '../current-thread/store'
 import {
   createRuntimeChatStateClient,
@@ -667,14 +668,16 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
     },
   )
 
-  integrationIt('replays a durable failure into a fresh runtime before retrying', async () => {
+  integrationIt('rebuilds durable owners and runtime from disk before retrying', async () => {
     checkedRuntimeArtifactPath()
     const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-retry-'))
-    const store = new CurrentThreadStore({
-      filePath: join(tempDir, 'current-thread.json'),
+    const filePath = join(tempDir, 'current-thread.json')
+    const firstStore = new CurrentThreadStore({
+      filePath,
       generateId: () => 'thread-durable-retry-1',
     })
-    const coordinator = new CurrentThreadSessionCoordinator({ store })
+    const firstCoordinator = new CurrentThreadSessionCoordinator({ store: firstStore })
+    const firstRuntimeClient = createRuntimeChatStateClient()
     const firstSender = mockSender()
     const secondSender = mockSender()
     streamChatCompletion
@@ -686,7 +689,8 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
         },
       )
     const firstManager = new ChatSessionManager({
-      resolveCurrentThreadSession: () => coordinator,
+      createRuntimeChatStateClient: () => firstRuntimeClient,
+      resolveCurrentThreadSession: () => firstCoordinator,
     })
 
     try {
@@ -696,8 +700,35 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       })
       firstSender.emitDestroyed()
 
+      const secondStore = new CurrentThreadStore({ filePath })
+      const secondCoordinator = new CurrentThreadSessionCoordinator({ store: secondStore })
+      const snapshotService = new CurrentThreadSnapshotService({
+        resolveReader: () => secondStore,
+      })
+      const secondRuntimeClient = createRuntimeChatStateClient()
+
+      await expect(snapshotService.getSnapshot()).resolves.toMatchObject({
+        ok: true,
+        value: {
+          runStatus: 'failed',
+          selectedTarget: { kind: 'env_fallback' },
+          retryableTurn: {
+            userMessageId: 'user-1',
+            assistantMessageId: 'assistant-1',
+          },
+          messages: [
+            { id: 'user-1' },
+            {
+              id: 'assistant-1',
+              targetAttribution: { kind: 'env_fallback', modelId: 'model' },
+            },
+          ],
+        },
+      })
+
       const secondManager = new ChatSessionManager({
-        resolveCurrentThreadSession: () => coordinator,
+        createRuntimeChatStateClient: () => secondRuntimeClient,
+        resolveCurrentThreadSession: () => secondCoordinator,
       })
       secondManager.start(
         secondSender,
@@ -716,12 +747,18 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       })
       secondSender.emitDestroyed()
 
-      await expect(store.read()).resolves.toMatchObject({
+      await expect(secondStore.read()).resolves.toMatchObject({
         turns: [
           {
             attemptRequestId: 'request-durable-retry-1',
+            userMessageId: 'user-1',
+            assistantMessageId: 'assistant-1',
             assistantStatus: 'completed',
             assistantContent: 'Retried answer',
+            targetBinding: {
+              selection: { kind: 'env_fallback' },
+              attribution: { kind: 'env_fallback', modelId: 'model' },
+            },
           },
         ],
       })

@@ -297,6 +297,49 @@ describe('createChatTargetResolver', () => {
     })
   })
 
+  it.each([
+    [
+      'disabled',
+      [
+        {
+          ...providerState().providers[0]!,
+          models: [{ ...providerState().providers[0]!.models[0]!, enabled: false }],
+        },
+      ],
+    ],
+    [
+      'deleted',
+      [
+        {
+          ...providerState().providers[0]!,
+          models: [],
+        },
+      ],
+    ],
+  ] satisfies ReadonlyArray<readonly [string, ConnectionStoreState['providers']]>)(
+    'maps a %s selected model to target_unavailable without env fallback',
+    async (_state, providers) => {
+      const envConfigReader = vi.fn(envConfig)
+      const resolver = createChatTargetResolver({
+        connectionStore: {
+          readState: vi.fn(async () => providerState({ providers: [...providers] })),
+        },
+        secretStore: {
+          readSecret: vi.fn(async () => 'stored-secret'),
+        },
+        envConfigReader,
+      })
+
+      await expect(resolver(connectionSelection)).rejects.toMatchObject({
+        chatError: {
+          code: 'target_unavailable',
+          retryable: true,
+        },
+      })
+      expect(envConfigReader).not.toHaveBeenCalled()
+    },
+  )
+
   it('maps a missing selected target to target_unavailable', async () => {
     const envConfigReader = vi.fn(envConfig)
     const resolver = createChatTargetResolver({

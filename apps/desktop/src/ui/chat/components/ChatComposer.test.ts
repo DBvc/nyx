@@ -37,6 +37,13 @@ function targetSelectOpeningTag(markup: string) {
   return openingTag as string
 }
 
+function sendButtonOpeningTag(markup: string) {
+  const openingTag = markup.match(/<button\b[^>]*aria-label="Send message"[^>]*>/)?.[0]
+
+  expect(openingTag).toBeTypeOf('string')
+  return openingTag as string
+}
+
 describe('shouldSendComposerKey', () => {
   it.each([
     ['Enter', false, false, true],
@@ -92,6 +99,7 @@ describe('ChatComposer', () => {
 
   it('keeps an unavailable target selected while offering an alternative', () => {
     const markup = renderComposer({
+      canSend: false,
       targetOptions: [
         { value: 'target-old', label: 'Old target (Unavailable)', disabled: true },
         { value: 'target-new', label: 'Provider Two · Model Two' },
@@ -105,6 +113,7 @@ describe('ChatComposer', () => {
     )
     expect(markup).toContain('Provider Two · Model Two')
     expect(targetSelectOpeningTag(markup)).not.toContain(' disabled=""')
+    expect(sendButtonOpeningTag(markup)).toContain('disabled=""')
   })
 
   it.each(['Refresh targets', 'Open Connections'])('renders the %s target action', (label) => {

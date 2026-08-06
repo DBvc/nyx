@@ -172,5 +172,16 @@ describe('Composer target projection', () => {
         }),
       ),
     ).toEqual({ kind: 'env_fallback' })
+
+    expect(
+      selectInitialChatTarget(
+        null,
+        overview({
+          providers: [],
+          defaultTarget: null,
+          defaultTargetSource: 'missing',
+        }),
+      ),
+    ).toBeNull()
   })
 })

@@ -12,7 +12,7 @@ import type {
   NyxChatTargetSelection,
 } from '../../../shared/chat/types'
 import { chatReducer } from './chat-reducer'
-import { initialChatState } from './chat-types'
+import { initialChatState, type ChatState } from './chat-types'
 import {
   isChatTargetAvailable,
   selectInitialChatTarget,
@@ -82,6 +82,73 @@ interface UseChatSessionOptions {
   connectionStatus: ConnectionStatusState
   refreshConnections: () => Promise<void>
   getLatestConnectionRequestEpoch: () => number
+}
+
+type TargetCatalogAction =
+  | {
+      type: 'target-context-ready'
+      generation: number
+      catalogEpoch: number
+      selection: NyxChatTargetSelection | null
+      available: boolean
+    }
+  | {
+      type: 'target-catalog-updated'
+      generation: number
+      catalogEpoch: number
+      available: boolean
+    }
+  | {
+      type: 'target-catalog-unready'
+      catalogEpoch: number
+    }
+
+export function deriveTargetCatalogAction(
+  state: ChatState,
+  connectionStatus: ConnectionStatusState,
+): TargetCatalogAction | null {
+  if (state.hydrationStatus !== 'ready' || state.resetStatus === 'resetting') {
+    return null
+  }
+
+  if (connectionStatus.kind !== 'ready') {
+    return {
+      type: 'target-catalog-unready',
+      catalogEpoch: connectionStatus.requestEpoch,
+    }
+  }
+
+  if (!state.targetInitialized) {
+    const selection = selectInitialChatTarget(state.committedTarget, connectionStatus.overview)
+
+    return {
+      type: 'target-context-ready',
+      generation: state.projectionGeneration,
+      catalogEpoch: connectionStatus.requestEpoch,
+      selection,
+      available: isChatTargetAvailable(selection, connectionStatus.overview),
+    }
+  }
+
+  return {
+    type: 'target-catalog-updated',
+    generation: state.projectionGeneration,
+    catalogEpoch: connectionStatus.requestEpoch,
+    available: isChatTargetAvailable(state.targetDraft, connectionStatus.overview),
+  }
+}
+
+export function canSubmitChat(state: ChatState, connectionStatus: ConnectionStatusState) {
+  return (
+    state.hydrationStatus === 'ready' &&
+    state.resetStatus === 'idle' &&
+    state.input.trim().length > 0 &&
+    !state.activeRequestId &&
+    connectionStatus.kind === 'ready' &&
+    state.targetInitialized &&
+    state.targetAvailable &&
+    isChatTargetAvailable(state.targetDraft, connectionStatus.overview)
+  )
 }
 
 export function useChatSession({
@@ -184,37 +251,13 @@ export function useChatSession({
   }, [refreshConnections])
 
   useEffect(() => {
-    if (state.hydrationStatus !== 'ready' || state.resetStatus === 'resetting') {
+    const action = deriveTargetCatalogAction(state, connectionStatus)
+
+    if (!action) {
       return
     }
 
-    if (connectionStatus.kind !== 'ready') {
-      dispatch({
-        type: 'target-catalog-unready',
-        catalogEpoch: connectionStatus.requestEpoch,
-      })
-      return
-    }
-
-    if (!state.targetInitialized) {
-      const selection = selectInitialChatTarget(state.committedTarget, connectionStatus.overview)
-
-      dispatch({
-        type: 'target-context-ready',
-        generation: state.projectionGeneration,
-        catalogEpoch: connectionStatus.requestEpoch,
-        selection,
-        available: isChatTargetAvailable(selection, connectionStatus.overview),
-      })
-      return
-    }
-
-    dispatch({
-      type: 'target-catalog-updated',
-      generation: state.projectionGeneration,
-      catalogEpoch: connectionStatus.requestEpoch,
-      available: isChatTargetAvailable(state.targetDraft, connectionStatus.overview),
-    })
+    dispatch(action)
   }, [
     connectionStatus,
     state.committedTarget,
@@ -230,16 +273,7 @@ export function useChatSession({
 
     const targetSelection = state.targetDraft
 
-    if (
-      !prompt ||
-      state.hydrationStatus !== 'ready' ||
-      state.activeRequestId ||
-      !state.targetInitialized ||
-      !state.targetAvailable ||
-      !targetSelection ||
-      connectionStatus.kind !== 'ready' ||
-      !window.nyx
-    ) {
+    if (!canSubmitChat(state, connectionStatus) || !targetSelection || !window.nyx) {
       return
     }
 
@@ -307,7 +341,8 @@ export function useChatSession({
       !state.targetInitialized ||
       !state.targetAvailable ||
       !state.targetDraft ||
-      connectionStatus.kind !== 'ready'
+      connectionStatus.kind !== 'ready' ||
+      !isChatTargetAvailable(state.targetDraft, connectionStatus.overview)
     ) {
       return
     }
@@ -418,15 +453,7 @@ export function useChatSession({
     state,
     isBusy: Boolean(state.activeRequestId),
     isResetting: state.resetStatus === 'resetting',
-    canSend:
-      state.hydrationStatus === 'ready' &&
-      state.resetStatus === 'idle' &&
-      state.input.trim().length > 0 &&
-      !state.activeRequestId &&
-      connectionStatus.kind === 'ready' &&
-      state.targetInitialized &&
-      state.targetAvailable &&
-      Boolean(state.targetDraft),
+    canSend: canSubmitChat(state, connectionStatus),
     setInput(value: string) {
       dispatch({
         type: 'set-input',
