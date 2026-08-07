@@ -85,7 +85,7 @@ Allowed:
 Not allowed in this phase:
 
 - settings UI
-- model picker UI
+- model routing or picker UI beyond the bounded Composer target selector
 - Recent, thread switching, or persistent multi-thread history
 - markdown rendering
 - tool UI
@@ -153,7 +153,7 @@ Still not allowed after that third workstream:
 - tools, usage, sources, files, structured output, or native protocol adapters
 - provider calls, credentials, or adapter execution in OCaml
 
-Explicit fourth `composer-target-selection` workstream additions:
+Implemented D1-D4 `composer-target-selection` workstream additions:
 
 - a redacted selectable-target catalog on the existing Connections overview
 - a renderer-local, unsent Composer target draft
@@ -165,6 +165,10 @@ Explicit fourth `composer-target-selection` workstream additions:
 - a compact Composer target selector and compact assistant attribution
 - deterministic hydration, New thread, Retry, unavailable-target, and `.env`
   fallback behavior
+
+The required automated D5 acceptance passes. Interactive two-target provider,
+streaming-switch, failure/recovery, and restart acceptance remains pending in
+`../../docs/next/composer-target-selection-runthrough.md`.
 
 Still not allowed in that fourth workstream:
 

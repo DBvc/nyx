@@ -51,7 +51,8 @@ implemented additions recorded in this file and in
 `docs/next/agent-workbench-task-slices.md` supersede conflicting baseline lines
 only for those exact additions. Ordinary work must preserve the implemented
 Connections, thread-first, current-thread durability, and provider compatibility
-core behavior without using them as permission to broaden product scope.
+core behavior, plus the bounded Composer target-selection behavior, without
+using them as permission to broaden product scope.
 
 The current desktop product remains a minimal single-page chat client:
 
@@ -67,7 +68,7 @@ Still out of scope:
 
 - Recent, thread switching, or persistent multi-thread history
 - settings UI
-- model picker UI
+- model routing or picker UI beyond the bounded Composer target selector
 - markdown rendering
 - tools
 - agents
@@ -131,7 +132,8 @@ changes, Settings or model-picker UI, new shared/IPC contracts, raw reasoning
 exposure or persistence, renderer/OCaml provider integration, tools, or
 structured output.
 
-The explicit fourth `composer-target-selection` workstream may add only:
+The implemented D1-D4 slices of the explicit fourth
+`composer-target-selection` workstream added only:
 
 - one redacted catalog of configured selectable targets on the existing
   Connections overview bridge
@@ -145,6 +147,10 @@ The explicit fourth `composer-target-selection` workstream may add only:
   attribution
 - deterministic restart, New thread, Retry, unavailable-target, and `.env`
   fallback behavior defined by the D slices
+
+The required automated D5 acceptance passes. Interactive two-target provider,
+streaming-switch, failure/recovery, and restart acceptance remains pending and
+is recorded in `docs/next/composer-target-selection-runthrough.md`.
 
 This fourth workstream does not authorize changing the Connections persisted
 schema or global default when the Composer selection changes. It also does not

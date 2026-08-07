@@ -1,8 +1,9 @@
 # Nyx Thread-First Agent Workbench Direction
 
 Status: First foundation, current-thread durability, and provider compatibility
-core workstreams completed. Composer target-selection scope gate approved;
-implementation slices remain pending.
+core workstreams completed. Composer target-selection D1-D4 implemented and
+automated acceptance passed; interactive D5 provider/restart acceptance remains
+pending.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -116,7 +117,7 @@ Out of scope:
 This workstream can detect and report a reasoning model exhausting its output
 budget. It does not claim to prevent that exhaustion.
 
-## Fourth Workstream: Composer Target Selection (Scope Gated)
+## Fourth Workstream: Composer Target Selection (Implemented Through D4)
 
 The fourth workstream lets the user choose a configured provider/model target
 from the existing Composer without turning the main surface into a routing
@@ -157,6 +158,11 @@ per-turn selection and attribution. Electron main remains the sole owner of
 resolved targets and provider execution. The existing Connections Settings form
 may continue to edit full provider configuration through its typed detail API.
 OCaml continues to receive only the existing message-level runtime actions.
+
+The automated D5 acceptance is recorded in
+[composer-target-selection-runthrough.md](./composer-target-selection-runthrough.md).
+That runthrough keeps the interactive two-target provider, active-stream switch,
+failure/recovery, and restart matrix pending until it is actually exercised.
 
 ## Product Rules
 

@@ -77,6 +77,7 @@ In scope:
 - `Stop`
 - `Retry`
 - `New thread`
+- explicit provider/model target selection in the Composer
 - environment-based provider configuration
 - provider secrets kept in Electron main only
 
@@ -84,7 +85,7 @@ Out of scope for this phase:
 
 - Recent, thread switching, and persistent multi-thread history
 - settings UI
-- model picker UI
+- model routing or picker UI beyond the bounded Composer target selector
 - Markdown or code highlighting
 - tools
 - agents
@@ -150,7 +151,30 @@ provider-specific request parameters, an adapter registry, capability profiles,
 Connections schema changes, new UI or IPC, raw reasoning exposure, tools, or
 native protocol adapters.
 
-The product direction for that gated workstream is recorded in
+The implemented D1-D4 slices of the fourth gated workstream add only bounded
+Composer target selection:
+
+- a redacted catalog of selectable saved targets and the configured `.env`
+  fallback
+- one renderer-local unsent target draft and one explicit target selection on
+  each Send or Retry
+- Electron-main validation, resolution, and durable target binding with no
+  silent fallback
+- a version-2 current-thread record with committed selection and safe
+  per-response attribution
+- compact target selection and assistant attribution UI
+- deterministic target hydration, refresh, Retry, New thread, unavailable, and
+  active-generation behavior
+
+The required automated acceptance passes. The interactive two-target provider,
+streaming switch, failure/recovery, and restart matrix remains pending and is
+tracked without overclaiming in
+[composer-target-selection-runthrough.md](./docs/next/composer-target-selection-runthrough.md).
+This workstream does not add automatic routing, capability profiles,
+provider-specific parameters, attempt history, persistent multi-thread history,
+new runtime protocol fields, or a second durable selection owner.
+
+The product direction for these gated workstreams is recorded in
 [agent-workbench-direction.md](./docs/next/agent-workbench-direction.md).
 
 ## Boundaries

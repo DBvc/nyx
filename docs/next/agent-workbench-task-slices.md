@@ -64,9 +64,12 @@ Use relative documentation links. Do not add local absolute paths.
   provider-specific request policy, schema/UI expansion, or a new renderer or
   OCaml provider boundary.
 - `D0` defines the approved scope gate for the fourth
-  `composer-target-selection` workstream. `D1` through `D5` are planned but not
-  implemented. They may be executed only when the user explicitly requests the
-  named D workstream or slice.
+  `composer-target-selection` workstream. `D1` through `D4` are implemented and
+  passed the required automated D5 checks on 2026-08-07. D5 documentation is
+  synchronized, while its interactive provider/restart acceptance remains
+  pending in
+  [composer-target-selection-runthrough.md](./composer-target-selection-runthrough.md).
+  The named D workstream or slice still requires an explicit user request.
 - The D workstream permits safe target selection and attribution only. It does
   not authorize global-default mutation, a Connections store migration,
   provider-specific policy, automatic routing, attempt history, multi-thread
@@ -1034,8 +1037,10 @@ Do not:
 
 ## D Workstream: Composer Target Selection
 
-Status: `D0` scope gate approved on 2026-08-05. `D1` through `D5` are not yet
-implemented.
+Status: `D0` scope gate approved on 2026-08-05. `D1` through `D4` are
+implemented and passed the required automated D5 checks on 2026-08-07. D5
+documentation is synchronized; interactive provider/restart acceptance remains
+pending.
 
 Goal: let the user explicitly choose a configured chat target from the Composer
 while keeping provider resolution, credentials, provider calls, and durable
@@ -1470,6 +1475,10 @@ mise run runtime:chat-state:check
 ## D5: Composer Target Selection Acceptance And Docs
 
 Type: acceptance verification and documentation sync.
+
+Status: required automated verification passed and documentation synchronized
+on 2026-08-07. Interactive provider/restart acceptance remains pending; see
+[composer-target-selection-runthrough.md](./composer-target-selection-runthrough.md).
 
 Goal: verify D1-D4 against the locked D semantics and record only behavior that
 was actually demonstrated.
