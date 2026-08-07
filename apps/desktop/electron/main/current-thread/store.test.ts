@@ -44,6 +44,13 @@ const targetSelection = {
   providerId: 'provider-1',
   modelId: 'model-1',
 } as const
+const targetAttribution = {
+  kind: 'connection',
+  providerId: 'provider-1',
+  providerDisplayName: 'Provider One',
+  modelId: 'model-1',
+  modelDisplayName: 'Model One',
+} as const
 
 function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
   return parseCurrentThreadRecordV2({
@@ -96,9 +103,30 @@ function pendingRecordV1(overrides: Partial<CurrentThreadRecordV1> = {}) {
 }
 
 function completedRecord(requestId: string, content: string) {
-  const record = pendingRecord()
+  const record = bindRecord(pendingRecord())
 
   return completeRecord(record, requestId, content)
+}
+
+function bindRecord(record: CurrentThreadRecordV2) {
+  const latestTurnIndex = record.turns.length - 1
+
+  return parseCurrentThreadRecordV2({
+    ...record,
+    turns: record.turns.map((turn, index) =>
+      index === latestTurnIndex
+        ? {
+            ...turn,
+            targetBinding: {
+              selection: targetSelection,
+              attribution: targetAttribution,
+            },
+            updatedAt: record.updatedAt,
+          }
+        : turn,
+    ),
+    updatedAt: record.updatedAt,
+  })
 }
 
 function completeRecord(record: CurrentThreadRecordV2, requestId: string, content: string) {
@@ -158,11 +186,13 @@ describe('CurrentThreadStore', () => {
       userContent: 'Hello',
       targetSelection,
     })
+    const bound = bindRecord(created)
+    await store.write(bound)
     const failed = parseCurrentThreadRecordV2({
-      ...created,
+      ...bound,
       turns: [
         {
-          ...created.turns[0]!,
+          ...bound.turns[0]!,
           assistantStatus: 'failed',
           error: createSafeThreadErrorRecordV2({
             code: 'network_error',
@@ -182,6 +212,10 @@ describe('CurrentThreadStore', () => {
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
+          targetBinding: {
+            selection: targetSelection,
+            attribution: null,
+          },
         },
       ],
     })
@@ -274,6 +308,91 @@ describe('CurrentThreadStore', () => {
     })
   })
 
+  it('rejects ordinary terminal settlement before target attribution is bound', async () => {
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: 'Hello',
+      targetSelection,
+    })
+    const cancelled = parseCurrentThreadRecordV2({
+      ...created,
+      turns: [{ ...created.turns[0]!, assistantStatus: 'cancelled' }],
+    })
+    const failed = parseCurrentThreadRecordV2({
+      ...created,
+      turns: [
+        {
+          ...created.turns[0]!,
+          assistantStatus: 'failed',
+          error: createSafeThreadErrorRecordV2({ code: 'network_error', retryable: true }),
+        },
+      ],
+    })
+
+    for (const terminalRecord of [
+      completeRecord(created, 'request-1', 'Done'),
+      cancelled,
+      failed,
+    ]) {
+      await expect(store.write(terminalRecord)).rejects.toMatchObject({
+        code: 'invalid_transition',
+      } satisfies Partial<CurrentThreadStoreError>)
+    }
+
+    await expect(store.read()).resolves.toEqual(created)
+  })
+
+  it('settles only retryable target-resolution failure before attribution is bound', async () => {
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: 'Hello',
+      targetSelection,
+    })
+    const nonRetryable = parseCurrentThreadRecordV2({
+      ...created,
+      turns: [
+        {
+          ...created.turns[0]!,
+          assistantStatus: 'failed',
+          error: createSafeThreadErrorRecordV2({
+            code: 'target_unavailable',
+            retryable: false,
+          }),
+        },
+      ],
+    })
+    const resolutionFailed = parseCurrentThreadRecordV2({
+      ...nonRetryable,
+      turns: [
+        {
+          ...nonRetryable.turns[0]!,
+          error: createSafeThreadErrorRecordV2({
+            code: 'target_unavailable',
+            retryable: true,
+          }),
+        },
+      ],
+    })
+    const resolutionFailedWithContent = parseCurrentThreadRecordV2({
+      ...resolutionFailed,
+      turns: [{ ...resolutionFailed.turns[0]!, assistantContent: 'Unexpected content' }],
+    })
+
+    await expect(store.write(nonRetryable)).rejects.toMatchObject({
+      code: 'invalid_transition',
+    } satisfies Partial<CurrentThreadStoreError>)
+    await expect(store.write(resolutionFailedWithContent)).rejects.toMatchObject({
+      code: 'invalid_transition',
+    } satisfies Partial<CurrentThreadStoreError>)
+    await expect(store.write(resolutionFailed)).resolves.toEqual(resolutionFailed)
+  })
+
   it('rejects replacement of an existing thread or message identity', async () => {
     const store = createStore(await createTempFilePath())
     const created = await store.create({
@@ -319,7 +438,9 @@ describe('CurrentThreadStore', () => {
       userContent: 'Hello',
       targetSelection,
     })
-    const completed = completeRecord(created, 'request-1', 'Done')
+    const bound = bindRecord(created)
+    await store.write(bound)
+    const completed = completeRecord(bound, 'request-1', 'Done')
     await store.write(completed)
 
     await expect(
@@ -342,11 +463,13 @@ describe('CurrentThreadStore', () => {
       userContent: 'Hello',
       targetSelection,
     })
+    const retryBound = bindRecord(retryCreated)
+    await retriedStore.write(retryBound)
     const failed = parseCurrentThreadRecordV2({
-      ...retryCreated,
+      ...retryBound,
       turns: [
         {
-          ...retryCreated.turns[0]!,
+          ...retryBound.turns[0]!,
           assistantStatus: 'failed',
           error: createSafeThreadErrorRecordV2({ code: 'unknown', retryable: true }),
         },
@@ -380,7 +503,9 @@ describe('CurrentThreadStore', () => {
       userContent: 'First',
       targetSelection,
     })
-    const firstCompleted = completeRecord(created, 'request-1', 'First answer')
+    const firstBound = bindRecord(created)
+    await store.write(firstBound)
+    const firstCompleted = completeRecord(firstBound, 'request-1', 'First answer')
     await store.write(firstCompleted)
     const secondPending = parseCurrentThreadRecordV2({
       ...firstCompleted,
@@ -405,12 +530,14 @@ describe('CurrentThreadStore', () => {
       updatedAt: '2026-07-11T01:00:00.000Z',
     })
     await store.write(secondPending)
+    const secondBound = bindRecord(secondPending)
+    await store.write(secondBound)
     const secondCompleted = parseCurrentThreadRecordV2({
-      ...secondPending,
+      ...secondBound,
       turns: [
-        secondPending.turns[0]!,
+        secondBound.turns[0]!,
         {
-          ...secondPending.turns[1]!,
+          ...secondBound.turns[1]!,
           assistantContent: 'Second answer',
           assistantStatus: 'completed',
           updatedAt: '2026-07-11T02:00:00.000Z',
@@ -509,11 +636,13 @@ describe('CurrentThreadStore', () => {
       userContent: 'Hello',
       targetSelection,
     })
+    const bound = bindRecord(created)
+    await store.write(bound)
     const failed = parseCurrentThreadRecordV2({
-      ...created,
+      ...bound,
       turns: [
         {
-          ...created.turns[0]!,
+          ...bound.turns[0]!,
           assistantStatus: 'failed',
           error: createSafeThreadErrorRecordV2({ code: 'network_error', retryable: true }),
         },
@@ -528,6 +657,10 @@ describe('CurrentThreadStore', () => {
           assistantStatus: 'pending',
           assistantContent: '',
           error: null,
+          targetBinding: {
+            selection: targetSelection,
+            attribution: null,
+          },
         },
       ],
     })
@@ -596,7 +729,9 @@ describe('CurrentThreadStore', () => {
       userContent: 'Hello',
       targetSelection,
     })
-    const completed = completeRecord(created, 'request-1', 'Done')
+    const bound = bindRecord(created)
+    await store.write(bound)
+    const completed = completeRecord(bound, 'request-1', 'Done')
 
     failNextRename = true
     await expect(store.write(completed)).rejects.toMatchObject({
@@ -606,7 +741,7 @@ describe('CurrentThreadStore', () => {
       turns: [{ assistantStatus: 'pending' }],
     })
     await expect(stat(tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(store.read()).resolves.toEqual(created)
+    await expect(store.read()).resolves.toEqual(bound)
 
     await store.write(completed)
     await expect(store.read()).resolves.toEqual(completed)

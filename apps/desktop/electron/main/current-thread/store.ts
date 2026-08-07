@@ -149,6 +149,29 @@ function isResolvedTargetBindingTransition(currentTurn: TurnRecordV2, nextTurn: 
   })
 }
 
+function isValidPendingSettlement(currentTurn: TurnRecordV2, nextTurn: TurnRecordV2) {
+  if (
+    currentTurn.assistantStatus !== 'pending' ||
+    nextTurn.attemptRequestId !== currentTurn.attemptRequestId ||
+    nextTurn.assistantStatus === 'pending' ||
+    !currentTurn.targetBinding ||
+    !recordsEqual(currentTurn.targetBinding, nextTurn.targetBinding)
+  ) {
+    return false
+  }
+
+  if (currentTurn.targetBinding.attribution) {
+    return true
+  }
+
+  return (
+    nextTurn.assistantStatus === 'failed' &&
+    nextTurn.assistantContent === currentTurn.assistantContent &&
+    nextTurn.error?.code === 'target_unavailable' &&
+    nextTurn.error.retryable
+  )
+}
+
 function assertValidTransition(
   currentRecord: CurrentThreadRecord,
   nextRecord: CurrentThreadRecordV2,
@@ -183,11 +206,7 @@ function assertValidTransition(
       .every((turn, index) => recordsEqual(turn, nextTurns[index]))
     const currentTurn = currentTurns.at(-1)!
     const nextTurn = nextTurns.at(-1)!
-    const settlesPending =
-      currentTurn.assistantStatus === 'pending' &&
-      nextTurn.attemptRequestId === currentTurn.attemptRequestId &&
-      nextTurn.assistantStatus !== 'pending' &&
-      recordsEqual(currentTurn.targetBinding, nextTurn.targetBinding)
+    const settlesPending = isValidPendingSettlement(currentTurn, nextTurn)
     const bindsResolvedTarget = isResolvedTargetBindingTransition(currentTurn, nextTurn)
     const retriesFailed =
       currentTurn.assistantStatus === 'failed' &&

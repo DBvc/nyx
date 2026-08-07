@@ -121,6 +121,7 @@ describe('CurrentThreadSessionCoordinator', () => {
   it('derives later provider context from durable terminal turns', async () => {
     const { coordinator } = await createCoordinator()
     await coordinator.prepare(newRequest())
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
     await coordinator.complete('request-1', 'assistant-1', 'First answer')
 
     const prepared = await coordinator.prepare(
