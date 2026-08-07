@@ -11,7 +11,14 @@ const defaultProps: ComponentProps<typeof ChatComposer> = {
   canSend: true,
   disabled: false,
   targetDisabled: false,
-  targetOptions: [{ value: 'target-1', label: 'Provider One · Model One' }],
+  targetOptions: [
+    {
+      value: 'target-1',
+      label: 'Model One',
+      detail: 'Provider One',
+      disambiguation: 'Provider One',
+    },
+  ],
   targetAction: null,
   targetStatus: null,
   targetValue: 'target-1',
@@ -30,8 +37,24 @@ function renderComposer(overrides: Partial<ComponentProps<typeof ChatComposer>> 
   )
 }
 
-function targetSelectOpeningTag(markup: string) {
-  const openingTag = markup.match(/<select\b[^>]*>/)?.[0]
+function targetTriggerOpeningTag(markup: string) {
+  const openingTag = markup.match(/<button\b[^>]*aria-haspopup="dialog"[^>]*>/)?.[0]
+
+  expect(openingTag).toBeTypeOf('string')
+  return openingTag as string
+}
+
+function targetTriggerContent(markup: string) {
+  const content = markup.match(
+    /<button\b[^>]*aria-haspopup="dialog"[^>]*>([\s\S]*?)<\/button>/,
+  )?.[1]
+
+  expect(content).toBeTypeOf('string')
+  return content as string
+}
+
+function selectedTargetOpeningTag(markup: string) {
+  const openingTag = markup.match(/<button\b[^>]*aria-pressed="true"[^>]*>/)?.[0]
 
   expect(openingTag).toBeTypeOf('string')
   return openingTag as string
@@ -60,26 +83,28 @@ describe('ChatComposer', () => {
     const sendMarkup = renderComposer()
     const stopMarkup = renderComposer({ isBusy: true, canSend: false })
 
-    expect(sendMarkup.match(/<button/g)).toHaveLength(1)
     expect(sendMarkup).toContain('aria-label="Send message"')
     expect(sendMarkup).not.toContain('Stop response')
+    expect(sendMarkup).not.toContain('<select')
+    expect(sendMarkup).toContain('popoverTarget="chat-target-popover"')
+    expect(sendMarkup).toContain('role="dialog"')
 
-    expect(stopMarkup.match(/<button/g)).toHaveLength(1)
     expect(stopMarkup).toContain('aria-label="Stop response"')
     expect(stopMarkup).not.toContain('Send message')
-    expect(stopMarkup).toContain('aria-label="Chat target"')
-    expect(targetSelectOpeningTag(stopMarkup)).not.toContain(' disabled=""')
+    expect(targetTriggerOpeningTag(stopMarkup)).not.toContain(' disabled=""')
   })
 
-  it('describes a disabled loading target selector', () => {
+  it('describes a disabled loading target trigger', () => {
     const markup = renderComposer({
       targetDisabled: true,
+      targetOptions: [],
+      targetValue: '',
       targetStatus: 'Loading targets…',
     })
 
     expect(markup).toContain('aria-describedby="chat-target-status"')
-    expect(markup).toContain('aria-label="Chat target"')
-    expect(markup).toContain('disabled=""')
+    expect(targetTriggerOpeningTag(markup)).toContain('aria-label="Chat target: Loading targets…"')
+    expect(targetTriggerOpeningTag(markup)).toContain('disabled=""')
     expect(markup).toContain('aria-live="polite"')
     expect(markup).toContain('id="chat-target-status"')
     expect(markup).toContain('Loading targets…')
@@ -92,8 +117,7 @@ describe('ChatComposer', () => {
       targetStatus: 'Refreshing targets…',
     })
 
-    expect(markup).toContain('aria-label="Chat target"')
-    expect(targetSelectOpeningTag(markup)).not.toContain(' disabled=""')
+    expect(targetTriggerOpeningTag(markup)).not.toContain(' disabled=""')
     expect(markup).toContain('Refreshing targets…')
   })
 
@@ -101,19 +125,67 @@ describe('ChatComposer', () => {
     const markup = renderComposer({
       canSend: false,
       targetOptions: [
-        { value: 'target-old', label: 'Old target (Unavailable)', disabled: true },
-        { value: 'target-new', label: 'Provider Two · Model Two' },
+        {
+          value: 'target-old',
+          label: 'Old model',
+          detail: 'Provider One · Unavailable',
+          disambiguation: 'Provider One',
+          disabled: true,
+        },
+        {
+          value: 'target-new',
+          label: 'Model Two',
+          detail: 'Provider Two',
+          disambiguation: 'Provider Two',
+        },
       ],
       targetStatus: 'Selected target unavailable. Choose another target.',
       targetValue: 'target-old',
     })
 
-    expect(markup).toContain(
-      '<option disabled="" value="target-old" selected="">Old target (Unavailable)</option>',
+    expect(markup).not.toContain('<select')
+    expect(markup).toContain('Old model')
+    expect(markup).toContain('Provider One · Unavailable')
+    expect(markup).toContain('Model Two')
+    expect(markup).toContain('Provider Two')
+    expect(selectedTargetOpeningTag(markup)).toContain('disabled=""')
+    expect(targetTriggerOpeningTag(markup)).toContain(
+      'aria-label="Chat target: Old model · Provider One · Unavailable"',
     )
-    expect(markup).toContain('Provider Two · Model Two')
-    expect(targetSelectOpeningTag(markup)).not.toContain(' disabled=""')
+    expect(targetTriggerOpeningTag(markup)).not.toContain(' disabled=""')
+    expect(targetTriggerContent(markup)).toContain('lucide-circle-alert')
+    expect(targetTriggerContent(markup)).toContain('aria-hidden="true"')
     expect(sendButtonOpeningTag(markup)).toContain('disabled=""')
+  })
+
+  it('exposes a unique target provider without adding it to the collapsed text', () => {
+    const uniqueMarkup = renderComposer()
+
+    expect(targetTriggerOpeningTag(uniqueMarkup)).toContain(
+      'aria-label="Chat target: Model One · Provider One"',
+    )
+    expect(targetTriggerContent(uniqueMarkup)).toContain('Model One')
+    expect(targetTriggerContent(uniqueMarkup)).not.toContain('Provider One')
+  })
+
+  it('shows and exposes the provider when model names collide', () => {
+    const duplicateMarkup = renderComposer({
+      targetOptions: [
+        ...defaultProps.targetOptions,
+        {
+          value: 'target-2',
+          label: 'Model One',
+          detail: 'Provider Two',
+          disambiguation: 'Provider Two',
+        },
+      ],
+    })
+
+    expect(targetTriggerOpeningTag(duplicateMarkup)).toContain(
+      'aria-label="Chat target: Model One · Provider One"',
+    )
+    expect(targetTriggerContent(duplicateMarkup)).toContain('Model One')
+    expect(targetTriggerContent(duplicateMarkup)).toContain('Provider One')
   })
 
   it.each(['Refresh targets', 'Open Connections'])('renders the %s target action', (label) => {
@@ -123,6 +195,19 @@ describe('ChatComposer', () => {
     })
 
     expect(markup).toContain(`>${label}</button>`)
-    expect(markup.match(/<button/g)).toHaveLength(2)
+    expect(targetTriggerOpeningTag(markup)).not.toContain('disabled=""')
+  })
+
+  it('keeps Connections reachable when no target is available', () => {
+    const markup = renderComposer({
+      targetAction: { label: 'Open Connections', run: () => undefined },
+      targetDisabled: true,
+      targetOptions: [],
+      targetStatus: 'No target available.',
+      targetValue: '',
+    })
+
+    expect(targetTriggerOpeningTag(markup)).not.toContain('disabled=""')
+    expect(markup).toContain('>Open Connections</button>')
   })
 })

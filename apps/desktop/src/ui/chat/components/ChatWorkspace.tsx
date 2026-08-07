@@ -39,6 +39,8 @@ interface ComposerTargetPresentation {
 interface ComposerTargetOption {
   value: string
   label: string
+  detail: string
+  disambiguation: string
   selection: NyxChatTargetSelection
   disabled?: boolean
 }
@@ -58,7 +60,9 @@ export function buildComposerTargetOptions(
 
     options.push({
       value: chatTargetSelectionKey(selection),
-      label: `${target.providerDisplayName} · ${target.modelDisplayName}`,
+      label: target.modelDisplayName,
+      detail: target.providerDisplayName,
+      disambiguation: target.providerDisplayName,
       selection,
     })
   }
@@ -67,7 +71,9 @@ export function buildComposerTargetOptions(
     const selection = { kind: 'env_fallback' } as const satisfies NyxChatTargetSelection
     options.push({
       value: chatTargetSelectionKey(selection),
-      label: `.env · ${overview.targetCatalog.envFallback.modelId}`,
+      label: overview.targetCatalog.envFallback.modelId,
+      detail: '.env fallback',
+      disambiguation: '.env fallback',
       selection,
     })
   }
@@ -78,10 +84,13 @@ export function buildComposerTargetOptions(
     if (!options.some((option) => option.value === selectedValue)) {
       options.unshift({
         value: selectedValue,
-        label:
+        label: targetDraft.kind === 'connection' ? targetDraft.modelId : '.env fallback',
+        detail:
           targetDraft.kind === 'connection'
-            ? `${targetDraft.providerId} · ${targetDraft.modelId} (Unavailable)`
-            : '.env fallback (Unavailable)',
+            ? `${targetDraft.providerId} · Unavailable`
+            : 'Unavailable',
+        disambiguation:
+          targetDraft.kind === 'connection' ? targetDraft.providerId : '.env fallback',
         selection: targetDraft,
         disabled: true,
       })

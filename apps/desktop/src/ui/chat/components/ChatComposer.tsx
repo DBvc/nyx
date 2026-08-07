@@ -1,5 +1,5 @@
-import { ArrowUp, Square } from 'lucide-react'
-import type { FormEvent, KeyboardEvent } from 'react'
+import { ArrowUp, Check, ChevronDown, CircleAlert, Square } from 'lucide-react'
+import { useRef, type FormEvent, type KeyboardEvent } from 'react'
 
 interface ChatComposerProps {
   input: string
@@ -10,6 +10,8 @@ interface ChatComposerProps {
   targetOptions: ReadonlyArray<{
     value: string
     label: string
+    detail: string
+    disambiguation: string
     disabled?: boolean
   }>
   targetAction: {
@@ -67,6 +69,31 @@ export function ChatComposer({
     void onSend()
   }
 
+  const targetPopoverRef = useRef<HTMLDivElement>(null)
+  const targetTriggerRef = useRef<HTMLButtonElement>(null)
+  const selectedTarget = targetOptions.find((option) => option.value === targetValue)
+  const selectedTargetNeedsDisambiguation =
+    selectedTarget !== undefined &&
+    targetOptions.some(
+      (option) => option.value !== selectedTarget.value && option.label === selectedTarget.label,
+    )
+  const targetSummary = selectedTarget
+    ? [
+        selectedTarget.label,
+        selectedTarget.disambiguation,
+        selectedTarget.disabled ? 'Unavailable' : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : (targetStatus ?? 'Choose target')
+  const targetTriggerDisabled =
+    (targetDisabled || targetOptions.length === 0) && targetAction === null
+
+  function closeTargetPopover() {
+    targetPopoverRef.current?.hidePopover()
+    targetTriggerRef.current?.focus()
+  }
+
   return (
     <footer className='shrink-0 bg-nyx-canvas px-6 pb-5 pt-4'>
       <form className='mx-auto w-full max-w-[48rem]' onSubmit={handleSubmit}>
@@ -85,56 +112,145 @@ export function ChatComposer({
             value={input}
           />
 
-          <div className='mt-2 flex min-h-8 items-end justify-between gap-3'>
-            <div className='min-w-0 flex-1'>
-              <div className='flex min-w-0 items-center gap-2'>
-                <select
-                  aria-describedby={targetStatus ? 'chat-target-status' : undefined}
-                  aria-label='Chat target'
-                  className='min-w-0 max-w-[22rem] flex-1 rounded-md border border-nyx-line bg-nyx-panel px-2 py-1 text-xs text-nyx-muted outline-none focus:border-nyx-subtle disabled:opacity-60'
-                  disabled={targetDisabled || targetOptions.length === 0}
-                  onChange={(event) => {
-                    onTargetChange(event.target.value)
-                  }}
-                  value={targetValue}
-                >
-                  {targetValue === '' ? (
-                    <option disabled value=''>
-                      No target available
-                    </option>
-                  ) : null}
-                  {targetOptions.map((option) => (
-                    <option disabled={option.disabled} key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+          <div className='mt-2 flex h-9 items-center justify-end gap-2'>
+            <div className='min-w-0'>
+              <button
+                aria-describedby={targetStatus ? 'chat-target-status' : undefined}
+                aria-haspopup='dialog'
+                aria-label={`Chat target: ${targetSummary}`}
+                className={`chat-target-trigger flex h-7 w-fit max-w-[14rem] items-center gap-1.5 rounded-lg px-2 text-left text-[12px] font-medium outline-none hover:bg-nyx-solid disabled:opacity-60 ${
+                  selectedTarget?.disabled
+                    ? 'text-nyx-warning'
+                    : 'text-nyx-muted hover:text-nyx-ink'
+                }`}
+                disabled={targetTriggerDisabled}
+                popoverTarget='chat-target-popover'
+                ref={targetTriggerRef}
+                title={targetSummary}
+                type='button'
+              >
+                <span className='min-w-0 truncate'>
+                  {selectedTarget?.label ?? targetStatus ?? 'Choose target'}
+                </span>
+                {selectedTargetNeedsDisambiguation ? (
+                  <>
+                    <span aria-hidden='true' className='shrink-0 text-nyx-subtle'>
+                      ·
+                    </span>
+                    <span className='min-w-0 truncate text-nyx-subtle'>
+                      {selectedTarget.disambiguation}
+                    </span>
+                  </>
+                ) : null}
+                {selectedTarget?.disabled ? (
+                  <CircleAlert
+                    aria-hidden='true'
+                    className='h-3.5 w-3.5 shrink-0'
+                    strokeWidth={2}
+                  />
+                ) : null}
+                <ChevronDown
+                  aria-hidden='true'
+                  className='h-3.5 w-3.5 shrink-0 text-nyx-subtle'
+                  strokeWidth={1.75}
+                />
+              </button>
 
-                {targetAction ? (
-                  <button
-                    className='shrink-0 text-xs font-medium text-nyx-muted hover:text-nyx-ink'
-                    onClick={targetAction.run}
-                    type='button'
-                  >
-                    {targetAction.label}
-                  </button>
+              <div
+                aria-label='Chat target'
+                className='chat-target-popover rounded-xl border border-nyx-line-strong bg-nyx-panel p-1.5 text-nyx-ink shadow-lg'
+                id='chat-target-popover'
+                onToggle={(event) => {
+                  if (!event.currentTarget.matches(':popover-open')) {
+                    return
+                  }
+
+                  const selected = event.currentTarget.querySelector<HTMLButtonElement>(
+                    'button[aria-pressed="true"]:not(:disabled)',
+                  )
+                  const firstAvailable =
+                    event.currentTarget.querySelector<HTMLButtonElement>('button:not(:disabled)')
+                  const focusTarget = selected ?? firstAvailable
+
+                  focusTarget?.focus()
+                }}
+                popover='auto'
+                ref={targetPopoverRef}
+                role='dialog'
+              >
+                <div className='px-2 py-1.5 text-[11px] font-medium text-nyx-subtle'>Model</div>
+
+                <div className='nyx-scrollbar max-h-64 overflow-y-auto'>
+                  {targetOptions.map((option) => {
+                    const selected = option.value === targetValue
+
+                    return (
+                      <button
+                        aria-pressed={selected}
+                        className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left ${
+                          selected
+                            ? 'bg-nyx-solid text-nyx-ink'
+                            : 'text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
+                        }`}
+                        disabled={option.disabled}
+                        key={option.value}
+                        onClick={() => {
+                          onTargetChange(option.value)
+                          closeTargetPopover()
+                        }}
+                        type='button'
+                      >
+                        <span className='min-w-0 flex-1'>
+                          <span className='block break-words text-[13px] font-medium'>
+                            {option.label}
+                          </span>
+                          <span className='block truncate text-[11px] text-nyx-subtle'>
+                            {option.detail}
+                          </span>
+                        </span>
+                        {selected ? (
+                          <Check
+                            aria-hidden='true'
+                            className='h-3.5 w-3.5 shrink-0'
+                            strokeWidth={2}
+                          />
+                        ) : null}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {targetStatus || targetAction ? (
+                  <div className='mt-1 border-t border-nyx-line px-2 py-2'>
+                    {targetStatus ? (
+                      <p className='m-0 text-[11px] leading-4 text-nyx-subtle'>{targetStatus}</p>
+                    ) : null}
+                    {targetAction ? (
+                      <button
+                        className='mt-1 text-[12px] font-medium text-nyx-muted hover:text-nyx-ink'
+                        onClick={() => {
+                          closeTargetPopover()
+                          targetAction.run()
+                        }}
+                        type='button'
+                      >
+                        {targetAction.label}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 
               {targetStatus ? (
-                <p
-                  aria-live='polite'
-                  className='mt-1 text-[11px] leading-4 text-nyx-subtle'
-                  id='chat-target-status'
-                >
+                <span aria-live='polite' className='sr-only' id='chat-target-status'>
                   {targetStatus}
-                </p>
+                </span>
               ) : null}
             </div>
 
             <button
               aria-label={isBusy ? 'Stop response' : 'Send message'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full ${
+              className={`flex h-9 w-9 items-center justify-center rounded-full ${
                 isBusy
                   ? 'bg-nyx-ink text-nyx-canvas hover:opacity-90'
                   : canSend
@@ -153,9 +269,9 @@ export function ChatComposer({
               type={isBusy ? 'button' : 'submit'}
             >
               {isBusy ? (
-                <Square aria-hidden='true' fill='currentColor' size={10} strokeWidth={0} />
+                <Square aria-hidden='true' fill='currentColor' size={14} strokeWidth={0} />
               ) : (
-                <ArrowUp aria-hidden='true' className='h-4 w-4' strokeWidth={2} />
+                <ArrowUp aria-hidden='true' className='h-[18px] w-[18px]' strokeWidth={2.25} />
               )}
             </button>
           </div>

@@ -157,8 +157,8 @@ describe('Composer target options', () => {
 
     expect(before).toHaveLength(1)
     expect(after).toHaveLength(1)
-    expect(before[0]?.label).toBe('Provider One · Model One')
-    expect(after[0]?.label).toBe('Provider Renamed · Model Renamed')
+    expect(before[0]).toMatchObject({ label: 'Model One', detail: 'Provider One' })
+    expect(after[0]).toMatchObject({ label: 'Model Renamed', detail: 'Provider Renamed' })
     expect(after[0]?.value).toBe(before[0]?.value)
     expect(after[0]?.selection).toEqual(targetDraft)
     expect(targetDraft).toEqual({
@@ -184,7 +184,9 @@ describe('Composer target options', () => {
     expect(options).toEqual([
       {
         value: JSON.stringify(targetDraft),
-        label: 'provider-1 · model-1 (Unavailable)',
+        label: 'model-1',
+        detail: 'provider-1 · Unavailable',
+        disambiguation: 'provider-1',
         selection: targetDraft,
         disabled: true,
       },

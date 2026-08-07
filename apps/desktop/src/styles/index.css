@@ -95,6 +95,19 @@ input[type='radio'] {
   outline: none;
 }
 
+.chat-target-trigger {
+  anchor-name: --chat-target-trigger;
+}
+
+.chat-target-popover {
+  position: fixed;
+  position-anchor: --chat-target-trigger;
+  inset: auto anchor(right) anchor(top) auto;
+  width: min(20rem, calc(100vw - 2rem));
+  max-height: min(24rem, calc(100vh - 8rem));
+  margin: 0 0 0.5rem;
+}
+
 .nyx-scrollbar {
   scrollbar-color: var(--color-nyx-subtle) transparent;
   scrollbar-width: thin;
