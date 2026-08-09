@@ -90,7 +90,11 @@ Use relative documentation links. Do not add local absolute paths.
   `RC-V3-PLAN-03`. E1 then completed at `1bf91cf` and passed
   `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
   complete at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8`
-  and passed `RC-E4-CODE-02`. E5 is now the only executable E slice. E0F itself
+  and passed `RC-E4-CODE-02`. E5 stopped at `RC-E5-EVIDENCE-01` when Chromium
+  erased credentials before the product handler. The user approved policy A;
+  the v3.1 canonical-identity amendment passed `RC-E5-PLAN-A-02`. E5 then stopped
+  at the fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned
+  `VALID_STOP`. No E slice is executable pending a new user decision. E0F itself
   froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
@@ -1569,8 +1573,9 @@ Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
 review on 2026-08-09. The v3.0 stable-image-URL plan passed `RC-V3-PLAN-03`;
 E1 completed at `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6`
 and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
-`RC-E3-CODE-02`; E4 completed at `b13d3b8` and passed `RC-E4-CODE-02`. E5 is
-the only executable E slice.
+`RC-E3-CODE-02`; E4 completed at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1
+amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
+`RC-E5-4K-MEMORY-01`. No E slice is executable pending a new user decision.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1595,7 +1600,9 @@ They are non-operative and are not implementation permission. The rewritten
 E1-E5 sections near the end of this workstream describe the reviewed v3.0 plan.
 The active E invariants are:
 
-- E1-E4 are complete and independently reviewed; E5 is executable
+- E1-E4 are complete and independently reviewed; the v3.1 canonical-identity
+  amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
+  gate and no E slice is executable
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2489,7 +2496,10 @@ or OCaml change.
 
 Type: acceptance verification and documentation sync.
 
-Status: executable. E5 is the only permitted next E slice.
+Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
+import measured +309.859 MiB against the fixed +192 MiB line. Independent review
+`RC-E5-4K-MEMORY-01` returned `VALID_STOP`; no E slice is executable pending a
+new user decision.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:
@@ -2510,11 +2520,16 @@ Required:
   reset ordering, orphan reconcile, and every draft object-URL terminal path
 - rerun the protocol canonical-alias/security/JS-read/cache/restart-revocation
   matrix and production Worker from the packaged app; evidence must bind the
-  running app to the reviewed build
+  running app to the reviewed build. Raw port/case/fragment/credentials spelling
+  erased before `protocol.handle` is the same canonical identity and carries no
+  authority; any observable credentials, query, wrong host, unknown id,
+  traversal, or non-GET request still fails closed
 - through the real E4 import handler in that packaged product, run four ordinary
   images and one high-entropy 4K image across picker/paste/drop -> Worker -> main
   validation; record 4-image ready <=1.5 s, 4K ready <=1 s, heartbeat <=50 ms,
-  single-image main sync <=250 ms, and each whole-process peak delta <=192 MiB
+  single-image main sync <=250 ms, and each whole-process peak delta <=192 MiB.
+  Use a fresh process and stop this import-phase sample after accepted/main-
+  validation settle and before Provider build
 - mount the real product grid at 12 refs/24,883,200 full pixels, open the max
   image in the single dialog, and build the 32 MiB Provider request concurrently;
   require open <=500 ms, heartbeat <=50 ms, main sync <=250 ms, whole-process

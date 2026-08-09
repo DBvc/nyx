@@ -4,7 +4,10 @@ Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
 implementation plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
 `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`; E3
 completed at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8`
-and passed `RC-E4-CODE-02`. E5 is executable.
+and passed `RC-E4-CODE-02`. E5 stopped at `RC-E5-EVIDENCE-01`; the user approved
+policy A and the v3.1 amendment passed `RC-E5-PLAN-A-02`. E5 then stopped at the
+fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. No E
+slice is executable pending a new user decision.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -639,7 +642,60 @@ sources, and preview URLs; only successful reset clears them. The desktop suite
 passed with 417 tests and 17 skips; typecheck, compatibility typecheck, lint,
 format check, and production build passed with a separate Worker chunk. E4
 added no new IPC, dependency, Renderer cache, rich text, assistant image output,
-Provider policy, or OCaml change. E5 is the only executable next slice.
+Provider policy, or OCaml change. E5 was the only executable next slice before
+the first packaged acceptance Stop.
+
+## E5 first packaged acceptance and policy decision
+
+The first E5 run bound HEAD `91c797d` to an `app.asar` with SHA-256
+`59cb16af1d804af3fff8970f7cda8b18a4d99b307f9e6aaa381b3a26992a1ae9`.
+The running page's URL was inside that archive. Electron-builder's external TLS
+download failed after the production build, so the already validated local
+Electron 41.7.2 shell was packaged in OS temp using the same reviewed `app.asar`
+shape as E0F. No product file changed.
+
+Four ordinary images passed the real picker -> production Worker -> main path:
+ready 113.3 ms, maximum heartbeat gap 12.2 ms, accepted/main prepare 30.8 ms,
+whole-process peak delta 81.109 MiB, four ordered Provider image parts, and four
+sent previews. A 3840x2160 high-entropy boundary JPEG passed the real paste and
+image-only path: canonical 8,359,933 bytes, ready 224.6 ms, heartbeat 13.8 ms,
+accepted/main prepare 114.6 ms, durable hydration, and sent display. Its first
+302.328 MiB sample continued through Provider completion and mixed import with
+data-URL/request construction; `RC-E5-EVIDENCE-01` correctly left the import
+peak undecided rather than treating that mixed number as pass or fail.
+
+Restart hydration, canonical/port-alias loads, repeated native-cache loads,
+query/wrong-host/unknown-id/traversal failures, Renderer fetch `TypeError`, XHR
+status 0, and canvas `SecurityError` passed. Before the full variant was warm,
+however, `nyx-image://user:pass@full/<authorized-id>` loaded and its `currentSrc`
+was already canonical. Chromium erased credentials before the handler, so the
+sealed fail-before-handler rule was not implementable. Independent review
+`RC-E5-EVIDENCE-01` returned `VALID_STOP` and correctly stopped revocation,
+combined grid/32 MiB Provider, and real-target remainder.
+
+The user approved policy A: raw spelling Chromium erases before the handler,
+including the observed credentials spelling, is the same canonical resource
+identity and conveys no authorization. Observable unauthorized shapes, JS byte-
+read isolation, main durable id ownership, and restart revocation remain fixed.
+The v3.1 amendment passed bound independent review `RC-E5-PLAN-A-02`. The
+required fresh-process rerun used the real drop handler and production Worker.
+The 3840x2160 high-entropy JPEG source was 5,801,864 bytes; canonical was
+8,359,933 bytes and preview was 500,128 bytes. Ready was 243.3 ms, heartbeat
+14.2 ms, and accepted/main prepare 124.1 ms.
+
+After the page settled, 20 baseline samples at 20 ms intervals had a 406.156
+MiB median. Recursive root-plus-descendant RSS sampling approximately every
+20-27 ms peaked at 716.016 MiB at t=169 ms, before Worker ready: delta +309.859
+MiB against the fixed +192 MiB line. This separated import phase ended on
+accepted; the later local
+mock request cannot explain the earlier peak. Independent review
+`RC-E5-4K-MEMORY-01` verified the fixture, baseline, process sum, timing, and
+phase isolation, then returned `VALID_STOP` without requiring a repeat.
+
+E5 remainder stopped immediately. Combined product grid/32 MiB Provider,
+restart revocation, and real-target acceptance were not run. The OS-temp app,
+profiles, fixtures, and redacted evidence remain retained pending the next user
+decision and one bound documentation review.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -687,5 +743,5 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  the reviewed v3.0 plan authorized E1-E4, which subsequently completed; E5 is
-  now executable
+  the reviewed v3.0 plan authorized E1-E4, which subsequently completed and
+  unlocked the first E5 run; current E5 status is recorded at the top

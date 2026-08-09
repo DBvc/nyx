@@ -1,6 +1,7 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.0 sealed; E1-E4 completed and reviewed, E5 executable
+> Status: v3.1 sealed; E1-E4 completed and reviewed; E5 stopped after
+> `RC-E5-4K-MEMORY-01` VALID_STOP; no E slice is executable pending user decision
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -13,7 +14,9 @@
 >
 > 当前生效约束：E1 已在 `1bf91cf` 完成并通过 `RC-E1-CODE-02`；E2 已在
 > `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在 `7677868` 完成并通过
-> `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过 `RC-E4-CODE-02`。只允许执行 E5。
+> `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过 `RC-E4-CODE-02`。下述 v3.1
+> amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在 fresh-process 4K import
+> memory gate 停止，等待新的用户决策。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -262,8 +265,9 @@ reject 表示 final 未改变；record rename 后无 fallible post-step。图片
   media stream。`protocol.handle` 在 ready 后使用 default session。
 - Authorization 只使用 handler 收到的 canonical Request：GET、exact scheme、host
   `preview | full`、一个 UUID path segment、无 observable query。Chromium 已抹除的
-  raw port/case/fragment 是同一 identity；unknown id/host、traversal、query、non-GET
-  fail closed，credentials 在 handler 前失败。
+  raw port/case/fragment/credentials spelling 是同一 identity；unknown id/host、
+  traversal、query、non-GET fail closed。若 credentials 在未来 Electron 中重新成为
+  handler 可观察字段，现有 username/password 检查必须 fail closed。
 - Handler 每次 cache miss 从 current durable record 确认 id 仍被引用，再构造 main-only
   deterministic path，拒绝 symlink/non-file/empty/oversized file，并用
   `net.fetch(file:)` 的 `Response.body` streaming 返回。Measured path 不 `readFile`/
@@ -283,6 +287,40 @@ reject 表示 final 未改变；record rename 后无 fallible post-step。图片
 New thread 会清 DOM、删除授权记录且 image id 永不复用，Renderer JS 仍不能读取 bytes；
 若旧 URL 被故意保留，它可能在该进程退出前再次显示。要求即时撤销将需要禁用 native
 cache 或增加 token/version owner，都会推翻 E0F 的内存路径，本实验不引入。
+
+### v3.1 E5 canonical identity amendment
+
+E5 packaged product 首轮在 Electron 41.7.2 / Chromium 146.0.7680.216 发现：尚未
+warm 的 `nyx-image://user:pass@full/<authorized-id>` 在进入 handler 前被规范化为
+canonical URL，首次 load 成功且 `currentSrc` 不含 credentials。handler 无法观察
+raw username/password，和已批准的 non-default port alias 属于同一平台边界。
+独立 review `RC-E5-EVIDENCE-01` 判定原 credentials fail-before-handler 要求不可实现，
+结论为 `VALID_STOP`。
+
+用户批准继续采用 policy A：授权唯一依据仍是 handler 收到的 canonical `Request`
+与 main-owned durable id map。任何在该边界前被 Chromium 擦除的 raw spelling，
+包括已观察的 port、case、fragment 与 credentials，都只是同一资源 identity；它不
+携带授权、不进入持久化、不写日志、不转发 Provider。observable query、wrong host、
+unknown id、traversal、non-GET 仍必须 fail closed，Renderer fetch/XHR/canvas 仍必须
+阻断，restart 后 main 撤销 id 仍必须压过 native disk cache。
+
+这项 amendment 不改变 scheme、URL builder、handler、parser、IPC、Store 或产品代码。
+parser 保留 username/password 检查，以便 Chromium/Electron 未来若不再擦除它们时
+自动拒绝。绑定独立 plan review `RC-E5-PLAN-A-02` 已 PASS；E5 用 fresh process 重跑
+security/revocation。4K import 内存只采 ingress → Worker → accepted/main-validation
+settle，Provider build 前结束；product grid + 32 MiB Provider build 仍在独立组合相位
+按原 ≤192 MiB 红线测量，不能沿用首轮混相的 302.328 MiB 判定通过或失败。
+
+Fresh-process 分相重跑使用真实 drop handler 与 production Worker。3840×2160
+high-entropy JPEG source 为 5,801,864 bytes，canonical 为 8,359,933 bytes，preview
+为 500,128 bytes；ready 243.3 ms、heartbeat 14.2 ms、accepted/main prepare
+124.1 ms 均通过。页面稳定后，以 20 ms 间隔取得 20 个 baseline samples，median
+为 406.156 MiB；约每 20-27 ms 的 whole-process sampling 在 ready 前 t=169 ms
+达到 716.016 MiB，delta
++309.859 MiB，超过固定 +192 MiB。独立 evidence review
+`RC-E5-4K-MEMORY-01` 判定 `VALID_STOP`：峰值属于 import Worker 相位，不是后续
+Provider build；无需重测。E5 的 grid/32 MiB Provider、revocation 与 real-target
+remainder 未运行，当前没有可执行 E slice。
 
 ### Provider、错误与 Runtime
 
@@ -317,7 +355,8 @@ cache 或增加 token/version owner，都会推翻 E0F 的内存路径，本实�
 
 ### 实现切片与放行顺序
 
-`RC-V3-PLAN-03` 已 PASS，当前只解锁 E1；每片提交、验证、review 后才进入下一片：
+`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5 在 v3.1 amendment 通过
+独立 review 后成为唯一可执行切片：
 
 1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
    snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
@@ -1396,7 +1435,12 @@ mise run check
   局部缺口。修订只保留 image-only 空 user compatibility entry、补 packaged real
   import 性能门、把 source `File` 生命周期延长到 Worker ready；没有改 owner、协议、
   容量或 scope。
+- Epoch 12 / E5 policy A：首轮 packaged acceptance 发现 Chromium 在 handler 前
+  同样擦除 credentials spelling；`RC-E5-EVIDENCE-01` 判定原 fail-before-handler
+  要求为有效 Stop。用户批准把该 spelling 纳入 canonical identity；v3.1 amendment
+  不改产品代码或既有可观察安全边界，并通过 `RC-E5-PLAN-A-02`。
 - 当前判断：v3.0 已通过独立 review；E1 已在 `1bf91cf` 完成并通过
   `RC-E1-CODE-02`；E2 已在 `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在
   `7677868` 完成并通过 `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过
-  `RC-E4-CODE-02`。只有 E5 可执行。
+  `RC-E4-CODE-02`。v3.1 amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在
+  `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止，等待用户决策。
