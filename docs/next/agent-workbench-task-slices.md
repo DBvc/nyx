@@ -79,10 +79,11 @@ Use relative documentation links. Do not add local absolute paths.
   because Chromium's canonical JPEG contained an ICC APP2 segment forbidden by
   the failed v1.8 candidate's sealed metadata allowlist. User-approved `E0C`
   proved the exact ICC candidate, then stopped because visible 12×1080p and
-  8×1080p grids exceeded the fixed whole-process memory line. No E slice is
-  permitted until the user chooses and approves a revised feasibility direction;
-  `E1` through `E5` remain blocked. No capacity limit or product ICC allowlist is
-  frozen. Evidence is recorded in
+  8×1080p grids exceeded the fixed whole-process memory line. User-approved
+  `E0D` proved the preview-only grid, then stopped when its temporary
+  fresh-byte/Blob/object-URL full-open path exceeded the same line. No E slice is
+  executable; `E1` through `E5` remain blocked pending a new user decision. No
+  capacity limit or product ICC allowlist is frozen. Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
@@ -1556,14 +1557,17 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0, E0B, and E0C stopped on 2026-08-09. There is no executable E slice;
-E1-E5 remain blocked pending a new user decision.
+Status: E0, E0B, E0C, and E0D stopped on 2026-08-09. There is no executable E
+slice; E1-E5 remain blocked pending a new user decision.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
-whole-process memory stop line. E0C did not freeze an implementation allowlist
-or any capacity and does not authorize product code or E1-E5. This document
-remains the higher-priority scope gate if a conflict appears.
+whole-process memory stop line. E0D then proved the preview-only grid but stopped
+when its temporary full-open path copied fresh bytes through IPC into a new Blob
+and object URL on each open and exceeded the same line. This narrow result does
+not disprove derived previews or select a product transport. It does not
+authorize product code or E1-E5. This document remains the higher-priority scope
+gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
@@ -1571,6 +1575,8 @@ They are non-operative and are not implementation permission. The active E
 invariants are:
 
 - E1-E5 remain blocked
+- E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
+  constant, or full-image transport is frozen by implication
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
@@ -1834,6 +1840,109 @@ Observed result:
   and returned `VALID_STOP`; the reviewed OS-temp harness was then deleted
 
 No capacity or product ICC allowlist is frozen. E1-E5 remain blocked.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
+## E0D: Derived Preview And On-Demand Full Decode Feasibility
+
+Type: temporary Electron/Vite display-memory probe and plan/docs evidence only.
+
+Status: stopped on 2026-08-09 after independent review. E0D is not product
+implementation permission.
+
+Allowed tracked files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-technical-plan.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Required:
+
+- recreate a minimal OS-temp production-shape Electron/Vite harness from
+  scratch with the current sandbox/context-isolation settings, one static module
+  Worker, no production Renderer imports, no new dependency, and synthetic data
+- reuse the E0C exact APP0/APP2 evidence only inside the probe; it is still not a
+  product allowlist until the whole E0D gate passes
+- decode each source once in the Worker and emit two outputs: the same-MIME full
+  canonical image and one aspect-preserving PNG preview whose maximum edge is
+  512 px; do not add multiple preview sizes, a cache, service, or worker pool
+- verify static Worker loading in build and `app.asar`, JPEG orientation/visual
+  equivalence, and PNG alpha/visual equivalence with the current toolchain
+- keep main authoritative for both outputs: full canonical rules remain bounded
+  by the E0C candidate; preview must be PNG with only `IHDR`/`IDAT`/`IEND`, at
+  most 1 MiB, maximum edge 512 px, maximum 262,144 pixels, correct orientation,
+  and dimensions derived from the full canonical image
+- simulate accepted ownership after import: main owns full canonical and preview
+  bytes as one pair; Renderer drops source/full bytes and receives only previews
+  for the message grid. Temporary harness IPC is evidence plumbing, not a new
+  product contract
+- prepare synthetic evidence outside measured runs, then run each display
+  scenario in a fresh Electron process; load main-owned full/preview pairs before
+  a 500 ms baseline sample so prior Worker/import caches cannot contaminate the
+  display delta
+- test the count/cumulative-pixel candidate with 12 distinct 1920×1080 images
+  (24,883,200 total pixels) rendered as real visible preview `<img>` elements;
+  wait for decode/load/error, two animation frames, and a settled sample
+- separately test the maximum-image path with one 3840×2160 image plus eight
+  1920×1080 images (also 24,883,200 total pixels): render previews, request and
+  decode only the 4K full canonical on open, then close and release its DOM node
+  and object URL; repeat open/close three times and never hold two full images
+- repeat the fresh preview-grid and full-open scenarios three times; sample
+  main+Renderer+Worker/GPU whole-process working set every 20 ms and record
+  baseline/peak/delta, preview bytes, ready time, open time, heartbeat gap, main
+  sync segments, visible dimensions, and live full-image count
+- retain the sanitized harness and synthetic files through one bound independent
+  review, then delete them and keep only redacted evidence in the runthrough
+
+Fixed stop lines: heartbeat gap ≤50 ms; main synchronous segment ≤250 ms; four
+daily full+preview outputs ready ≤1.5 s; one 4K full+preview output ready ≤1 s;
+preview grid ready ≤500 ms; one 4K full open ready ≤500 ms; source/full canonical
+≤8 MiB; preview ≤1 MiB and ≤262,144 pixels; every fresh-process whole-process
+peak delta ≤192 MiB. Candidate count 12 and cumulative pixels 24,883,200 remain
+unfrozen until every E0D item and independent review pass.
+
+Stop instead of widening E0D if a preview exceeds its bound, the fresh preview
+grid or one-full-image path misses a fixed line, memory grows across open/close
+cycles, safe use requires virtualization, multiple preview tiers, a general
+thumbnail/Asset service, new dependency/process/product IPC, product code, or a
+new OCaml protocol. Do not try another display architecture inside E0D.
+
+Observed result:
+
+- full+preview import, JPEG orientation/visual equivalence, PNG alpha/visual
+  equivalence, and the exact probe ICC candidate passed; four daily imports took
+  246.0-252.4 ms and 4K imports took 315.2-326.3 ms
+- three fresh preview-grid processes passed: 12 previews were ready in
+  131.0-131.5 ms with +29.656 to +45.813 MiB whole-process peak deltas and no
+  full image in the DOM
+- the first fresh full-open process stopped the gate: after the preview grid was
+  mounted and the baseline sampled, three one-at-a-time 4K opens took
+  77.5-82.8 ms but peaked at +271.047 MiB, above the fixed +192 MiB line
+- each close removed the node, revoked the object URL, and returned full-image
+  DOM count to zero; the measured path still copied a fresh 8,366,208-byte
+  typed array from main and created a fresh Blob/object URL on every open
+- the production build emitted its static Worker; `app.asar` was not rerun
+  after the valid Stop
+- independent strict review bound source-tree fingerprint
+  `d08f54374b7d93eccce1784413374a73d47c2049c4c5f395b7d289d3a036c879`
+  and returned `VALID_STOP`
+
+No count, pixel, preview, ICC, or transport choice is frozen. The result rejects
+only E0D's sealed temporary full-open path; it does not prove the derived-preview
+model generally infeasible.
 
 Validation:
 

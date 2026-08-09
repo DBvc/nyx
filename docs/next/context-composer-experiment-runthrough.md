@@ -1,16 +1,20 @@
 # Context Composer Experiment Runthrough
 
-Status: E0, E0B, and E0C stopped; E1-E5 blocked; a new user decision is required.
+Status: E0, E0B, E0C, and E0D stopped; E1-E5 blocked; a new user decision is
+required.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
 No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
-candidate but failed the visible-DOM whole-process memory stop line. This is not
-product implementation permission.
+candidate but failed the full-image visible-DOM memory line. E0D proved the
+preview-only grid, then failed the same line on its temporary full-open data
+path. This is not product implementation permission.
 
 Probe date: 2026-08-09
 
 E0C plan baseline: `d25ea7a`
+
+E0D plan baseline: `cef901b`
 
 Plan: [context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md)
 
@@ -306,6 +310,87 @@ with high confidence. It found the memory failure valid and warned that the
 lifecycle/metadata results must remain probe-scoped. The reviewed OS-temp
 harness and synthetic outputs were then deleted.
 
+### E0D derived-preview and full-open failure record
+
+The bounded OS-temp harness used the current sandbox/context-isolation settings,
+one static Vite module Worker, no production Renderer imports, no new dependency,
+and synthetic data. One Worker decode emitted the same-MIME full canonical and
+one aspect-preserving PNG preview. Main validated and owned both; the message
+grid received previews only. Preparation and display ran in separate processes;
+each display process loaded main-owned pairs before its 500 ms baseline, and
+main sampled main+Renderer+Worker/GPU working set every 20 ms.
+
+Executed redacted command shapes:
+
+```sh
+E0D_ROOT="<OS temp>/nyx-context-composer-exp-01"
+REPO_ROOT="<repo>"
+"$REPO_ROOT/apps/desktop/node_modules/.bin/electron-vite" build "$E0D_ROOT" -c "$E0D_ROOT/electron.vite.config.ts"
+E0D_RUN_MODE=smoke "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0D_ROOT"
+E0D_RUN_MODE=prepare "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0D_ROOT"
+E0D_RUN_MODE=grid E0D_REPETITION="<1..3>" "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0D_ROOT"
+E0D_RUN_MODE=full E0D_REPETITION=1 "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0D_ROOT"
+```
+
+The production build emitted a separate static `image-worker-<hash>.js` chunk.
+The valid Stop occurred before `app.asar` loading was rerun, so no packaged E0D
+loading result is claimed.
+
+Import and trust-boundary checks passed:
+
+| Evidence          | Result                                                                     |
+| ----------------- | -------------------------------------------------------------------------- |
+| JPEG visual       | full+preview left red / right blue                                         |
+| EXIF orientation  | full 800×1200; preview 341×512                                             |
+| PNG alpha         | preserved in full and preview                                              |
+| Four daily images | 246.0 / 248.0 / 252.4 ms total; heartbeat ≤11.9 ms; peak delta ≤60.453 MiB |
+| One 4K image      | 315.2-326.3 ms; heartbeat ≤11.5 ms; peak delta ≤150.797 MiB                |
+| 4K pair           | full 8,366,208 bytes; preview 231,638 bytes; 3840×2160 → 512×288           |
+
+The exact E0C ICC candidate continued to validate. Preview PNGs stayed within
+the sealed chunk, byte, edge, and pixel rules.
+
+Three fresh preview-grid processes passed with 12 distinct 1920×1080 images
+(24,883,200 full pixels, 2,679,826 preview bytes total):
+
+| Repetition |    Ready | Heartbeat |    Baseline |        Peak |       Delta | Full DOM images |
+| ---------: | -------: | --------: | ----------: | ----------: | ----------: | --------------: |
+|          1 | 131.4 ms |   11.1 ms | 434.172 MiB | 463.828 MiB | +29.656 MiB |               0 |
+|          2 | 131.5 ms |   11.0 ms | 426.250 MiB | 471.281 MiB | +45.031 MiB |               0 |
+|          3 | 131.0 ms |   11.1 ms | 425.859 MiB | 471.672 MiB | +45.813 MiB |               0 |
+
+The first fresh full-open process then hit the fixed Stop. Its preview grid was
+mounted before baseline. Each cycle fetched a fresh main-owned 8,366,208-byte
+typed array, created a Blob/object URL, decoded one 3840×2160 image, then removed
+the node and revoked the URL; DOM full-image count returned to zero after each
+close.
+
+| Open cycle |   Ready | Main copy | Live full images |
+| ---------: | ------: | --------: | ---------------: |
+|          1 | 82.8 ms |  0.737 ms |                1 |
+|          2 | 77.5 ms |  0.818 ms |                1 |
+|          3 | 78.1 ms |  0.751 ms |                1 |
+
+Heartbeat peaked at 12.2 ms, but whole-process working set rose from
+496.438 MiB to 767.484 MiB: **+271.047 MiB**, above the fixed +192 MiB line.
+The remaining two fresh full-open repetitions were correctly not run after this
+valid Stop.
+
+The sanitized source-tree fingerprint was
+`d08f54374b7d93eccce1784413374a73d47c2049c4c5f395b7d289d3a036c879`.
+Independent strict review recomputed the fingerprint and returned `VALID_STOP`
+with high confidence. It found no baseline, sampling, release, or harness defect
+that could be repaired within E0D. Its boundary warning is important: this
+rejects only the sealed fresh-byte/Blob/object-URL temporary path; it does not
+show that derived previews are generally infeasible or choose a product
+full-image transport.
+
+The reviewed OS-temp harness and synthetic outputs were then deleted.
+
+E0D result: **STOP**. No count, cumulative-pixel, preview, product ICC, or
+transport value is frozen. E1-E5 remain blocked pending a new user-approved
+feasibility gate and review.
+
 ## Historical v1.8 candidate limits (status reference)
 
 This is the status reference for v1.8's historical candidate values. No
@@ -351,4 +436,5 @@ E0C result: **STOP**.
 - independent strict review returned `VALID_STOP`; no local harness repair or
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
-- E1-E5 remain blocked pending a new user-approved direction and reviewed gate
+- E0D also returned `VALID_STOP`; E1-E5 remain blocked pending a new
+  user-approved direction and reviewed gate

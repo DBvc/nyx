@@ -1,17 +1,17 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: Blocked after E0C evidence — E0/E0B/E0C STOP, user decision required
+> Status: Blocked after E0D evidence — E0/E0B/E0C/E0D STOP, user decision required
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v1.9 E0C 已停止，不再授权继续取证或产品实现。其余正文是失败的
-> v1.8 历史候选与证据记录，不是当前实现方案或 scope 授权。
+> v2.0 E0D 已停止，不再授权继续取证或产品实现。v1.9 E0C 与其余
+> v1.8 正文是失败的历史候选与证据记录，不是当前实现方案或 scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
 > 生效，也不构成实现许可。
 >
 > 当前生效约束：没有 executable E slice；E1-E5 blocked；未来方案仍由
-> Electron main 权威验证并持有 durable state；不得开始产品实现或扩大
-> scope。没有冻结任何容量限制；状态以
+> Electron main 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有
+> 冻结任何容量限制；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
 >
@@ -19,6 +19,86 @@
 > arm64 与已记录的 synthetic fixtures：OS-temp production-shape Vite
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
+
+## v2.0 历史修订：E0D 派生预览与按需原图门禁（已停止）
+
+用户在 2026-08-09 批准 E0D。它只改变显示内存假设：未来 accepted image
+仍由 Electron main 持有 full canonical bytes，但消息流只显示一份已验证、
+持久化尺寸的派生 PNG preview；用户主动打开时，Renderer 最多解码一张 full
+canonical image。E0D 只验证该模型，不写产品代码，也不恢复历史 E1-E5。
+
+### 最小数据与 owner 模型
+
+一个临时 accepted image pair 只有两个字节实体：
+
+- `canonical`：Provider、Retry 和 full view 使用的 same-MIME full image；沿用
+  E0C exact ICC/PNG candidate validation，但尚未冻结为产品规则
+- `preview`：同一个 Worker 在 canonicalization decode 生命周期中生成的一份
+  aspect-preserving PNG，max edge 512 px、max pixels 262,144、max bytes 1 MiB，
+  只允许 `IHDR`/`IDAT`/`IEND`
+
+Electron main 在 probe 中权威验证并成对持有两者。Renderer 在 accepted 后必须
+丢弃 source/full bytes，message grid 只拿 preview。临时 full-open IPC 只模拟
+未来读取路径，不是 product contract 选择；E0D 不决定 schema、文件布局、IPC
+命名或 migration。
+
+不增加多级缩略图、virtualization、cache、Asset/thumbnail service、Worker pool
+或 dependency。preview 不是第二份可编辑 source of truth；它只由 canonical
+导出，未来若缺失可重建，但首屏不得靠 hydration 时重解 full image 才显示。
+
+### E0D 可证伪矩阵
+
+1. 在 OS temp 用当前 Electron/Vite、sandbox/context-isolation 和静态 module
+   Worker 重建 harness。Worker 对每张 source 只 decode 一次，同时输出 same-MIME
+   canonical 与 512 px-edge PNG preview；验证 orientation、aspect、PNG chunks、
+   size/pixels、JPEG visual、PNG alpha/visual、production build、`app.asar` 和
+   E0C exact ICC candidate。
+2. 四张 1600×1200 daily images 的 full+preview 在 ≤1.5 s ready；一张
+   3840×2160 高熵图在 ≤1 s ready；heartbeat ≤50 ms、main sync segment
+   ≤250 ms、whole-process peak delta ≤192 MiB。
+3. prepare 与 display 分进程：synthetic pairs 先写 OS temp，fresh Electron
+   process 在 main 读完 canonical+preview 后采 500 ms baseline，Renderer 只接收
+   preview。避免把 import Worker/cache 高水位混进 display delta。
+4. count/cumulative candidate 使用 12 张不同的 1920×1080 图片，共
+   24,883,200 pixels；挂载真实可见 preview `<img>`，等待 decode、两帧和 settled
+   sample。fresh process 重复三次，grid ready ≤500 ms，delta ≤192 MiB。
+5. max-image candidate 使用一张 3840×2160 加八张 1920×1080，同样共
+   24,883,200 pixels。preview grid ready 后只请求/解码 4K full image；open
+   ≤500 ms、heartbeat ≤50 ms、delta ≤192 MiB。open/close 三次，始终最多一个
+   full DOM image，并释放 node/object URL；fresh process 重复三次。
+6. 全进程 sampling 每 20 ms 覆盖 main、Renderer、Worker/GPU。记录 environment、
+   seed/hash、pair bytes/dimensions、baseline/peak/delta、ready/open/heartbeat/main
+   segment、repetition 和脱敏命令。sanitized harness 经绑定独立审查后删除。
+
+固定候选只有：per-turn 4、current-thread count 12、cumulative pixels
+24,883,200、full source/canonical 8 MiB、full max pixels 8,294,400、preview
+1 MiB/512 edge/262,144 pixels。它们在 E0D 全矩阵与 independent review PASS 前
+都不冻结。
+
+若 preview/grid/full-open 任一固定线失败，跨 open/close 出现增长，或需要
+virtualization、多级 preview、通用 service、新 dependency/process/product IPC、
+产品代码或 OCaml protocol，E0D Stop 并返回用户决策；本门禁不换第三种显示
+架构。E0D PASS 后也只能重新收敛产品实现方案，不能直接沿用历史切片。
+
+### E0D 结果
+
+派生 preview 的生成、验证和 message grid 显示均通过：四张日常图的
+full+preview 总耗时 246.0-252.4 ms，4K 为 315.2-326.3 ms；三次 fresh
+preview-grid 的 ready 为 131.0-131.5 ms，whole-process peak delta 为
++29.656 到 +45.813 MiB。
+
+门禁停止在第一轮 fresh full-open：preview grid 已挂载并建立 baseline 后，三次
+单张 4K open 虽只需 77.5-82.8 ms，但 whole-process peak delta 达
++271.047 MiB，超过固定 +192 MiB。每次 close 均移除 DOM node、revoke object
+URL 并回到 0 个 full image；本次封存路径仍会在每次打开时从 main 复制新的
+8,366,208-byte typed array，再建立 Blob/object URL。
+
+独立审查绑定 source-tree fingerprint
+`d08f54374b7d93eccce1784413374a73d47c2049c4c5f395b7d289d3a036c879`
+并判定 `VALID_STOP`。该结论只否决 E0D 临时 full-open 数据路径，不能外推为
+derived-preview 模型普遍不可行。没有冻结容量、preview 常量、product ICC
+allowlist 或 full-image transport；production build 通过，但有效 Stop 后未再跑
+`app.asar`。
 
 ## v1.9 E0C 精确 Chromium ICC 门禁（已停止）
 
@@ -738,6 +818,12 @@ mise run check
 - 2026-08-09 / E0C evidence：exact ICC 与十个 APP2 adversarial cases 通过，
   但 12×1080p 与最终 8×1080p visible DOM grid 均超过 +192 MiB。独立审查
   判定 `VALID_STOP`；harness 删除，不运行 `review-ready`，不冻结容量。
+- 2026-08-09 / v2.0：用户批准 E0D，只重开 display memory 边界：main-owned
+  full canonical + one 512 px PNG preview，message grid 只 decode preview，主动
+  full view 最多 decode 一张原图。仍不授权产品代码或 E1-E5。
+- 2026-08-09 / E0D evidence：preview grid 三次均低于 +46 MiB，但临时
+  fresh-byte/Blob/object-URL full-open 路径达到 +271.047 MiB。独立审查判定
+  `VALID_STOP`；不冻结容量、preview 常量或 product transport。
 
 ## Convergence 记录
 
@@ -769,5 +855,10 @@ mise run check
   stop line 失败。独立 reviewer 认为 failure delta 的采样顺序有效，不是需要
   局部修复的 harness 假失败；lifecycle/metadata 只能描述为 probe coverage，
   不能写成生产验证。
+- Epoch 5 / user decision：用户批准用单一 persisted-size preview 与 on-demand
+  full decode 隔离 message grid 的 decoded-memory 成本；不批准通用 thumbnail
+  service、virtualization、多级 preview 或 product implementation。
+- Epoch 6 / E0D evidence：preview-only grid 方向成立，但 sealed temporary
+  full-open path 超出内存线。reviewer 判定为有效 Stop，并要求只做路径级结论。
 - 当前判断：方案不是 implementation-ready；没有 executable E slice。
-  E1-E5 blocked，等待用户决定是否以新的显示/内存策略重开门禁。
+  E1-E5 blocked，等待用户决定是否以新的 full-image transport/lifetime 门禁继续。

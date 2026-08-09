@@ -82,9 +82,11 @@ E0 stopped on main-thread encoding; E0B then stopped because Chromium's native
 JPEG output violated the failed v1.8 candidate's sealed metadata allowlist.
 The user approved only the bounded E0C exact-ICC feasibility gate. E0C then
 stopped because visible 12×1080p and 8×1080p DOM grids exceeded the fixed
-whole-process memory stop line. The exact Chromium ICC evidence is not product
-implementation permission. E1-E5 remain blocked pending a new user decision,
-and no capacity limit is frozen.
+whole-process memory stop line. E0D later proved the preview-only message grid
+but stopped because its temporary fresh-byte/Blob/object-URL full-open path
+exceeded the same memory line. Neither result is product implementation
+permission or proof that derived previews are generally infeasible. E1-E5
+remain blocked pending a new user decision; no capacity is currently frozen.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -185,13 +187,13 @@ The candidate-limit table in
 `docs/next/context-composer-experiment-runthrough.md` is the status reference;
 no capacity limit of any kind is frozen.
 
-There is no executable E slice after E0C Stop. E1-E5 remain blocked, Electron
+There is no executable E slice after E0D Stop. E1-E5 remain blocked, Electron
 main remains authoritative for validation, metadata policy, file IO, durable
 ownership, target resolution, Provider mapping, and safe errors, and no product
 implementation or scope expansion is authorized. Any continuation requires a
 new user-approved feasibility gate.
 
-E0, E0B, and E0C failure evidence is recorded in
+E0, E0B, E0C, and E0D failure evidence is recorded in
 `docs/next/context-composer-experiment-runthrough.md`. E1 through E5 remain
 blocked pending a new user decision and reviewed gate.
 

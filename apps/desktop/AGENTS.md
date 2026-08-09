@@ -73,11 +73,14 @@ This subproject owns:
   stopped because Chromium's native JPEG output violated the failed v1.8
   candidate's sealed metadata allowlist. The user approved only E0C, which then
   stopped because visible 12×1080p and 8×1080p DOM grids exceeded the fixed
-  whole-process memory stop line. E1-E5 production behavior remains blocked
-  pending a new user decision. Electron main must remain authoritative for
-  validation, metadata policy, file IO, durable state, Provider mapping, and
-  errors. OCaml remains a text-only projection. No product implementation or
-  scope expansion is authorized meanwhile.
+  whole-process memory stop line. E0D later proved the preview-only grid but
+  stopped because its temporary fresh-byte/Blob/object-URL full-open path
+  exceeded the same line. This does not prove derived previews generally
+  infeasible. E1-E5 production behavior remains blocked pending a new user
+  decision. Electron main must remain authoritative for validation, metadata
+  policy, file IO, durable state, Provider mapping, and errors. OCaml remains a
+  text-only projection. No product implementation or scope expansion is
+  authorized meanwhile.
 
 ## Current Scope
 
@@ -219,11 +222,12 @@ The v1.8 Worker/JPEG/allowlist design, every numeric limit, and the E1-E5 slice
 and file lists are historical candidate material only. They are non-operative
 and are not implementation permission. E0C proved one stable exact Chromium ICC
 candidate but failed its visible-grid memory gate, so it did not freeze an
-implementation allowlist or any capacity. Only main authority and durable
+implementation allowlist or any capacity. E0D also stopped without freezing a
+capacity or choosing a product full-image transport. Main authority and durable
 ownership remain active E boundaries; no product implementation or scope
 expansion is authorized.
 
-E0, E0B, and E0C failure evidence is recorded in
+E0, E0B, E0C, and E0D failure evidence is recorded in
 `../../docs/next/context-composer-experiment-runthrough.md`. E1-E5 remain
 blocked pending a new user decision and reviewed gate.
 
