@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
-import type { NyxChatTargetAttribution, NyxChatTargetSelection } from '../../../shared/chat/types'
+import {
+  nyxChatImageMediaTypes,
+  type NyxChatImageRef,
+  type NyxChatTargetAttribution,
+  type NyxChatTargetSelection,
+} from '../../../shared/chat/types'
 
 export const currentThreadAssistantStatusesV1 = [
   'pending',
@@ -357,11 +362,101 @@ export const currentThreadRecordV2Schema = z
 export type SafeThreadErrorRecordV2 = z.infer<typeof safeThreadErrorRecordV2Schema>
 export type TurnRecordV2 = z.infer<typeof turnRecordV2Schema>
 export type CurrentThreadRecordV2 = z.infer<typeof currentThreadRecordV2Schema>
-export type CurrentThreadRecord = CurrentThreadRecordV1 | CurrentThreadRecordV2
+
+export const chatImageRefSchema = z
+  .object({
+    imageId: z.uuid(),
+    mediaType: z.enum(nyxChatImageMediaTypes),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  })
+  .strict() satisfies z.ZodType<NyxChatImageRef>
+
+export const turnRecordV3Schema = turnRecordV2Schema
+  .safeExtend({
+    userContent: z.string(),
+    imageRefs: z.array(chatImageRefSchema),
+  })
+  .superRefine((turn, context) => {
+    if (turn.userContent.length === 0 && turn.imageRefs.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A user turn must contain text or at least one image reference.',
+        path: ['userContent'],
+      })
+    }
+  })
+
+export const currentThreadRecordV3Schema = z
+  .object({
+    version: z.literal(3),
+    threadId: nonEmptyStringSchema,
+    turns: z.array(turnRecordV3Schema).min(1),
+    createdAt: nonEmptyStringSchema,
+    updatedAt: nonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((record, context) => {
+    const messageIds = record.turns.flatMap((turn) => [turn.userMessageId, turn.assistantMessageId])
+    const requestIds = record.turns.map((turn) => turn.attemptRequestId)
+    const pendingIndexes = record.turns.flatMap((turn, index) =>
+      turn.assistantStatus === 'pending' ? [index] : [],
+    )
+    const imageIds = record.turns.flatMap((turn) =>
+      turn.imageRefs.map((imageRef) => imageRef.imageId),
+    )
+
+    if (new Set(messageIds).size !== messageIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread message ids must be unique.',
+        path: ['turns'],
+      })
+    }
+
+    if (new Set(requestIds).size !== requestIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread latest attempt request ids must be unique.',
+        path: ['turns'],
+      })
+    }
+
+    if (
+      pendingIndexes.length > 1 ||
+      pendingIndexes.some((index) => index !== record.turns.length - 1)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only the final turn may be pending.',
+        path: ['turns'],
+      })
+    }
+
+    if (new Set(imageIds).size !== imageIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread image ids must be unique.',
+        path: ['turns'],
+      })
+    }
+  })
+
+export type TurnRecordV3 = z.infer<typeof turnRecordV3Schema>
+export type CurrentThreadRecordV3 = z.infer<typeof currentThreadRecordV3Schema>
+export type MutableTurnRecord = TurnRecordV2 | TurnRecordV3
+export type MutableCurrentThreadRecord = CurrentThreadRecordV2 | CurrentThreadRecordV3
+export type CurrentThreadRecord = CurrentThreadRecordV1 | MutableCurrentThreadRecord
 
 export const currentThreadRecordSchema = z.discriminatedUnion('version', [
   currentThreadRecordV1Schema,
   currentThreadRecordV2Schema,
+  currentThreadRecordV3Schema,
+])
+
+const mutableCurrentThreadRecordSchema = z.discriminatedUnion('version', [
+  currentThreadRecordV2Schema,
+  currentThreadRecordV3Schema,
 ])
 
 export function createSafeThreadErrorRecordV1(input: {
@@ -410,13 +505,25 @@ export function parseCurrentThreadRecordV2(value: unknown): CurrentThreadRecordV
   return currentThreadRecordV2Schema.parse(value)
 }
 
+export function parseCurrentThreadRecordV3(value: unknown): CurrentThreadRecordV3 {
+  return currentThreadRecordV3Schema.parse(value)
+}
+
+export function parseMutableCurrentThreadRecord(value: unknown): MutableCurrentThreadRecord {
+  return mutableCurrentThreadRecordSchema.parse(value)
+}
+
 export function parseCurrentThreadRecord(value: unknown): CurrentThreadRecord {
   return currentThreadRecordSchema.parse(value)
 }
 
 export function upgradeCurrentThreadRecordForMutation(
   record: CurrentThreadRecord,
-): CurrentThreadRecordV2 {
+): MutableCurrentThreadRecord {
+  if (record.version === 3) {
+    return parseCurrentThreadRecordV3(record)
+  }
+
   if (record.version === 2) {
     return parseCurrentThreadRecordV2(record)
   }
@@ -427,6 +534,25 @@ export function upgradeCurrentThreadRecordForMutation(
     turns: record.turns.map((turn) => ({
       ...turn,
       targetBinding: null,
+    })),
+  })
+}
+
+export function upgradeCurrentThreadRecordForImageMutation(
+  record: CurrentThreadRecord,
+): CurrentThreadRecordV3 {
+  if (record.version === 3) {
+    return parseCurrentThreadRecordV3(record)
+  }
+
+  const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
+
+  return parseCurrentThreadRecordV3({
+    ...upgradedRecord,
+    version: 3,
+    turns: upgradedRecord.turns.map((turn) => ({
+      ...turn,
+      imageRefs: [],
     })),
   })
 }

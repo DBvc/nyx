@@ -59,9 +59,31 @@ export interface NyxChatInputMessage {
   content: string
 }
 
+export const nyxChatImageMediaTypes = ['image/png', 'image/jpeg'] as const
+
+export type NyxChatImageMediaType = (typeof nyxChatImageMediaTypes)[number]
+
+export interface NyxChatImageRef {
+  imageId: string
+  mediaType: NyxChatImageMediaType
+  width: number
+  height: number
+}
+
+export interface NyxChatNewImage {
+  imageId: string
+  canonicalBytes: Uint8Array
+  previewBytes: Uint8Array
+}
+
+export interface NyxChatMessageImage extends NyxChatImageRef {
+  available: boolean
+}
+
 export interface NyxChatTurnUserMessage {
   id: string
   content: string
+  imageRefs?: ReadonlyArray<NyxChatImageRef>
 }
 
 export type NyxChatTargetSelection =
@@ -92,6 +114,7 @@ export interface NyxChatMessage {
   role: NyxChatRole
   content: string
   status: NyxChatMessageStatus
+  images?: ReadonlyArray<NyxChatMessageImage>
   error?: NyxChatError
   canRetry?: boolean
   targetAttribution?: NyxChatTargetAttribution
@@ -105,6 +128,7 @@ export interface NyxChatRequest {
   turnUserMessage: NyxChatTurnUserMessage
   messages: ReadonlyArray<NyxChatInputMessage>
   targetSelection: NyxChatTargetSelection
+  newImages?: ReadonlyArray<NyxChatNewImage>
   systemPrompt?: string
 }
 

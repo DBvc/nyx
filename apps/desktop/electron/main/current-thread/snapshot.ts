@@ -23,8 +23,12 @@ const snapshotLoadError = {
   code: 'load_failed',
   message: 'Nyx could not load the current thread.',
 } as const
+const noAvailableImageIds: ReadonlySet<string> = new Set()
 
-export function toCurrentThreadSnapshot(record: CurrentThreadRecord): NyxCurrentThreadSnapshot {
+export function toCurrentThreadSnapshot(
+  record: CurrentThreadRecord,
+  availableImageIds: ReadonlySet<string>,
+): NyxCurrentThreadSnapshot {
   const messages: NyxCurrentThreadMessage[] = []
   const submittedMessages: NyxChatInputMessage[] = []
   let retryableTurn: NyxCurrentThreadRetryableTurn | null = null
@@ -32,7 +36,8 @@ export function toCurrentThreadSnapshot(record: CurrentThreadRecord): NyxCurrent
   let runStatus: NyxCurrentThreadSnapshot['runStatus'] = 'completed'
 
   for (const [index, turn] of record.turns.entries()) {
-    const targetBinding = record.version === 2 ? record.turns[index]!.targetBinding : null
+    const targetBinding = record.version === 1 ? null : record.turns[index]!.targetBinding
+    const imageRefs = record.version === 3 ? record.turns[index]!.imageRefs : []
 
     if (turn.assistantStatus === 'pending') {
       throw new Error('Pending current thread records must be recovered before snapshot mapping.')
@@ -49,6 +54,14 @@ export function toCurrentThreadSnapshot(record: CurrentThreadRecord): NyxCurrent
       role: 'user',
       content: turn.userContent,
       status: 'completed',
+      ...(imageRefs.length > 0
+        ? {
+            images: imageRefs.map((imageRef) => ({
+              ...imageRef,
+              available: availableImageIds.has(imageRef.imageId),
+            })),
+          }
+        : {}),
     } as const satisfies NyxCurrentThreadMessage
     const assistantMessage: NyxCurrentThreadMessage = {
       id: turn.assistantMessageId,
@@ -79,6 +92,9 @@ export function toCurrentThreadSnapshot(record: CurrentThreadRecord): NyxCurrent
         turnUserMessage: {
           id: turn.userMessageId,
           content: turn.userContent,
+          ...(imageRefs.length > 0
+            ? { imageRefs: imageRefs.map((imageRef) => ({ ...imageRef })) }
+            : {}),
         },
         submittedMessages: submittedMessages.map((message) => ({ ...message })),
       }
@@ -106,7 +122,7 @@ export class CurrentThreadSnapshotService implements CurrentThreadSnapshotContro
 
       return {
         ok: true,
-        value: record ? toCurrentThreadSnapshot(record) : null,
+        value: record ? toCurrentThreadSnapshot(record, noAvailableImageIds) : null,
       }
     } catch {
       return {

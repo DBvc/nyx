@@ -20,6 +20,12 @@ const firstAttribution = {
 } as const
 const envAttributionA = { kind: 'env_fallback', modelId: 'env-model-a' } as const
 const envAttributionB = { kind: 'env_fallback', modelId: 'env-model-b' } as const
+const imageRef = {
+  imageId: '00000000-0000-4000-8000-000000000001',
+  mediaType: 'image/png',
+  width: 640,
+  height: 480,
+} as const
 
 async function createCoordinator() {
   const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-session-'))
@@ -144,6 +150,7 @@ describe('CurrentThreadSessionCoordinator', () => {
       { role: 'user', content: 'Continue' },
     ])
     expect(prepared.replayRecord?.turns).toHaveLength(1)
+    expect(prepared.pendingRecord.version).toBe(2)
     expect(prepared.pendingRecord.turns).toHaveLength(2)
   })
 
@@ -197,6 +204,96 @@ describe('CurrentThreadSessionCoordinator', () => {
           },
         },
       ],
+    })
+  })
+
+  it('upgrades on the first image turn and keeps empty image-only history in later requests', async () => {
+    const { coordinator } = await createCoordinator()
+    await coordinator.prepare(newRequest())
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.complete('request-1', 'assistant-1', 'First answer')
+
+    const imageTurn = await coordinator.prepare(
+      newRequest({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        turnUserMessage: { id: 'user-2', content: '', imageRefs: [imageRef] },
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'First answer' },
+          { role: 'user', content: '' },
+        ],
+      }),
+    )
+
+    expect(imageTurn.pendingRecord).toMatchObject({
+      version: 3,
+      turns: [{ imageRefs: [] }, { userContent: '', imageRefs: [imageRef] }],
+    })
+
+    await coordinator.bindResolvedTarget('request-2', 'assistant-2', firstAttribution)
+    await coordinator.complete('request-2', 'assistant-2', 'Image answer')
+
+    const textTurn = await coordinator.prepare(
+      newRequest({
+        requestId: 'request-3',
+        userMessageId: 'user-3',
+        assistantMessageId: 'assistant-3',
+        turnUserMessage: { id: 'user-3', content: 'Continue' },
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'First answer' },
+          { role: 'user', content: '' },
+          { role: 'assistant', content: 'Image answer' },
+          { role: 'user', content: 'Continue' },
+        ],
+      }),
+    )
+
+    expect(textTurn.pendingRecord).toMatchObject({
+      version: 3,
+      turns: [{ imageRefs: [] }, { imageRefs: [imageRef] }, { imageRefs: [] }],
+    })
+  })
+
+  it('preserves image refs across Retry and rejects a mismatched retry', async () => {
+    const { coordinator } = await createCoordinator()
+    const request = newRequest({
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+    })
+
+    await coordinator.prepare(request)
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.fail('request-1', 'assistant-1', '', {
+      code: 'network_error',
+      message: 'Retry me.',
+      retryable: true,
+    })
+
+    await expect(
+      coordinator.prepare({
+        ...request,
+        requestId: 'request-2',
+        turnIntent: 'retry_failed_response',
+        turnUserMessage: {
+          ...request.turnUserMessage,
+          imageRefs: [{ ...imageRef, width: 320 }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_request' })
+
+    const retried = await coordinator.prepare({
+      ...request,
+      requestId: 'request-2',
+      turnIntent: 'retry_failed_response',
+    })
+
+    expect(retried.providerMessages).toEqual([{ role: 'user', content: '' }])
+    expect(retried.pendingRecord).toMatchObject({
+      version: 3,
+      turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
     })
   })
 
@@ -261,7 +358,7 @@ describe('CurrentThreadSessionCoordinator', () => {
         attribution: envAttributionB,
       },
     })
-    expect(record && toCurrentThreadSnapshot(record)).toMatchObject({
+    expect(record && toCurrentThreadSnapshot(record, new Set())).toMatchObject({
       selectedTarget: { kind: 'env_fallback' },
       messages: [{ id: 'user-1' }, { id: 'assistant-1', targetAttribution: envAttributionB }],
     })

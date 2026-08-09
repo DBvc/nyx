@@ -4,9 +4,12 @@ import {
   createSafeThreadErrorRecordV1,
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
+  parseCurrentThreadRecordV3,
   upgradeCurrentThreadRecordForMutation,
 } from './schemas'
 import { CurrentThreadSnapshotService, toCurrentThreadSnapshot } from './snapshot'
+
+const noAvailableImageIds = new Set<string>()
 
 function completedThenFailedRecord() {
   return parseCurrentThreadRecordV1({
@@ -41,10 +44,48 @@ function completedThenFailedRecord() {
   })
 }
 
+const imageRef = {
+  imageId: '00000000-0000-4000-8000-000000000001',
+  mediaType: 'image/png',
+  width: 640,
+  height: 480,
+} as const
+
+function failedImageOnlyRecord() {
+  return parseCurrentThreadRecordV3({
+    version: 3,
+    threadId: 'thread-1',
+    turns: [
+      {
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: '',
+        imageRefs: [imageRef],
+        assistantContent: '',
+        assistantStatus: 'failed',
+        error: {
+          code: 'network_error',
+          message: 'Nyx could not reach the provider.',
+          retryable: true,
+        },
+        targetBinding: {
+          selection: { kind: 'env_fallback' },
+          attribution: { kind: 'env_fallback', modelId: 'env-model' },
+        },
+        createdAt: '2026-07-11T00:00:00.000Z',
+        updatedAt: '2026-07-11T00:01:00.000Z',
+      },
+    ],
+    createdAt: '2026-07-11T00:00:00.000Z',
+    updatedAt: '2026-07-11T00:01:00.000Z',
+  })
+}
+
 describe('toCurrentThreadSnapshot', () => {
   it('maps terminal messages without exposing persisted metadata', () => {
     const record = completedThenFailedRecord()
-    const snapshot = toCurrentThreadSnapshot(record)
+    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds)
 
     expect(snapshot.messages).toEqual([
       {
@@ -114,7 +155,7 @@ describe('toCurrentThreadSnapshot', () => {
       ],
     })
 
-    const snapshot = toCurrentThreadSnapshot(record)
+    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds)
 
     expect(snapshot.selectedTarget).toEqual({ kind: 'env_fallback' })
     expect(snapshot.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
@@ -126,7 +167,7 @@ describe('toCurrentThreadSnapshot', () => {
   })
 
   it('rebuilds retry metadata while excluding the failed assistant from provider messages', () => {
-    const snapshot = toCurrentThreadSnapshot(completedThenFailedRecord())
+    const snapshot = toCurrentThreadSnapshot(completedThenFailedRecord(), noAvailableImageIds)
 
     expect(snapshot.retryableTurn).toEqual({
       userMessageId: 'user-2',
@@ -140,6 +181,30 @@ describe('toCurrentThreadSnapshot', () => {
         { role: 'assistant', content: 'First answer' },
         { role: 'user', content: 'Second question' },
       ],
+    })
+  })
+
+  it('projects v3 image availability without dropping image-only compatibility history', () => {
+    const availableSnapshot = toCurrentThreadSnapshot(
+      failedImageOnlyRecord(),
+      new Set([imageRef.imageId]),
+    )
+
+    expect(availableSnapshot.messages[0]).toMatchObject({
+      content: '',
+      images: [{ ...imageRef, available: true }],
+    })
+    expect(availableSnapshot.retryableTurn).toEqual({
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      submittedMessages: [{ role: 'user', content: '' }],
+    })
+
+    expect(
+      toCurrentThreadSnapshot(failedImageOnlyRecord(), noAvailableImageIds).messages[0],
+    ).toMatchObject({
+      images: [{ ...imageRef, available: false }],
     })
   })
 
@@ -164,7 +229,7 @@ describe('toCurrentThreadSnapshot', () => {
       updatedAt: '2026-07-11T00:05:00.000Z',
     })
 
-    const snapshot = toCurrentThreadSnapshot(laterCompletedRecord)
+    const snapshot = toCurrentThreadSnapshot(laterCompletedRecord, noAvailableImageIds)
     const historicalFailure = snapshot.messages.find((message) => message.id === 'assistant-2')
 
     expect(historicalFailure).toMatchObject({
@@ -190,7 +255,7 @@ describe('toCurrentThreadSnapshot', () => {
       ],
     })
 
-    expect(() => toCurrentThreadSnapshot(pendingRecord)).toThrow()
+    expect(() => toCurrentThreadSnapshot(pendingRecord, noAvailableImageIds)).toThrow()
   })
 })
 

@@ -10,11 +10,14 @@ import {
   createSafeThreadErrorRecordV2,
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
+  parseCurrentThreadRecordV3,
+  upgradeCurrentThreadRecordForImageMutation,
   upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecordV1,
   type CurrentThreadRecordV2,
+  type CurrentThreadRecordV3,
 } from './schemas'
-import { CurrentThreadStore, CurrentThreadStoreError } from './store'
+import { CurrentThreadStore, CurrentThreadStoreError, type CreateCurrentThreadInput } from './store'
 
 const tempDirs: string[] = []
 
@@ -50,6 +53,12 @@ const targetAttribution = {
   providerDisplayName: 'Provider One',
   modelId: 'model-1',
   modelDisplayName: 'Model One',
+} as const
+const imageRef = {
+  imageId: '00000000-0000-4000-8000-000000000001',
+  mediaType: 'image/png',
+  width: 640,
+  height: 480,
 } as const
 
 function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
@@ -92,6 +101,34 @@ function pendingRecordV1(overrides: Partial<CurrentThreadRecordV1> = {}) {
         assistantContent: '',
         assistantStatus: 'pending',
         error: null,
+        createdAt: '2026-07-10T00:00:00.000Z',
+        updatedAt: '2026-07-10T00:00:00.000Z',
+      },
+    ],
+    createdAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:00:00.000Z',
+    ...overrides,
+  })
+}
+
+function pendingRecordV3(overrides: Partial<CurrentThreadRecordV3> = {}) {
+  return parseCurrentThreadRecordV3({
+    version: 3,
+    threadId: 'thread-1',
+    turns: [
+      {
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: '',
+        imageRefs: [imageRef],
+        assistantContent: '',
+        assistantStatus: 'pending',
+        error: null,
+        targetBinding: {
+          selection: targetSelection,
+          attribution: null,
+        },
         createdAt: '2026-07-10T00:00:00.000Z',
         updatedAt: '2026-07-10T00:00:00.000Z',
       },
@@ -264,6 +301,26 @@ describe('CurrentThreadStore', () => {
     })
   })
 
+  it('recovers a pending version-3 turn without losing image identity', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, `${JSON.stringify(pendingRecordV3())}\n`, 'utf8')
+
+    await expect(
+      createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' }).read(),
+    ).resolves.toMatchObject({
+      version: 3,
+      turns: [
+        {
+          imageRefs: [imageRef],
+          assistantStatus: 'failed',
+          error: { code: 'unknown', retryable: true },
+        },
+      ],
+    })
+  })
+
   it('reads a stable version-1 record without rewriting it', async () => {
     const filePath = await createTempFilePath()
     const adapter = createCurrentThreadFileAdapter()
@@ -274,6 +331,140 @@ describe('CurrentThreadStore', () => {
 
     await expect(createStore(filePath).read()).resolves.toEqual(record)
     await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
+  })
+
+  it('reads stable version-2 and version-3 records without rewriting them', async () => {
+    const records = [
+      completedRecord('request-1', 'Done'),
+      parseCurrentThreadRecordV3({
+        ...pendingRecordV3(),
+        turns: [
+          {
+            ...pendingRecordV3().turns[0]!,
+            assistantContent: 'Done',
+            assistantStatus: 'completed',
+          },
+        ],
+      }),
+    ]
+
+    for (const record of records) {
+      const filePath = await createTempFilePath()
+      const adapter = createCurrentThreadFileAdapter()
+      const contents = `${JSON.stringify(record, null, 2)}\n`
+      await adapter.ensureParentDirectory(filePath)
+      await writeFile(filePath, contents, 'utf8')
+
+      await expect(createStore(filePath).read()).resolves.toEqual(record)
+      await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
+    }
+  })
+
+  it('keeps version-3 image refs immutable across later mutations', async () => {
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: '',
+      imageRefs: [imageRef],
+      targetSelection,
+    })
+    const bound = parseCurrentThreadRecordV3({
+      ...created,
+      turns: [
+        {
+          ...created.turns[0]!,
+          targetBinding: {
+            selection: targetSelection,
+            attribution: targetAttribution,
+          },
+        },
+      ],
+    })
+    await store.write(bound)
+
+    await expect(
+      store.write(
+        parseCurrentThreadRecordV3({
+          ...bound,
+          turns: [
+            {
+              ...bound.turns[0]!,
+              imageRefs: [{ ...imageRef, width: 320 }],
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'identity_mismatch' })
+  })
+
+  it('requires a real image mutation to enter version 3 and rejects downgrade', async () => {
+    const emptyStore = createStore(await createTempFilePath())
+    const emptyImageInput = {
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: 'Hello',
+      imageRefs: [],
+      targetSelection,
+    } as unknown as CreateCurrentThreadInput
+
+    await expect(emptyStore.create(emptyImageInput)).rejects.toMatchObject({
+      code: 'invalid_transition',
+    })
+    await expect(emptyStore.read()).resolves.toBeNull()
+
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: 'Hello',
+      targetSelection,
+    })
+    const bound = bindRecord(created)
+    await store.write(bound)
+    const completed = completeRecord(bound, 'request-1', 'Done')
+    await store.write(completed)
+    const upgraded = upgradeCurrentThreadRecordForImageMutation(completed)
+    const appendedTurn = {
+      attemptRequestId: 'request-2',
+      userMessageId: 'user-2',
+      assistantMessageId: 'assistant-2',
+      userContent: 'Next',
+      assistantContent: '',
+      assistantStatus: 'pending',
+      error: null,
+      targetBinding: { selection: targetSelection, attribution: null },
+      createdAt: '2026-07-11T01:00:00.000Z',
+      updatedAt: '2026-07-11T01:00:00.000Z',
+    } as const
+    const textOnlyUpgrade = parseCurrentThreadRecordV3({
+      ...upgraded,
+      turns: [...upgraded.turns, { ...appendedTurn, imageRefs: [] }],
+      updatedAt: appendedTurn.updatedAt,
+    })
+
+    await expect(store.write(textOnlyUpgrade)).rejects.toMatchObject({
+      code: 'invalid_transition',
+    })
+
+    const imageUpgrade = parseCurrentThreadRecordV3({
+      ...upgraded,
+      turns: [...upgraded.turns, { ...appendedTurn, imageRefs: [imageRef] }],
+      updatedAt: appendedTurn.updatedAt,
+    })
+    await store.write(imageUpgrade)
+
+    const downgraded = parseCurrentThreadRecordV2({
+      ...imageUpgrade,
+      version: 2,
+      turns: imageUpgrade.turns.map(({ imageRefs: _imageRefs, ...turn }) => turn),
+    })
+    await expect(store.write(downgraded)).rejects.toMatchObject({
+      code: 'identity_mismatch',
+    })
   })
 
   it('rejects a pure version-1 to version-2 rewrite without a real mutation', async () => {
@@ -872,5 +1063,72 @@ describe('CurrentThreadRecordV2 schema', () => {
       message: 'The selected chat target is unavailable.',
       retryable: true,
     })
+  })
+})
+
+describe('CurrentThreadRecordV3 schema', () => {
+  it('upgrades existing turns with empty refs and accepts image-only content', () => {
+    const version1 = upgradeCurrentThreadRecordForImageMutation(
+      completedRecordV1('request-1', 'Done'),
+    )
+    const upgraded = upgradeCurrentThreadRecordForImageMutation(
+      completedRecord('request-1', 'Done'),
+    )
+
+    expect(version1).toMatchObject({ version: 3, turns: [{ imageRefs: [] }] })
+    expect(upgraded).toMatchObject({ version: 3, turns: [{ imageRefs: [] }] })
+    const imageOnly = parseCurrentThreadRecordV3({
+      ...upgraded,
+      turns: [
+        upgraded.turns[0]!,
+        {
+          attemptRequestId: 'request-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          userContent: '',
+          imageRefs: [imageRef],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: { selection: targetSelection, attribution: null },
+          createdAt: '2026-07-11T01:00:00.000Z',
+          updatedAt: '2026-07-11T01:00:00.000Z',
+        },
+      ],
+      updatedAt: '2026-07-11T01:00:00.000Z',
+    })
+
+    expect(imageOnly).toMatchObject({
+      version: 3,
+      turns: [{ imageRefs: [] }, { userContent: '', imageRefs: [imageRef] }],
+    })
+  })
+
+  it('rejects empty turns, duplicate image ids, and unknown image metadata', () => {
+    const record = pendingRecordV3()
+
+    expect(() =>
+      parseCurrentThreadRecordV3({
+        ...record,
+        turns: [{ ...record.turns[0]!, userContent: '', imageRefs: [] }],
+      }),
+    ).toThrow()
+    expect(() =>
+      parseCurrentThreadRecordV3({
+        ...record,
+        turns: [{ ...record.turns[0]!, imageRefs: [imageRef, imageRef] }],
+      }),
+    ).toThrow()
+    expect(() =>
+      parseCurrentThreadRecordV3({
+        ...record,
+        turns: [
+          {
+            ...record.turns[0]!,
+            imageRefs: [{ ...imageRef, localPath: '/private/image.png' }],
+          },
+        ],
+      }),
+    ).toThrow()
   })
 })

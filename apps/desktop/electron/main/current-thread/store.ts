@@ -1,15 +1,18 @@
 import { randomUUID } from 'node:crypto'
 
-import type { NyxChatTargetSelection } from '../../../shared/chat/types'
+import type { NyxChatImageRef, NyxChatTargetSelection } from '../../../shared/chat/types'
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
 import {
   createInterruptedThreadErrorRecordV2,
   parseCurrentThreadRecord,
-  parseCurrentThreadRecordV2,
+  parseMutableCurrentThreadRecord,
+  upgradeCurrentThreadRecordForImageMutation,
   upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecord,
   type CurrentThreadRecordV2,
-  type TurnRecordV2,
+  type CurrentThreadRecordV3,
+  type MutableCurrentThreadRecord,
+  type MutableTurnRecord,
 } from './schemas'
 
 export type CurrentThreadStoreErrorCode =
@@ -38,13 +41,18 @@ export interface CurrentThreadStoreOptions {
   fileAdapter?: CurrentThreadFileAdapter
 }
 
-export interface CreateCurrentThreadInput {
+interface CreateCurrentThreadInputBase {
   attemptRequestId: string
   userMessageId: string
   assistantMessageId: string
   userContent: string
   targetSelection: NyxChatTargetSelection
 }
+
+type NonEmptyImageRefs = readonly [NyxChatImageRef, ...NyxChatImageRef[]]
+
+export type CreateCurrentThreadInput = CreateCurrentThreadInputBase &
+  ({ imageRefs?: undefined } | { imageRefs: NonEmptyImageRefs })
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
@@ -84,12 +92,12 @@ function recoverInterruptedTurn(record: CurrentThreadRecord, now: string) {
     assistantStatus: 'failed',
     error: createInterruptedThreadErrorRecordV2(),
     updatedAt: now,
-  } satisfies TurnRecordV2
+  } satisfies MutableTurnRecord
   const turns = upgradedRecord.turns.map((turn, index) =>
     index === pendingIndex ? recoveredTurn : turn,
   )
 
-  return parseCurrentThreadRecordV2({
+  return parseMutableCurrentThreadRecord({
     ...upgradedRecord,
     turns,
     updatedAt: now,
@@ -100,9 +108,13 @@ function recordsEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+function recordImageRefs(record: CurrentThreadRecord, index: number) {
+  return record.version === 3 ? (record.turns[index]?.imageRefs ?? []) : []
+}
+
 function assertStableIdentity(
   currentRecord: CurrentThreadRecord,
-  nextRecord: CurrentThreadRecordV2,
+  nextRecord: MutableCurrentThreadRecord,
 ) {
   const identityChanged =
     currentRecord.threadId !== nextRecord.threadId ||
@@ -116,6 +128,7 @@ function assertStableIdentity(
         currentTurn.userMessageId !== nextTurn.userMessageId ||
         currentTurn.assistantMessageId !== nextTurn.assistantMessageId ||
         currentTurn.userContent !== nextTurn.userContent ||
+        !recordsEqual(recordImageRefs(currentRecord, index), recordImageRefs(nextRecord, index)) ||
         currentTurn.createdAt !== nextTurn.createdAt
       )
     })
@@ -128,7 +141,10 @@ function assertStableIdentity(
   }
 }
 
-function isResolvedTargetBindingTransition(currentTurn: TurnRecordV2, nextTurn: TurnRecordV2) {
+function isResolvedTargetBindingTransition(
+  currentTurn: MutableTurnRecord,
+  nextTurn: MutableTurnRecord,
+) {
   if (
     currentTurn.assistantStatus !== 'pending' ||
     nextTurn.assistantStatus !== 'pending' ||
@@ -149,7 +165,7 @@ function isResolvedTargetBindingTransition(currentTurn: TurnRecordV2, nextTurn: 
   })
 }
 
-function isValidPendingSettlement(currentTurn: TurnRecordV2, nextTurn: TurnRecordV2) {
+function isValidPendingSettlement(currentTurn: MutableTurnRecord, nextTurn: MutableTurnRecord) {
   if (
     currentTurn.assistantStatus !== 'pending' ||
     nextTurn.attemptRequestId !== currentTurn.attemptRequestId ||
@@ -174,12 +190,34 @@ function isValidPendingSettlement(currentTurn: TurnRecordV2, nextTurn: TurnRecor
 
 function assertValidTransition(
   currentRecord: CurrentThreadRecord,
-  nextRecord: CurrentThreadRecordV2,
+  nextRecord: MutableCurrentThreadRecord,
 ) {
   assertStableIdentity(currentRecord, nextRecord)
-  const upgradedCurrent = upgradeCurrentThreadRecordForMutation(currentRecord)
 
-  if (currentRecord.version === 2 && recordsEqual(currentRecord, nextRecord)) {
+  if (currentRecord.version === 3 && nextRecord.version !== 3) {
+    throw new CurrentThreadStoreError(
+      'invalid_transition',
+      'Current thread version 3 records cannot be downgraded.',
+    )
+  }
+
+  if (
+    currentRecord.version !== 3 &&
+    nextRecord.version === 3 &&
+    nextRecord.turns.length !== currentRecord.turns.length + 1
+  ) {
+    throw new CurrentThreadStoreError(
+      'invalid_transition',
+      'Current thread version 3 begins only with an appended image turn.',
+    )
+  }
+
+  const upgradedCurrent =
+    nextRecord.version === 3
+      ? upgradeCurrentThreadRecordForImageMutation(currentRecord)
+      : upgradeCurrentThreadRecordForMutation(currentRecord)
+
+  if (currentRecord.version === nextRecord.version && recordsEqual(currentRecord, nextRecord)) {
     return
   }
 
@@ -191,12 +229,14 @@ function assertValidTransition(
       recordsEqual(turn, nextTurns[index]),
     )
     const appendedTurn = nextTurns.at(-1)
+    const appendedImageRefs = recordImageRefs(nextRecord, nextTurns.length - 1)
 
     if (
       previousTurnsUnchanged &&
       appendedTurn?.assistantStatus === 'pending' &&
       appendedTurn.targetBinding !== null &&
-      appendedTurn.targetBinding.attribution === null
+      appendedTurn.targetBinding.attribution === null &&
+      (currentRecord.version === 3 || nextRecord.version !== 3 || appendedImageRefs.length > 0)
     ) {
       return
     }
@@ -255,6 +295,13 @@ export class CurrentThreadStore {
     })
   }
 
+  create(
+    input: CreateCurrentThreadInputBase & { imageRefs?: undefined },
+  ): Promise<CurrentThreadRecordV2>
+  create(
+    input: CreateCurrentThreadInputBase & { imageRefs: NonEmptyImageRefs },
+  ): Promise<CurrentThreadRecordV3>
+  create(input: CreateCurrentThreadInput): Promise<MutableCurrentThreadRecord>
   create(input: CreateCurrentThreadInput) {
     return this.enqueue(async () => {
       await this.ensureLoaded()
@@ -267,13 +314,22 @@ export class CurrentThreadStore {
       }
 
       const now = this.now()
-      const { targetSelection, ...turnInput } = input
-      const record = parseCurrentThreadRecordV2({
-        version: 2,
+      const { targetSelection, imageRefs, ...turnInput } = input
+
+      if (imageRefs && imageRefs.length === 0) {
+        throw new CurrentThreadStoreError(
+          'invalid_transition',
+          'Current thread version 3 requires at least one image reference at creation.',
+        )
+      }
+
+      const record = parseMutableCurrentThreadRecord({
+        version: imageRefs ? 3 : 2,
         threadId: this.generateId(),
         turns: [
           {
             ...turnInput,
+            ...(imageRefs ? { imageRefs } : {}),
             assistantContent: '',
             assistantStatus: 'pending',
             error: null,
@@ -292,15 +348,18 @@ export class CurrentThreadStore {
       await this.writeAtomic(record)
       this.currentRecord = record
 
-      return parseCurrentThreadRecordV2(record)
+      return parseMutableCurrentThreadRecord(record)
     })
   }
 
-  write(record: CurrentThreadRecordV2) {
+  write(record: CurrentThreadRecordV2): Promise<CurrentThreadRecordV2>
+  write(record: CurrentThreadRecordV3): Promise<CurrentThreadRecordV3>
+  write(record: MutableCurrentThreadRecord): Promise<MutableCurrentThreadRecord>
+  write(record: MutableCurrentThreadRecord) {
     return this.enqueue(async () => {
       await this.ensureLoaded()
 
-      const parsedRecord = parseCurrentThreadRecordV2(record)
+      const parsedRecord = parseMutableCurrentThreadRecord(record)
 
       if (!this.currentRecord) {
         throw new CurrentThreadStoreError(
@@ -314,7 +373,7 @@ export class CurrentThreadStore {
       await this.writeAtomic(parsedRecord)
       this.currentRecord = parsedRecord
 
-      return parseCurrentThreadRecordV2(parsedRecord)
+      return parseMutableCurrentThreadRecord(parsedRecord)
     })
   }
 

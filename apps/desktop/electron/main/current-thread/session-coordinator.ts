@@ -1,16 +1,20 @@
 import type {
   NyxChatError,
+  NyxChatImageRef,
   NyxChatInputMessage,
   NyxChatRequest,
   NyxChatTargetAttribution,
 } from '../../../shared/chat/types'
 import {
   createSafeThreadErrorRecordV2,
+  parseCurrentThreadRecordV3,
   parseCurrentThreadRecordV2,
+  parseMutableCurrentThreadRecord,
+  upgradeCurrentThreadRecordForImageMutation,
   upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecord,
-  type CurrentThreadRecordV2,
-  type TurnRecordV2,
+  type MutableCurrentThreadRecord,
+  type MutableTurnRecord,
 } from './schemas'
 import type { CurrentThreadStore } from './store'
 
@@ -25,7 +29,7 @@ export class CurrentThreadSessionError extends Error {
 }
 
 export interface PreparedCurrentThreadTurn {
-  pendingRecord: CurrentThreadRecordV2
+  pendingRecord: MutableCurrentThreadRecord
   replayRecord: CurrentThreadRecord | null
   providerMessages: NyxChatInputMessage[]
 }
@@ -46,6 +50,29 @@ function messagesEqual(
         message.role === right[index]?.role && message.content === right[index]?.content,
     )
   )
+}
+
+function imageRefsEqual(
+  left: ReadonlyArray<NyxChatImageRef>,
+  right: ReadonlyArray<NyxChatImageRef>,
+) {
+  return (
+    left.length === right.length &&
+    left.every((imageRef, index) => {
+      const other = right[index]
+
+      return (
+        imageRef.imageId === other?.imageId &&
+        imageRef.mediaType === other.mediaType &&
+        imageRef.width === other.width &&
+        imageRef.height === other.height
+      )
+    })
+  )
+}
+
+function recordTurnImageRefs(record: CurrentThreadRecord, index: number) {
+  return record.version === 3 ? record.turns[index]!.imageRefs : []
 }
 
 export function toCurrentThreadProviderMessages(record: CurrentThreadRecord | null) {
@@ -89,13 +116,7 @@ export class CurrentThreadSessionCoordinator {
 
         const pendingRecord = currentRecord
           ? await this.store.write(this.appendPendingTurn(currentRecord, request))
-          : await this.store.create({
-              attemptRequestId: request.requestId,
-              userMessageId: request.userMessageId,
-              assistantMessageId: request.assistantMessageId,
-              userContent: request.turnUserMessage.content,
-              targetSelection: request.targetSelection,
-            })
+          : await this.createPendingThread(request)
 
         return { pendingRecord, replayRecord: currentRecord, providerMessages }
       }
@@ -105,13 +126,16 @@ export class CurrentThreadSessionCoordinator {
       }
 
       const failedTurn = currentRecord.turns.at(-1)!
+      const requestImageRefs = request.turnUserMessage.imageRefs ?? []
+      const failedTurnImageRefs = recordTurnImageRefs(currentRecord, currentRecord.turns.length - 1)
 
       if (
         failedTurn.assistantStatus !== 'failed' ||
         !failedTurn.error?.retryable ||
         failedTurn.userMessageId !== request.userMessageId ||
         failedTurn.assistantMessageId !== request.assistantMessageId ||
-        failedTurn.userContent !== request.turnUserMessage.content
+        failedTurn.userContent !== request.turnUserMessage.content ||
+        !imageRefsEqual(failedTurnImageRefs, requestImageRefs)
       ) {
         throw new CurrentThreadSessionError(
           'invalid_request',
@@ -123,26 +147,28 @@ export class CurrentThreadSessionCoordinator {
 
       const now = this.now()
       const upgradedRecord = upgradeCurrentThreadRecordForMutation(currentRecord)
-      const pendingRecord = await this.store.write({
-        ...upgradedRecord,
-        turns: upgradedRecord.turns.map((turn, index) =>
-          index === upgradedRecord.turns.length - 1
-            ? {
-                ...turn,
-                attemptRequestId: request.requestId,
-                assistantContent: '',
-                assistantStatus: 'pending',
-                error: null,
-                targetBinding: {
-                  selection: request.targetSelection,
-                  attribution: null,
-                },
-                updatedAt: now,
-              }
-            : turn,
-        ),
-        updatedAt: now,
-      })
+      const pendingRecord = await this.store.write(
+        parseMutableCurrentThreadRecord({
+          ...upgradedRecord,
+          turns: upgradedRecord.turns.map((turn, index) =>
+            index === upgradedRecord.turns.length - 1
+              ? {
+                  ...turn,
+                  attemptRequestId: request.requestId,
+                  assistantContent: '',
+                  assistantStatus: 'pending',
+                  error: null,
+                  targetBinding: {
+                    selection: request.targetSelection,
+                    attribution: null,
+                  },
+                  updatedAt: now,
+                }
+              : turn,
+          ),
+          updatedAt: now,
+        }),
+      )
 
       return { pendingRecord, replayRecord: currentRecord, providerMessages: currentMessages }
     } catch (error) {
@@ -186,22 +212,24 @@ export class CurrentThreadSessionCoordinator {
       const now = this.now()
       const currentBinding = currentTurn.targetBinding
 
-      return await this.store.write({
-        ...upgradedRecord,
-        turns: upgradedRecord.turns.map((turn, index) =>
-          index === upgradedRecord.turns.length - 1
-            ? {
-                ...turn,
-                targetBinding: {
-                  ...currentBinding,
-                  attribution,
-                },
-                updatedAt: now,
-              }
-            : turn,
-        ),
-        updatedAt: now,
-      })
+      return await this.store.write(
+        parseMutableCurrentThreadRecord({
+          ...upgradedRecord,
+          turns: upgradedRecord.turns.map((turn, index) =>
+            index === upgradedRecord.turns.length - 1
+              ? {
+                  ...turn,
+                  targetBinding: {
+                    ...currentBinding,
+                    attribution,
+                  },
+                  updatedAt: now,
+                }
+              : turn,
+          ),
+          updatedAt: now,
+        }),
+      )
     } catch (error) {
       if (error instanceof CurrentThreadSessionError) {
         throw error
@@ -240,7 +268,7 @@ export class CurrentThreadSessionCoordinator {
 
   private appendPendingTurn(record: CurrentThreadRecord, request: NyxChatRequest) {
     const now = this.now()
-    const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
+    const imageRefs = request.turnUserMessage.imageRefs ?? []
     const turn = {
       attemptRequestId: request.requestId,
       userMessageId: request.userMessageId,
@@ -255,13 +283,47 @@ export class CurrentThreadSessionCoordinator {
       },
       createdAt: now,
       updatedAt: now,
-    } as const satisfies TurnRecordV2
+    } as const
+
+    if (record.version === 3 || imageRefs.length > 0) {
+      const upgradedRecord = upgradeCurrentThreadRecordForImageMutation(record)
+
+      return parseCurrentThreadRecordV3({
+        ...upgradedRecord,
+        turns: [...upgradedRecord.turns, { ...turn, imageRefs }],
+        updatedAt: now,
+      })
+    }
+
+    const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
+
+    if (upgradedRecord.version !== 2) {
+      throw new CurrentThreadSessionError('invalid_request', 'Current thread version is invalid.')
+    }
 
     return parseCurrentThreadRecordV2({
       ...upgradedRecord,
       turns: [...upgradedRecord.turns, turn],
       updatedAt: now,
     })
+  }
+
+  private createPendingThread(request: NyxChatRequest) {
+    const input = {
+      attemptRequestId: request.requestId,
+      userMessageId: request.userMessageId,
+      assistantMessageId: request.assistantMessageId,
+      userContent: request.turnUserMessage.content,
+      targetSelection: request.targetSelection,
+    }
+    const [firstImageRef, ...remainingImageRefs] = request.turnUserMessage.imageRefs ?? []
+
+    return firstImageRef
+      ? this.store.create({
+          ...input,
+          imageRefs: [firstImageRef, ...remainingImageRefs],
+        })
+      : this.store.create(input)
   }
 
   private assertRequestMessages(
@@ -281,7 +343,7 @@ export class CurrentThreadSessionCoordinator {
     assistantMessageId: string,
     assistantStatus: 'completed' | 'cancelled' | 'failed',
     assistantContent: string,
-    error: TurnRecordV2['error'],
+    error: MutableTurnRecord['error'],
   ) {
     try {
       const record = await this.store.read()
@@ -303,21 +365,23 @@ export class CurrentThreadSessionCoordinator {
 
       const now = this.now()
 
-      return await this.store.write({
-        ...upgradedRecord,
-        turns: upgradedRecord.turns.map((turn, index) =>
-          index === upgradedRecord.turns.length - 1
-            ? {
-                ...turn,
-                assistantContent,
-                assistantStatus,
-                error,
-                updatedAt: now,
-              }
-            : turn,
-        ),
-        updatedAt: now,
-      })
+      return await this.store.write(
+        parseMutableCurrentThreadRecord({
+          ...upgradedRecord,
+          turns: upgradedRecord.turns.map((turn, index) =>
+            index === upgradedRecord.turns.length - 1
+              ? {
+                  ...turn,
+                  assistantContent,
+                  assistantStatus,
+                  error,
+                  updatedAt: now,
+                }
+              : turn,
+          ),
+          updatedAt: now,
+        }),
+      )
     } catch (settleError) {
       if (settleError instanceof CurrentThreadSessionError) {
         throw settleError
