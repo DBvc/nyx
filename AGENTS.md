@@ -21,7 +21,7 @@ broaden unrelated tasks.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
   thread-first Agent Workbench foundation, current-thread durability, and
   provider compatibility core tasks, plus the bounded Composer target-selection
-  workstream.
+  and Context Composer experiment workstreams.
 
 ## Source of Truth
 
@@ -76,6 +76,12 @@ Still out of scope:
 - artifacts
 - cloud sync
 - multimodal features
+
+Multimodal behavior remains out of scope for ordinary work. Context Composer
+E0 stopped on main-thread encoding; E0B then stopped because Chromium's native
+JPEG output violated the failed v1.8 candidate's sealed metadata allowlist.
+E1-E5 remain blocked until the user approves a revised feasibility gate. No
+capacity limit is frozen.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -159,6 +165,40 @@ registry, attempt history, persistent multi-thread history, a new IPC channel,
 or provider identity in OCaml. Safe provider/model selection ids and display
 labels may cross the existing typed desktop bridge; resolved base URLs,
 credentials, protocols, and provider execution remain Electron-main-only.
+
+The E0 scope gate for the explicit fifth `context-composer-experiment`
+workstream did not pass. A high-entropy image at the minimum supported size
+blocked Electron main for about one second, so the synchronous main-owned
+canonicalization direction is rejected.
+
+E0B also did not pass. In the recorded environment, the OS-temp
+production-shape Vite Worker harness loaded its static Worker in dev, build,
+and `app.asar`; this was not production Renderer integration. Chromium's JPEG
+encoder emitted an ICC APP2 segment that the failed v1.8 candidate's sealed
+main allowlist correctly rejected. The Worker/JPEG/allowlist design, every
+numeric limit, and the E1-E5 slice and file lists are historical candidate
+material only: they are non-operative and are not implementation permission.
+The candidate-limit table in
+`docs/next/context-composer-experiment-runthrough.md` is the status reference;
+no capacity limit of any kind is frozen.
+
+Until a user-approved revised feasibility gate passes, the only active E
+invariants are that E1-E5 remain blocked, Electron main remains authoritative
+for validation, metadata policy, file IO, durable ownership, target resolution,
+Provider mapping, and safe errors, and no product implementation or scope
+expansion is authorized. A revised gate may change input types,
+canonicalization executor, metadata policy, capacities, and slice/file details.
+
+E0 and E0B failure evidence is recorded in
+`docs/next/context-composer-experiment-runthrough.md`. E1 through E5 remain
+blocked until a revised gate passes and the plan completes its review gate.
+
+This fifth workstream does not authorize PDF/doc/audio/video input, remote file
+upload, a general Asset service, arbitrary content parts, capability inference
+or registry, assistant rich output, Markdown/HTML/Artifact/Generative UI
+rendering, multi-thread history, a new IPC namespace, or new OCaml protocol
+messages. Provider credentials, resolved targets, file IO, and any future
+accepted image bytes remain Electron-main-owned.
 
 ## Workspace Boundary
 

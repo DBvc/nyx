@@ -6,9 +6,10 @@ The desktop app is currently the only user-facing product surface. Its default
 scope remains `v1 min chat`.
 
 Connections settings, thread-first UI work, current-thread durability, provider
-compatibility core, and Composer target selection are allowed only when the user
-explicitly asks to execute the corresponding gated agent-workbench workstream or
-a named slice from `../../docs/next/agent-workbench-task-slices.md`.
+compatibility core, Composer target selection, and the bounded Context Composer
+experiment are allowed only when the user explicitly asks to execute the
+corresponding gated agent-workbench workstream or a named slice from
+`../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
 
@@ -68,6 +69,13 @@ This subproject owns:
   ids, current display labels, availability, and safe attribution through typed
   shared contracts. Electron main must still own resolved targets, base URLs,
   credentials, protocols, provider calls, and fail-closed validation.
+- Context Composer E0 stopped on synchronous main-thread encoding. E0B then
+  stopped because Chromium's native JPEG output violated the failed v1.8
+  candidate's sealed metadata allowlist. E1-E5 production behavior remains
+  blocked until the user approves a revised feasibility gate. Electron main
+  must remain authoritative for validation, metadata policy, file IO, durable
+  state, Provider mapping, and errors. OCaml remains a text-only projection.
+  No product implementation or scope expansion is authorized meanwhile.
 
 ## Current Scope
 
@@ -92,6 +100,7 @@ Not allowed in this phase:
 - agent UI
 - plugin UI
 - artifact UI
+- multimodal behavior outside the explicit Context Composer E slices
 
 Explicit first agent-workbench workstream additions:
 
@@ -183,6 +192,50 @@ Still not allowed in that fourth workstream:
 - attempt history, Recent, thread switching, or persistent multi-thread history
 - a new chat/thread IPC namespace or new OCaml runtime protocol messages
 - tools, usage, sources, files, structured output, or native protocol adapters
+
+Stopped E0 `context-composer-experiment` scope gate:
+
+- the real-target and ordinary performance checks passed
+- a 25 MP / 7.78 MiB high-entropy PNG blocked Electron main for about 1 second
+- the minimum 8 MP / 8 MiB class fixture also blocked Electron main for about 1
+  second
+- synchronous main-owned canonicalization is rejected; E1-E5 are blocked
+
+Stopped E0B feasibility gate:
+
+- in the recorded environment, the OS-temp production-shape Vite Worker
+  harness loaded its static Worker in dev, build, and `app.asar`; this was not
+  production Renderer integration
+- Chromium's same-MIME JPEG output contained an ICC APP2 segment
+- main rejected that segment under the failed v1.8 candidate's sealed
+  APP1-APP15 deny rule
+- no capacity limit of any kind is frozen; the candidate-limit table in
+  `../../docs/next/context-composer-experiment-runthrough.md` is the status
+  reference
+
+The v1.8 Worker/JPEG/allowlist design, every numeric limit, and the E1-E5 slice
+and file lists are historical candidate material only. They are non-operative
+and are not implementation permission. A user-approved revised gate may change
+input types, canonicalization executor, metadata policy, capacities, and
+slice/file details. Until it passes, only main authority and durable ownership
+remain active E boundaries; no product implementation or scope expansion is
+authorized.
+
+E0 and E0B failure evidence is recorded in
+`../../docs/next/context-composer-experiment-runthrough.md`. E1-E5 remain
+blocked until a revised gate passes and the plan completes review.
+
+Still not allowed in this fifth workstream:
+
+- PDF, document, audio, video, HEIC, SVG, GIF, or WebP input
+- remote upload/file ids, a general Asset service, database, hash deduplication,
+  reference counting, or cross-thread sharing
+- capability inference/registry, provider-specific policy, or Connections
+  schema/default changes
+- rich-text Composer, assistant image/rich output, Markdown, HTML, Artifact, or
+  Generative UI rendering
+- a new chat/thread IPC namespace, new OCaml actions/protocol messages,
+  multi-thread history, tools, or agents
 
 ## Contract Rules
 

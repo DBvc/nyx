@@ -74,6 +74,17 @@ Use relative documentation links. Do not add local absolute paths.
   not authorize global-default mutation, a Connections store migration,
   provider-specific policy, automatic routing, attempt history, multi-thread
   history, or a new renderer/OCaml provider boundary.
+- `E0` stopped on 2026-08-09 after a representative high-entropy fixture
+  disproved synchronous Electron-main canonicalization. `E0B` then stopped
+  because Chromium's canonical JPEG contained an ICC APP2 segment forbidden by
+  the failed v1.8 candidate's sealed metadata allowlist. No E slice is permitted
+  until the user chooses and approves a revised feasibility direction; `E1`
+  through `E5` remain blocked. No capacity limit is frozen. Evidence is recorded
+  in [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
+- The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
+  historical candidate material, not an active workstream or implementation
+  permission. Any revised gate may change those details. It still may not
+  authorize product implementation or scope expansion before approval.
 
 ## A0: Scope Gate Docs
 
@@ -1539,3 +1550,448 @@ Do not:
   verified without evidence
 - weaken automated checks or broaden D into routing, capabilities, history,
   tools, or runtime work
+
+## E Workstream: Context Composer Experiment
+
+Status: E0 and E0B stopped on 2026-08-09. E1-E5 are blocked pending a new user decision.
+
+There is currently no executable E entry gate. A request for
+`context-composer-experiment` or a named E slice does not unblock E1-E5; a new
+user-approved feasibility direction and independent review must pass first.
+This document remains the higher-priority scope gate if a conflict appears.
+
+The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
+E1-E5 file and requirement lists below are failed historical candidate material.
+They are non-operative and are not implementation permission. A revised gate
+may change input types, canonicalization executor, metadata policy, capacities,
+and slice/file details. The only active E invariants are:
+
+- E1-E5 remain blocked
+- Electron main remains authoritative for validation, metadata policy, file IO,
+  durable ownership, target resolution, Provider mapping, and safe errors
+- no product implementation or scope expansion is authorized
+
+Failure evidence is defined in
+[context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md);
+the failed candidate implementation is recorded in
+[context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md).
+
+Failed v1.8 historical candidate semantics (non-operative):
+
+- support only PNG/JPEG through picker, paste, and drop
+- preserve `userContent` and add ordered `imageRefs`; do not introduce arbitrary
+  content parts
+- one sandboxed Renderer Web Worker may execute ephemeral same-MIME
+  canonicalization; it owns no accepted or durable state
+- Electron main owns authoritative canonical validation, metadata policy,
+  canonical files, durable state, target resolution, Provider mapping, and safe
+  errors
+- Renderer owns unsent `File` drafts, Worker lifecycle, object URLs, and a
+  rebuildable projection
+- emit `chat:accepted` only after canonical files and the pending user turn are
+  durable; Renderer clears the matching draft only after that event
+- keep target capability `unknown`; do not infer support from host/model names
+- keep the OCaml protocol unchanged and project only `userContent`
+- preserve text-only wire shape, streaming, Stop, Retry, New thread, target
+  selection/attribution, and current-thread recovery
+
+Historical v1.8 candidate limits (none are frozen):
+
+```text
+types: image/png, image/jpeg
+images per turn: 4
+draft source bytes per image: 8 MiB
+canonical bytes per image: 8 MiB
+new bytes per turn: 16 MiB
+current-thread image bytes: 32 MiB
+current-thread image count: revised-gate evidence pending
+current-thread cumulative pixels: revised-gate evidence pending
+maximum edge: 8192 px
+maximum pixels: 8,294,400
+```
+
+The candidate table in
+[context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
+is the status reference for these values. No capacity limit of any kind is
+frozen.
+
+The failed v1.8 candidate would stop if no real target accepted inline data
+URLs, the target required remote upload/file ids, the sandboxed native Web
+Worker missed E0B performance, metadata, build, lifecycle, decoded-grid memory,
+or evidence-review boundary, or implementation required a dependency,
+`utilityProcess`, general Asset service, database, worker pool,
+thumbnail/lazy-load layer, new IPC namespace, new OCaml protocol, or behavior
+outside the historical candidate semantics above.
+
+## E0: Context Composer Scope And Feasibility Gate
+
+Type: real-target/performance probe and documentation-only scope gate.
+
+Status: stopped on 2026-08-09. See
+[context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
+
+Allowed files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Required:
+
+- prove one configured OpenAI-compatible target accepts a streamed
+  text-plus-inline-image request and semantically uses the synthetic image
+- measure 25 MP canonicalization, four-image Renderer/main roundtrip, 32 MiB
+  hydration, and 32 MiB historical request construction on actual Electron
+- rerun a 25 MP and minimum 8 MP high-entropy fixture before freezing limits
+- record only redacted labels, request shape, environment, measurements,
+  caveats, and the go/stop result
+
+Do not change production code/tests/persisted data/provider configuration;
+retain temporary probes, raw responses, Base64, private images, full base URLs,
+credentials, or local absolute paths; or treat E0 as implementation permission.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run format-check
+git diff --check
+```
+
+Observed result: real-target, ordinary IPC/hydration, and historical request
+construction passed, but both 25 MP and minimum 8 MP high-entropy PNGs blocked
+Electron main for about one second. The original PASS is withdrawn. E0 does not
+authorize E1-E5.
+
+## E0B: Native Off-Main Canonicalization Feasibility
+
+Type: temporary Electron/Vite feasibility probe and plan/docs revision only.
+
+Status: stopped on 2026-08-09. The OS-temp production-shape Vite Worker harness
+loaded its static Worker in dev, build, and `app.asar`, but its synthetic JPEG
+output contained an ICC APP2 segment that the failed v1.8 candidate's sealed
+main allowlist correctly rejected. No capacity limit is frozen.
+
+Allowed tracked files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-technical-plan.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Sanitized temporary probe code and synthetic fixtures existed only in the OS
+temporary directory through the bounded independent E0B review. They were never
+committed and the reviewed harness was deleted after review.
+
+Required:
+
+- use the current sandbox/context-isolation settings and Vite's static
+  `new Worker(new URL(..., import.meta.url), { type: 'module' })` shape
+- use one ordinary Web Worker with no Node integration, dependency, pool,
+  file-system access, bridge access, Provider access, or durable state
+- canonicalize with `createImageBitmap({ imageOrientation: 'from-image' })`,
+  same-size `OffscreenCanvas`, PNG or JPEG quality 0.95, and transferable
+  buffers
+- before Worker decode, use one pure PNG/JPEG header parser to reject truncated,
+  oversized-edge, oversized-pixel, or MIME/magic-mismatched source bytes
+- prove a small crafted source with oversized header dimensions is rejected
+  before `createImageBitmap`, so compressed input cannot bypass the pixel bound
+- keep main authoritative: bound canonical bytes, parse PNG/JPEG headers,
+  cross-check with `nativeImage` decode, and fail closed on metadata-bearing
+  PNG chunks, JPEG APP1-APP15/COM, or arbitrary/repeated/extended APP0 segments;
+  allow at most the exact minimal JFIF APP0 shape with no thumbnail or arbitrary
+  payload only when production Worker fixtures prove it necessary; add a custom
+  APP0 adversarial fixture and do not synchronously re-encode
+- prove production Worker loading, PNG/JPEG MIME, EXIF orientation,
+  GPS/device/XMP/COM/PNG text removal, visual equivalence, remove/New
+  thread/unmount, stale-result disposal, timeout/error recovery, and four-image
+  sequencing
+- measure peak main+Renderer+Worker working set instead of only completion RSS
+- in the OS-temp harness, use many highly-compressible full-pixel images at each
+  candidate count/pixel limit to create object URLs and real `<img>` elements,
+  mount them in a representative visible DOM grid, wait for `img.decode()` or
+  load/error completion, and measure whole-process peak working set across
+  main+Renderer+Worker; use that evidence to freeze both current-thread total
+  image count and cumulative pixels, with main recomputing authority from refs
+  and bounded header reads rather than persisted dimensions or a cache
+- retain in the runthrough the executed redacted command shapes without
+  absolute/private data, deterministic seed and fixture hash, repetition count,
+  peak-sampling method, and packaged Worker evidence; after the reviewed
+  harness is deleted, those command shapes are not a self-contained reproduction
+- freeze limits only if Renderer heartbeat gap is ≤50 ms, main validation
+  segments are ≤250 ms, four daily images finish ≤1.5 s, a 3840×2160
+  high-entropy image finishes ≤1 s, and peak working-set increase is ≤192 MiB
+- stop for a new decision if no practical current-thread count/pixel bound can
+  meet peak memory without a thumbnail or lazy-load layer
+
+Do not commit production image behavior, begin E1-E5, add a dependency or
+`utilityProcess`, weaken sandbox/context isolation, relax stop lines, keep a
+Blob Worker, commit probe code, retain temporary source/payloads outside OS
+temp, retain them after bounded independent review, import production Renderer
+components, or implement/run the E4-blocked `ChatMessage`/product message grid.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:lint
+mise run format-check
+git diff --check
+```
+
+Observed result: the no-dependency same-MIME Worker candidate failed the JPEG
+metadata gate. A deterministic 120×80 synthetic fixture produced a 990-byte
+canonical JPEG containing `FFE2 ICC_PROFILE`; main rejected it as required by
+the failed v1.8 candidate's APP1-APP15 deny rule. The remaining lifecycle/grid
+matrix was not promoted after this Stop condition. E1-E5 stay blocked until the
+user approves a revised gate, which may change input types, canonicalization
+executor, metadata policy, capacities, and slice/file details.
+
+## E1: Image Refs And Current-Thread V3
+
+Type: shared chat contract and current-thread schema/migration only.
+
+Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+
+The file list and requirements below are failed v1.8 historical candidate
+material, non-operative, and not implementation permission.
+
+Allowed files:
+
+```text
+apps/desktop/shared/chat/types.ts
+apps/desktop/shared/chat/snapshot.ts
+apps/desktop/shared/contracts/desktop.ts only for required type propagation
+apps/desktop/electron/preload/index.ts only for required type propagation
+apps/desktop/electron/main/current-thread/schemas.ts
+apps/desktop/electron/main/current-thread/store.ts
+apps/desktop/electron/main/current-thread/session-coordinator.ts
+apps/desktop/electron/main/current-thread/snapshot.ts
+corresponding near-source tests
+```
+
+Required: add ordered `imageRefs`, Worker-canonical new-image bytes, accepted
+canonical bytes, image-only validation, stable Retry identity, and lazy v3
+migration. Keep v1/v2 stable reads byte-stable; upgrade only on the first
+image-bearing mutation; keep later text turns in v3; store no
+bytes/Base64/paths/original filenames in JSON; fail closed on malformed or
+unknown future records.
+
+Do not implement file import, Provider mapping, Composer UI, a new bridge method
+or IPC channel, Connections changes, OCaml types, or text-only behavior changes.
+
+Validation:
+
+```sh
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:test
+```
+
+## E2: Main Image Import And Durable Acceptance
+
+Type: Electron-main validation, canonical storage, and acceptance lifecycle.
+
+Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+
+The file list and requirements below are failed v1.8 historical candidate
+material, non-operative, and not implementation permission.
+
+Allowed files:
+
+```text
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/current-thread/store.ts
+apps/desktop/electron/main/current-thread/file-adapter.ts
+apps/desktop/electron/main/current-thread/session-coordinator.ts
+apps/desktop/electron/main/current-thread/snapshot.ts
+one direct image helper under apps/desktop/electron/main/current-thread/
+apps/desktop/shared/chat/image-file.ts
+apps/desktop/shared/chat/events.ts
+corresponding near-source tests
+```
+
+Required:
+
+- validate request shape, UUID ids, byte budgets, PNG/JPEG magic, pre-decode
+  dimensions/pixels, decoded size, and MIME agreement
+- keep one stateless shared byte parser for Renderer preflight and independent
+  main validation; do not add a validator service or mutable cache
+- treat canonical payload as untrusted; use header parsing plus Electron
+  `nativeImage` decode for MIME/dimension agreement, reject metadata-bearing
+  PNG chunks, JPEG APP1-APP15/COM, and arbitrary/repeated/extended APP0;
+  allow at most the exact minimal JFIF APP0 shape with no thumbnail or arbitrary
+  payload only if production Worker fixtures prove it necessary, and do not
+  synchronously re-encode
+- write canonical files before the pending record and emit `chat:accepted` only
+  from `ChatSessionManager` after record commit
+- compose one current-thread image owner from `userData`; use it for coordinator
+  prepare/reset/reconcile and snapshot bounded reads without a second Store
+- keep snapshot hydration on the same bounded image read and return safe
+  unavailable descriptions without failing unrelated text/images
+- use one local write contract: `rename` resolve is committed; reject leaves the
+  final path unchanged; do no fallible work after record rename before returning
+- provide one main-only bounded image read that rejects symlinks, non-files,
+  empty/truncated/mismatched/oversized files
+
+Do not add fsync/power-loss claims, a second Store, transaction manager,
+fresh-disk recovery, database, general Asset service, remote upload, another
+IPC, a codec dependency, `utilityProcess`, or Runtime/Provider side effects
+after failed prepare/bind.
+
+Validation:
+
+```sh
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:test
+```
+
+## E3: Provider Image Mapping And Runtime Projection
+
+Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
+projection.
+
+Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+
+The file list and requirements below are failed v1.8 historical candidate
+material, non-operative, and not implementation permission.
+
+Allowed files:
+
+```text
+apps/desktop/electron/main/chat/client.ts
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/shared/chat/types.ts
+apps/desktop/electron/main/current-thread/schemas.ts
+apps/desktop/electron/main/current-thread/session-coordinator.ts
+apps/desktop/electron/main/current-thread/runtime-replay.ts
+corresponding near-source tests
+```
+
+Required: preserve exact text-only wire shape; map image-bearing turns to
+text-first arrays and transient data URLs in `imageRefs` order; construct
+historical context from durable files and fail closed on unavailable refs; map
+image-bearing 400/413/415 to safe retryable `content_rejected`; switch target on
+Retry without copying files; add `content_rejected` once to the shared chat
+error code, v3 persisted safe-error schema/message, and coordinator settlement
+without changing v1/v2 schemas; project only `userContent` to OCaml.
+
+Do not add capability inference/cache/registry, provider-specific parameters,
+remote upload, raw Provider errors, or any new OCaml message/type.
+
+Validation:
+
+```sh
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:test
+mise run runtime:chat-state:check
+```
+
+## E4: Composer Images, Thread Display, And Hydration
+
+Type: bounded Renderer interaction and projection.
+
+Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+
+The file list and requirements below are failed v1.8 historical candidate
+material, non-operative, and not implementation permission.
+
+Allowed files:
+
+```text
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/chat-reducer.ts
+apps/desktop/src/ui/chat/chat-types.ts
+apps/desktop/src/ui/chat/chat-presenters.ts
+apps/desktop/src/ui/chat/image-canonicalizer.worker.ts
+apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
+apps/desktop/src/ui/chat/components/ChatComposer.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.tsx
+corresponding near-source tests and existing chat styles
+```
+
+Required: preserve the textarea; normalize picker/paste/drop into one draft
+path; use one lazy sandboxed Web Worker for `preparing → ready | failed`;
+transfer source/canonical buffers; support ordered previews/remove/image-only;
+allow Send only when all images are ready; retain the locked draft until
+`chat:accepted`; use canonical accepted/hydrated bytes for the message grid;
+discard stale Worker results; provide native dialog, missing placeholder,
+keyboard/`aria-live` behavior; and release every Worker, bitmap, buffer, and
+object URL on its terminal path. The historical candidate proposed testing the
+real product message grid at limits that E0B never froze.
+
+Do not add contenteditable/rich text, drag sorting, crop/annotation/OCR, a
+global image cache, Worker pool/manager, third-party image/image-processing
+dependency, unrelated Composer redesign, Renderer file paths/credentials/raw
+Provider config, or durable Renderer ownership.
+
+Validation:
+
+```sh
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:test
+mise run desktop:build
+```
+
+## E5: Context Composer Lifecycle Acceptance And Docs
+
+Type: acceptance verification and documentation sync.
+
+Status: blocked until the user approves a revised direction, its feasibility evidence and plan pass independent review, and E1-E4 are implemented.
+
+The file list and requirements below are failed v1.8 historical candidate
+material, non-operative, and not implementation permission.
+
+Allowed files: E1-E4 production files only for fixes returned to their owning
+slice, corresponding tests, and:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Required: prove text/image paths, Stop before/after commit, Retry/target switch,
+bind failure, restart/interrupted pending, New thread, orphan reconcile,
+missing/corrupt image, metadata removal, object URLs, text-only regression, and
+v3 behavior after disabling new ingress. The historical candidate proposed
+exercising the real product message grid at limits that E0B never froze.
+Complete one real target text+image and image-only run, use a second target for
+reject/switch/retry when available, and record exact redacted evidence without
+claiming unobserved behavior.
+
+Do not fix failed acceptance outside its owning E1-E4 boundary or broaden E into
+documents/remote files, general assets/parts, capability policy, assistant rich
+output, Markdown/HTML/Artifact/Generative UI, history, tools, agents, new IPC,
+or new OCaml protocol.
+
+Validation:
+
+```sh
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run desktop:check
+mise run check
+mise run format-check
+git diff --check
+```
