@@ -213,10 +213,14 @@ export function ChatWorkspace() {
   const {
     state,
     isBusy,
+    isAccepting,
     isResetting,
     canSend,
     setInput,
     setTargetSelection,
+    addDraftImages,
+    removeDraftImage,
+    retryDraftImage,
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,
@@ -389,10 +393,17 @@ export function ChatWorkspace() {
               />
               <ChatComposer
                 canSend={canSend}
+                composerError={state.composerError}
+                composerNotice={state.composerNotice}
                 disabled={state.hydrationStatus !== 'ready' || isResetting}
+                draftImages={state.draftImages}
                 input={state.input}
+                isAccepting={isAccepting}
                 isBusy={isBusy}
+                onAddImages={addDraftImages}
                 onInputChange={setInput}
+                onRemoveImage={removeDraftImage}
+                onRetryImage={retryDraftImage}
                 targetAction={
                   targetPresentation.action === 'refresh'
                     ? {

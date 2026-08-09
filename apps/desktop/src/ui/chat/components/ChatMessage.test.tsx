@@ -19,6 +19,21 @@ function renderAssistant(message: Partial<NyxChatMessage>) {
   )
 }
 
+function renderUser(message: Partial<NyxChatMessage>) {
+  return renderToStaticMarkup(
+    <ChatMessage
+      message={{
+        id: 'user-1',
+        role: 'user',
+        content: '',
+        status: 'completed',
+        ...message,
+      }}
+      onRetry={vi.fn()}
+    />,
+  )
+}
+
 describe('ChatMessage', () => {
   it.each(['pending', 'streaming'] as const)(
     'shows Thinking while an empty assistant message is %s',
@@ -110,5 +125,42 @@ describe('ChatMessage', () => {
 
     expect(markup).not.toContain('.env ·')
     expect(markup).not.toContain('Provider One · Model One')
+  })
+
+  it('renders stable previews for an image-only user message without loading full bytes', () => {
+    const markup = renderUser({
+      images: [
+        {
+          imageId: '00000000-0000-4000-8000-000000000001',
+          mediaType: 'image/png',
+          width: 1,
+          height: 1,
+          available: true,
+        },
+      ],
+    })
+
+    expect(markup).toContain('src="nyx-image://preview/00000000-0000-4000-8000-000000000001"')
+    expect(markup).not.toContain('nyx-image://full/')
+    expect(markup).toContain('aria-label="Open attached image 1"')
+    expect(markup).toContain('<dialog')
+  })
+
+  it('renders an unavailable image placeholder without a protocol URL', () => {
+    const markup = renderUser({
+      images: [
+        {
+          imageId: '00000000-0000-4000-8000-000000000002',
+          mediaType: 'image/jpeg',
+          width: 1,
+          height: 1,
+          available: false,
+        },
+      ],
+    })
+
+    expect(markup).toContain('Image unavailable')
+    expect(markup).toContain('Attached image 1 is unavailable')
+    expect(markup).not.toContain('nyx-image://')
   })
 })

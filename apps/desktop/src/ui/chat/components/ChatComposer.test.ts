@@ -3,13 +3,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { ChatComposer, shouldSendComposerKey } from './ChatComposer'
+import { ChatComposer, isSupportedComposerImageType, shouldSendComposerKey } from './ChatComposer'
 
 const defaultProps: ComponentProps<typeof ChatComposer> = {
   input: 'Hello',
+  draftImages: [],
   isBusy: false,
+  isAccepting: false,
   canSend: true,
   disabled: false,
+  composerError: null,
+  composerNotice: null,
   targetDisabled: false,
   targetOptions: [
     {
@@ -22,7 +26,10 @@ const defaultProps: ComponentProps<typeof ChatComposer> = {
   targetAction: null,
   targetStatus: null,
   targetValue: 'target-1',
+  onAddImages: () => undefined,
   onInputChange: () => undefined,
+  onRemoveImage: () => undefined,
+  onRetryImage: () => undefined,
   onTargetChange: () => undefined,
   onSend: () => undefined,
   onStop: () => undefined,
@@ -75,6 +82,17 @@ describe('shouldSendComposerKey', () => {
     ['a', false, false, false],
   ] as const)('returns %s/%s/%s as %s', (key, shiftKey, isComposing, expected) => {
     expect(shouldSendComposerKey(key, shiftKey, isComposing)).toBe(expected)
+  })
+})
+
+describe('isSupportedComposerImageType', () => {
+  it.each([
+    ['image/png', true],
+    ['image/jpeg', true],
+    ['image/webp', false],
+    ['text/plain', false],
+  ])('maps %s to %s', (type, expected) => {
+    expect(isSupportedComposerImageType(type)).toBe(expected)
   })
 })
 
@@ -209,5 +227,65 @@ describe('ChatComposer', () => {
 
     expect(targetTriggerOpeningTag(markup)).not.toContain('disabled=""')
     expect(markup).toContain('>Open Connections</button>')
+  })
+
+  it('renders ordered ready, preparing, and failed image drafts', () => {
+    const markup = renderComposer({
+      canSend: false,
+      draftImages: [
+        {
+          id: 'ready',
+          name: 'ready.png',
+          status: 'ready',
+          source: null,
+          image: { mediaType: 'image/png', width: 1, height: 1 },
+          canonicalBytes: new Uint8Array([1]),
+          previewBytes: new Uint8Array([2]),
+          previewUrl: 'blob:ready',
+        },
+        {
+          id: 'preparing',
+          name: 'preparing.png',
+          status: 'preparing',
+          source: new Blob(),
+        },
+        {
+          id: 'failed',
+          name: 'failed.png',
+          status: 'failed',
+          source: new Blob(),
+          error: 'failed',
+        },
+      ],
+    })
+
+    expect(markup).toContain('aria-label="Attached images"')
+    expect(markup).toContain('src="blob:ready"')
+    expect(markup).toContain('Preparing…')
+    expect(markup).toContain('Couldn’t prepare')
+    expect(markup).toContain('aria-label="Retry attachment 3"')
+    expect(markup).toContain('aria-label="Remove attachment 1"')
+  })
+
+  it('locks the captured Composer while waiting for accepted', () => {
+    const markup = renderComposer({ isAccepting: true, isBusy: true, canSend: false })
+    const textarea = markup.match(/<textarea\b[^>]*>/)?.[0]
+
+    expect(textarea).toContain('disabled=""')
+    expect(targetTriggerOpeningTag(markup)).toContain('disabled=""')
+    expect(markup).toContain('aria-label="Stop response"')
+  })
+
+  it('announces pre-accepted errors near the retained draft', () => {
+    const markup = renderComposer({
+      composerError: {
+        code: 'cancelled',
+        message: 'Request cancelled.',
+        retryable: false,
+      },
+    })
+
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Request cancelled.')
   })
 })

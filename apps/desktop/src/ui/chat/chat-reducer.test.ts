@@ -76,11 +76,19 @@ function submittedState() {
 }
 
 function streamingState() {
-  return chatReducer(submittedState(), {
+  return chatReducer(acceptedState(), {
     type: 'request-started',
     requestId,
     assistantMessageId,
     targetAttribution,
+  })
+}
+
+function acceptedState() {
+  return chatReducer(submittedState(), {
+    type: 'request-accepted',
+    requestId,
+    assistantMessageId,
   })
 }
 
@@ -265,11 +273,39 @@ describe('chatReducer', () => {
   })
 
   it('keeps reset failure safe and blocks stale conversation actions', () => {
-    const resettingState = chatReducer(submittedState(), {
-      type: 'reset-started',
-      generation: 1,
-      minimumCatalogEpoch: 2,
-    })
+    const draftImages = [
+      {
+        id: 'ready',
+        name: 'ready.png',
+        status: 'ready' as const,
+        source: null,
+        image: { mediaType: 'image/png' as const, width: 1, height: 1 },
+        canonicalBytes: new Uint8Array([1]),
+        previewBytes: new Uint8Array([2]),
+        previewUrl: 'blob:ready',
+      },
+      {
+        id: 'preparing',
+        name: 'preparing.png',
+        status: 'preparing' as const,
+        source: new Blob([new Uint8Array([3])], { type: 'image/png' }),
+      },
+      {
+        id: 'failed',
+        name: 'failed.png',
+        status: 'failed' as const,
+        source: new Blob([new Uint8Array([4])], { type: 'image/png' }),
+        error: 'failed',
+      },
+    ]
+    const resettingState = chatReducer(
+      { ...submittedState(), draftImages, composerNotice: 'Keep this draft.' },
+      {
+        type: 'reset-started',
+        generation: 1,
+        minimumCatalogEpoch: 2,
+      },
+    )
     const state = chatReducer(resettingState, {
       type: 'reset-failed',
       generation: 1,
@@ -292,12 +328,15 @@ describe('chatReducer', () => {
     expect(state.activeAssistantMessageId).toBeUndefined()
     expect(state.activeTurn).toBeNull()
     expect(state.retryableTurn).toBeNull()
+    expect(state.input).toBe('Hello Nyx')
+    expect(state.draftImages).toEqual(draftImages)
+    expect(state.composerNotice).toBe('Keep this draft.')
   })
 
-  it('records a submitted request and appends user and assistant messages', () => {
+  it('locks a submitted request without clearing or inserting before accepted', () => {
     const state = submittedState()
 
-    expect(state.input).toBe('')
+    expect(state.input).toBe('Hello Nyx')
     expect(state.runStatus).toBe('submitting')
     expect(state.activeRequestId).toBe(requestId)
     expect(state.activeAssistantMessageId).toBe(assistantMessageId)
@@ -305,12 +344,89 @@ describe('chatReducer', () => {
       requestId,
       userMessageId,
       assistantMessageId,
+      turnIntent: 'new_user_message',
+      accepted: false,
       turnUserMessage,
       submittedMessages,
       targetSelection,
+      capturedInput: 'Hello Nyx',
+      capturedDraftImageIds: [],
+      userMessage,
+      assistantMessage,
     })
     expect(state.retryableTurn).toBeNull()
+    expect(state.messages).toEqual([])
+  })
+
+  it('commits the captured request on accepted', () => {
+    const state = acceptedState()
+
+    expect(state.input).toBe('')
+    expect(state.activeTurn?.accepted).toBe(true)
+    expect(state.committedTarget).toEqual(targetSelection)
     expect(state.messages).toEqual([userMessage, assistantMessage])
+  })
+
+  it('retains the captured Composer when a request fails before accepted', () => {
+    const state = chatReducer(submittedState(), {
+      type: 'request-failed',
+      requestId,
+      assistantMessageId,
+      error: retryableError,
+    })
+
+    expect(state.input).toBe('Hello Nyx')
+    expect(state.messages).toEqual([])
+    expect(state.committedTarget).toBeNull()
+    expect(state.activeTurn).toBeNull()
+    expect(state.composerError).toEqual(retryableError)
+  })
+
+  it('clears only captured image drafts and inserts stable refs on accepted', () => {
+    const imageId = '00000000-0000-4000-8000-000000000001'
+    const draft = {
+      id: 'draft-1',
+      name: 'image.png',
+      status: 'ready' as const,
+      source: null,
+      image: { mediaType: 'image/png' as const, width: 1, height: 1 },
+      canonicalBytes: new Uint8Array([1]),
+      previewBytes: new Uint8Array([2]),
+      previewUrl: 'blob:preview',
+    }
+    const imageUserMessage = {
+      ...userMessage,
+      content: '',
+      images: [{ imageId, ...draft.image, available: true }],
+    }
+    const imageTurn = {
+      id: userMessageId,
+      content: '',
+      imageRefs: [{ imageId, ...draft.image }],
+    }
+    const submitted = chatReducer(
+      { ...initialChatState, draftImages: [draft] },
+      {
+        type: 'request-submitted',
+        requestId,
+        assistantMessageId,
+        turnUserMessage: imageTurn,
+        submittedMessages: [{ role: 'user', content: '' }],
+        userMessage: imageUserMessage,
+        assistantMessage,
+        targetSelection,
+      },
+    )
+    const accepted = chatReducer(submitted, {
+      type: 'request-accepted',
+      requestId,
+      assistantMessageId,
+    })
+
+    expect(submitted.draftImages).toEqual([draft])
+    expect(submitted.messages).toEqual([])
+    expect(accepted.draftImages).toEqual([])
+    expect(accepted.messages[0]).toEqual(imageUserMessage)
   })
 
   it('keeps the active selection immutable when the Composer draft changes', () => {
@@ -327,7 +443,7 @@ describe('chatReducer', () => {
     })
 
     expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
-    expect(changed.targetDraft).toEqual({ kind: 'env_fallback' })
+    expect(changed.targetDraft).toEqual(targetSelection)
   })
 
   it('keeps active attribution after the Composer draft changes during generation', () => {
@@ -351,6 +467,7 @@ describe('chatReducer', () => {
     })
 
     expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
+    expect(changed.targetDraft).toEqual({ kind: 'env_fallback' })
     expect(assistantFrom(completed.messages).targetAttribution).toEqual(targetAttribution)
   })
 
@@ -522,7 +639,7 @@ describe('chatReducer', () => {
   })
 
   it('retains attribution on a post-bind failure even when chat:start was not observed', () => {
-    const state = chatReducer(submittedState(), {
+    const state = chatReducer(acceptedState(), {
       type: 'request-failed',
       requestId,
       assistantMessageId,
@@ -568,6 +685,16 @@ describe('chatReducer', () => {
     const selectedForRetry = chatReducer(
       {
         ...failedState,
+        input: 'Next question',
+        draftImages: [
+          {
+            id: 'draft-next',
+            name: 'next.png',
+            status: 'failed',
+            source: new Blob(),
+            error: 'failed',
+          },
+        ],
         targetInitialized: true,
         targetDraft: targetSelection,
       },
@@ -578,7 +705,7 @@ describe('chatReducer', () => {
       },
     )
 
-    const state = chatReducer(selectedForRetry, {
+    const accepting = chatReducer(selectedForRetry, {
       type: 'retry-requested',
       requestId: 'request-2',
       userMessageId,
@@ -588,6 +715,14 @@ describe('chatReducer', () => {
       targetSelection: { kind: 'env_fallback' },
     })
 
+    expect(assistantFrom(accepting.messages).error).toEqual(retryableError)
+    expect(accepting.retryableTurn).toEqual(failedState.retryableTurn)
+
+    const state = chatReducer(accepting, {
+      type: 'request-accepted',
+      requestId: 'request-2',
+      assistantMessageId,
+    })
     const assistant = assistantFrom(state.messages)
 
     expect(state.runStatus).toBe('submitting')
@@ -597,11 +732,17 @@ describe('chatReducer', () => {
       requestId: 'request-2',
       userMessageId,
       assistantMessageId,
+      turnIntent: 'retry_failed_response',
+      accepted: true,
       turnUserMessage,
       submittedMessages,
       targetSelection: { kind: 'env_fallback' },
+      capturedInput: '',
+      capturedDraftImageIds: [],
     })
     expect(state.retryableTurn).toBeNull()
+    expect(state.input).toBe('Next question')
+    expect(state.draftImages).toHaveLength(1)
     expect(assistant.id).toBe(assistantMessageId)
     expect(assistant.content).toBe('')
     expect(assistant.status).toBe('pending')
@@ -611,11 +752,25 @@ describe('chatReducer', () => {
   })
 
   it('clears the chat back to the initial state', () => {
-    const resettingState = chatReducer(submittedState(), {
-      type: 'reset-started',
-      generation: 1,
-      minimumCatalogEpoch: 2,
-    })
+    const resettingState = chatReducer(
+      {
+        ...submittedState(),
+        draftImages: [
+          {
+            id: 'failed',
+            name: 'failed.png',
+            status: 'failed',
+            source: new Blob(),
+            error: 'failed',
+          },
+        ],
+      },
+      {
+        type: 'reset-started',
+        generation: 1,
+        minimumCatalogEpoch: 2,
+      },
+    )
     const state = chatReducer(resettingState, {
       type: 'clear-chat',
       generation: 1,

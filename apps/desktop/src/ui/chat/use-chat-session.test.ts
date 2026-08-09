@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { NyxCurrentThreadSnapshot } from '../../../shared/chat/snapshot'
 import type { NyxConnectionsOverview } from '../../../shared/connections/types'
 import { chatReducer } from './chat-reducer'
 import { summarizeConnectionsOverview, type ConnectionStatusState } from './connection-status'
 import { initialChatState, type ChatState } from './chat-types'
-import { canSubmitChat, deriveTargetCatalogAction } from './use-chat-session'
+import {
+  canSubmitChat,
+  deriveTargetCatalogAction,
+  revokeDraftPreviewUrls,
+  toRequestMessages,
+} from './use-chat-session'
 
 type ReadyConnectionStatus = Extract<ConnectionStatusState, { kind: 'ready' }>
 
@@ -162,5 +167,95 @@ describe('target catalog lifecycle', () => {
         summary: summarizeConnectionsOverview(changedOverview),
       }),
     ).toBe(false)
+  })
+
+  it('allows image-only Send only after every draft is ready', () => {
+    const status = readyStatus()
+    const base = applyTargetCatalog(hydrate(initialChatState), status)
+    const preparing = {
+      ...base,
+      draftImages: [
+        {
+          id: 'draft-1',
+          name: 'image.png',
+          status: 'preparing' as const,
+          source: new Blob(),
+        },
+      ],
+    }
+
+    expect(canSubmitChat(preparing, status)).toBe(false)
+    expect(
+      canSubmitChat(
+        {
+          ...preparing,
+          draftImages: [
+            {
+              id: 'draft-1',
+              name: 'image.png',
+              status: 'ready',
+              source: null,
+              image: { mediaType: 'image/png', width: 1, height: 1 },
+              canonicalBytes: new Uint8Array([1]),
+              previewBytes: new Uint8Array([2]),
+              previewUrl: 'blob:preview-1',
+            },
+          ],
+        },
+        status,
+      ),
+    ).toBe(true)
+  })
+
+  it('keeps image-only user entries in compatibility request history', () => {
+    expect(
+      toRequestMessages([
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '',
+          status: 'completed',
+          images: [
+            {
+              imageId: '00000000-0000-4000-8000-000000000001',
+              mediaType: 'image/png',
+              width: 1,
+              height: 1,
+              available: true,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([{ role: 'user', content: '' }])
+  })
+
+  it('revokes only selected ready draft URLs', () => {
+    const revoke = vi.fn()
+
+    revokeDraftPreviewUrls(
+      [
+        {
+          id: 'ready',
+          name: 'ready.png',
+          status: 'ready',
+          source: null,
+          image: { mediaType: 'image/png', width: 1, height: 1 },
+          canonicalBytes: new Uint8Array([1]),
+          previewBytes: new Uint8Array([2]),
+          previewUrl: 'blob:ready',
+        },
+        {
+          id: 'failed',
+          name: 'failed.png',
+          status: 'failed',
+          source: new Blob(),
+          error: 'failed',
+        },
+      ],
+      new Set(['ready', 'failed']),
+      revoke,
+    )
+
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:ready')
   })
 })

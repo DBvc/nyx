@@ -37,18 +37,28 @@ export function summarizeText(content: string, maxLength: number) {
 
 export function threadTitle(messages: ReadonlyArray<NyxChatMessage>) {
   const firstUserMessage = messages.find(
-    (message) => message.role === 'user' && message.content.trim().length > 0,
+    (message) =>
+      message.role === 'user' && (message.content.trim().length > 0 || message.images?.length),
   )
 
-  return firstUserMessage ? summarizeText(firstUserMessage.content, 48) : 'New thread'
+  if (!firstUserMessage) {
+    return 'New thread'
+  }
+
+  return (
+    summarizeText(firstUserMessage.content, 48) ||
+    (firstUserMessage.images?.length ? 'Image' : 'New thread')
+  )
 }
 
 export function threadPreview(messages: ReadonlyArray<NyxChatMessage>) {
-  const lastMessage = [...messages].reverse().find((message) => message.content.trim().length > 0)
+  const lastMessage = [...messages]
+    .reverse()
+    .find((message) => message.content.trim().length > 0 || message.images?.length)
 
   if (!lastMessage) {
     return 'Ready for a new thread'
   }
 
-  return summarizeText(lastMessage.content, 46)
+  return summarizeText(lastMessage.content, 46) || 'Image'
 }

@@ -1,5 +1,6 @@
 import type {
   NyxChatError,
+  NyxChatImageRef,
   NyxChatInputMessage,
   NyxChatMessage,
   NyxChatTargetAttribution,
@@ -11,7 +12,7 @@ import type {
   NyxCurrentThreadSnapshot,
   NyxCurrentThreadSnapshotError,
 } from '../../../shared/chat/snapshot'
-import type { ChatState } from './chat-types'
+import type { ChatImageDraft, ChatState } from './chat-types'
 import { initialChatState } from './chat-types'
 
 type ChatAction =
@@ -28,6 +29,35 @@ type ChatAction =
   | {
       type: 'set-input'
       value: string
+    }
+  | {
+      type: 'draft-images-added'
+      images: ReadonlyArray<ChatImageDraft>
+    }
+  | {
+      type: 'draft-image-preparing'
+      imageId: string
+    }
+  | {
+      type: 'draft-image-ready'
+      imageId: string
+      image: Omit<NyxChatImageRef, 'imageId'>
+      canonicalBytes: Uint8Array
+      previewBytes: Uint8Array
+      previewUrl: string
+    }
+  | {
+      type: 'draft-image-failed'
+      imageId: string
+      error: string
+    }
+  | {
+      type: 'draft-image-removed'
+      imageId: string
+    }
+  | {
+      type: 'composer-notice-changed'
+      notice: string | null
     }
   | {
       type: 'target-context-ready'
@@ -60,6 +90,11 @@ type ChatAction =
       userMessage: NyxChatMessage
       assistantMessage: NyxChatMessage
       targetSelection: NyxChatTargetSelection
+    }
+  | {
+      type: 'request-accepted'
+      requestId: string
+      assistantMessageId: string
     }
   | {
       type: 'request-started'
@@ -135,6 +170,27 @@ function isActiveAssistantTurn(state: ChatState, requestId: string, assistantMes
   )
 }
 
+function isAcceptedAssistantTurn(state: ChatState, requestId: string, assistantMessageId: string) {
+  return (
+    isActiveAssistantTurn(state, requestId, assistantMessageId) &&
+    state.activeTurn?.accepted === true
+  )
+}
+
+function isComposerLocked(state: ChatState) {
+  return state.activeTurn !== null && !state.activeTurn.accepted
+}
+
+function terminalRunStatus(messages: ReadonlyArray<NyxChatMessage>) {
+  const status = [...messages].reverse().find((message) => message.role === 'assistant')?.status
+
+  return status === 'failed' || status === 'cancelled'
+    ? status
+    : messages.length > 0
+      ? 'completed'
+      : 'idle'
+}
+
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'current-thread-hydrated': {
@@ -156,6 +212,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...readyState,
         messages: action.snapshot.messages.map((message) => ({
           ...message,
+          ...(message.images ? { images: message.images.map((image) => ({ ...image })) } : {}),
           ...(message.error ? { error: { ...message.error } } : {}),
           ...(message.targetAttribution
             ? { targetAttribution: { ...message.targetAttribution } }
@@ -165,7 +222,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         retryableTurn: action.snapshot.retryableTurn
           ? {
               ...action.snapshot.retryableTurn,
-              turnUserMessage: { ...action.snapshot.retryableTurn.turnUserMessage },
+              turnUserMessage: {
+                ...action.snapshot.retryableTurn.turnUserMessage,
+                ...(action.snapshot.retryableTurn.turnUserMessage.imageRefs
+                  ? {
+                      imageRefs: action.snapshot.retryableTurn.turnUserMessage.imageRefs.map(
+                        (imageRef) => ({ ...imageRef }),
+                      ),
+                    }
+                  : {}),
+              },
               submittedMessages: action.snapshot.retryableTurn.submittedMessages.map((message) => ({
                 ...message,
               })),
@@ -189,9 +255,97 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
     case 'set-input':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
       return {
         ...state,
         input: action.value,
+      }
+
+    case 'draft-images-added':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftImages: [...state.draftImages, ...action.images],
+        composerError: null,
+      }
+
+    case 'draft-image-preparing':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftImages: state.draftImages.map((image) =>
+          image.id === action.imageId && image.status === 'failed'
+            ? {
+                id: image.id,
+                name: image.name,
+                status: 'preparing',
+                source: image.source,
+              }
+            : image,
+        ),
+        composerError: null,
+      }
+
+    case 'draft-image-ready':
+      return {
+        ...state,
+        draftImages: state.draftImages.map((image) =>
+          image.id === action.imageId && image.status === 'preparing'
+            ? {
+                id: image.id,
+                name: image.name,
+                status: 'ready',
+                source: null,
+                image: action.image,
+                canonicalBytes: action.canonicalBytes,
+                previewBytes: action.previewBytes,
+                previewUrl: action.previewUrl,
+              }
+            : image,
+        ),
+      }
+
+    case 'draft-image-failed':
+      return {
+        ...state,
+        draftImages: state.draftImages.map((image) =>
+          image.id === action.imageId && image.status === 'preparing'
+            ? {
+                id: image.id,
+                name: image.name,
+                status: 'failed',
+                source: image.source,
+                error: action.error,
+              }
+            : image,
+        ),
+        composerNotice: action.error,
+      }
+
+    case 'draft-image-removed':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftImages: state.draftImages.filter((image) => image.id !== action.imageId),
+        composerError: null,
+      }
+
+    case 'composer-notice-changed':
+      return {
+        ...state,
+        composerNotice: action.notice,
       }
 
     case 'target-context-ready':
@@ -237,7 +391,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
     case 'target-draft-changed':
-      if (!state.targetInitialized || state.resetStatus === 'resetting') {
+      if (
+        !state.targetInitialized ||
+        state.resetStatus === 'resetting' ||
+        isComposerLocked(state)
+      ) {
         return state
       }
 
@@ -250,7 +408,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'request-submitted':
       return {
         ...state,
-        input: '',
         runStatus: 'submitting',
         activeRequestId: action.requestId,
         activeAssistantMessageId: action.assistantMessageId,
@@ -258,17 +415,70 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           requestId: action.requestId,
           userMessageId: action.userMessage.id,
           assistantMessageId: action.assistantMessageId,
+          turnIntent: 'new_user_message',
+          accepted: false,
           turnUserMessage: action.turnUserMessage,
           submittedMessages: action.submittedMessages,
           targetSelection: action.targetSelection,
+          capturedInput: state.input,
+          capturedDraftImageIds: state.draftImages.map((image) => image.id),
+          userMessage: action.userMessage,
+          assistantMessage: action.assistantMessage,
         },
-        committedTarget: { ...action.targetSelection },
-        retryableTurn: null,
-        messages: [...state.messages, action.userMessage, action.assistantMessage],
+        composerError: null,
       }
 
-    case 'request-started':
+    case 'request-accepted': {
       if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
+        return state
+      }
+
+      const activeTurn = state.activeTurn
+
+      if (!activeTurn || activeTurn.accepted) {
+        return state
+      }
+
+      if (activeTurn.turnIntent === 'retry_failed_response') {
+        return {
+          ...state,
+          activeTurn: { ...activeTurn, accepted: true },
+          committedTarget: { ...activeTurn.targetSelection },
+          retryableTurn: null,
+          composerError: null,
+          messages: updateMessage(state.messages, activeTurn.assistantMessageId, (message) => ({
+            ...(() => {
+              const { error: _error, targetAttribution: _targetAttribution, ...rest } = message
+              return rest
+            })(),
+            content: '',
+            status: 'pending',
+            canRetry: false,
+          })),
+        }
+      }
+
+      if (!activeTurn.userMessage || !activeTurn.assistantMessage) {
+        return state
+      }
+
+      const capturedImageIds = new Set(activeTurn.capturedDraftImageIds)
+
+      return {
+        ...state,
+        input: state.input === activeTurn.capturedInput ? '' : state.input,
+        draftImages: state.draftImages.filter((image) => !capturedImageIds.has(image.id)),
+        activeTurn: { ...activeTurn, accepted: true },
+        committedTarget: { ...activeTurn.targetSelection },
+        retryableTurn: null,
+        composerError: null,
+        composerNotice: null,
+        messages: [...state.messages, activeTurn.userMessage, activeTurn.assistantMessage],
+      }
+    }
+
+    case 'request-started':
+      if (!isAcceptedAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -283,7 +493,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
     case 'request-delta':
-      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
+      if (!isAcceptedAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -298,7 +508,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
     case 'request-completed':
-      if (!isActiveAssistantTurn(state, action.requestId, action.assistantMessageId)) {
+      if (!isAcceptedAssistantTurn(state, action.requestId, action.assistantMessageId)) {
         return state
       }
 
@@ -325,12 +535,24 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return state
       }
 
+      if (!state.activeTurn?.accepted) {
+        return {
+          ...state,
+          runStatus: terminalRunStatus(state.messages),
+          activeRequestId: undefined,
+          activeAssistantMessageId: undefined,
+          activeTurn: null,
+          composerError: { ...action.error },
+        }
+      }
+
       return {
         ...state,
         runStatus: 'failed',
         activeRequestId: undefined,
         activeAssistantMessageId: undefined,
         activeTurn: null,
+        composerError: null,
         retryableTurn:
           action.error.retryable && state.activeTurn
             ? {
@@ -361,21 +583,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           requestId: action.requestId,
           userMessageId: action.userMessageId,
           assistantMessageId: action.assistantMessageId,
+          turnIntent: 'retry_failed_response',
+          accepted: false,
           turnUserMessage: action.turnUserMessage,
           submittedMessages: action.submittedMessages,
           targetSelection: action.targetSelection,
+          capturedInput: '',
+          capturedDraftImageIds: [],
         },
-        committedTarget: { ...action.targetSelection },
-        retryableTurn: null,
-        messages: updateMessage(state.messages, action.assistantMessageId, (message) => ({
-          ...(() => {
-            const { error: _error, targetAttribution: _targetAttribution, ...rest } = message
-            return rest
-          })(),
-          content: '',
-          status: 'pending',
-          canRetry: false,
-        })),
+        composerError: null,
       }
 
     case 'reset-started':

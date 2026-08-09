@@ -66,6 +66,25 @@ describe('chat presenters', () => {
     ).toBe('Answer')
   })
 
+  it('uses Image for image-only thread summaries', () => {
+    const imageOnly = message({
+      role: 'user',
+      content: '',
+      images: [
+        {
+          imageId: '00000000-0000-4000-8000-000000000001',
+          mediaType: 'image/png',
+          width: 1,
+          height: 1,
+          available: true,
+        },
+      ],
+    })
+
+    expect(threadTitle([imageOnly])).toBe('Image')
+    expect(threadPreview([imageOnly])).toBe('Image')
+  })
+
   it('falls back for an empty thread shell', () => {
     expect(threadTitle([])).toBe('New thread')
     expect(threadPreview([])).toBe('Ready for a new thread')

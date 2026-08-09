@@ -1,8 +1,11 @@
 import type {
+  NyxChatError,
   NyxChatInputMessage,
+  NyxChatImageRef,
   NyxChatMessage,
   NyxChatRunStatus,
   NyxChatTargetSelection,
+  NyxChatTurnIntent,
   NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
 import type {
@@ -13,13 +16,44 @@ import type {
 export type ChatHydrationStatus = 'loading' | 'ready' | 'error'
 export type ChatResetStatus = 'idle' | 'resetting'
 
+export type ChatImageDraft =
+  | {
+      id: string
+      name: string
+      status: 'preparing'
+      source: Blob
+    }
+  | {
+      id: string
+      name: string
+      status: 'ready'
+      source: null
+      image: Omit<NyxChatImageRef, 'imageId'>
+      canonicalBytes: Uint8Array
+      previewBytes: Uint8Array
+      previewUrl: string
+    }
+  | {
+      id: string
+      name: string
+      status: 'failed'
+      source: Blob
+      error: string
+    }
+
 export interface ChatTurnRequest {
   requestId: string
   userMessageId: string
   assistantMessageId: string
+  turnIntent: NyxChatTurnIntent
+  accepted: boolean
   turnUserMessage: NyxChatTurnUserMessage
   submittedMessages: ReadonlyArray<NyxChatInputMessage>
   targetSelection: NyxChatTargetSelection
+  capturedInput: string
+  capturedDraftImageIds: ReadonlyArray<string>
+  userMessage?: NyxChatMessage
+  assistantMessage?: NyxChatMessage
 }
 
 export interface RetryableChatTurn {
@@ -32,6 +66,9 @@ export interface RetryableChatTurn {
 export interface ChatState {
   messages: NyxChatMessage[]
   input: string
+  draftImages: ChatImageDraft[]
+  composerNotice: string | null
+  composerError: NyxChatError | null
   runStatus: NyxChatRunStatus
   activeRequestId: string | undefined
   activeAssistantMessageId: string | undefined
@@ -53,6 +90,9 @@ export interface ChatState {
 export const initialChatState: ChatState = {
   messages: [],
   input: '',
+  draftImages: [],
+  composerNotice: null,
+  composerError: null,
   runStatus: 'idle',
   activeRequestId: undefined,
   activeAssistantMessageId: undefined,
