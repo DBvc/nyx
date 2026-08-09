@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/chat/snapshot'
 import type { NyxChatInputMessage } from '../../../shared/chat/types'
 import type { CurrentThreadRecord } from './schemas'
+import type { CurrentThreadImageFiles } from './image-files'
 
 export interface CurrentThreadRecordReader {
   read(): Promise<CurrentThreadRecord | null>
@@ -17,6 +18,7 @@ export interface CurrentThreadSnapshotController {
 
 export interface CurrentThreadSnapshotServiceOptions {
   resolveReader: () => CurrentThreadRecordReader
+  resolveImages?: () => CurrentThreadImageFiles
 }
 
 const snapshotLoadError = {
@@ -111,18 +113,24 @@ export function toCurrentThreadSnapshot(
 
 export class CurrentThreadSnapshotService implements CurrentThreadSnapshotController {
   private readonly resolveReader: () => CurrentThreadRecordReader
+  private readonly resolveImages: (() => CurrentThreadImageFiles) | undefined
 
-  constructor({ resolveReader }: CurrentThreadSnapshotServiceOptions) {
+  constructor({ resolveReader, resolveImages }: CurrentThreadSnapshotServiceOptions) {
     this.resolveReader = resolveReader
+    this.resolveImages = resolveImages
   }
 
   async getSnapshot(): Promise<NyxCurrentThreadSnapshotResult> {
     try {
       const record = await this.resolveReader().read()
+      const availableImageIds =
+        record && this.resolveImages
+          ? await this.resolveImages().availableImageIds(record)
+          : noAvailableImageIds
 
       return {
         ok: true,
-        value: record ? toCurrentThreadSnapshot(record, noAvailableImageIds) : null,
+        value: record ? toCurrentThreadSnapshot(record, availableImageIds) : null,
       }
     } catch {
       return {

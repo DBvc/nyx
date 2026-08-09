@@ -1,4 +1,14 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  net,
+  protocol,
+  safeStorage,
+  session as electronSession,
+} from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -22,6 +32,8 @@ import {
 } from './current-thread/snapshot'
 import { CurrentThreadSessionCoordinator } from './current-thread/session-coordinator'
 import { CurrentThreadStore } from './current-thread/store'
+import { CurrentThreadImageFiles } from './current-thread/image-files'
+import { registerNyxImageProtocol, registerNyxImageScheme } from './current-thread/image-protocol'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 import { configureMainAutoUpdate } from './update/service'
 
@@ -29,6 +41,8 @@ const moduleDir = dirname(fileURLToPath(import.meta.url))
 const rendererDistPath = join(moduleDir, '../renderer')
 const preloadPath = join(moduleDir, '../preload/index.cjs')
 const devServerUrl = resolveDevServerUrl(process.env)
+
+registerNyxImageScheme(protocol)
 
 export function resolveDevServerUrl(env: NodeJS.ProcessEnv) {
   return env.ELECTRON_RENDERER_URL || env.VITE_DEV_SERVER_URL
@@ -100,18 +114,44 @@ function createMainCurrentThreadStoreResolver() {
 
 function createMainCurrentThreadSessionResolver(
   resolveStore: ReturnType<typeof createMainCurrentThreadStoreResolver>,
+  resolveImages: ReturnType<typeof createMainCurrentThreadImageFilesResolver>,
 ) {
   let session: CurrentThreadSessionCoordinator | undefined
 
   return () => {
-    session ??= new CurrentThreadSessionCoordinator({ store: resolveStore() })
+    session ??= new CurrentThreadSessionCoordinator({
+      store: resolveStore(),
+      images: resolveImages(),
+    })
     return session
   }
 }
 
+function createMainCurrentThreadImageFilesResolver() {
+  let images: CurrentThreadImageFiles | undefined
+
+  return () => {
+    images ??= new CurrentThreadImageFiles({
+      directoryPath: join(app.getPath('userData'), 'threads', 'current-thread-assets'),
+      decodeImageSize: (bytes) => {
+        const image = nativeImage.createFromBuffer(
+          Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+        )
+
+        return image.isEmpty() ? null : image.getSize()
+      },
+    })
+
+    return images
+  }
+}
+
 const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
-const resolveCurrentThreadSession =
-  createMainCurrentThreadSessionResolver(resolveCurrentThreadStore)
+const resolveCurrentThreadImages = createMainCurrentThreadImageFilesResolver()
+const resolveCurrentThreadSession = createMainCurrentThreadSessionResolver(
+  resolveCurrentThreadStore,
+  resolveCurrentThreadImages,
+)
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
   resolveChatTarget: createMainChatTargetResolver(),
@@ -120,6 +160,7 @@ const chatSessionManager = new ChatSessionManager({
 const connectionsService = createMainConnectionsService()
 const currentThreadSnapshotService = new CurrentThreadSnapshotService({
   resolveReader: resolveCurrentThreadStore,
+  resolveImages: resolveCurrentThreadImages,
 })
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
@@ -202,8 +243,22 @@ function configureAutoUpdate() {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark'
+  registerNyxImageProtocol({
+    protocol: electronSession.defaultSession.protocol,
+    net,
+    recordReader: resolveCurrentThreadStore(),
+    images: resolveCurrentThreadImages(),
+  })
+
+  try {
+    const record = await resolveCurrentThreadStore().read()
+    await resolveCurrentThreadImages().reconcile(record)
+  } catch {
+    // Malformed or unknown records must not authorize cleanup.
+  }
+
   registerIpcHandlers()
   createMainWindow()
   configureAutoUpdate()

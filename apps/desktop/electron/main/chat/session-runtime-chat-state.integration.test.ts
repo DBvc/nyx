@@ -539,7 +539,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
         await expect(manager.reset(sender)).resolves.toEqual({ ok: true })
 
         await expect(store.read()).resolves.toBeNull()
-        expect(sentChatEvents(sender).map((event) => event.type)).toEqual(['chat:start'])
+        expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
+          'chat:accepted',
+          'chat:start',
+        ])
         expect(clearStates).toEqual([
           {
             transcript: [],

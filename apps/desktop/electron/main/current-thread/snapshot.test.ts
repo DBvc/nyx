@@ -8,6 +8,7 @@ import {
   upgradeCurrentThreadRecordForMutation,
 } from './schemas'
 import { CurrentThreadSnapshotService, toCurrentThreadSnapshot } from './snapshot'
+import type { CurrentThreadImageFiles } from './image-files'
 
 const noAvailableImageIds = new Set<string>()
 
@@ -283,5 +284,24 @@ describe('CurrentThreadSnapshotService', () => {
         message: 'Nyx could not load the current thread.',
       },
     })
+  })
+
+  it('uses the main image owner for bounded pair availability', async () => {
+    const record = failedImageOnlyRecord()
+    const images = {
+      availableImageIds: vi.fn(async () => new Set([imageRef.imageId])),
+    } as unknown as CurrentThreadImageFiles
+    const service = new CurrentThreadSnapshotService({
+      resolveReader: () => ({ read: async () => record }),
+      resolveImages: () => images,
+    })
+
+    const result = await service.getSnapshot()
+
+    expect(result).toMatchObject({ ok: true })
+    expect(result.ok && result.value?.messages[0]).toMatchObject({
+      images: [{ ...imageRef, available: true }],
+    })
+    expect(images.availableImageIds).toHaveBeenCalledWith(record)
   })
 })

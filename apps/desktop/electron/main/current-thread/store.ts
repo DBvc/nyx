@@ -181,10 +181,11 @@ function isValidPendingSettlement(currentTurn: MutableTurnRecord, nextTurn: Muta
   }
 
   return (
-    nextTurn.assistantStatus === 'failed' &&
     nextTurn.assistantContent === currentTurn.assistantContent &&
-    nextTurn.error?.code === 'target_unavailable' &&
-    nextTurn.error.retryable
+    ((nextTurn.assistantStatus === 'cancelled' && nextTurn.error === null) ||
+      (nextTurn.assistantStatus === 'failed' &&
+        nextTurn.error?.code === 'target_unavailable' &&
+        nextTurn.error.retryable))
   )
 }
 
@@ -344,11 +345,12 @@ export class CurrentThreadStore {
         createdAt: now,
         updatedAt: now,
       })
+      const returnRecord = parseMutableCurrentThreadRecord(record)
 
       await this.writeAtomic(record)
       this.currentRecord = record
 
-      return parseMutableCurrentThreadRecord(record)
+      return returnRecord
     })
   }
 
@@ -369,11 +371,12 @@ export class CurrentThreadStore {
       }
 
       assertValidTransition(this.currentRecord, parsedRecord)
+      const returnRecord = parseMutableCurrentThreadRecord(parsedRecord)
 
       await this.writeAtomic(parsedRecord)
       this.currentRecord = parsedRecord
 
-      return parseMutableCurrentThreadRecord(parsedRecord)
+      return returnRecord
     })
   }
 

@@ -1,12 +1,29 @@
-import type { NyxChatError, NyxChatRunStatus, NyxChatTargetAttribution } from './types'
+import type {
+  NyxChatError,
+  NyxChatRunStatus,
+  NyxChatTargetAttribution,
+  NyxChatTurnIntent,
+} from './types'
 
-export const nyxChatEventTypes = ['chat:start', 'chat:delta', 'chat:done', 'chat:error'] as const
+export const nyxChatEventTypes = [
+  'chat:accepted',
+  'chat:start',
+  'chat:delta',
+  'chat:done',
+  'chat:error',
+] as const
 
 export type NyxChatEventType = (typeof nyxChatEventTypes)[number]
 
 interface NyxChatEventBase {
   requestId: string
   assistantMessageId: string
+}
+
+export interface NyxChatAcceptedEvent extends NyxChatEventBase {
+  type: 'chat:accepted'
+  userMessageId: string
+  turnIntent: NyxChatTurnIntent
 }
 
 export interface NyxChatStartEvent extends NyxChatEventBase {
@@ -35,6 +52,7 @@ export interface NyxChatErrorEvent extends NyxChatEventBase {
 }
 
 export type NyxChatEvent =
+  | NyxChatAcceptedEvent
   | NyxChatStartEvent
   | NyxChatDeltaEvent
   | NyxChatDoneEvent

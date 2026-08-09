@@ -5,7 +5,9 @@ import type { NyxCurrentThreadResetResult } from '../../../shared/chat/snapshot'
 import {
   isNyxChatTurnIntent,
   type NyxChatCancellationRequest,
+  type NyxChatImageRef,
   type NyxChatInputMessage,
+  type NyxChatNewImage,
   type NyxChatRequest,
   type NyxChatTargetAttribution,
   type NyxChatTargetSelection,
@@ -89,8 +91,13 @@ const requestKeys = new Set([
   'turnUserMessage',
   'messages',
   'targetSelection',
+  'newImages',
   'systemPrompt',
 ])
+const turnUserMessageKeys = new Set(['id', 'content', 'imageRefs'])
+const imageRefKeys = new Set(['imageId', 'mediaType', 'width', 'height'])
+const newImageKeys = new Set(['imageId', 'canonicalBytes', 'previewBytes'])
+const imageIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function invalidRequest(message: string): NyxChatErrorEvent['error'] {
   return { code: 'invalid_request', message, retryable: false }
@@ -173,6 +180,68 @@ function parseInputMessages(value: unknown): NyxChatInputMessage[] | null {
   return messages
 }
 
+function parseImageRefs(value: unknown): NyxChatImageRef[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 4) {
+    return null
+  }
+
+  const refs: NyxChatImageRef[] = []
+
+  for (const ref of value) {
+    if (
+      !isRecord(ref) ||
+      !hasOnlyKeys(ref, imageRefKeys) ||
+      typeof ref.imageId !== 'string' ||
+      !imageIdPattern.test(ref.imageId) ||
+      (ref.mediaType !== 'image/png' && ref.mediaType !== 'image/jpeg') ||
+      !Number.isInteger(ref.width) ||
+      !Number.isInteger(ref.height) ||
+      (ref.width as number) <= 0 ||
+      (ref.height as number) <= 0
+    ) {
+      return null
+    }
+
+    refs.push({
+      imageId: ref.imageId,
+      mediaType: ref.mediaType,
+      width: ref.width as number,
+      height: ref.height as number,
+    })
+  }
+
+  return new Set(refs.map((ref) => ref.imageId)).size === refs.length ? refs : null
+}
+
+function parseNewImages(value: unknown): NyxChatNewImage[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 4) {
+    return null
+  }
+
+  const images: NyxChatNewImage[] = []
+
+  for (const image of value) {
+    if (
+      !isRecord(image) ||
+      !hasOnlyKeys(image, newImageKeys) ||
+      typeof image.imageId !== 'string' ||
+      !imageIdPattern.test(image.imageId) ||
+      !(image.canonicalBytes instanceof Uint8Array) ||
+      !(image.previewBytes instanceof Uint8Array)
+    ) {
+      return null
+    }
+
+    images.push({
+      imageId: image.imageId,
+      canonicalBytes: image.canonicalBytes,
+      previewBytes: image.previewBytes,
+    })
+  }
+
+  return new Set(images.map((image) => image.imageId)).size === images.length ? images : null
+}
+
 function parseChatRequest(value: unknown): ChatRequestParseResult {
   const correlation = requestCorrelation(value)
   const malformed = (message: string): ChatRequestParseResult => ({
@@ -186,6 +255,11 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
   }
 
   const messages = parseInputMessages(value.messages)
+  const imageRefs =
+    isRecord(value.turnUserMessage) && value.turnUserMessage.imageRefs !== undefined
+      ? parseImageRefs(value.turnUserMessage.imageRefs)
+      : []
+  const newImages = value.newImages === undefined ? [] : parseNewImages(value.newImages)
 
   if (
     !nonEmptyString(value.requestId) ||
@@ -193,9 +267,12 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
     !nonEmptyString(value.assistantMessageId) ||
     !messages ||
     !isRecord(value.turnUserMessage) ||
-    !hasOnlyKeys(value.turnUserMessage, new Set(['id', 'content'])) ||
+    !hasOnlyKeys(value.turnUserMessage, turnUserMessageKeys) ||
     !nonEmptyString(value.turnUserMessage.id) ||
-    !nonEmptyString(value.turnUserMessage.content)
+    typeof value.turnUserMessage.content !== 'string' ||
+    !imageRefs ||
+    !newImages ||
+    (value.turnUserMessage.content.length === 0 && imageRefs.length === 0)
   ) {
     return malformed(
       'Chat requests must include ids, intent, the current user message, and at least one provider message.',
@@ -204,6 +281,16 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
 
   if (!isNyxChatTurnIntent(value.turnIntent)) {
     return malformed('Chat requests must use a known turn intent.')
+  }
+
+  if (
+    (value.turnIntent === 'new_user_message' &&
+      ((imageRefs.length === 0 && newImages.length !== 0) ||
+        (imageRefs.length !== newImages.length && imageRefs.length > 0) ||
+        imageRefs.some((ref, index) => ref.imageId !== newImages[index]?.imageId))) ||
+    (value.turnIntent === 'retry_failed_response' && newImages.length !== 0)
+  ) {
+    return malformed('Chat image refs and new payloads do not match the turn intent.')
   }
 
   const targetSelection = parseTargetSelection(value.targetSelection)
@@ -224,9 +311,11 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
     turnUserMessage: {
       id: value.turnUserMessage.id,
       content: value.turnUserMessage.content,
+      ...(imageRefs.length > 0 ? { imageRefs } : {}),
     },
     messages,
     targetSelection,
+    ...(newImages.length > 0 ? { newImages } : {}),
     ...(value.systemPrompt === undefined ? {} : { systemPrompt: value.systemPrompt }),
   }
 
@@ -357,13 +446,22 @@ export class ChatSessionManager {
     session.currentThreadSession = currentThreadSession
 
     try {
-      const preparedCurrentThread = await currentThreadSession.prepare(request)
+      const preparedCurrentThread = await currentThreadSession.prepare(
+        request,
+        session.abortController.signal,
+      )
 
       if (this.activeSession !== session) {
         return
       }
 
       session.preparedCurrentThread = preparedCurrentThread
+      this.emitAccepted(session)
+
+      if (await this.finishCancelledCommittedSession(session)) {
+        return
+      }
+
       const durableRequest = {
         ...request,
         messages: preparedCurrentThread.providerMessages,
@@ -395,11 +493,15 @@ export class ChatSessionManager {
     try {
       target = await this.resolveChatTarget(request.targetSelection)
     } catch (error) {
+      if (await this.finishCancelledCommittedSession(session)) {
+        return
+      }
+
       await this.handleChatTargetError(session, request, error)
       return
     }
 
-    if (this.activeSession !== session) {
+    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
       return
     }
 
@@ -423,12 +525,28 @@ export class ChatSessionManager {
       }
     }
 
-    if (this.activeSession !== session) {
+    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
       return
     }
 
     session.boundTargetAttribution = target.targetAttribution
     await this.startWithChatTarget(session, target, request)
+  }
+
+  private async finishCancelledCommittedSession(session: ActiveChatSession) {
+    if (
+      this.activeSession !== session ||
+      !session.preparedCurrentThread ||
+      !session.abortController.signal.aborted
+    ) {
+      return false
+    }
+
+    if (await this.persistCancelled(session)) {
+      this.emitDone(session, 'cancelled')
+    }
+    this.activeSession = undefined
+    return true
   }
 
   private startWithChatTarget(
@@ -913,6 +1031,16 @@ export class ChatSessionManager {
       assistantMessageId: session.assistantMessageId,
       status: 'streaming',
       targetAttribution: session.boundTargetAttribution!,
+    })
+  }
+
+  private emitAccepted(session: ActiveChatSession) {
+    this.emitEvent(session.sender, {
+      type: 'chat:accepted',
+      requestId: session.requestId,
+      userMessageId: session.userMessageId,
+      assistantMessageId: session.assistantMessageId,
+      turnIntent: session.turnIntent,
     })
   }
 

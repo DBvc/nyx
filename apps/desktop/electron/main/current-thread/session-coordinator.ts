@@ -17,6 +17,7 @@ import {
   type MutableTurnRecord,
 } from './schemas'
 import type { CurrentThreadStore } from './store'
+import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
 
 export class CurrentThreadSessionError extends Error {
   constructor(
@@ -36,7 +37,16 @@ export interface PreparedCurrentThreadTurn {
 
 export interface CurrentThreadSessionCoordinatorOptions {
   store: CurrentThreadStore
+  images?: CurrentThreadImageFiles
   now?: () => string
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    const error = new Error('Image import was cancelled.')
+    error.name = 'AbortError'
+    throw error
+  }
 }
 
 function messagesEqual(
@@ -91,17 +101,20 @@ export function toCurrentThreadProviderMessages(record: CurrentThreadRecord | nu
 
 export class CurrentThreadSessionCoordinator {
   private readonly store: CurrentThreadStore
+  private readonly images: CurrentThreadImageFiles | undefined
   private readonly now: () => string
 
   constructor({
     store,
+    images,
     now = () => new Date().toISOString(),
   }: CurrentThreadSessionCoordinatorOptions) {
     this.store = store
+    this.images = images
     this.now = now
   }
 
-  async prepare(request: NyxChatRequest): Promise<PreparedCurrentThreadTurn> {
+  async prepare(request: NyxChatRequest, signal?: AbortSignal): Promise<PreparedCurrentThreadTurn> {
     try {
       const currentRecord = await this.store.read()
       const currentMessages = toCurrentThreadProviderMessages(currentRecord)
@@ -113,10 +126,46 @@ export class CurrentThreadSessionCoordinator {
         ]
 
         this.assertRequestMessages(request, providerMessages)
+        await this.images?.reconcile(currentRecord)
 
-        const pendingRecord = currentRecord
-          ? await this.store.write(this.appendPendingTurn(currentRecord, request))
-          : await this.createPendingThread(request)
+        const requestImageRefs = request.turnUserMessage.imageRefs ?? []
+        const newImages = request.newImages ?? []
+        let preparedImageIds: string[] = []
+
+        if (
+          requestImageRefs.length !== newImages.length ||
+          requestImageRefs.some((ref, index) => ref.imageId !== newImages[index]?.imageId)
+        ) {
+          throw new CurrentThreadSessionError(
+            'invalid_request',
+            'Image refs and payloads do not match.',
+          )
+        }
+
+        if (requestImageRefs.length > 0) {
+          if (!this.images) {
+            throw new CurrentThreadSessionError('invalid_request', 'Image storage is unavailable.')
+          }
+
+          preparedImageIds = await this.images.writeNewImages({
+            record: currentRecord,
+            refs: requestImageRefs,
+            images: newImages,
+            ...(signal ? { signal } : {}),
+          })
+        }
+
+        let pendingRecord: MutableCurrentThreadRecord
+
+        try {
+          throwIfAborted(signal)
+          pendingRecord = currentRecord
+            ? await this.store.write(this.appendPendingTurn(currentRecord, request))
+            : await this.createPendingThread(request)
+        } catch (error) {
+          await this.images?.rollbackImages(preparedImageIds)
+          throw error
+        }
 
         return { pendingRecord, replayRecord: currentRecord, providerMessages }
       }
@@ -143,7 +192,25 @@ export class CurrentThreadSessionCoordinator {
         )
       }
 
+      if (request.newImages !== undefined) {
+        throw new CurrentThreadSessionError(
+          'invalid_request',
+          'Retry cannot include new image payloads.',
+        )
+      }
+
       this.assertRequestMessages(request, currentMessages)
+      await this.images?.reconcile(currentRecord)
+
+      if (failedTurnImageRefs.length > 0) {
+        if (!this.images) {
+          throw new CurrentThreadSessionError('invalid_request', 'Image storage is unavailable.')
+        }
+
+        await this.images.assertAvailable(failedTurnImageRefs)
+      }
+
+      throwIfAborted(signal)
 
       const now = this.now()
       const upgradedRecord = upgradeCurrentThreadRecordForMutation(currentRecord)
@@ -173,6 +240,17 @@ export class CurrentThreadSessionCoordinator {
       return { pendingRecord, replayRecord: currentRecord, providerMessages: currentMessages }
     } catch (error) {
       if (error instanceof CurrentThreadSessionError) {
+        throw error
+      }
+
+      if (error instanceof CurrentThreadImageFilesError) {
+        throw new CurrentThreadSessionError(
+          error.code === 'io_error' ? 'store_error' : 'invalid_request',
+          error.code === 'io_error' ? 'Current thread storage failed.' : error.message,
+        )
+      }
+
+      if (error instanceof Error && error.name === 'AbortError') {
         throw error
       }
 
@@ -263,6 +341,12 @@ export class CurrentThreadSessionCoordinator {
       await this.store.reset()
     } catch {
       throw new CurrentThreadSessionError('store_error', 'Current thread storage failed.')
+    }
+
+    try {
+      await this.images?.reset()
+    } catch {
+      // The record is already reset; leftover files are unreachable orphans.
     }
   }
 

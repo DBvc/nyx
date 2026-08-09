@@ -2,10 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { CurrentThreadSessionCoordinator, CurrentThreadSessionError } from './session-coordinator'
+import type { CurrentThreadImageFiles } from './image-files'
 import { parseCurrentThreadRecordV1 } from './schemas'
 import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
@@ -26,6 +27,11 @@ const imageRef = {
   width: 640,
   height: 480,
 } as const
+const newImage = {
+  imageId: imageRef.imageId,
+  canonicalBytes: new Uint8Array([1]),
+  previewBytes: new Uint8Array([2]),
+} as const
 
 async function createCoordinator() {
   const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-session-'))
@@ -35,12 +41,36 @@ async function createCoordinator() {
     generateId: () => 'thread-1',
     now: () => '2026-07-11T00:00:00.000Z',
   })
+  const availableImageIds = new Set<string>()
+  const images = {
+    reconcile: async () => undefined,
+    writeNewImages: async ({ refs }: { refs: ReadonlyArray<typeof imageRef> }) => {
+      for (const ref of refs) {
+        availableImageIds.add(ref.imageId)
+      }
+      return refs.map((ref) => ref.imageId)
+    },
+    rollbackImages: async (imageIds: ReadonlyArray<string>) => {
+      for (const imageId of imageIds) {
+        availableImageIds.delete(imageId)
+      }
+    },
+    assertAvailable: async (refs: ReadonlyArray<typeof imageRef>) => {
+      if (refs.some((ref) => !availableImageIds.has(ref.imageId))) {
+        throw new Error('unavailable')
+      }
+    },
+    reset: async () => {
+      availableImageIds.clear()
+    },
+  } as unknown as CurrentThreadImageFiles
 
   return {
     filePath: join(dir, 'current-thread.json'),
     store,
     coordinator: new CurrentThreadSessionCoordinator({
       store,
+      images,
       now: () => '2026-07-11T01:00:00.000Z',
     }),
   }
@@ -100,6 +130,52 @@ describe('CurrentThreadSessionCoordinator', () => {
         },
       ],
     })
+  })
+
+  it('rolls back image files when the durable record commit fails', async () => {
+    const rollbackImages = vi.fn(async () => undefined)
+    const store = {
+      read: vi.fn(async () => null),
+      create: vi.fn(async () => {
+        throw new Error('record rename failed')
+      }),
+    } as unknown as CurrentThreadStore
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewImages: vi.fn(async () => [imageRef.imageId]),
+      rollbackImages,
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images })
+
+    await expect(
+      coordinator.prepare(
+        newRequest({
+          turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+          messages: [{ role: 'user', content: '' }],
+          newImages: [newImage],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'store_error' })
+    expect(rollbackImages).toHaveBeenCalledWith([imageRef.imageId])
+  })
+
+  it('resets the record before deleting images and ignores unreachable orphan cleanup failure', async () => {
+    const order: string[] = []
+    const store = {
+      reset: vi.fn(async () => {
+        order.push('record')
+      }),
+    } as unknown as CurrentThreadStore
+    const images = {
+      reset: vi.fn(async () => {
+        order.push('images')
+        throw new Error('directory cleanup failed')
+      }),
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images })
+
+    await expect(coordinator.reset()).resolves.toBeUndefined()
+    expect(order).toEqual(['record', 'images'])
   })
 
   it('binds attribution exactly once without settling the pending turn', async () => {
@@ -219,6 +295,7 @@ describe('CurrentThreadSessionCoordinator', () => {
         userMessageId: 'user-2',
         assistantMessageId: 'assistant-2',
         turnUserMessage: { id: 'user-2', content: '', imageRefs: [imageRef] },
+        newImages: [newImage],
         messages: [
           { role: 'user', content: 'Hello' },
           { role: 'assistant', content: 'First answer' },
@@ -262,6 +339,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     const request = newRequest({
       turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
       messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
     })
 
     await coordinator.prepare(request)
@@ -272,9 +350,11 @@ describe('CurrentThreadSessionCoordinator', () => {
       retryable: true,
     })
 
+    const { newImages: _newImages, ...retryRequest } = request
+
     await expect(
       coordinator.prepare({
-        ...request,
+        ...retryRequest,
         requestId: 'request-2',
         turnIntent: 'retry_failed_response',
         turnUserMessage: {
@@ -285,7 +365,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     ).rejects.toMatchObject({ code: 'invalid_request' })
 
     const retried = await coordinator.prepare({
-      ...request,
+      ...retryRequest,
       requestId: 'request-2',
       turnIntent: 'retry_failed_response',
     })

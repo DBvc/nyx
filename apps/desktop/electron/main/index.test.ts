@@ -30,6 +30,22 @@ const electronMock = vi.hoisted(() => {
     nativeTheme: {
       themeSource: 'system',
     },
+    nativeImage: {
+      createFromBuffer: vi.fn(),
+    },
+    net: {
+      fetch: vi.fn(),
+    },
+    protocol: {
+      registerSchemesAsPrivileged: vi.fn(),
+    },
+    session: {
+      defaultSession: {
+        protocol: {
+          handle: vi.fn(),
+        },
+      },
+    },
     safeStorage: {
       isEncryptionAvailable: vi.fn(() => true),
       encryptString: vi.fn((value: string) => Buffer.from(value)),
@@ -43,7 +59,11 @@ vi.mock('electron', () => ({
   BrowserWindow: electronMock.BrowserWindow,
   ipcMain: electronMock.ipcMain,
   nativeTheme: electronMock.nativeTheme,
+  nativeImage: electronMock.nativeImage,
+  net: electronMock.net,
+  protocol: electronMock.protocol,
   safeStorage: electronMock.safeStorage,
+  session: electronMock.session,
 }))
 
 import { registerIpcHandlers, resolveDevServerUrl, resolveMainWindowChromeOptions } from './index'
@@ -51,6 +71,8 @@ import { registerIpcHandlers, resolveDevServerUrl, resolveMainWindowChromeOption
 const appGetPathCallCountAfterImport = electronMock.app.getPath.mock.calls.length
 const safeStorageAvailabilityCallCountAfterImport =
   electronMock.safeStorage.isEncryptionAvailable.mock.calls.length
+const registeredImageSchemesAfterImport =
+  electronMock.protocol.registerSchemesAsPrivileged.mock.calls[0]?.[0]
 
 function registeredHandler(channel: string) {
   const handler = electronMock.handlers.get(channel)
@@ -89,6 +111,17 @@ describe('resolveMainWindowChromeOptions', () => {
     })
     expect(resolveMainWindowChromeOptions('win32')).toEqual({})
     expect(resolveMainWindowChromeOptions('linux')).toEqual({})
+  })
+})
+
+describe('image protocol scheme registration', () => {
+  it('registers only the standard and secure privileges before app ready', () => {
+    expect(registeredImageSchemesAfterImport).toEqual([
+      {
+        scheme: 'nyx-image',
+        privileges: { standard: true, secure: true },
+      },
+    ])
   })
 })
 

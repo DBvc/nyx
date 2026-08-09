@@ -499,7 +499,7 @@ describe('CurrentThreadStore', () => {
     })
   })
 
-  it('rejects ordinary terminal settlement before target attribution is bound', async () => {
+  it('allows only unchanged cancellation before target attribution is bound', async () => {
     const store = createStore(await createTempFilePath())
     const created = await store.create({
       attemptRequestId: 'request-1',
@@ -511,6 +511,10 @@ describe('CurrentThreadStore', () => {
     const cancelled = parseCurrentThreadRecordV2({
       ...created,
       turns: [{ ...created.turns[0]!, assistantStatus: 'cancelled' }],
+    })
+    const cancelledWithContent = parseCurrentThreadRecordV2({
+      ...cancelled,
+      turns: [{ ...cancelled.turns[0]!, assistantContent: 'Unexpected content' }],
     })
     const failed = parseCurrentThreadRecordV2({
       ...created,
@@ -525,7 +529,7 @@ describe('CurrentThreadStore', () => {
 
     for (const terminalRecord of [
       completeRecord(created, 'request-1', 'Done'),
-      cancelled,
+      cancelledWithContent,
       failed,
     ]) {
       await expect(store.write(terminalRecord)).rejects.toMatchObject({
@@ -533,7 +537,8 @@ describe('CurrentThreadStore', () => {
       } satisfies Partial<CurrentThreadStoreError>)
     }
 
-    await expect(store.read()).resolves.toEqual(created)
+    await expect(store.write(cancelled)).resolves.toEqual(cancelled)
+    await expect(store.read()).resolves.toEqual(cancelled)
   })
 
   it('settles only retryable target-resolution failure before attribution is bound', async () => {
