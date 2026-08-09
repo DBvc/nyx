@@ -1,7 +1,7 @@
 # Context Composer Experiment Runthrough
 
-Status: E0 through E0E stopped; E0F canonical-request identity gate authorized;
-evidence pending; E1-E5 blocked.
+Status: E0 through E0E stopped; E0F passed bounded independent review; no E
+slice is executable; E1-E5 remain blocked pending a revised implementation plan.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -9,9 +9,9 @@ No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
 candidate but failed the full-image visible-DOM memory line. E0D proved the
 preview-only grid, then failed the same line on its temporary full-open data
 path. E0E then failed its sealed exact-route security rule before memory
-measurement. User-approved E0F authorizes the canonical request Chromium
-delivers rather than erased raw URL spelling. This is not product implementation
-permission.
+measurement. E0F then proved the bounded canonical request/native-cache
+direction in OS temp. This is feasibility evidence, not product implementation
+permission or a frozen product protocol/capacity.
 
 Probe date: 2026-08-09
 
@@ -21,7 +21,7 @@ E0D plan baseline: `cef901b`
 
 E0E plan baseline: `dba1a14`
 
-E0F plan baseline: `226fd57`
+E0F plan baseline: `03d6e5b`
 
 Plan: [context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md)
 
@@ -488,7 +488,7 @@ rejects only E0E's sealed standard-scheme exact-route model; it does not prove
 all stable local URL directions infeasible. E1-E5 remain blocked pending a new
 user-approved feasibility gate and review.
 
-### E0F pending evidence contract
+### E0F passed evidence record
 
 E0F policy A changes only the authorization identity. Main validates the
 canonical `Request` received by `protocol.handle`: `GET`, exact scheme, exact
@@ -522,9 +522,68 @@ after all earlier gates pass.
 Any second handler hit after the first full load, cached load after main
 revocation, identity divergence, JS/path exposure, security/memory failure, or
 need for manual cache/token service/new URL shape/non-standard scheme/product
-code or dependency stops E0F. No capacity, ICC, preview, scheme, URL, or
-transport value is frozen before the complete matrix and independent review
-pass.
+code or dependency stops E0F.
+
+Executed redacted command shapes:
+
+```sh
+E0F_ROOT="<OS temp>/nyx-context-composer-exp-01"
+REPO_ROOT="<repo>"
+"$REPO_ROOT/apps/desktop/node_modules/.bin/electron-vite" build "$E0F_ROOT" -c "$E0F_ROOT/electron.vite.config.ts"
+E0F_RUN_MODE=prepare "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0F_ROOT" --user-data-dir="$E0F_ROOT/user-data-prepare"
+E0F_RUN_MODE=identity "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0F_ROOT" --user-data-dir="$E0F_ROOT/user-data-identity"
+E0F_RUN_MODE=revocation "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0F_ROOT" --user-data-dir="$E0F_ROOT/user-data-identity"
+E0F_RUN_MODE=memory E0F_REPETITION=<1..3> "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0F_ROOT" --user-data-dir="$E0F_ROOT/user-data-memory-<1..3>"
+mkdir -p "$E0F_ROOT/package-stage"
+cp -R "$REPO_ROOT/apps/desktop/node_modules/electron/dist/Electron.app" "$E0F_ROOT/NyxE0F.app"
+cp "$E0F_ROOT/package.json" "$E0F_ROOT/package-stage/package.json"
+cp -R "$E0F_ROOT/out" "$E0F_ROOT/package-stage/out"
+node "$REPO_ROOT/node_modules/.pnpm/@electron+asar@3.4.1/node_modules/@electron/asar/bin/asar.js" pack "$E0F_ROOT/package-stage" "$E0F_ROOT/NyxE0F.app/Contents/Resources/app.asar"
+E0F_RUN_MODE=smoke "$E0F_ROOT/NyxE0F.app/Contents/MacOS/Electron" --user-data-dir="$E0F_ROOT/user-data-packaged"
+```
+
+Environment: Electron 41.7.2, Chromium 146.0.7680.216, Node 24.15.0,
+macOS 26.6.1 arm64, electron-vite 5.0.0, and Vite 8.0.16. The synthetic
+dataset contained one 3840×2160 / 8,009,319-byte JPEG plus eight distinct
+1920×1080 JPEGs, each with a max-edge 512 PNG preview.
+
+| Identity/security check                           | Result                              |
+| ------------------------------------------------- | ----------------------------------- |
+| Canonical → `:444` alias → canonical              | 3840×2160; hits `0→1→1→1`           |
+| Handler-observed full request                     | one canonical URL and opaque id     |
+| Renderer fetch / XHR / canvas                     | blocked / blocked / `SecurityError` |
+| Unknown/query/wrong-host/traversal/non-GET routes | 404 / 404 / 404 / 404 / 405         |
+| Credentials                                       | rejected before handler             |
+| Local path exposure                               | none                                |
+| Same-profile restart after id/file revocation     | load failed; no `clearCache`        |
+
+| Run | Baseline MiB | Peak MiB | Delta MiB | Open ms           | Post-close MiB              | Heartbeat ms | Main sync ms | Hits      |
+| --: | -----------: | -------: | --------: | ----------------- | --------------------------- | -----------: | -----------: | --------- |
+|   1 |      420.063 |  525.359 |   105.297 | 89.6 / 6.0 / 5.4  | 522.281 / 522.578 / 518.406 |         12.3 |        1.684 | `0→1→1→1` |
+|   2 |      422.414 |  525.969 |   103.555 | 89.6 / 6.3 / 8.4  | 525.391 / 525.609 / 522.469 |         11.4 |        1.667 | `0→1→1→1` |
+|   3 |      423.188 |  528.031 |   104.844 | 89.6 / 5.8 / 11.1 | 526.047 / 526.359 / 524.516 |         12.9 |        1.949 | `0→1→1→1` |
+
+All fixed identity, revocation, JS isolation, open, heartbeat, main-sync,
+whole-process peak, and post-close plateau lines passed. No Renderer Blob URL
+or measured-path userland full read occurred.
+
+The first strict review bound source fingerprint
+`14637395415f46fa6697af6917b08b143e9e81890690bd7e1210850eff2a6961` and accepted
+every gate except packaged runtime provenance. The evidence-only repair added
+`app.isPackaged`, `app.getAppPath()`, and `process.execPath` to the smoke result.
+The rerun recorded `appPath` inside `NyxE0F.app/Contents/Resources/app.asar`, the
+matching App executable, a 3840×2160 load, and one handler hit. `app.isPackaged`
+was false because the harness copied Electron.app rather than building a signed
+product bundle; the sealed gate required `app.asar` loading, not product
+packaging. Scoped review bound source fingerprint
+`d6d41f4f8b52626e0ecd873f134791f7fec2b553f2cb5f900285f478ec8642fc`, verified
+the `app.asar` contents against the production build, and returned PASS.
+
+The reviewed OS-temp harness, generated images, profiles, and App bundle were
+then deleted. E0F result: **PASS**. This proves only the bounded feasibility
+direction in the recorded environment. Product protocol, shared/IPC contracts,
+capacity policy, ICC policy, and E1-E5 remain unfrozen until a revised
+implementation plan passes independent review.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -571,5 +630,5 @@ E0C result: **STOP**.
 - independent strict review returned `VALID_STOP`; no local harness repair or
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
-- user-approved E0F may test the canonical-request identity direction recorded
-  above; E1-E5 remain blocked until that gate and review pass
+- later E0F passed its bounded canonical-request/native-cache feasibility gate;
+  E1-E5 remain blocked until a revised implementation plan passes review

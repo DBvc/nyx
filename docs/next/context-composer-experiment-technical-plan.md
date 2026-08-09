@@ -1,18 +1,18 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: E0F canonical-request identity gate authorized; evidence and independent review pending
+> Status: E0F feasibility gate passed independent review; revised implementation plan pending
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v2.2 只授权下述 E0F 临时证据门，不授权产品实现。v2.1 E0E、v2.0 E0D、
+> v2.3 记录 E0F 已通过下述临时证据门，但仍不授权产品实现。v2.1 E0E、v2.0 E0D、
 > v1.9 E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现
 > 方案或 scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
 > 生效，也不构成实现许可。
 >
-> 当前生效约束：只有 E0F 可执行；E1-E5 blocked；未来方案仍由 Electron main
-> 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
-> 任何容量限制；状态以
+> 当前生效约束：没有可执行 E slice；E1-E5 blocked，等待 revised implementation
+> plan 与 independent review；未来方案仍由 Electron main 权威验证并持有 durable
+> state；不得开始产品实现或扩大 scope。E0F 没有自动冻结产品容量或协议；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
 >
@@ -21,7 +21,7 @@
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
 
-## v2.2 生效修订：E0F canonical request identity 门禁
+## v2.2 已完成修订：E0F canonical request identity 门禁
 
 用户在 2026-08-09 批准方案 A。E0F 不再尝试验证 Chromium 已经删除的 raw URL
 语法；授权 source of truth 改为 `protocol.handle` 实际收到的 canonical
@@ -67,6 +67,31 @@ product protocol/IPC/schema 或 OCaml change。若 canonical/alias 没有共用 
 cache identity、第二次 open 重放 handler/file transport、安全或内存失败，立即
 返回用户决策。若 same-profile restart 在 id/file 撤销后仍从 disk cache load，
 同样立即 Stop；不得在本门禁里换 transport 或用 cache clearing 掩盖。
+
+### E0F evidence result（PASS）
+
+在 Electron 41.7.2 / Chromium 146.0.7680.216 / macOS 26.6.1 arm64 的
+OS-temp production-shape harness 中，canonical → `:444` alias → canonical
+连续加载得到 `0→1→1→1` handler counter。Fetch、XHR、canvas readback 与 sealed
+unauthorized route matrix 全部 fail closed；同 profile 重启、main 撤销 id 且移走
+source 后，warmed URL 在不调用 `clearCache` 的前提下 load fail。
+
+三个 fresh-profile memory repetition 先挂载九个 512-edge preview，再三次
+open/close 同一 3840×2160 / 8,009,319-byte JPEG。whole-process peak delta 分别为
+105.297、103.555、104.844 MiB；handler counter 均为 `0→1→1→1`，open、heartbeat、
+main sync 与 post-close plateau 全部通过固定 stop line。同一 production build
+随后从 `app.asar` 加载 3840×2160 图片，handler hit 为 1。
+
+独立 strict review 先绑定 source fingerprint
+`14637395415f46fa6697af6917b08b143e9e81890690bd7e1210850eff2a6961`，仅要求
+packaged smoke 增加运行来源自证；scoped repair 只增加 `app.isPackaged`、
+`app.getAppPath()` 与 `process.execPath` 三个只读结果字段。复审绑定新 fingerprint
+`d6d41f4f8b52626e0ecd873f134791f7fec2b553f2cb5f900285f478ec8642fc` 后 PASS。
+reviewed harness 与 synthetic data 已删除。
+
+这个结果证明 bounded stable canonical URL / native-cache 方向可行，但不自动
+选择 product protocol、shared/IPC contract 或 capacity policy。E1-E5 继续 blocked，
+直到 revised implementation plan 通过独立 review。
 
 ## v2.1 历史修订：E0E 稳定、main 授权的图片 URL 门禁（已停止）
 
@@ -965,6 +990,9 @@ mise run check
 - 2026-08-09 / v2.2：用户批准 E0F policy A，以 handler 收到的 canonical
   request identity 授权，并验证 alias/cache identity、security、memory 与 packaged
   load；仍不授权 product code 或 E1-E5。
+- 2026-08-09 / v2.3：E0F identity、revocation、security、三次 memory 与
+  `app.asar` gate 全部通过；独立 evidence review 在一次 packaged-source scoped
+  repair 后 PASS。结果只进入 revised implementation plan，不直接解锁 E1-E5。
 
 ## Convergence 记录
 
@@ -1008,5 +1036,8 @@ mise run check
   scheme shape 或放宽规则。
 - Epoch 9 / user decision：用户批准按 browser-native normalization 定义
   authorization identity，不再把被平台抹除的 raw spelling 当独立权限输入。
-- 当前判断：只有 E0F 可继续取证，方案仍不是 implementation-ready。
-  E1-E5 blocked；E0F 任一 Stop 条件出现时返回用户决策。
+- Epoch 10 / E0F evidence：canonical identity/native cache、restart revocation、
+  Renderer byte isolation、三次 memory 与 `app.asar` load 全部通过；独立 review
+  在补足 packaged runtime marker 后 PASS。
+- 当前判断：feasibility direction 已成立，但旧 v1.8 E1-E5 仍是失效候选，方案
+  尚未 implementation-ready。下一步只允许修订 implementation plan 并独立 review。

@@ -85,10 +85,11 @@ Use relative documentation links. Do not add local absolute paths.
   implemented. User-approved `E0E` then stopped because Chromium removed a
   non-default explicit port before the standard custom-protocol handler, so its
   exact-route authorization rule could not reject the alias. User-approved
-  `E0F` is now the only executable E slice and tests post-normalization request
-  identity plus native cache/memory behavior in OS temp only. `E1` through `E5`
-  remain blocked. No capacity limit or product ICC allowlist is frozen. Evidence
-  is recorded in
+  `E0F` then passed post-normalization identity, native-cache revocation,
+  security, memory, and `app.asar` loading in OS temp. No E slice is currently
+  executable; `E1` through `E5` remain blocked until a revised implementation
+  plan passes independent review. No product capacity or protocol is frozen.
+  Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
@@ -1562,8 +1563,9 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0 through E0E stopped on 2026-08-09. E0F is the only executable E
-slice; E1-E5 remain blocked.
+Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
+review on 2026-08-09. No E slice is currently executable; E1-E5 remain blocked
+until a revised implementation plan passes independent review.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1576,9 +1578,10 @@ by main. E0E stopped when Chromium removed an explicit non-default port before
 the handler, making the sealed exact-route rejection unimplementable within that
 standard-scheme shape. The user then approved policy A for E0F: authorize the
 canonical request identity delivered to the handler and treat syntactic
-spellings erased by Chromium as aliases of the same resource. This authorizes
-only the OS-temp gate, not product code or E1-E5. This document remains the
-higher-priority scope gate if a conflict appears.
+spellings erased by Chromium as aliases of the same resource. The resulting
+OS-temp gate passed identity/cache reuse, revocation, security, memory, and
+packaged loading. This does not authorize product code or E1-E5. This document
+remains the higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
@@ -1590,12 +1593,14 @@ invariants are:
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
   preload/IPC method, cache, or Asset service is authorized
-- E0F may test only canonical request identity, native cache reuse, repeated
-  full-image memory, and packaged loading; no product protocol is authorized
+- E0F evidence is probe-scoped; it proves the bounded canonical-identity/native-
+  cache direction feasible in the recorded environment but does not authorize
+  a product protocol, shared contract, preload/IPC shape, or capacity policy
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
-- any continuation requires a new user-approved feasibility gate and review
+- any continuation requires a revised user-approved implementation plan and
+  independent review
 
 Failure evidence is defined in
 [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md);
@@ -2087,8 +2092,8 @@ git diff --check
 Type: temporary Electron custom-protocol identity/cache/memory probe and
 plan/docs evidence only.
 
-Status: policy A authorized by the user on 2026-08-09; evidence and independent
-review pending. E0F is not product implementation permission.
+Status: passed bounded independent review on 2026-08-09. E0F is feasibility
+evidence, not product implementation permission.
 
 Allowed tracked files:
 
@@ -2172,6 +2177,23 @@ a line, or the direction needs manual cache, token service, alternate URL shape,
 non-standard scheme, new dependency, product code/IPC, or a different owner. Do
 not try another transport in E0F.
 
+Observed result:
+
+- canonical → `:444` alias → canonical loaded 3840×2160 with a phase-scoped
+  handler counter of `0→1→1→1`; Renderer fetch/XHR/canvas reads and all sealed
+  unauthorized routes remained blocked without path exposure
+- a same-profile restart with the id unregistered and source moved failed the
+  warmed URL without `clearCache`
+- three fresh-profile runs with nine previews and one on-demand 4K image had
+  whole-process peak deltas of 105.297, 103.555, and 104.844 MiB; every timing,
+  handler, and post-close plateau line passed
+- the same production build loaded 3840×2160 from `app.asar`; the scoped repair
+  recorded runtime `appPath` and executable-path evidence
+- independent review bound source fingerprints
+  `14637395415f46fa6697af6917b08b143e9e81890690bd7e1210850eff2a6961`
+  and `d6d41f4f8b52626e0ecd873f134791f7fec2b553f2cb5f900285f478ec8642fc`,
+  then returned PASS; the OS-temp harness and synthetic data were deleted
+
 Validation:
 
 ```sh
@@ -2187,7 +2209,7 @@ git diff --check
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked until E0F evidence and the revised plan pass independent review.
+Status: blocked until a revised implementation plan passes independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2229,7 +2251,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked until E0F evidence and the revised plan pass independent review.
+Status: blocked until a revised implementation plan passes independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2291,7 +2313,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked until E0F evidence and the revised plan pass independent review.
+Status: blocked until a revised implementation plan passes independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2333,7 +2355,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until E0F evidence and the revised plan pass independent review.
+Status: blocked until a revised implementation plan passes independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2381,7 +2403,7 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until E0F evidence and the revised plan pass independent review,
+Status: blocked until a revised implementation plan passes independent review
 and E1-E4 are implemented.
 
 The file list and requirements below are failed v1.8 historical candidate
