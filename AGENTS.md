@@ -100,8 +100,8 @@ build loaded from `app.asar`. This is feasibility evidence, not product
 implementation permission by itself. The later v3.0 stable-image-URL plan passed
 independent review as `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
 `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
-complete at `7677868` and passed `RC-E3-CODE-02`. E4 is now the only executable
-slice, and E5 remains blocked. Composer UI is limited to E4.
+complete at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8` and
+passed `RC-E4-CODE-02`. E5 is now the only executable slice.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -206,8 +206,8 @@ E0F passed its bounded feasibility gate and independent review. The later v3.0
 stable-image-URL plan passed `RC-V3-PLAN-03`; E1 completed at `1bf91cf` and
 passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
 `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
-the only executable slice, and E5 remains blocked by its ordered prerequisite.
-Electron main remains
+complete at `b13d3b8` and passed `RC-E4-CODE-02`. E5 is the only executable
+slice. Electron main remains
 authoritative for validation, metadata policy, file IO, durable ownership,
 target resolution, Provider mapping, and safe errors. Product changes are
 authorized only inside the named active slice; no scope expansion is allowed.

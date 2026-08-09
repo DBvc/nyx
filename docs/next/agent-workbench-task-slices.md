@@ -89,9 +89,9 @@ Use relative documentation links. Do not add local absolute paths.
   security, memory, and `app.asar` loading in OS temp. The later v3.0 plan passed
   `RC-V3-PLAN-03`. E1 then completed at `1bf91cf` and passed
   `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
-  complete at `7677868` and passed `RC-E3-CODE-02`. E4 is now the only
-  executable E slice, and E5 remains ordered. E0F itself froze no product
-  capacity or protocol; v3.0 selects them.
+  complete at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8`
+  and passed `RC-E4-CODE-02`. E5 is now the only executable E slice. E0F itself
+  froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
@@ -1569,8 +1569,8 @@ Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
 review on 2026-08-09. The v3.0 stable-image-URL plan passed `RC-V3-PLAN-03`;
 E1 completed at `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6`
 and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
-`RC-E3-CODE-02`. E4 is the only executable E slice, and E5 remains ordered and
-blocked.
+`RC-E3-CODE-02`; E4 completed at `b13d3b8` and passed `RC-E4-CODE-02`. E5 is
+the only executable E slice.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1595,8 +1595,7 @@ They are non-operative and are not implementation permission. The rewritten
 E1-E5 sections near the end of this workstream describe the reviewed v3.0 plan.
 The active E invariants are:
 
-- E1-E3 are complete and independently reviewed; E4 is executable; E5 remains
-  blocked by its ordered prerequisite
+- E1-E4 are complete and independently reviewed; E5 is executable
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2418,7 +2417,7 @@ upload, dependency, or OCaml type.
 
 Type: bounded Renderer interaction and projection.
 
-Status: executable. E4 is the only permitted next E slice.
+Status: completed at `b13d3b8`; independent review `RC-E4-CODE-02` passed.
 
 Allowed files:
 
@@ -2474,11 +2473,23 @@ mise run desktop:test
 mise run desktop:build
 ```
 
+Recorded result: picker, paste, and supported-image drop now share one bounded
+draft path backed by one lazy sequential Worker. Image-only Send, ordered draft
+previews, accepted-only reducer commit, pre-accepted draft retention, Retry,
+stable sent/hydrated image URLs, unavailable placeholders, and one native full-
+image dialog are implemented. Reset failure retains unsent text and every draft
+resource; successful reset, accepted, remove, stale result, and unmount paths
+release their owned resources. The desktop suite passed with 417 tests and 17
+skips; typecheck, compatibility typecheck, lint, format check, and production
+build also passed, including a separate Worker chunk. E4 added no new IPC,
+dependency, Renderer cache, rich text, assistant image output, Provider policy,
+or OCaml change.
+
 ## E5: Context Composer Lifecycle Acceptance And Docs
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until E4 is implemented and reviewed.
+Status: executable. E5 is the only permitted next E slice.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

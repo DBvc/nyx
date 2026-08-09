@@ -87,7 +87,8 @@ This subproject owns:
   itself. The later v3.0 plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf`
   and passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
   `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
-  the only executable slice, and E5 remains blocked.
+  complete at `b13d3b8` and passed `RC-E4-CODE-02`. E5 is the only executable
+  slice.
   Electron main must remain authoritative
   for validation, metadata policy, file IO, durable state, Provider mapping, and
   errors. OCaml remains a text-only projection. No scope expansion is authorized.
@@ -239,12 +240,12 @@ feasibility gate, but it does not by itself select a product protocol or freeze
 a product capacity. The later v3.0 plan passed `RC-V3-PLAN-03`; E1 completed at
 `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
 `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
-the only executable slice, and E5 remains blocked. Main authority and durable
-ownership remain active E boundaries; no scope expansion is authorized.
+complete at `b13d3b8` and passed `RC-E4-CODE-02`. E5 is the only executable
+slice. Main authority and durable ownership remain active E boundaries; no
+scope expansion is authorized.
 
 E0 through E0F evidence is recorded in
-`../../docs/next/context-composer-experiment-runthrough.md`. E4 is executable;
-E5 remains blocked by its ordered prerequisite.
+`../../docs/next/context-composer-experiment-runthrough.md`. E5 is executable.
 
 Still not allowed in this fifth workstream:
 

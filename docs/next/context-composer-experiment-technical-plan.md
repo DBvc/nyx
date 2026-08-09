@@ -1,6 +1,6 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.0 sealed; E1-E3 completed and reviewed, E4 executable, E5 blocked
+> Status: v3.0 sealed; E1-E4 completed and reviewed, E5 executable
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -13,7 +13,7 @@
 >
 > 当前生效约束：E1 已在 `1bf91cf` 完成并通过 `RC-E1-CODE-02`；E2 已在
 > `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在 `7677868` 完成并通过
-> `RC-E3-CODE-02`。只允许执行 E4，E5 必须等待前置切片实现、验证与 review。
+> `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过 `RC-E4-CODE-02`。只允许执行 E5。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -1398,5 +1398,5 @@ mise run check
   容量或 scope。
 - 当前判断：v3.0 已通过独立 review；E1 已在 `1bf91cf` 完成并通过
   `RC-E1-CODE-02`；E2 已在 `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在
-  `7677868` 完成并通过 `RC-E3-CODE-02`。只有 E4 可执行，E5 继续等待前置
-  切片实现、验证与 review。
+  `7677868` 完成并通过 `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过
+  `RC-E4-CODE-02`。只有 E5 可执行。

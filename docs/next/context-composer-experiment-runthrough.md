@@ -3,8 +3,8 @@
 Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
 implementation plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
 `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`; E3
-completed at `7677868` and passed `RC-E3-CODE-02`. E4 is executable, and E5
-remains blocked by its ordered prerequisite.
+completed at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8`
+and passed `RC-E4-CODE-02`. E5 is executable.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -624,7 +624,22 @@ The desktop suite passed with 401 tests and 17 skips; typecheck, compatibility
 typecheck, lint, format check, production build, and
 `runtime:chat-state:check` with 9 cases also passed. E3 added no
 Renderer/Composer UI, Worker, new IPC namespace, capability registry, remote
-upload, dependency, or OCaml type. E4 is the only executable next slice.
+upload, dependency, or OCaml type. At the E3 completion point, E4 was the only
+executable next slice.
+
+## E4 implementation record
+
+E4 completed at `b13d3b8` and independent review `RC-E4-CODE-02` passed.
+Picker, paste, and supported-image drop share one bounded Renderer draft path
+and lazy sequential Worker. Image-only Send, accepted-only message commit,
+pre-accepted retention, stable sent/hydrated previews, unavailable placeholders,
+and one native full-image dialog are implemented. The reviewed repair ensures a
+failed durable reset retains unsent text, ready/preparing/failed drafts, bytes,
+sources, and preview URLs; only successful reset clears them. The desktop suite
+passed with 417 tests and 17 skips; typecheck, compatibility typecheck, lint,
+format check, and production build passed with a separate Worker chunk. E4
+added no new IPC, dependency, Renderer cache, rich text, assistant image output,
+Provider policy, or OCaml change. E5 is the only executable next slice.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -672,5 +687,5 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  the reviewed v3.0 plan authorized E1-E3, which subsequently completed; E4 is
-  now executable while E5 remains ordered
+  the reviewed v3.0 plan authorized E1-E4, which subsequently completed; E5 is
+  now executable
