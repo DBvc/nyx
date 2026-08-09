@@ -1,5 +1,6 @@
-import type { NyxChatRequest } from '../../../shared/chat/types'
+import { nyxChatContentRejectedMessage, type NyxChatRequest } from '../../../shared/chat/types'
 import type { ResolvedChatTarget } from '../connections/provider-resolver'
+import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import { createChatBridgeError } from './errors'
 import {
   decodeOpenAiCompatibleStream,
@@ -12,6 +13,7 @@ const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI as
 interface StreamChatCompletionOptions {
   target: ResolvedChatTarget
   request: NyxChatRequest
+  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
 }
@@ -33,11 +35,14 @@ export function buildChatCompletionsUrl(baseUrl: string) {
   return url.toString()
 }
 
-export function buildProviderMessages(request: NyxChatRequest) {
-  const alreadyHasSystemMessage = request.messages.some((message) => message.role === 'system')
+export function buildProviderMessages(
+  request: NyxChatRequest,
+  messages: ReadonlyArray<CurrentThreadProviderMessage> = request.messages,
+) {
+  const alreadyHasSystemMessage = messages.some((message) => message.role === 'system')
 
   if (alreadyHasSystemMessage) {
-    return request.messages
+    return messages
   }
 
   return [
@@ -45,13 +50,14 @@ export function buildProviderMessages(request: NyxChatRequest) {
       role: 'system' as const,
       content: request.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     },
-    ...request.messages,
+    ...messages,
   ]
 }
 
 export function buildOpenAiCompatibleChatRequest(
   target: ResolvedChatTarget,
   request: NyxChatRequest,
+  providerMessages: ReadonlyArray<CurrentThreadProviderMessage> = request.messages,
 ) {
   return {
     url: buildChatCompletionsUrl(target.baseUrl),
@@ -64,16 +70,20 @@ export function buildOpenAiCompatibleChatRequest(
       body: JSON.stringify({
         model: target.modelId,
         stream: true,
-        messages: buildProviderMessages(request),
+        messages: buildProviderMessages(request, providerMessages),
       }),
     } satisfies RequestInit,
   }
 }
 
-function buildChatProviderRequest(target: ResolvedChatTarget, request: NyxChatRequest) {
+function buildChatProviderRequest(
+  target: ResolvedChatTarget,
+  request: NyxChatRequest,
+  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+) {
   switch (target.protocol) {
     case 'openai-chat-completions':
-      return buildOpenAiCompatibleChatRequest(target, request)
+      return buildOpenAiCompatibleChatRequest(target, request, providerMessages)
   }
 }
 
@@ -86,13 +96,13 @@ async function readErrorDetails(response: Response) {
   }
 }
 
-function toUpstreamError(response: Response, details: string) {
+function toUpstreamError(response: Response, details?: string) {
   if (response.status === 400) {
     return createChatBridgeError({
       code: 'invalid_request',
       message: 'The relay rejected this chat request.',
       retryable: false,
-      details,
+      ...(details ? { details } : {}),
     })
   }
 
@@ -101,7 +111,7 @@ function toUpstreamError(response: Response, details: string) {
       code: 'auth_failed',
       message: 'Nyx could not authenticate with the relay API.',
       retryable: false,
-      details,
+      ...(details ? { details } : {}),
     })
   }
 
@@ -110,7 +120,7 @@ function toUpstreamError(response: Response, details: string) {
       code: 'rate_limited',
       message: 'The relay API is rate limiting this request.',
       retryable: true,
-      details,
+      ...(details ? { details } : {}),
     })
   }
 
@@ -118,7 +128,7 @@ function toUpstreamError(response: Response, details: string) {
     code: 'upstream_error',
     message: 'The relay API returned an unexpected error.',
     retryable: true,
-    details,
+    ...(details ? { details } : {}),
   })
 }
 
@@ -236,17 +246,30 @@ export async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
 export async function streamChatCompletion({
   target,
   request,
+  providerMessages = request.messages,
   signal,
   onDelta,
 }: StreamChatCompletionOptions) {
-  const providerRequest = buildChatProviderRequest(target, request)
+  const imageBearing = providerMessages.some(
+    (message) =>
+      Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
+  )
+  const providerRequest = buildChatProviderRequest(target, request, providerMessages)
   const response = await fetch(providerRequest.url, {
     ...providerRequest.options,
     signal,
   })
 
   if (!response.ok) {
-    throw toUpstreamError(response, await readErrorDetails(response))
+    if (imageBearing && [400, 413, 415].includes(response.status)) {
+      throw createChatBridgeError({
+        code: 'content_rejected',
+        message: nyxChatContentRejectedMessage,
+        retryable: true,
+      })
+    }
+
+    throw toUpstreamError(response, imageBearing ? undefined : await readErrorDetails(response))
   }
 
   if (!response.body) {

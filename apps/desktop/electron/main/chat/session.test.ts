@@ -246,6 +246,34 @@ function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadT
   }
 }
 
+function preparedImageTurn(): PreparedCurrentThreadTurn {
+  return {
+    providerMessages: [{ role: 'user', content: '' }],
+    replayRecord: null,
+    pendingRecord: {
+      version: 3,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: '',
+          imageRefs: [imageRef],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: { selection: targetSelection, attribution: null },
+          createdAt: '2026-08-09T00:00:00.000Z',
+          updatedAt: '2026-08-09T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-09T00:00:00.000Z',
+      updatedAt: '2026-08-09T00:00:00.000Z',
+    },
+  }
+}
+
 describe('validateChatRequest', () => {
   it('accepts a complete new user message request', () => {
     expect(validateChatRequest(validRequest())).toBeNull()
@@ -1461,8 +1489,9 @@ describe('ChatSessionManager durable current thread ordering', () => {
         targetAttribution,
       }
     })
-    streamChatCompletion.mockImplementation(async ({ request }: { request: NyxChatRequest }) => {
-      order.push(`provider:${request.messages[0]?.content}`)
+    streamChatCompletion.mockImplementation(async (options: { request: NyxChatRequest }) => {
+      expect(options).not.toHaveProperty('providerMessages')
+      order.push(`provider:${options.request.messages[0]?.content}`)
       return { finalContent: 'Done' }
     })
     const sender = mockSender(order)
@@ -1495,6 +1524,239 @@ describe('ChatSessionManager durable current thread ordering', () => {
       assistantMessageId: 'assistant-1',
       turnIntent: 'new_user_message',
     })
+  })
+
+  it('persists content rejection before emitting the safe image error', async () => {
+    const order: string[] = []
+    const providerMessages = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AQ==' } }],
+      },
+    ]
+    const coordinator = {
+      prepare: vi.fn(async () => {
+        order.push('durable:pending')
+        return preparedImageTurn()
+      }),
+      bindResolvedTarget: vi.fn(async () => {
+        order.push('durable:bind')
+      }),
+      materializeProviderMessages: vi.fn(async () => {
+        order.push('main:materialize')
+        return providerMessages
+      }),
+      fail: vi.fn(async () => {
+        order.push('durable:fail')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockImplementationOnce(
+      async ({ providerMessages: actualMessages }: { providerMessages: unknown }) => {
+        order.push('provider:start')
+        expect(actualMessages).toEqual(providerMessages)
+        throw createChatBridgeError({
+          code: 'content_rejected',
+          message: 'The selected target rejected this image request.',
+          retryable: true,
+        })
+      },
+    )
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+    const request = {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user' as const, content: '' }],
+      newImages: [newImage],
+    }
+
+    manager.start(sender, request)
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(order).toEqual([
+      'durable:pending',
+      'event:chat:accepted',
+      'durable:bind',
+      'main:materialize',
+      'event:chat:start',
+      'provider:start',
+      'durable:fail',
+      'event:chat:error',
+    ])
+    expect(coordinator.fail).toHaveBeenCalledWith('request-1', 'assistant-1', '', {
+      code: 'content_rejected',
+      message: 'The selected target rejected this image request.',
+      retryable: true,
+    })
+    expect(sentChatEvents(sender).at(-1)).toMatchObject({
+      error: { code: 'content_rejected', retryable: true },
+    })
+  })
+
+  it('fails an accepted image turn before Runtime or Provider when materialization fails', async () => {
+    const order: string[] = []
+    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient(order))
+    const coordinator = {
+      prepare: vi.fn(async () => preparedImageTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => {
+        throw new CurrentThreadSessionError('invalid_request', '/private/secret-image.full')
+      }),
+      fail: vi.fn(async () => {
+        order.push('durable:fail')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: runtimeFactory,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
+    })
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(order).toEqual(['event:chat:accepted', 'durable:fail', 'event:chat:error'])
+    expect(sentChatEvents(sender).at(-1)).toMatchObject({
+      error: {
+        code: 'invalid_request',
+        message: 'A current-thread image is unavailable.',
+        retryable: false,
+      },
+    })
+    expect(JSON.stringify(sentChatEvents(sender))).not.toContain('/private/')
+    expect(runtimeFactory).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('settles Stop after image materialization without starting Runtime or Provider', async () => {
+    const materializeGate = deferred<
+      Array<{
+        role: 'user'
+        content: Array<{ type: 'image_url'; image_url: { url: string } }>
+      }>
+    >()
+    const coordinator = {
+      prepare: vi.fn(async () => preparedImageTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(() => materializeGate.promise),
+      cancel: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: runtimeFactory,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
+    })
+    await waitForAssertion(() =>
+      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
+    )
+    manager.cancel({ requestId: 'request-1' })
+    materializeGate.resolve([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
+      },
+    ])
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
+    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
+      'chat:accepted',
+      'chat:done',
+    ])
+    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
+    expect(runtimeFactory).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('settles Stop when image materialization rejects without persisting failure', async () => {
+    const materializeGate = deferred<never>()
+    const coordinator = {
+      prepare: vi.fn(async () => preparedImageTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(() => materializeGate.promise),
+      cancel: vi.fn(async () => undefined),
+      fail: vi.fn(),
+    } as unknown as CurrentThreadSessionCoordinator
+    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: runtimeFactory,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
+    })
+    await waitForAssertion(() =>
+      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
+    )
+    manager.cancel({ requestId: 'request-1' })
+    materializeGate.reject(new CurrentThreadSessionError('invalid_request', 'unavailable'))
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
+    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
+      'chat:accepted',
+      'chat:done',
+    ])
+    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
+    expect(coordinator.fail).not.toHaveBeenCalled()
+    expect(runtimeFactory).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('suppresses a stale materialization failure after Reset', async () => {
+    const materializeGate = deferred<never>()
+    const coordinator = {
+      prepare: vi.fn(async () => preparedImageTurn()),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(() => materializeGate.promise),
+      fail: vi.fn(),
+      reset: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: runtimeChatStateDisabledEnv,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
+    })
+    await waitForAssertion(() =>
+      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
+    )
+    const resetOperation = manager.reset(sender)
+    materializeGate.reject(new CurrentThreadSessionError('invalid_request', 'unavailable'))
+
+    await expect(resetOperation).resolves.toEqual({ ok: true })
+    expect(sentChatEvents(sender).map((event) => event.type)).toEqual(['chat:accepted'])
+    expect(coordinator.fail).not.toHaveBeenCalled()
+    expect(coordinator.reset).toHaveBeenCalledTimes(1)
+    expect(streamChatCompletion).not.toHaveBeenCalled()
   })
 
   it('reports cancellation without acceptance when Stop wins before record commit', async () => {

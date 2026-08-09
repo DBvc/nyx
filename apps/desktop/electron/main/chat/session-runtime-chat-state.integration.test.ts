@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxChatRequest } from '../../../shared/chat/types'
+import type { CurrentThreadImageFiles } from '../current-thread/image-files'
 import { CurrentThreadSessionCoordinator } from '../current-thread/session-coordinator'
 import { CurrentThreadSnapshotService } from '../current-thread/snapshot'
 import { CurrentThreadStore } from '../current-thread/store'
@@ -37,6 +38,17 @@ import { ChatSessionManager } from './session'
 const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const artifactPath = join(repoRoot, 'apps', 'desktop', '.runtime-artifacts', 'nyx-runtime')
 const integrationIt = process.env.NYX_RUNTIME_CHAT_STATE_INTEGRATION === '1' ? it : it.skip
+const imageRef = {
+  imageId: '00000000-0000-4000-8000-000000000001',
+  mediaType: 'image/png',
+  width: 2,
+  height: 1,
+} as const
+const newImage = {
+  imageId: imageRef.imageId,
+  canonicalBytes: Uint8Array.from([1]),
+  previewBytes: Uint8Array.from([2]),
+} as const
 
 function configuredRuntimeArtifactPath() {
   const configuredRuntimePath = process.env.NYX_RUNTIME_PATH
@@ -151,10 +163,16 @@ async function waitForAssertion(assertion: () => void, timeoutMs = 5_000, interv
   throw lastError
 }
 
-function createObservableRuntimeChatStateClient(clearStates: RuntimeChatReducerState[]) {
+function createObservableRuntimeChatStateClient(
+  clearStates: RuntimeChatReducerState[],
+  submittedContents: string[] = [],
+) {
   const client = createRuntimeChatStateClient()
   const observableClient: RuntimeChatStateClient = {
-    submitUserMessage: (turn) => client.submitUserMessage(turn),
+    submitUserMessage: (turn) => {
+      submittedContents.push(turn.content)
+      return client.submitUserMessage(turn)
+    },
     retryFailed: (turn) => client.retryFailed(turn),
     startAssistant: (turn) => client.startAssistant(turn),
     appendDelta: (turn) => client.appendDelta(turn),
@@ -250,6 +268,73 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       }
     },
   )
+
+  integrationIt('projects an image-only turn as empty Runtime text', async () => {
+    checkedRuntimeArtifactPath()
+    const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-image-only-'))
+    const store = new CurrentThreadStore({
+      filePath: join(tempDir, 'current-thread.json'),
+      generateId: () => 'thread-image-only',
+    })
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewImages: vi.fn(async () => [imageRef.imageId]),
+      rollbackImages: vi.fn(async () => undefined),
+      readCanonical: vi.fn(async () => newImage.canonicalBytes),
+      reset: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images })
+    const submittedContents: string[] = []
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      createRuntimeChatStateClient: () =>
+        createObservableRuntimeChatStateClient([], submittedContents),
+      resolveCurrentThreadSession: () => coordinator,
+    })
+    streamChatCompletion.mockImplementationOnce(
+      async ({
+        providerMessages,
+        onDelta,
+      }: {
+        providerMessages: unknown
+        onDelta: (delta: string, snapshot: string) => Promise<void>
+      }) => {
+        expect(providerMessages).toEqual([
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
+          },
+        ])
+        await onDelta('Image answer', 'Image answer')
+        return { finalContent: 'Image answer' }
+      },
+    )
+
+    try {
+      manager.start(sender, {
+        requestId: 'request-image-1',
+        userMessageId: 'user-image-1',
+        assistantMessageId: 'assistant-image-1',
+        turnIntent: 'new_user_message',
+        turnUserMessage: { id: 'user-image-1', content: '', imageRefs: [imageRef] },
+        messages: [{ role: 'user', content: '' }],
+        targetSelection: { kind: 'env_fallback' },
+        newImages: [newImage],
+      })
+
+      await waitForAssertion(() => {
+        expect(sentChatEvents(sender).at(-1)).toMatchObject({
+          type: 'chat:done',
+          requestId: 'request-image-1',
+          finalContent: 'Image answer',
+        })
+      })
+      expect(submittedContents).toEqual([''])
+    } finally {
+      await manager.reset(sender)
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
 
   integrationIt('cancels an active runtime-backed turn with partial content', async () => {
     checkedRuntimeArtifactPath()

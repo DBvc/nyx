@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import type { ResolvedChatTarget } from '../connections/provider-resolver'
+import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import {
   buildChatCompletionsUrl,
   buildOpenAiCompatibleChatRequest,
@@ -76,6 +77,7 @@ async function streamWithResponse(
   response: Response,
   signal = new AbortController().signal,
   onDelta = vi.fn(),
+  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>,
 ) {
   vi.stubGlobal(
     'fetch',
@@ -85,6 +87,7 @@ async function streamWithResponse(
   const result = await streamChatCompletion({
     target: resolvedTarget,
     request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
+    ...(providerMessages ? { providerMessages } : {}),
     signal,
     onDelta,
   })
@@ -233,6 +236,35 @@ describe('buildOpenAiCompatibleChatRequest', () => {
       },
     })
   })
+
+  it('maps text first and ordered main-only image data without durable ids or paths', () => {
+    const providerMessages: CurrentThreadProviderMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect these' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Ag==' } },
+        ],
+      },
+    ]
+    const request = buildOpenAiCompatibleChatRequest(
+      resolvedTarget,
+      requestWithMessages([{ role: 'user', content: 'Inspect these' }]),
+      providerMessages,
+    )
+    const body = JSON.parse(request.options.body)
+
+    expect(body.messages).toEqual([
+      {
+        role: 'system',
+        content: 'You are Nyx, a concise and reliable desktop AI assistant.',
+      },
+      ...providerMessages,
+    ])
+    expect(request.options.body).not.toContain('00000000-')
+    expect(request.options.body).not.toContain('/private/')
+  })
 })
 
 describe('iterateSseData', () => {
@@ -273,6 +305,60 @@ describe('iterateSseData', () => {
 })
 
 describe('streamChatCompletion', () => {
+  it.each([400, 413, 415])(
+    'maps image-bearing HTTP %s to one retryable content rejection without details',
+    async (status) => {
+      const operation = streamWithResponse(
+        new Response('{"error":{"message":"secret provider body"}}', { status }),
+        new AbortController().signal,
+        vi.fn(),
+        [
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
+          },
+        ],
+      )
+
+      await expect(operation).rejects.toMatchObject({
+        chatError: {
+          code: 'content_rejected',
+          message: 'The selected target rejected this image request.',
+          retryable: true,
+        },
+      })
+      await expect(operation).rejects.not.toHaveProperty('chatError.details')
+    },
+  )
+
+  it('keeps text-only 400 behavior while suppressing every image-bearing upstream body', async () => {
+    const body = '{"error":{"message":"provider detail"}}'
+
+    await expect(streamWithResponse(new Response(body, { status: 400 }))).rejects.toMatchObject({
+      chatError: {
+        code: 'invalid_request',
+        details: 'provider detail',
+        retryable: false,
+      },
+    })
+
+    const imageOperation = streamWithResponse(
+      new Response(body, { status: 500 }),
+      new AbortController().signal,
+      vi.fn(),
+      [
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
+        },
+      ],
+    )
+    await expect(imageOperation).rejects.toMatchObject({
+      chatError: { code: 'upstream_error', retryable: true },
+    })
+    await expect(imageOperation).rejects.not.toHaveProperty('chatError.details')
+  })
+
   it('recognizes reasoning activity without exposing it as assistant content', async () => {
     const { onDelta, result } = await streamWithResponse(
       responseFromPayloads([

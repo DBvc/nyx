@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import {
+  nyxChatContentRejectedMessage,
   nyxChatImageMediaTypes,
   type NyxChatImageRef,
   type NyxChatTargetAttribution,
@@ -267,6 +268,47 @@ export const targetBindingV2Schema = z
     }
   })
 
+function refineAssistantState(
+  turn: {
+    assistantStatus: (typeof currentThreadAssistantStatusesV1)[number]
+    assistantContent: string
+    error: unknown | null
+  },
+  context: z.RefinementCtx,
+) {
+  if (turn.assistantStatus === 'pending') {
+    if (turn.assistantContent !== '') {
+      context.addIssue({
+        code: 'custom',
+        message: 'A pending assistant must not persist streaming content.',
+        path: ['assistantContent'],
+      })
+    }
+
+    if (turn.error !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A pending assistant must not have an error.',
+        path: ['error'],
+      })
+    }
+  } else if (turn.assistantStatus === 'failed') {
+    if (turn.error === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A failed assistant must have a safe error.',
+        path: ['error'],
+      })
+    }
+  } else if (turn.error !== null) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Only a failed assistant may have an error.',
+      path: ['error'],
+    })
+  }
+}
+
 export const turnRecordV2Schema = z
   .object({
     attemptRequestId: nonEmptyStringSchema,
@@ -281,39 +323,7 @@ export const turnRecordV2Schema = z
     updatedAt: nonEmptyStringSchema,
   })
   .strict()
-  .superRefine((turn, context) => {
-    if (turn.assistantStatus === 'pending') {
-      if (turn.assistantContent !== '') {
-        context.addIssue({
-          code: 'custom',
-          message: 'A pending assistant must not persist streaming content.',
-          path: ['assistantContent'],
-        })
-      }
-
-      if (turn.error !== null) {
-        context.addIssue({
-          code: 'custom',
-          message: 'A pending assistant must not have an error.',
-          path: ['error'],
-        })
-      }
-    } else if (turn.assistantStatus === 'failed') {
-      if (turn.error === null) {
-        context.addIssue({
-          code: 'custom',
-          message: 'A failed assistant must have a safe error.',
-          path: ['error'],
-        })
-      }
-    } else if (turn.error !== null) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Only a failed assistant may have an error.',
-        path: ['error'],
-      })
-    }
-  })
+  .superRefine(refineAssistantState)
 
 export const currentThreadRecordV2Schema = z
   .object({
@@ -363,6 +373,41 @@ export type SafeThreadErrorRecordV2 = z.infer<typeof safeThreadErrorRecordV2Sche
 export type TurnRecordV2 = z.infer<typeof turnRecordV2Schema>
 export type CurrentThreadRecordV2 = z.infer<typeof currentThreadRecordV2Schema>
 
+export const currentThreadErrorCodesV3 = [...currentThreadErrorCodesV2, 'content_rejected'] as const
+
+export type CurrentThreadErrorCodeV3 = (typeof currentThreadErrorCodesV3)[number]
+
+export const safeThreadErrorMessagesV3 = {
+  ...safeThreadErrorMessagesV2,
+  content_rejected: nyxChatContentRejectedMessage,
+} as const satisfies Record<CurrentThreadErrorCodeV3, string>
+
+const safeErrorMessageV3Schema = z.enum([
+  ...Object.values(safeThreadErrorMessagesV3),
+  interruptedThreadErrorMessageV1,
+])
+
+export const safeThreadErrorRecordV3Schema = z
+  .object({
+    code: z.enum(currentThreadErrorCodesV3),
+    message: safeErrorMessageV3Schema,
+    retryable: z.boolean(),
+  })
+  .strict()
+  .superRefine((error, context) => {
+    const expectedMessage = safeThreadErrorMessagesV3[error.code]
+    const isInterrupted =
+      error.code === 'unknown' && error.message === interruptedThreadErrorMessageV1
+
+    if (error.message !== expectedMessage && !isInterrupted) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A persisted chat error must use its fixed safe message.',
+        path: ['message'],
+      })
+    }
+  })
+
 export const chatImageRefSchema = z
   .object({
     imageId: z.uuid(),
@@ -372,11 +417,15 @@ export const chatImageRefSchema = z
   })
   .strict() satisfies z.ZodType<NyxChatImageRef>
 
-export const turnRecordV3Schema = turnRecordV2Schema
-  .safeExtend({
+export const turnRecordV3Schema = z
+  .object({
+    ...turnRecordV2Schema.shape,
     userContent: z.string(),
     imageRefs: z.array(chatImageRefSchema),
+    error: safeThreadErrorRecordV3Schema.nullable(),
   })
+  .strict()
+  .superRefine(refineAssistantState)
   .superRefine((turn, context) => {
     if (turn.userContent.length === 0 && turn.imageRefs.length === 0) {
       context.addIssue({
@@ -443,6 +492,7 @@ export const currentThreadRecordV3Schema = z
   })
 
 export type TurnRecordV3 = z.infer<typeof turnRecordV3Schema>
+export type SafeThreadErrorRecordV3 = z.infer<typeof safeThreadErrorRecordV3Schema>
 export type CurrentThreadRecordV3 = z.infer<typeof currentThreadRecordV3Schema>
 export type MutableTurnRecord = TurnRecordV2 | TurnRecordV3
 export type MutableCurrentThreadRecord = CurrentThreadRecordV2 | CurrentThreadRecordV3
@@ -485,6 +535,17 @@ export function createSafeThreadErrorRecordV2(input: {
   return {
     code: input.code,
     message: safeThreadErrorMessagesV2[input.code],
+    retryable: input.retryable,
+  }
+}
+
+export function createSafeThreadErrorRecordV3(input: {
+  code: CurrentThreadErrorCodeV3
+  retryable: boolean
+}): SafeThreadErrorRecordV3 {
+  return {
+    code: input.code,
+    message: safeThreadErrorMessagesV3[input.code],
     retryable: input.retryable,
   }
 }

@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { CurrentThreadSessionCoordinator, CurrentThreadSessionError } from './session-coordinator'
-import type { CurrentThreadImageFiles } from './image-files'
-import { parseCurrentThreadRecordV1 } from './schemas'
+import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
+import { parseCurrentThreadRecordV1, parseCurrentThreadRecordV3 } from './schemas'
 import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
 
@@ -31,6 +31,15 @@ const newImage = {
   imageId: imageRef.imageId,
   canonicalBytes: new Uint8Array([1]),
   previewBytes: new Uint8Array([2]),
+} as const
+const imageRef2 = {
+  ...imageRef,
+  imageId: '00000000-0000-4000-8000-000000000002',
+  mediaType: 'image/jpeg',
+} as const
+const imageRef3 = {
+  ...imageRef,
+  imageId: '00000000-0000-4000-8000-000000000003',
 } as const
 
 async function createCoordinator() {
@@ -60,6 +69,7 @@ async function createCoordinator() {
         throw new Error('unavailable')
       }
     },
+    readCanonical: async (ref: typeof imageRef) => Uint8Array.from([Number(ref.imageId.slice(-1))]),
     reset: async () => {
       availableImageIds.clear()
     },
@@ -230,6 +240,120 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(prepared.pendingRecord.turns).toHaveLength(2)
   })
 
+  it('materializes ordered text+image and image-only history from the durable record', async () => {
+    const readCanonical = vi.fn(async (ref: typeof imageRef) =>
+      Uint8Array.from([Number(ref.imageId.slice(-1))]),
+    )
+    const coordinator = new CurrentThreadSessionCoordinator({
+      store: {} as CurrentThreadStore,
+      images: { readCanonical } as unknown as CurrentThreadImageFiles,
+    })
+    const record = parseCurrentThreadRecordV3({
+      version: 3,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: 'Inspect these',
+          imageRefs: [imageRef, imageRef2],
+          assistantContent: 'First answer',
+          assistantStatus: 'completed',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'model-1' },
+          },
+          createdAt: '2026-08-09T00:00:00.000Z',
+          updatedAt: '2026-08-09T00:00:00.000Z',
+        },
+        {
+          attemptRequestId: 'request-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          userContent: '',
+          imageRefs: [imageRef3],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: null,
+          },
+          createdAt: '2026-08-09T00:01:00.000Z',
+          updatedAt: '2026-08-09T00:01:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-09T00:00:00.000Z',
+      updatedAt: '2026-08-09T00:01:00.000Z',
+    })
+
+    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect these' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Ag==' } },
+        ],
+      },
+      { role: 'assistant', content: 'First answer' },
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,Aw==' } }],
+      },
+    ])
+    expect(readCanonical.mock.calls.map(([ref]) => ref.imageId)).toEqual([
+      imageRef.imageId,
+      imageRef2.imageId,
+      imageRef3.imageId,
+    ])
+  })
+
+  it('fails the whole Provider build with one safe error when a canonical file is unavailable', async () => {
+    const coordinator = new CurrentThreadSessionCoordinator({
+      store: {} as CurrentThreadStore,
+      images: {
+        readCanonical: vi.fn(async () => {
+          throw new CurrentThreadImageFilesError('unavailable', '/private/secret-image.full')
+        }),
+      } as unknown as CurrentThreadImageFiles,
+    })
+
+    await expect(
+      coordinator.materializeProviderMessages(
+        parseCurrentThreadRecordV3({
+          version: 3,
+          threadId: 'thread-1',
+          turns: [
+            {
+              attemptRequestId: 'request-1',
+              userMessageId: 'user-1',
+              assistantMessageId: 'assistant-1',
+              userContent: '',
+              imageRefs: [imageRef],
+              assistantContent: '',
+              assistantStatus: 'pending',
+              error: null,
+              targetBinding: {
+                selection: { kind: 'env_fallback' },
+                attribution: null,
+              },
+              createdAt: '2026-08-09T00:00:00.000Z',
+              updatedAt: '2026-08-09T00:00:00.000Z',
+            },
+          ],
+          createdAt: '2026-08-09T00:00:00.000Z',
+          updatedAt: '2026-08-09T00:00:00.000Z',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_request',
+      message: 'A current-thread image is unavailable.',
+    })
+  })
+
   it('upgrades version 1 only while appending a real selected turn', async () => {
     const { coordinator, filePath } = await createCoordinator()
     const version1 = parseCurrentThreadRecordV1({
@@ -374,6 +498,75 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(retried.pendingRecord).toMatchObject({
       version: 3,
       turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
+    })
+  })
+
+  it('persists v3 content rejection and reuses the same image on target-switch Retry', async () => {
+    const { coordinator, store } = await createCoordinator()
+    const request = newRequest({
+      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
+      messages: [{ role: 'user', content: '' }],
+      newImages: [newImage],
+    })
+
+    await coordinator.prepare(request)
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.fail('request-1', 'assistant-1', '', {
+      code: 'content_rejected',
+      message: 'Raw provider body',
+      retryable: true,
+      details: 'data:image/png;base64,secret',
+    })
+
+    await expect(store.read()).resolves.toMatchObject({
+      version: 3,
+      turns: [
+        {
+          imageRefs: [imageRef],
+          error: {
+            code: 'content_rejected',
+            message: 'The selected target rejected this image request.',
+            retryable: true,
+          },
+        },
+      ],
+    })
+
+    const { newImages: _newImages, ...retryRequest } = request
+    const retried = await coordinator.prepare({
+      ...retryRequest,
+      requestId: 'request-2',
+      turnIntent: 'retry_failed_response',
+      targetSelection: { kind: 'env_fallback' },
+    })
+
+    expect(retried.pendingRecord).toMatchObject({
+      version: 3,
+      turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
+    })
+    await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
+      },
+    ])
+  })
+
+  it('rejects content rejection settlement for a text-only v2 turn', async () => {
+    const { coordinator, store } = await createCoordinator()
+    await coordinator.prepare(newRequest())
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+
+    await expect(
+      coordinator.fail('request-1', 'assistant-1', '', {
+        code: 'content_rejected',
+        message: 'Unexpected',
+        retryable: true,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_request' })
+    await expect(store.read()).resolves.toMatchObject({
+      version: 2,
+      turns: [{ assistantStatus: 'pending', error: null }],
     })
   })
 

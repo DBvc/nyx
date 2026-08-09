@@ -22,6 +22,7 @@ import { replayCurrentThread } from '../current-thread/runtime-replay'
 import {
   CurrentThreadSessionCoordinator,
   CurrentThreadSessionError,
+  type CurrentThreadProviderMessage,
   type PreparedCurrentThreadTurn,
 } from '../current-thread/session-coordinator'
 import { streamChatCompletion } from './client'
@@ -45,6 +46,7 @@ interface ActiveChatSession {
   runtimeChatStateClient?: RuntimeChatStateClient
   currentThreadSession?: CurrentThreadSessionCoordinator
   preparedCurrentThread?: PreparedCurrentThreadTurn
+  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>
   boundTargetAttribution?: NyxChatTargetAttribution
   operation?: Promise<void>
 }
@@ -530,6 +532,44 @@ export class ChatSessionManager {
     }
 
     session.boundTargetAttribution = target.targetAttribution
+
+    if (
+      session.currentThreadSession &&
+      session.preparedCurrentThread?.pendingRecord.version === 3
+    ) {
+      try {
+        session.providerMessages = await session.currentThreadSession.materializeProviderMessages(
+          session.preparedCurrentThread.pendingRecord,
+        )
+      } catch (error) {
+        if (
+          this.activeSession !== session ||
+          (await this.finishCancelledCommittedSession(session))
+        ) {
+          return
+        }
+
+        const chatError =
+          error instanceof CurrentThreadSessionError && error.code === 'invalid_request'
+            ? {
+                code: 'invalid_request' as const,
+                message: 'A current-thread image is unavailable.',
+                retryable: false,
+              }
+            : toNonRetryableRuntimeChatError(error)
+
+        if (await this.persistFailure(session, chatError)) {
+          this.emitSessionError(session, chatError)
+        }
+        this.activeSession = undefined
+        return
+      }
+    }
+
+    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
+      return
+    }
+
     await this.startWithChatTarget(session, target, request)
   }
 
@@ -843,6 +883,7 @@ export class ChatSessionManager {
       const result = await streamChatCompletion({
         target,
         request,
+        ...(session.providerMessages ? { providerMessages: session.providerMessages } : {}),
         signal: session.abortController.signal,
         onDelta: async (delta, snapshot) => {
           if (this.activeSession !== session) {

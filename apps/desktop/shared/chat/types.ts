@@ -36,6 +36,7 @@ export function isNyxChatTurnIntent(value: unknown): value is NyxChatTurnIntent 
 export const nyxChatErrorCodes = [
   'config_missing',
   'invalid_request',
+  'content_rejected',
   'target_unavailable',
   'auth_failed',
   'network_error',
@@ -46,6 +47,8 @@ export const nyxChatErrorCodes = [
 ] as const
 
 export type NyxChatErrorCode = (typeof nyxChatErrorCodes)[number]
+
+export const nyxChatContentRejectedMessage = 'The selected target rejected this image request.'
 
 export interface NyxChatError {
   code: NyxChatErrorCode

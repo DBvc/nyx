@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/chat/types'
 import {
   createSafeThreadErrorRecordV2,
+  createSafeThreadErrorRecordV3,
   parseCurrentThreadRecordV3,
   parseCurrentThreadRecordV2,
   parseMutableCurrentThreadRecord,
@@ -34,6 +35,15 @@ export interface PreparedCurrentThreadTurn {
   replayRecord: CurrentThreadRecord | null
   providerMessages: NyxChatInputMessage[]
 }
+
+export type CurrentThreadProviderMessage =
+  | NyxChatInputMessage
+  | {
+      role: 'user'
+      content: ReadonlyArray<
+        { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+      >
+    }
 
 export interface CurrentThreadSessionCoordinatorOptions {
   store: CurrentThreadStore
@@ -262,6 +272,72 @@ export class CurrentThreadSessionCoordinator {
     return this.settle(requestId, assistantMessageId, 'completed', finalContent, null)
   }
 
+  async materializeProviderMessages(record: CurrentThreadRecord) {
+    const messages: CurrentThreadProviderMessage[] = []
+
+    try {
+      for (const turn of record.turns) {
+        const refs = 'imageRefs' in turn ? turn.imageRefs : []
+
+        if (refs.length === 0) {
+          messages.push({ role: 'user', content: turn.userContent })
+        } else {
+          if (!this.images) {
+            throw new CurrentThreadSessionError(
+              'invalid_request',
+              'A current-thread image is unavailable.',
+            )
+          }
+
+          const content: Array<
+            Extract<CurrentThreadProviderMessage, { role: 'user' }>['content'][number]
+          > = []
+
+          if (turn.userContent.length > 0) {
+            content.push({ type: 'text', text: turn.userContent })
+          }
+
+          for (const ref of refs) {
+            const bytes = await this.images.readCanonical(ref)
+            content.push({
+              type: 'image_url',
+              image_url: {
+                url: `data:${ref.mediaType};base64,${Buffer.from(
+                  bytes.buffer,
+                  bytes.byteOffset,
+                  bytes.byteLength,
+                ).toString('base64')}`,
+              },
+            })
+          }
+
+          messages.push({ role: 'user', content })
+        }
+
+        if (turn.assistantStatus !== 'failed' && turn.assistantContent.length > 0) {
+          messages.push({ role: 'assistant', content: turn.assistantContent })
+        }
+      }
+
+      return messages
+    } catch (error) {
+      if (error instanceof CurrentThreadSessionError) {
+        throw error
+      }
+
+      if (error instanceof CurrentThreadImageFilesError) {
+        throw new CurrentThreadSessionError(
+          error.code === 'io_error' ? 'store_error' : 'invalid_request',
+          error.code === 'io_error'
+            ? 'Current thread storage failed.'
+            : 'A current-thread image is unavailable.',
+        )
+      }
+
+      throw new CurrentThreadSessionError('store_error', 'Current thread storage failed.')
+    }
+  }
+
   async bindResolvedTarget(
     requestId: string,
     assistantMessageId: string,
@@ -327,13 +403,7 @@ export class CurrentThreadSessionCoordinator {
     finalContent: string,
     error: NyxChatError,
   ) {
-    return this.settle(
-      requestId,
-      assistantMessageId,
-      'failed',
-      finalContent,
-      createSafeThreadErrorRecordV2({ code: error.code, retryable: error.retryable }),
-    )
+    return this.settle(requestId, assistantMessageId, 'failed', finalContent, error)
   }
 
   async reset() {
@@ -427,7 +497,7 @@ export class CurrentThreadSessionCoordinator {
     assistantMessageId: string,
     assistantStatus: 'completed' | 'cancelled' | 'failed',
     assistantContent: string,
-    error: MutableTurnRecord['error'],
+    error: NyxChatError | null,
   ) {
     try {
       const record = await this.store.read()
@@ -448,6 +518,28 @@ export class CurrentThreadSessionCoordinator {
       }
 
       const now = this.now()
+      let safeError: MutableTurnRecord['error'] = null
+
+      if (assistantStatus === 'failed' && error) {
+        if (upgradedRecord.version === 3) {
+          safeError = createSafeThreadErrorRecordV3({
+            code: error.code,
+            retryable: error.retryable,
+          })
+        } else {
+          if (error.code === 'content_rejected') {
+            throw new CurrentThreadSessionError(
+              'invalid_request',
+              'Only an image-bearing turn may persist content rejection.',
+            )
+          }
+
+          safeError = createSafeThreadErrorRecordV2({
+            code: error.code,
+            retryable: error.retryable,
+          })
+        }
+      }
 
       return await this.store.write(
         parseMutableCurrentThreadRecord({
@@ -458,7 +550,7 @@ export class CurrentThreadSessionCoordinator {
                   ...turn,
                   assistantContent,
                   assistantStatus,
-                  error,
+                  error: safeError,
                   updatedAt: now,
                 }
               : turn,

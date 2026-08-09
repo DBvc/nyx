@@ -5,6 +5,7 @@ import {
   createSafeThreadErrorRecordV1,
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
+  parseCurrentThreadRecordV3,
   upgradeCurrentThreadRecordForMutation,
 } from './schemas'
 import { replayCurrentThread } from './runtime-replay'
@@ -127,6 +128,52 @@ describe('replayCurrentThread', () => {
 
     await replayCurrentThread(runtime, record)
 
+    expect(order).toEqual(['submit', 'start', 'append', 'complete'])
+  })
+
+  it('projects an image-only version-3 turn as empty Runtime text', async () => {
+    const order: string[] = []
+    const runtime = client(order)
+    const record = parseCurrentThreadRecordV3({
+      version: 3,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: '',
+          imageRefs: [
+            {
+              imageId: '00000000-0000-4000-8000-000000000001',
+              mediaType: 'image/png',
+              width: 2,
+              height: 1,
+            },
+          ],
+          assistantContent: 'Answer',
+          assistantStatus: 'completed',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'model' },
+          },
+          createdAt: '2026-08-09T00:00:00.000Z',
+          updatedAt: '2026-08-09T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-09T00:00:00.000Z',
+      updatedAt: '2026-08-09T00:00:00.000Z',
+    })
+
+    await replayCurrentThread(runtime, record)
+
+    expect(runtime.submitUserMessage).toHaveBeenCalledWith({
+      turnRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      content: '',
+    })
     expect(order).toEqual(['submit', 'start', 'append', 'complete'])
   })
 })

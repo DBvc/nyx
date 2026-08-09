@@ -8,6 +8,7 @@ import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from '.
 import {
   createSafeThreadErrorRecordV1,
   createSafeThreadErrorRecordV2,
+  createSafeThreadErrorRecordV3,
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
   parseCurrentThreadRecordV3,
@@ -1072,6 +1073,43 @@ describe('CurrentThreadRecordV2 schema', () => {
 })
 
 describe('CurrentThreadRecordV3 schema', () => {
+  it('adds one fixed content rejection without widening version 2', () => {
+    const contentRejected = createSafeThreadErrorRecordV3({
+      code: 'content_rejected',
+      retryable: true,
+    })
+
+    expect(contentRejected).toEqual({
+      code: 'content_rejected',
+      message: 'The selected target rejected this image request.',
+      retryable: true,
+    })
+    expect(() =>
+      parseCurrentThreadRecordV2({
+        ...pendingRecord(),
+        turns: [
+          {
+            ...pendingRecord().turns[0]!,
+            assistantStatus: 'failed',
+            error: contentRejected,
+          },
+        ],
+      }),
+    ).toThrow()
+    expect(() =>
+      parseCurrentThreadRecordV3({
+        ...pendingRecordV3(),
+        turns: [
+          {
+            ...pendingRecordV3().turns[0]!,
+            assistantStatus: 'failed',
+            error: { ...contentRejected, message: 'Raw provider body' },
+          },
+        ],
+      }),
+    ).toThrow()
+  })
+
   it('upgrades existing turns with empty refs and accepts image-only content', () => {
     const version1 = upgradeCurrentThreadRecordForImageMutation(
       completedRecordV1('request-1', 'Done'),
