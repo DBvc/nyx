@@ -81,11 +81,13 @@ This subproject owns:
   without sending JS-owned full bytes or paths through preload/IPC. E0E then
   stopped because Chromium removed a non-default explicit port before the
   standard custom-protocol handler, so the sealed exact-route authorization
-  rule could not reject it. E1-E5 production behavior remains blocked pending a
-  new user decision. Electron main must remain authoritative for validation,
-  metadata policy, file IO, durable state, Provider mapping, and errors. OCaml
-  remains a text-only projection. No product implementation or scope expansion
-  is authorized.
+  rule could not reject it. The user then approved only E0F: an OS-temp gate
+  that authorizes the canonical request identity Chromium actually delivers and
+  treats erased raw spellings as aliases of the same resource. E1-E5 production
+  behavior remains blocked until E0F evidence and review pass. Electron main
+  must remain authoritative for validation, metadata policy, file IO, durable
+  state, Provider mapping, and errors. OCaml remains a text-only projection. No
+  product implementation or scope expansion is authorized.
 
 ## Current Scope
 
@@ -229,13 +231,14 @@ and are not implementation permission. E0C proved one stable exact Chromium ICC
 candidate but failed its visible-grid memory gate, so it did not freeze an
 implementation allowlist or any capacity. E0D also stopped without freezing a
 capacity or choosing a product full-image transport. E0E also stopped without
-freezing a scheme, URL shape, or transport. Main authority and durable ownership
-remain active E boundaries; no product implementation or scope expansion is
-authorized.
+freezing a scheme, URL shape, or transport. E0F may test only canonical request
+identity and native cache/memory behavior in OS temp; it does not select a
+product protocol. Main authority and durable ownership remain active E
+boundaries; no product implementation or scope expansion is authorized.
 
-E0 through E0E failure evidence is recorded in
+E0 through E0E failure evidence and the pending E0F contract are recorded in
 `../../docs/next/context-composer-experiment-runthrough.md`. E1-E5 remain
-blocked pending a new user decision and reviewed gate.
+blocked until E0F passes and the plan completes review.
 
 Still not allowed in this fifth workstream:
 

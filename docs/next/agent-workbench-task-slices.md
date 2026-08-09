@@ -84,9 +84,11 @@ Use relative documentation links. Do not add local absolute paths.
   fresh-byte/Blob/object-URL full-open path exceeded the same line. No E slice is
   implemented. User-approved `E0E` then stopped because Chromium removed a
   non-default explicit port before the standard custom-protocol handler, so its
-  exact-route authorization rule could not reject the alias. No E slice is
-  executable; `E1` through `E5` remain blocked pending a new user decision. No
-  capacity limit or product ICC allowlist is frozen. Evidence is recorded in
+  exact-route authorization rule could not reject the alias. User-approved
+  `E0F` is now the only executable E slice and tests post-normalization request
+  identity plus native cache/memory behavior in OS temp only. `E1` through `E5`
+  remain blocked. No capacity limit or product ICC allowlist is frozen. Evidence
+  is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
@@ -1560,8 +1562,8 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0 through E0E stopped on 2026-08-09. There is no executable E slice;
-E1-E5 remain blocked pending a new user decision.
+Status: E0 through E0E stopped on 2026-08-09. E0F is the only executable E
+slice; E1-E5 remain blocked.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1572,8 +1574,11 @@ not disprove derived previews or select a product transport. The user then
 approved only E0E: an OS-temp gate for a stable opaque URL authorized and served
 by main. E0E stopped when Chromium removed an explicit non-default port before
 the handler, making the sealed exact-route rejection unimplementable within that
-standard-scheme shape. It does not authorize product code or E1-E5. This
-document remains the higher-priority scope gate if a conflict appears.
+standard-scheme shape. The user then approved policy A for E0F: authorize the
+canonical request identity delivered to the handler and treat syntactic
+spellings erased by Chromium as aliases of the same resource. This authorizes
+only the OS-temp gate, not product code or E1-E5. This document remains the
+higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
@@ -1585,6 +1590,8 @@ invariants are:
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
   preload/IPC method, cache, or Asset service is authorized
+- E0F may test only canonical request identity, native cache reuse, repeated
+  full-image memory, and packaged loading; no product protocol is authorized
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
@@ -2075,11 +2082,112 @@ mise run desktop:format-check
 git diff --check
 ```
 
+## E0F: Canonical Request Identity And Stable Full-View Feasibility
+
+Type: temporary Electron custom-protocol identity/cache/memory probe and
+plan/docs evidence only.
+
+Status: policy A authorized by the user on 2026-08-09; evidence and independent
+review pending. E0F is not product implementation permission.
+
+Allowed tracked files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-technical-plan.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Required:
+
+- recreate the smallest OS-temp production-shape Electron/Vite harness with the
+  current default session, sandbox/context isolation, no production Renderer
+  imports, no product code, no new dependency, and synthetic images
+- reuse E0E's standard+secure privilege shape with Fetch API, CORS, CSP bypass,
+  Service Workers, extensions, and streaming-media privileges disabled
+- define authorization identity only from the canonical `Request` delivered to
+  `protocol.handle`: `GET`, exact scheme, exact host, and one main-known opaque
+  id path segment, with no observable query; main remains the sole id-to-file
+  owner
+- treat raw spellings Chromium erases before the handler, including the tested
+  non-default port alias, as the same resource identity rather than a separate
+  authorization input; do not add raw-string parsing, a token/cache service, or
+  another owner
+- keep rejecting every observable unauthorized shape: unknown id, query, wrong
+  host, encoded traversal, and non-GET; credentials must remain rejected before
+  handling. Return generic errors and expose no local path or raw file error
+- stream an authorized immutable file with `net.fetch(file:)` and
+  `Response.body`; measured paths must not call `readFile`/`arrayBuffer`,
+  construct a full userland Buffer/typed array, or create Renderer Blob/object
+  URLs
+- prove authorized canonical and `:444` alias `<img>` loads resolve to the
+  same main asset id and identical handler-observed canonical URL; record
+  `src`/`currentSrc` but do not require author spelling to change if resource
+  identity and cache behavior are identical
+- give identity and every memory repetition a unique initially empty
+  user-data/profile; phase-scope the full-id handler counter and prove
+  canonical → alias → canonical produces `0 → 1 → 1 → 1`, removing each node
+  and waiting 500 ms. Any different count means the cache evidence is
+  contaminated or identity did not converge and stops E0F
+- after the identity process warms the cache and exits, restart with the same
+  profile and scheme but do not register the target id and temporarily move its
+  file outside the served set; the old stable URL must fail to load. Do not call
+  `clearCache`. Restore the synthetic file only after recording the result
+- repeat E0E's JS-read negatives: Renderer `fetch` and XHR must fail, canvas
+  readback must raise `SecurityError`, and any other observed JS byte-read or
+  local-path exposure stops E0F
+- prepare one 3840×2160 near-boundary 7.5-8 MiB canonical plus eight distinct
+  1920×1080 images, each with one max-edge 512 PNG preview, before measurement
+- in each of three fresh production-build processes, mount nine stable preview
+  URLs, await decode/load/error, two frames, and settled state, then take a
+  500 ms whole-process baseline before opening the canonical stable 4K URL
+- open/close the same 4K URL three times with one full DOM image at most, 500 ms
+  close settle, and final-200 ms post-close median; within each isolated phase,
+  require the full-id counter to start at 0 and remain at 1 after the first
+  load, so later opens reuse the native resource rather than replaying main file
+  transport
+- sample main+Renderer+Worker/GPU whole-process working set every 20 ms and
+  record baseline/peak/delta, each open time, heartbeat, main sync, handler hits,
+  `src`/`currentSrc`, post-close medians, URL equality, and live full count
+- after identity, security, and all memory runs pass, package the same build in
+  `app.asar` and prove one canonical image loads; do not claim packaged evidence
+  if an earlier Stop prevents the run
+- retain the sanitized harness and synthetic files through one bound independent
+  review, then delete them and keep only redacted evidence in the runthrough
+
+Fixed stop lines: isolated identity counter is `0→1→1→1`; same-profile
+post-restart revoked URL fails without cache clearing; canonical/alias identity
+and other unauthorized/JS-read checks pass; no path/full IPC bytes/Blob URL
+appear; heartbeat gap ≤50 ms; main synchronous segment ≤250 ms; each 4K open
+ready ≤500 ms; every fresh-process whole-process peak delta ≤192 MiB. After
+first-open warm-up, second/third post-close medians are each ≤first+16 MiB and
+third ≤second+8 MiB.
+
+Stop instead of widening E0F if Chromium gives canonical and alias different
+handler/cache identities, cache serves a revoked id after restart, any
+handler/file replay occurs after the first full load, security or memory misses
+a line, or the direction needs manual cache, token service, alternate URL shape,
+non-standard scheme, new dependency, product code/IPC, or a different owner. Do
+not try another transport in E0F.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
 ## E1: Image Refs And Current-Thread V3
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0F evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2121,7 +2229,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0F evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2183,7 +2291,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0F evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2225,7 +2333,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0F evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2273,8 +2381,8 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked pending a new user-approved feasibility gate and review, and
-E1-E4 are implemented.
+Status: blocked until E0F evidence and the revised plan pass independent review,
+and E1-E4 are implemented.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.

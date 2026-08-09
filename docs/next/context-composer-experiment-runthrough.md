@@ -1,6 +1,7 @@
 # Context Composer Experiment Runthrough
 
-Status: E0 through E0E stopped; E1-E5 blocked; a new user decision is required.
+Status: E0 through E0E stopped; E0F canonical-request identity gate authorized;
+evidence pending; E1-E5 blocked.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -8,7 +9,9 @@ No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
 candidate but failed the full-image visible-DOM memory line. E0D proved the
 preview-only grid, then failed the same line on its temporary full-open data
 path. E0E then failed its sealed exact-route security rule before memory
-measurement. This is not product implementation permission.
+measurement. User-approved E0F authorizes the canonical request Chromium
+delivers rather than erased raw URL spelling. This is not product implementation
+permission.
 
 Probe date: 2026-08-09
 
@@ -17,6 +20,8 @@ E0C plan baseline: `d25ea7a`
 E0D plan baseline: `cef901b`
 
 E0E plan baseline: `dba1a14`
+
+E0F plan baseline: `226fd57`
 
 Plan: [context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md)
 
@@ -483,6 +488,44 @@ rejects only E0E's sealed standard-scheme exact-route model; it does not prove
 all stable local URL directions infeasible. E1-E5 remain blocked pending a new
 user-approved feasibility gate and review.
 
+### E0F pending evidence contract
+
+E0F policy A changes only the authorization identity. Main validates the
+canonical `Request` received by `protocol.handle`: `GET`, exact scheme, exact
+host, and one main-known opaque id. Raw spelling erased by Chromium before that
+boundary, including the observed `:444` alias, is the same resource identity.
+Observable query, wrong host, unknown id, encoded traversal, and non-GET remain
+unauthorized; credentials remain rejected before handling.
+
+Identity and every memory repetition use unique initially empty user-data
+profiles. One fresh identity/security phase must start its full-id handler
+counter at 0, then load canonical → `:444` alias → canonical with removal and
+500 ms settle between loads. All three must map to the same main asset id and
+identical handler-observed canonical URL; the counter must be `0→1→1→1`. DOM
+`src`/`currentSrc` may retain author spelling.
+
+After the warmed identity process exits, a second process must reuse the same
+profile and scheme while main omits the target id and temporarily moves its file
+outside the served set. Without `clearCache`, the old URL must fail to load.
+This prevents disk cache from outliving process-lifetime main authorization.
+Fetch, XHR, and canvas readback also remain blocked; no JS bytes or local path
+may surface.
+
+Only after identity/security pass do three fresh production-build memory
+processes mount nine previews, take a 500 ms baseline, and open/close the same
+canonical 4K URL three times. Each process must have exactly one full handler
+hit from a phase-scoped `0→1→1→1` counter, open ≤500 ms, heartbeat ≤50 ms,
+main sync ≤250 ms, and peak delta ≤192 MiB. Post-close plateau remains
+second/third ≤first+16 MiB and third ≤second+8 MiB. `app.asar` smoke runs only
+after all earlier gates pass.
+
+Any second handler hit after the first full load, cached load after main
+revocation, identity divergence, JS/path exposure, security/memory failure, or
+need for manual cache/token service/new URL shape/non-standard scheme/product
+code or dependency stops E0F. No capacity, ICC, preview, scheme, URL, or
+transport value is frozen before the complete matrix and independent review
+pass.
+
 ## Historical v1.8 candidate limits (status reference)
 
 This is the status reference for v1.8's historical candidate values. No
@@ -528,5 +571,5 @@ E0C result: **STOP**.
 - independent strict review returned `VALID_STOP`; no local harness repair or
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
-- E0E also returned `VALID_STOP`; E1-E5 remain blocked pending a new
-  user-approved direction and reviewed gate
+- user-approved E0F may test the canonical-request identity direction recorded
+  above; E1-E5 remain blocked until that gate and review pass

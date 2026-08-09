@@ -1,17 +1,17 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: Blocked after E0E evidence — E0 through E0E STOP, user decision required
+> Status: E0F canonical-request identity gate authorized; evidence and independent review pending
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v2.1 E0E 已停止，不再授权继续取证或产品实现。v2.0 E0D、v1.9
-> E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现方案或
-> scope 授权。
+> v2.2 只授权下述 E0F 临时证据门，不授权产品实现。v2.1 E0E、v2.0 E0D、
+> v1.9 E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现
+> 方案或 scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
 > 生效，也不构成实现许可。
 >
-> 当前生效约束：没有 executable E slice；E1-E5 blocked；未来方案仍由 Electron
-> main 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
+> 当前生效约束：只有 E0F 可执行；E1-E5 blocked；未来方案仍由 Electron main
+> 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
 > 任何容量限制；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -20,6 +20,53 @@
 > arm64 与已记录的 synthetic fixtures：OS-temp production-shape Vite
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
+
+## v2.2 生效修订：E0F canonical request identity 门禁
+
+用户在 2026-08-09 批准方案 A。E0F 不再尝试验证 Chromium 已经删除的 raw URL
+语法；授权 source of truth 改为 `protocol.handle` 实际收到的 canonical
+`Request`。一个资源身份只有 `GET + exact scheme + exact host + one opaque id`。
+main 仍单独持有 id → immutable validated file；Renderer 仍只看到 URL 与 safe
+display metadata。
+
+显式 port、host case 或 fragment 等若在 handler 前被 Chromium 消除，就不是新的
+授权输入，只是同一 canonical identity 的 raw spelling。query、wrong host、
+unknown id、encoded traversal 与 non-GET 若仍可观察，则必须拒绝；credentials
+继续在 handler 前 fail closed。该调整不新增 token、cache owner 或 raw-string
+parser，也不允许 arbitrary file access。
+
+### E0F 可证伪矩阵
+
+1. 在 OS temp 重建最小 standard+secure protocol harness，保留 E0E 的 default
+   session、sandbox/context isolation 与 privilege deny list。准备同级别 synthetic
+   full/preview dataset，不导入 production Renderer，不增加 dependency。
+2. Identity 与每个 memory repetition 使用唯一、初始为空的 user-data/profile。
+   Fresh identity/security process 在 full-id phase counter 为 0 时，依次 load
+   canonical、`:444` alias、canonical，逐次 remove/settle。记录 `src`、
+   `currentSrc`、handler URL/id 与 counter；必须得到 `0→1→1→1`。
+3. Warm identity process 退出后，用同一 profile 与 scheme 重启，但 main 不注册
+   target id，并把 synthetic file 暂移出 served set；不得 `clearCache`。旧 URL
+   必须 load fail，证明 disk cache 不能越过 process-lifetime main authorization。
+   记录后才恢复 synthetic file。
+4. Identity process 重跑 JS-read negative 与 observable route matrix：fetch/XHR/canvas
+   必须阻断；unknown/query/wrong host/traversal/non-GET 必须 fail closed；surface、
+   response 与 log 不得出现 path。port alias 本身不再算 unauthorized。
+5. Identity/revocation/security 通过后，三个 fresh production-build process 先挂载九个 stable
+   preview，完成 decode/two frames/settle 后取 500 ms baseline；同一 canonical 4K
+   URL open/close 三次，始终一个 full DOM node，close settle 500 ms，取最后
+   200 ms working-set median。每个 isolated phase full counter 必须 `0→1→1→1`。
+6. 继续使用 20 ms whole-process sampling；open ≤500 ms、heartbeat ≤50 ms、main
+   sync ≤250 ms、peak delta ≤192 MiB；second/third post-close 各 ≤first+16 MiB，
+   third ≤second+8 MiB。任一 miss 都 Stop，不改 redline。
+7. 只有 identity、revocation、security 与三次 memory 全部通过，才把同一 build 打成
+   `app.asar` 并验证 canonical image load。sanitized harness 经绑定独立审查后
+   删除，只保留脱敏 evidence。
+
+E0F 不实现 manual cache、token service、alternate URL shape、non-standard scheme、
+product protocol/IPC/schema 或 OCaml change。若 canonical/alias 没有共用 native
+cache identity、第二次 open 重放 handler/file transport、安全或内存失败，立即
+返回用户决策。若 same-profile restart 在 id/file 撤销后仍从 disk cache load，
+同样立即 Stop；不得在本门禁里换 transport 或用 cache clearing 掩盖。
 
 ## v2.1 历史修订：E0E 稳定、main 授权的图片 URL 门禁（已停止）
 
@@ -915,6 +962,9 @@ mise run check
 - 2026-08-09 / E0E evidence：non-default `:444` 在进入 handler 前被规范化为
   no-port URL，使 sealed explicit-port reject 无法执行。独立审查判定
   `VALID_STOP`；未运行 memory/`app.asar`，不冻结 scheme 或 transport。
+- 2026-08-09 / v2.2：用户批准 E0F policy A，以 handler 收到的 canonical
+  request identity 授权，并验证 alias/cache identity、security、memory 与 packaged
+  load；仍不授权 product code 或 E1-E5。
 
 ## Convergence 记录
 
@@ -956,5 +1006,7 @@ mise run check
 - Epoch 8 / E0E evidence：standard custom scheme 在 handler 前丢失 explicit port，
   无法实现 sealed exact-route reject；reviewer 判定有效 Stop，不允许在 E0E 内换
   scheme shape 或放宽规则。
-- 当前判断：方案不是 implementation-ready；没有 executable E slice。
-  E1-E5 blocked，等待用户决定是否修改 URL/security policy 或换下一门禁。
+- Epoch 9 / user decision：用户批准按 browser-native normalization 定义
+  authorization identity，不再把被平台抹除的 raw spelling 当独立权限输入。
+- 当前判断：只有 E0F 可继续取证，方案仍不是 implementation-ready。
+  E1-E5 blocked；E0F 任一 Stop 条件出现时返回用户决策。
