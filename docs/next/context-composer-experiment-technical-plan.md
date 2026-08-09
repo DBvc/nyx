@@ -1,6 +1,6 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.0 sealed; E1 completed and reviewed, E2 executable, E3-E5 blocked
+> Status: v3.0 sealed; E1-E2 completed and reviewed, E3 executable, E4-E5 blocked
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -11,8 +11,9 @@
 > 旧 v1.8 的 Worker/JPEG allowlist、容量数值以及 E1-E5 切片均已失效；只有
 > 下述 v3.0 选择与重写后的 E1-E5 切片生效。
 >
-> 当前生效约束：E1 已在 `1bf91cf` 完成并通过 `RC-E1-CODE-02`；只允许执行
-> E2，E3-E5 必须等待前置切片实现、验证与 review。
+> 当前生效约束：E1 已在 `1bf91cf` 完成并通过 `RC-E1-CODE-02`；E2 已在
+> `36e32e6` 完成并通过 `RC-E2-CODE-03`。只允许执行 E3，E4-E5 必须等待
+> 前置切片实现、验证与 review。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -1396,4 +1397,5 @@ mise run check
   import 性能门、把 source `File` 生命周期延长到 Worker ready；没有改 owner、协议、
   容量或 scope。
 - 当前判断：v3.0 已通过独立 review；E1 已在 `1bf91cf` 完成并通过
-  `RC-E1-CODE-02`。只有 E2 可执行，E3-E5 继续等待前置切片实现、验证与 review。
+  `RC-E1-CODE-02`；E2 已在 `36e32e6` 完成并通过 `RC-E2-CODE-03`。只有 E3
+  可执行，E4-E5 继续等待前置切片实现、验证与 review。

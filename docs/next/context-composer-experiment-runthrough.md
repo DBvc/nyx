@@ -2,8 +2,8 @@
 
 Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
 implementation plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
-`RC-E1-CODE-02`; E2 is executable and E3-E5 remain blocked by ordered
-prerequisites.
+`RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
+executable, and E4-E5 remain blocked by ordered prerequisites.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -597,8 +597,20 @@ Retry identity, image-only text compatibility, and explicit snapshot
 availability projection. The desktop suite passed with 356 tests and 16 skips;
 typecheck, compatibility typecheck, lint, format check, and
 `runtime:chat-state:check` also passed. E1 added no file IO, protocol, Provider
-image mapping, Renderer image UI, new IPC namespace, or OCaml type. E2 is the
-only executable next slice.
+image mapping, Renderer image UI, new IPC namespace, or OCaml type. At the E1
+completion point, E2 was the only executable next slice.
+
+## E2 implementation record
+
+E2 completed at `36e32e6` and independent review `RC-E2-CODE-03` passed. It
+implemented strict main validation and bounded current-thread image files, the
+identity-only accepted lifecycle, one main-owned stable `nyx-image` protocol,
+Retry fail-closed reads, reset/reconcile, and snapshot pair availability. The
+desktop suite passed with 385 tests and 16 skips; typecheck, compatibility
+typecheck, lint, format check, production build, and `runtime:chat-state:check`
+also passed. E2 added no Provider image mapping, Renderer image UI, new IPC
+namespace, dependency, database, general Asset service, or OCaml type. E3 is
+the only executable next slice.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -646,5 +658,5 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  the reviewed v3.0 plan authorized E1, which subsequently completed; E2 is now
-  executable while E3-E5 remain ordered
+  the reviewed v3.0 plan authorized E1-E2, which subsequently completed; E3 is
+  now executable while E4-E5 remain ordered
