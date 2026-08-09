@@ -78,11 +78,14 @@ This subproject owns:
   exceeded the same line. This does not prove derived previews generally
   infeasible. The user approved only E0E: an OS-temp feasibility gate for one
   stable, main-authorized, opaque local image URL that streams a canonical file
-  without sending JS-owned full bytes or paths through preload/IPC. E1-E5
-  production behavior remains blocked until E0E evidence and review pass.
-  Electron main must remain authoritative for validation, metadata policy, file
-  IO, durable state, Provider mapping, and errors. OCaml remains a text-only
-  projection. No product implementation or scope expansion is authorized.
+  without sending JS-owned full bytes or paths through preload/IPC. E0E then
+  stopped because Chromium removed a non-default explicit port before the
+  standard custom-protocol handler, so the sealed exact-route authorization
+  rule could not reject it. E1-E5 production behavior remains blocked pending a
+  new user decision. Electron main must remain authoritative for validation,
+  metadata policy, file IO, durable state, Provider mapping, and errors. OCaml
+  remains a text-only projection. No product implementation or scope expansion
+  is authorized.
 
 ## Current Scope
 
@@ -225,14 +228,14 @@ and file lists are historical candidate material only. They are non-operative
 and are not implementation permission. E0C proved one stable exact Chromium ICC
 candidate but failed its visible-grid memory gate, so it did not freeze an
 implementation allowlist or any capacity. E0D also stopped without freezing a
-capacity or choosing a product full-image transport. E0E may test only a stable
-opaque custom-scheme URL in OS temp; its scheme name and handler are not product
-contract choices. Main authority and durable ownership remain active E
-boundaries; no product implementation or scope expansion is authorized.
+capacity or choosing a product full-image transport. E0E also stopped without
+freezing a scheme, URL shape, or transport. Main authority and durable ownership
+remain active E boundaries; no product implementation or scope expansion is
+authorized.
 
-E0 through E0D failure evidence and the pending E0E evidence contract are
-recorded in `../../docs/next/context-composer-experiment-runthrough.md`. E1-E5
-remain blocked until E0E passes and the plan completes review.
+E0 through E0E failure evidence is recorded in
+`../../docs/next/context-composer-experiment-runthrough.md`. E1-E5 remain
+blocked pending a new user decision and reviewed gate.
 
 Still not allowed in this fifth workstream:
 

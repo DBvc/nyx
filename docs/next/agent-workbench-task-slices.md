@@ -82,10 +82,11 @@ Use relative documentation links. Do not add local absolute paths.
   8×1080p grids exceeded the fixed whole-process memory line. User-approved
   `E0D` proved the preview-only grid, then stopped when its temporary
   fresh-byte/Blob/object-URL full-open path exceeded the same line. No E slice is
-  implemented. User-approved `E0E` is the only executable slice and tests a
-  stable, main-authorized opaque local URL in OS temp only. `E1` through `E5`
-  remain blocked. No capacity limit or product ICC allowlist is frozen. Evidence
-  is recorded in
+  implemented. User-approved `E0E` then stopped because Chromium removed a
+  non-default explicit port before the standard custom-protocol handler, so its
+  exact-route authorization rule could not reject the alias. No E slice is
+  executable; `E1` through `E5` remain blocked pending a new user decision. No
+  capacity limit or product ICC allowlist is frozen. Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
@@ -1559,8 +1560,8 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0, E0B, E0C, and E0D stopped on 2026-08-09. E0E is the only executable
-E slice; E1-E5 remain blocked.
+Status: E0 through E0E stopped on 2026-08-09. There is no executable E slice;
+E1-E5 remain blocked pending a new user decision.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1569,8 +1570,10 @@ when its temporary full-open path copied fresh bytes through IPC into a new Blob
 and object URL on each open and exceeded the same line. This narrow result does
 not disprove derived previews or select a product transport. The user then
 approved only E0E: an OS-temp gate for a stable opaque URL authorized and served
-by main. It does not authorize product code or E1-E5. This document remains the
-higher-priority scope gate if a conflict appears.
+by main. E0E stopped when Chromium removed an explicit non-default port before
+the handler, making the sealed exact-route rejection unimplementable within that
+standard-scheme shape. It does not authorize product code or E1-E5. This
+document remains the higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
@@ -1580,8 +1583,8 @@ invariants are:
 - E1-E5 remain blocked
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
-- E0E may test only a stable opaque custom-scheme URL; it may not add a product
-  protocol, shared contract, preload/IPC method, cache, or Asset service
+- E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
+  preload/IPC method, cache, or Asset service is authorized
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
@@ -1965,8 +1968,8 @@ git diff --check
 Type: temporary Electron custom-protocol security/memory probe and plan/docs
 evidence only.
 
-Status: authorized by the user on 2026-08-09; evidence and independent review
-pending. E0E is not product implementation permission.
+Status: stopped on 2026-08-09 after independent review. E0E is not product
+implementation permission.
 
 Allowed tracked files:
 
@@ -2039,6 +2042,28 @@ authorization is ambiguous, any fixed line fails, safe use requires a token
 service/cache/service worker/range transport/new dependency/product code or IPC,
 or a different ownership model. Do not test another transport inside E0E.
 
+Observed result:
+
+- production build and synthetic preparation passed; the 3840×2160 canonical
+  JPEG was 8,009,319 bytes and its 512×288 PNG preview was 500,603 bytes
+- one authorized 3840×2160 `<img>` loaded; Renderer `fetch` failed with
+  `TypeError`, XHR failed, canvas readback raised `SecurityError`, and no local
+  path was present in the safe surface
+- valid GET returned 200; unknown id, query, wrong host, encoded traversal, and
+  non-GET requests failed as planned; credentials were rejected before handling
+- an initial explicit `:443` case returned 200 and was treated as potentially
+  ambiguous; the bounded retry used non-default `:444`, which also returned
+  200, while handler instrumentation observed only the canonical no-port URL
+- Chromium therefore removed the explicit port before `protocol.handle`;
+  the handler's `url.port` check could not enforce the sealed exact-route rule
+- independent strict review bound source-tree fingerprint
+  `7e11f7d0c9c87f7fd809d9a51c8aa1330687f3a5bcd136d1a6d8070d0a27053d`
+  and returned `VALID_STOP`
+
+Memory repetitions and `app.asar` were correctly not run after the security
+Stop. No capacity, ICC, preview, scheme, URL, or transport choice is frozen. The
+result rejects only E0E's sealed standard-scheme exact-route model.
+
 Validation:
 
 ```sh
@@ -2054,7 +2079,7 @@ git diff --check
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked until E0E evidence and the revised plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2096,7 +2121,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked until E0E evidence and the revised plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2158,7 +2183,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked until E0E evidence and the revised plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2200,7 +2225,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until E0E evidence and the revised plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2248,8 +2273,8 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until E0E evidence and the revised plan pass independent review,
-and E1-E4 are implemented.
+Status: blocked pending a new user-approved feasibility gate and review, and
+E1-E4 are implemented.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.

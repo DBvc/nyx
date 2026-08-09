@@ -1,15 +1,14 @@
 # Context Composer Experiment Runthrough
 
-Status: E0 through E0D stopped; E0E stable-asset URL gate authorized; evidence
-pending; E1-E5 blocked.
+Status: E0 through E0E stopped; E1-E5 blocked; a new user decision is required.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
 No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
 candidate but failed the full-image visible-DOM memory line. E0D proved the
 preview-only grid, then failed the same line on its temporary full-open data
-path. User-approved E0E tests one stable opaque URL authorized and served by
-Electron main. This is not product implementation permission.
+path. E0E then failed its sealed exact-route security rule before memory
+measurement. This is not product implementation permission.
 
 Probe date: 2026-08-09
 
@@ -394,9 +393,9 @@ E0D result: **STOP**. No count, cumulative-pixel, preview, product ICC, or
 transport value is frozen. E1-E5 remain blocked pending a new user-approved
 feasibility gate and review.
 
-### E0E pending evidence contract
+### E0E stable-asset URL security failure record
 
-E0E reopens only E0D's full-open transport/lifetime assumption. A probe-only
+E0E reopened only E0D's full-open transport/lifetime assumption. A probe-only
 standard+secure custom scheme maps one stable opaque URL to one main-authorized
 immutable local file. Renderer receives display metadata and URLs only; it must
 not receive a JS-owned full typed array, Buffer, local path, raw file error,
@@ -429,6 +428,60 @@ memory failure, or need for a service/cache/token manager/product code, IPC, or
 dependency stops E0E. Production build is required; `app.asar` smoke runs only
 if the earlier gates pass. No capacity, ICC, preview, scheme, or transport value
 is frozen before the full matrix and independent review pass.
+
+Executed redacted command shapes:
+
+```sh
+E0E_ROOT="<OS temp>/nyx-context-composer-exp-01"
+REPO_ROOT="<repo>"
+"$REPO_ROOT/apps/desktop/node_modules/.bin/electron-vite" build "$E0E_ROOT" -c "$E0E_ROOT/electron.vite.config.ts"
+E0E_ROOT="$E0E_ROOT" E0E_RUN_MODE=prepare E0E_REPETITION=1 "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0E_ROOT" --user-data-dir="$E0E_ROOT/user-data-prepare"
+E0E_ROOT="$E0E_ROOT" E0E_RUN_MODE=security E0E_REPETITION=1 "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0E_ROOT" --user-data-dir="$E0E_ROOT/user-data-security"
+E0E_ROOT="$E0E_ROOT" E0E_RUN_MODE=security E0E_REPETITION=2 "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0E_ROOT" --user-data-dir="$E0E_ROOT/user-data-security-2"
+```
+
+The OS-temp production build passed. Synthetic preparation created nine image
+pairs in 666.3 ms. The maximum pair was a 3840×2160 JPEG of 8,009,319 bytes and
+a 512×288 PNG preview of 500,603 bytes. The remaining eight distinct
+1920×1080 full JPEGs were 1,376,705-1,377,688 bytes each and their previews were
+501,437-501,555 bytes.
+
+Security observations:
+
+| Check                                               | Result                   |
+| --------------------------------------------------- | ------------------------ |
+| Authorized `<img>`                                  | 3840×2160 loaded         |
+| Renderer `fetch`                                    | blocked; `TypeError`     |
+| Renderer XHR                                        | blocked; error event     |
+| Canvas readback                                     | blocked; `SecurityError` |
+| Valid GET                                           | 200                      |
+| Unknown id / query / wrong host / encoded traversal | 404                      |
+| Credentials                                         | rejected before handler  |
+| Non-GET                                             | 405                      |
+| Safe-surface local path                             | absent                   |
+| Longest observed handler sync segment               | 1.841 ms                 |
+
+The first explicit-port fixture used `:443` and returned 200. Because that could
+be confused with default-port normalization, the only bounded harness repair
+changed the fixture to non-default `:444` and recorded every request received by
+the handler. The retry also returned 200. Its handler record contained only the
+canonical no-port URL: Chromium had removed `:444` before `protocol.handle`.
+Consequently the handler's exact `url.port` rejection could not run.
+
+The sanitized source-tree fingerprint was
+`7e11f7d0c9c87f7fd809d9a51c8aa1330687f3a5bcd136d1a6d8070d0a27053d`.
+Independent strict review recomputed the fingerprint and returned `VALID_STOP`
+with high confidence. It found that changing the standard scheme/URL shape or
+relaxing explicit-port rejection would cross E0E's non-goals. The other security
+passes remain probe-scoped.
+
+The reviewed OS-temp harness and synthetic outputs were then deleted.
+
+E0E result: **STOP**. Memory repetitions and `app.asar` were correctly not run.
+No capacity, ICC, preview, scheme, URL, or transport value is frozen. This
+rejects only E0E's sealed standard-scheme exact-route model; it does not prove
+all stable local URL directions infeasible. E1-E5 remain blocked pending a new
+user-approved feasibility gate and review.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -475,5 +528,5 @@ E0C result: **STOP**.
 - independent strict review returned `VALID_STOP`; no local harness repair or
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
-- user-approved E0E may test the stable main-authorized URL direction recorded
-  above; E1-E5 remain blocked until that gate and review pass
+- E0E also returned `VALID_STOP`; E1-E5 remain blocked pending a new
+  user-approved direction and reviewed gate

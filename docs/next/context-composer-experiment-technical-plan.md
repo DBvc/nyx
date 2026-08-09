@@ -1,16 +1,16 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: E0E stable-asset URL gate authorized; evidence and independent review pending
+> Status: Blocked after E0E evidence — E0 through E0E STOP, user decision required
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v2.1 只授权下述 E0E 临时证据门，不授权产品实现。v2.0 E0D、v1.9
+> v2.1 E0E 已停止，不再授权继续取证或产品实现。v2.0 E0D、v1.9
 > E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现方案或
 > scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
 > 生效，也不构成实现许可。
 >
-> 当前生效约束：只有 E0E 可执行；E1-E5 blocked；未来方案仍由 Electron
+> 当前生效约束：没有 executable E slice；E1-E5 blocked；未来方案仍由 Electron
 > main 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
 > 任何容量限制；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
@@ -21,7 +21,7 @@
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
 
-## v2.1 生效修订：E0E 稳定、main 授权的图片 URL 门禁
+## v2.1 历史修订：E0E 稳定、main 授权的图片 URL 门禁（已停止）
 
 用户在 2026-08-09 批准推荐方向。E0E 只验证一个问题：E0D 已证明 derived
 preview grid 可行后，能否让 full view 使用稳定、opaque、main-authorized 的本地
@@ -84,6 +84,27 @@ cache/service/token manager/new product IPC/dependency 才成立，E0E Stop；�
 计划只允许五份 docs tracked change，probe 全部留在 OS temp。sanitized harness
 保留到一次绑定的 independent strict review，之后删除。E0E 全部 PASS 也只能回到
 技术方案收敛，不能直接解锁历史 E1-E5。
+
+### E0E 结果
+
+production build 与 synthetic preparation 通过。3840×2160 canonical JPEG 为
+8,009,319 bytes，512×288 PNG preview 为 500,603 bytes。authorized `<img>`
+显示为 3840×2160；Renderer `fetch` 抛 `TypeError`、XHR 失败、canvas readback
+抛 `SecurityError`，safe surface 未出现 local path。valid GET 为 200；unknown、
+query、wrong host、encoded traversal 为 404，credentials 在 handler 前被拒绝，
+non-GET 为 405。
+
+门禁停止在 explicit-port case。初次 `:443` 返回 200，因可能属于默认端口语义，
+probe 只把它当作需辨别证据；随后唯一 bounded repair 改用 non-default `:444` 并
+记录 handler request。结果仍为 200，而 handler 收到的 URL 已被 Chromium 规范化
+为无端口 canonical URL。因此 `url.port` check 没有信息可以拒绝该 alias，sealed
+exact-route authorization 在当前 standard custom scheme 上无法实现。
+
+独立审查绑定 source-tree fingerprint
+`7e11f7d0c9c87f7fd809d9a51c8aa1330687f3a5bcd136d1a6d8070d0a27053d`
+并判定 `VALID_STOP`。memory repetition 与 `app.asar` 在 security Stop 后没有运行。
+该结论只否决 E0E sealed standard-scheme exact-route 模型，不能外推为所有 stable
+URL 方向不可行。没有冻结 capacity、ICC、preview、scheme、URL 或 transport。
 
 ## v2.0 历史修订：E0D 派生预览与按需原图门禁（已停止）
 
@@ -891,6 +912,9 @@ mise run check
   `VALID_STOP`；不冻结容量、preview 常量或 product transport。
 - 2026-08-09 / v2.1：用户批准 E0E，只验证 main-authorized stable opaque URL；
   不批准 Renderer full-byte cache、file URL、Asset service 或 product protocol。
+- 2026-08-09 / E0E evidence：non-default `:444` 在进入 handler 前被规范化为
+  no-port URL，使 sealed explicit-port reject 无法执行。独立审查判定
+  `VALID_STOP`；未运行 memory/`app.asar`，不冻结 scheme 或 transport。
 
 ## Convergence 记录
 
@@ -929,5 +953,8 @@ mise run check
   full-open path 超出内存线。reviewer 判定为有效 Stop，并要求只做路径级结论。
 - Epoch 7 / user decision：用户批准 E0E stable main-authorized asset URL gate，
   只在 OS temp 证明 security、lifetime 与 memory，不选 product contract。
-- 当前判断：只有 E0E 可继续取证，方案仍不是 implementation-ready。
-  E1-E5 blocked；E0E 任一 Stop 条件出现时返回用户决策。
+- Epoch 8 / E0E evidence：standard custom scheme 在 handler 前丢失 explicit port，
+  无法实现 sealed exact-route reject；reviewer 判定有效 Stop，不允许在 E0E 内换
+  scheme shape 或放宽规则。
+- 当前判断：方案不是 implementation-ready；没有 executable E slice。
+  E1-E5 blocked，等待用户决定是否修改 URL/security policy 或换下一门禁。
