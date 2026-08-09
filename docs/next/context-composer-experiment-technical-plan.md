@@ -1,6 +1,6 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.0 sealed after independent review; E1 is executable, E2-E5 remain blocked
+> Status: v3.0 sealed; E1 completed and reviewed, E2 executable, E3-E5 blocked
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -11,7 +11,8 @@
 > 旧 v1.8 的 Worker/JPEG allowlist、容量数值以及 E1-E5 切片均已失效；只有
 > 下述 v3.0 选择与重写后的 E1-E5 切片生效。
 >
-> 当前生效约束：只允许执行 E1；E2-E5 必须等待前置切片实现、验证与 review。
+> 当前生效约束：E1 已在 `1bf91cf` 完成并通过 `RC-E1-CODE-02`；只允许执行
+> E2，E3-E5 必须等待前置切片实现、验证与 review。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -432,8 +433,8 @@ packaged smoke 增加运行来源自证；scoped repair 只增加 `app.isPackage
 reviewed harness 与 synthetic data 已删除。
 
 这个结果证明 bounded stable canonical URL / native-cache 方向可行，但不自动
-选择 product protocol、shared/IPC contract 或 capacity policy。E1-E5 继续 blocked，
-直到 revised implementation plan 通过独立 review。
+选择 product protocol、shared/IPC contract 或 capacity policy。在 E0F 结束时，
+E1-E5 仍 blocked，直到 revised implementation plan 通过独立 review。
 
 ## v2.1 历史修订：E0E 稳定、main 授权的图片 URL 门禁（已停止）
 
@@ -657,7 +658,8 @@ E0C 当时必须一次性完成，不能只证明 ICC：
 +259.031 MiB 与 +269.453 MiB，均超过 +192 MiB 止损线。绑定临时 source-tree
 fingerprint `6e12136f051cf8ecb9cc74945391eb1076100c87cda2fd4c0a1399fe4e39768c`
 的独立 strict review 判定 `VALID_STOP`。E0C 没有 PASS，不冻结 product ICC
-allowlist、image count、cumulative pixels 或其他容量；E1-E5 继续 blocked。
+allowlist、image count、cumulative pixels 或其他容量；在 E0C Stop 时 E1-E5
+继续 blocked。
 
 ## v1.8 历史候选摘要（非生效方案）
 
@@ -1393,5 +1395,5 @@ mise run check
   局部缺口。修订只保留 image-only 空 user compatibility entry、补 packaged real
   import 性能门、把 source `File` 生命周期延长到 Worker ready；没有改 owner、协议、
   容量或 scope。
-- 当前判断：v3.0 已通过独立 review 并 implementation-ready；只有 E1 可执行，
-  E2-E5 继续等待前置切片实现、验证与 review。
+- 当前判断：v3.0 已通过独立 review；E1 已在 `1bf91cf` 完成并通过
+  `RC-E1-CODE-02`。只有 E2 可执行，E3-E5 继续等待前置切片实现、验证与 review。

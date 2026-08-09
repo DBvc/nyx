@@ -1,8 +1,9 @@
 # Context Composer Experiment Runthrough
 
 Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
-implementation plan passed `RC-V3-PLAN-03`. E1 is executable; E2-E5 remain
-blocked by ordered prerequisites.
+implementation plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
+`RC-E1-CODE-02`; E2 is executable and E3-E5 remain blocked by ordered
+prerequisites.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -588,6 +589,17 @@ direction in the recorded environment. E0F itself did not freeze product
 protocol, shared/IPC contracts, capacity, or ICC policy; the later v3.0 plan made
 those choices and passed `RC-V3-PLAN-03`.
 
+## E1 implementation record
+
+E1 completed at `1bf91cf` and independent review `RC-E1-CODE-02` passed. It
+implemented only shared image refs, current-thread v3 migration and invariants,
+Retry identity, image-only text compatibility, and explicit snapshot
+availability projection. The desktop suite passed with 356 tests and 16 skips;
+typecheck, compatibility typecheck, lint, format check, and
+`runtime:chat-state:check` also passed. E1 added no file IO, protocol, Provider
+image mapping, Renderer image UI, new IPC namespace, or OCaml type. E2 is the
+only executable next slice.
+
 ## Historical v1.8 candidate limits (status reference)
 
 This is the status reference for v1.8's historical candidate values. No
@@ -634,4 +646,5 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  the reviewed v3.0 plan now makes E1 executable while E2-E5 remain ordered
+  the reviewed v3.0 plan authorized E1, which subsequently completed; E2 is now
+  executable while E3-E5 remain ordered

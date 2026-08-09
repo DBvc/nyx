@@ -81,13 +81,14 @@ Use relative documentation links. Do not add local absolute paths.
   proved the exact ICC candidate, then stopped because visible 12×1080p and
   8×1080p grids exceeded the fixed whole-process memory line. User-approved
   `E0D` proved the preview-only grid, then stopped when its temporary
-  fresh-byte/Blob/object-URL full-open path exceeded the same line. No E slice is
-  implemented. User-approved `E0E` then stopped because Chromium removed a
+  fresh-byte/Blob/object-URL full-open path exceeded the same line. User-approved
+  `E0E` then stopped because Chromium removed a
   non-default explicit port before the standard custom-protocol handler, so its
   exact-route authorization rule could not reject the alias. User-approved
   `E0F` then passed post-normalization identity, native-cache revocation,
   security, memory, and `app.asar` loading in OS temp. The later v3.0 plan passed
-  `RC-V3-PLAN-03`; E1 is now the only executable E slice and E2-E5 remain
+  `RC-V3-PLAN-03`. E1 then completed at `1bf91cf` and passed
+  `RC-E1-CODE-02`; E2 is now the only executable E slice and E3-E5 remain
   ordered. E0F itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
@@ -1564,7 +1565,8 @@ Do not:
 
 Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
 review on 2026-08-09. The v3.0 stable-image-URL plan passed `RC-V3-PLAN-03`;
-E1 is the only executable E slice and E2-E5 remain ordered and blocked.
+E1 completed at `1bf91cf` and passed `RC-E1-CODE-02`. E2 is the only executable
+E slice and E3-E5 remain ordered and blocked.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1580,8 +1582,8 @@ canonical request identity delivered to the handler and treat syntactic
 spellings erased by Chromium as aliases of the same resource. The resulting
 OS-temp gate passed identity/cache reuse, revocation, security, memory, and
 packaged loading. E0F alone did not authorize product code; the later reviewed
-v3.0 plan now authorizes E1 only. This document remains the higher-priority
-scope gate if a conflict appears.
+v3.0 plan authorized E1, which is now complete. This document remains the
+higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and its old
 E1-E5 file and requirement lists are failed historical candidate material.
@@ -1589,7 +1591,8 @@ They are non-operative and are not implementation permission. The rewritten
 E1-E5 sections near the end of this workstream describe the reviewed v3.0 plan.
 The active E invariants are:
 
-- E1 is executable; E2-E5 remain blocked by their ordered prerequisites
+- E1 is complete and independently reviewed; E2 is executable; E3-E5 remain
+  blocked by their ordered prerequisites
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -1783,8 +1786,8 @@ Observed result: the no-dependency same-MIME Worker candidate failed the JPEG
 metadata gate. A deterministic 120×80 synthetic fixture produced a 990-byte
 canonical JPEG containing `FFE2 ICC_PROFILE`; main rejected it as required by
 the failed v1.8 candidate's APP1-APP15 deny rule. The remaining lifecycle/grid
-matrix was not promoted after this Stop condition. E1-E5 stay blocked pending
-E0C.
+matrix was not promoted after this Stop condition. At E0B Stop, E1-E5 remained
+blocked pending E0C.
 
 ## E0C: Exact Chromium ICC Allowlist Feasibility
 
@@ -2213,7 +2216,7 @@ git diff --check
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: executable. E1 is the only permitted next E slice.
+Status: completed at `1bf91cf`; independent review `RC-E1-CODE-02` passed.
 
 Allowed files:
 
@@ -2261,11 +2264,18 @@ mise run desktop:lint
 mise run desktop:test
 ```
 
+Recorded result: shared refs, strict current-thread v3 migration, stable Retry
+identity, image-only compatibility history, and explicit snapshot availability
+projection are implemented. The full desktop suite passed with 356 tests and 16
+skips; typecheck, compatibility typecheck, lint, format check, and
+`runtime:chat-state:check` also passed. E1 added no file IO, protocol, Provider
+image mapping, Renderer image UI, new IPC namespace, or OCaml type.
+
 ## E2: Main Image Import And Durable Acceptance
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked until E1 is implemented and reviewed.
+Status: executable. E2 is the only permitted next E slice.
 
 Allowed files:
 
@@ -2334,7 +2344,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked until E1-E2 are implemented and reviewed.
+Status: blocked until E2 is implemented and reviewed.
 
 Allowed files:
 
@@ -2384,7 +2394,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until E1-E3 are implemented and reviewed.
+Status: blocked until E3 is implemented and reviewed.
 
 Allowed files:
 
@@ -2444,7 +2454,7 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until E1-E4 are implemented and reviewed.
+Status: blocked until E4 is implemented and reviewed.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:
