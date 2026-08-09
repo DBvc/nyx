@@ -77,10 +77,13 @@ Use relative documentation links. Do not add local absolute paths.
 - `E0` stopped on 2026-08-09 after a representative high-entropy fixture
   disproved synchronous Electron-main canonicalization. `E0B` then stopped
   because Chromium's canonical JPEG contained an ICC APP2 segment forbidden by
-  the failed v1.8 candidate's sealed metadata allowlist. No E slice is permitted
-  until the user chooses and approves a revised feasibility direction; `E1`
-  through `E5` remain blocked. No capacity limit is frozen. Evidence is recorded
-  in [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
+  the failed v1.8 candidate's sealed metadata allowlist. User-approved `E0C`
+  proved the exact ICC candidate, then stopped because visible 12×1080p and
+  8×1080p grids exceeded the fixed whole-process memory line. No E slice is
+  permitted until the user chooses and approves a revised feasibility direction;
+  `E1` through `E5` remain blocked. No capacity limit or product ICC allowlist is
+  frozen. Evidence is recorded in
+  [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
   permission. Any revised gate may change those details. It still may not
@@ -1553,23 +1556,25 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0 and E0B stopped on 2026-08-09. E1-E5 are blocked pending a new user decision.
+Status: E0, E0B, and E0C stopped on 2026-08-09. There is no executable E slice;
+E1-E5 remain blocked pending a new user decision.
 
-There is currently no executable E entry gate. A request for
-`context-composer-experiment` or a named E slice does not unblock E1-E5; a new
-user-approved feasibility direction and independent review must pass first.
-This document remains the higher-priority scope gate if a conflict appears.
+The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
+but E0C stopped when both bounded visible DOM grid candidates exceeded the
+whole-process memory stop line. E0C did not freeze an implementation allowlist
+or any capacity and does not authorize product code or E1-E5. This document
+remains the higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
-They are non-operative and are not implementation permission. A revised gate
-may change input types, canonicalization executor, metadata policy, capacities,
-and slice/file details. The only active E invariants are:
+They are non-operative and are not implementation permission. The active E
+invariants are:
 
 - E1-E5 remain blocked
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
+- any continuation requires a new user-approved feasibility gate and review
 
 Failure evidence is defined in
 [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md);
@@ -1750,15 +1755,102 @@ Observed result: the no-dependency same-MIME Worker candidate failed the JPEG
 metadata gate. A deterministic 120×80 synthetic fixture produced a 990-byte
 canonical JPEG containing `FFE2 ICC_PROFILE`; main rejected it as required by
 the failed v1.8 candidate's APP1-APP15 deny rule. The remaining lifecycle/grid
-matrix was not promoted after this Stop condition. E1-E5 stay blocked until the
-user approves a revised gate, which may change input types, canonicalization
-executor, metadata policy, capacities, and slice/file details.
+matrix was not promoted after this Stop condition. E1-E5 stay blocked pending
+E0C.
+
+## E0C: Exact Chromium ICC Allowlist Feasibility
+
+Type: temporary Electron/Vite feasibility probe and plan/docs evidence only.
+
+Status: stopped on 2026-08-09 after independent review. E0C is not product
+implementation permission.
+
+Allowed tracked files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-technical-plan.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Historical sealed requirements:
+
+- recreate the minimal OS-temp production-shape Vite Worker harness using the
+  current sandbox/context-isolation settings, current installed toolchain, one
+  static module Worker, no production Renderer imports, and synthetic fixtures
+- generate the deterministic JPEG through the real Worker three times; record
+  the canonical JPEG hash, every JPEG marker, the full APP2 payload hash, and
+  the ICC bytes hash after the `ICC_PROFILE\0` sequence/count framing
+- freeze an allowlist only if all three outputs contain exactly one identical
+  APP2 segment with sequence `1`, count `1`, and byte-for-byte identical sRGB
+  ICC payload; any output/profile variation is a Stop condition
+- keep main fail closed: reject modified, truncated, repeated, additional,
+  split/extended, multi-segment, or out-of-order APP2; reject APP1,
+  APP3-APP15, COM, arbitrary/repeated/extended APP0, and metadata-bearing PNG
+  chunks; allow only a production-proven exact minimal JFIF APP0 if present
+- verify adversarial single-byte ICC mutation, missing/extra ICC bytes,
+  sequence/count mutation, repeated/additional APP2, split APP2, APP2 order
+  mutation, EXIF orientation, GPS/device, XMP, COM, PNG text, and PNG eXIf
+  fixtures; accepted JPEG output must remain `image/jpeg`
+- finish the previously blocked lifecycle, four-image timing, 4K timing,
+  heartbeat, main validation, and representative visible DOM `<img>` grid
+  matrix; sample main+Renderer+Worker peak working set and freeze every
+  practical capacity value or stop
+- rerun dev, build, and `app.asar` Worker loading and record the current
+  environment, deterministic fixture provenance, redacted reproducible command
+  shapes, repetition count, and peak-sampling method
+- retain the sanitized OS-temp harness through one bound independent review,
+  then delete it; keep only redacted evidence in the runthrough
+
+Fixed stop lines remain heartbeat gap ≤50 ms, main synchronous validation
+segment ≤250 ms, four daily images ready ≤1.5 s, 3840×2160 high-entropy image
+ready ≤1 s, source/canonical bytes ≤8 MiB, maximum canonical pixels 8,294,400,
+and whole-process peak working-set increase ≤192 MiB. These are gate thresholds,
+not frozen product capacities; image count and cumulative pixels remain pending
+until the visible-grid evidence passes.
+
+Stop instead of widening E0C if the exact ICC output is unstable, a Chromium
+upgrade changes it, safe acceptance requires parsing arbitrary ICC profiles,
+any threshold or lifecycle case fails, no practical count/pixel capacity passes,
+or the direction needs a dependency, new process/IPC, product code, thumbnail
+or lazy-load layer, general Asset service, or new OCaml protocol.
+
+Observed result:
+
+- three deterministic JPEG outputs were identical; canonical SHA-256 was
+  `f699c04d6b8c309403f2c69c9c58c2eddd2b4e7e4f5aa64851dc177ef0258d8f`
+- the one 470-byte APP2 payload SHA-256 was
+  `c3bb12de30d7357252ec3a5ec781bd2f8a6dd8c69dd7d3de97bbac262d9e1fd4`;
+  the 456-byte ICC bytes SHA-256 was
+  `12afb4d9953adee0607d347daee5b78b18d6b3cab2d572b88970703f5edb37bc`
+- all ten exact-APP2 adversarial cases were rejected; the probe reached the
+  visible-grid gate after its bounded metadata, timing, and lifecycle checks
+- 12×1920×1080 produced +259.031 MiB and 8×1920×1080 produced +269.453 MiB,
+  both over the fixed +192 MiB whole-process peak stop line
+- independent strict review bound source-tree fingerprint
+  `6e12136f051cf8ecb9cc74945391eb1076100c87cda2fd4c0a1399fe4e39768c`
+  and returned `VALID_STOP`; the reviewed OS-temp harness was then deleted
+
+No capacity or product ICC allowlist is frozen. E1-E5 remain blocked.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
 
 ## E1: Image Refs And Current-Thread V3
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -1800,7 +1892,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -1862,7 +1954,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -1904,7 +1996,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until the user approves a revised direction and its feasibility evidence and plan pass independent review.
+Status: blocked pending a new user-approved feasibility gate and review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -1952,7 +2044,8 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until the user approves a revised direction, its feasibility evidence and plan pass independent review, and E1-E4 are implemented.
+Status: blocked pending a new user-approved feasibility gate and review, and
+E1-E4 are implemented.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.

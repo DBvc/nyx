@@ -71,11 +71,13 @@ This subproject owns:
   credentials, protocols, provider calls, and fail-closed validation.
 - Context Composer E0 stopped on synchronous main-thread encoding. E0B then
   stopped because Chromium's native JPEG output violated the failed v1.8
-  candidate's sealed metadata allowlist. E1-E5 production behavior remains
-  blocked until the user approves a revised feasibility gate. Electron main
-  must remain authoritative for validation, metadata policy, file IO, durable
-  state, Provider mapping, and errors. OCaml remains a text-only projection.
-  No product implementation or scope expansion is authorized meanwhile.
+  candidate's sealed metadata allowlist. The user approved only E0C, which then
+  stopped because visible 12×1080p and 8×1080p DOM grids exceeded the fixed
+  whole-process memory stop line. E1-E5 production behavior remains blocked
+  pending a new user decision. Electron main must remain authoritative for
+  validation, metadata policy, file IO, durable state, Provider mapping, and
+  errors. OCaml remains a text-only projection. No product implementation or
+  scope expansion is authorized meanwhile.
 
 ## Current Scope
 
@@ -215,15 +217,15 @@ Stopped E0B feasibility gate:
 
 The v1.8 Worker/JPEG/allowlist design, every numeric limit, and the E1-E5 slice
 and file lists are historical candidate material only. They are non-operative
-and are not implementation permission. A user-approved revised gate may change
-input types, canonicalization executor, metadata policy, capacities, and
-slice/file details. Until it passes, only main authority and durable ownership
-remain active E boundaries; no product implementation or scope expansion is
-authorized.
+and are not implementation permission. E0C proved one stable exact Chromium ICC
+candidate but failed its visible-grid memory gate, so it did not freeze an
+implementation allowlist or any capacity. Only main authority and durable
+ownership remain active E boundaries; no product implementation or scope
+expansion is authorized.
 
-E0 and E0B failure evidence is recorded in
+E0, E0B, and E0C failure evidence is recorded in
 `../../docs/next/context-composer-experiment-runthrough.md`. E1-E5 remain
-blocked until a revised gate passes and the plan completes review.
+blocked pending a new user decision and reviewed gate.
 
 Still not allowed in this fifth workstream:
 

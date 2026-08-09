@@ -1,17 +1,17 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: Blocked after v1.8 evidence — E0/E0B STOP, user decision required
+> Status: Blocked after E0C evidence — E0/E0B/E0C STOP, user decision required
 >
 > Plan ID: `context-composer-exp-01`
 >
-> 这是失败的 v1.8 历史候选与证据记录，不是当前实现方案或 scope 授权。
+> v1.9 E0C 已停止，不再授权继续取证或产品实现。其余正文是失败的
+> v1.8 历史候选与证据记录，不是当前实现方案或 scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
-> 生效，也不构成实现许可。新的用户批准门禁可以改变输入类型、
-> canonicalization 执行者、metadata policy、容量与切片/文件细节。
+> 生效，也不构成实现许可。
 >
-> 当前只有三条生效约束：E1-E5 blocked；未来方案仍由 Electron main
-> 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
-> 任何容量限制；状态以
+> 当前生效约束：没有 executable E slice；E1-E5 blocked；未来方案仍由
+> Electron main 权威验证并持有 durable state；不得开始产品实现或扩大
+> scope。没有冻结任何容量限制；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
 >
@@ -19,6 +19,65 @@
 > arm64 与已记录的 synthetic fixtures：OS-temp production-shape Vite
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
+
+## v1.9 E0C 精确 Chromium ICC 门禁（已停止）
+
+用户在 2026-08-09 选择方案 A。该决策当时只修订 JPEG metadata 候选规则：
+Electron main 可以接受 **一个由当前 production-shape Chromium Worker
+证据冻结、完整字节相等的 sRGB ICC APP2 payload**。这不是通用 ICC 支持，
+也不恢复 v1.8 的实现许可。E0C 后续在 visible DOM memory gate 停止，所以下述
+规则只保留为已执行证据边界，不再是 executable gate。
+
+E0C 当时只允许在 OS 临时目录重建最小 Electron/Vite harness，复用当前
+`sandbox: true`、`contextIsolation: true`、`nodeIntegration: false` 和静态
+module Worker 形状；不得导入 production Renderer、修改产品代码、增加依赖、
+process、IPC、持久化、OCaml 协议或通用抽象。
+
+### JPEG 接受边界
+
+Main 仍把 Worker 输出当作不可信输入。只有同时满足以下条件才可接受：
+
+- 输出 magic/header/尺寸/像素/字节/MIME 与独立 `nativeImage` decode 均通过
+- JPEG marker 结构只含编码所需 marker、至多一个经 fixture 证明必要的精确
+  最小 JFIF APP0，以及恰好一个 APP2
+- APP2 payload 以 `ICC_PROFILE\0` 开头，sequence=`1`、count=`1`
+- 整个 APP2 payload 与 E0C 冻结 payload 完整字节相等；同时记录 full payload
+  和去掉 framing 后 ICC bytes 的 SHA-256
+
+以下任一情况必须 fail closed：APP2 单字节变化、截断、扩展、重复、额外、
+拆分、多段、sequence/count 变化或顺序变化；APP1、APP3-APP15、COM；任意、
+重复或扩展 APP0；metadata-bearing PNG chunk。Chromium/Electron 升级后只要
+payload 不再完整匹配，就必须拒绝并重新走显式证据/评审，不得按版本或
+profile 名模糊匹配。
+
+### E0C 证据与完成条件
+
+E0C 当时必须一次性完成，不能只证明 ICC：
+
+1. 真实 Worker 用相同 seed 的确定性 JPEG 连续运行三次；三份 canonical
+   hash、marker 序列、APP2 payload hash 和 ICC hash 全部一致，否则 Stop。
+2. adversarial matrix 覆盖 ICC 单字节变化、缺字节/多字节、sequence/count、
+   重复/额外/拆分/换序 APP2，以及 EXIF orientation、GPS/device、XMP、COM、
+   PNG text/eXIf；只允许精确已冻结形状通过。
+3. 完成 dev、build、`app.asar` Worker loading，JPEG/PNG 同 MIME、orientation、
+   视觉等价和 main 独立验证。
+4. 完成 remove、New thread、unmount、stale result、timeout、error 和四图顺序
+   生命周期；迟到结果不得产生 main 副作用。
+5. 每个日常四图与 3840×2160 高熵场景各重复三次；heartbeat gap ≤50 ms，
+   main 同步验证段 ≤250 ms，四图 ready ≤1.5 s，4K ready ≤1 s，source 与
+   canonical ≤8 MiB，canonical pixels ≤8,294,400。
+6. OS-temp visible DOM grid 必须挂载真实 object URL `<img>`，等待 decode/load/
+   error 终态并采样 main+Renderer+Worker whole-process peak working set；增量
+   ≤192 MiB 时才可冻结实用的 current-thread image count 与 cumulative pixels，
+   否则 Stop。
+7. 记录 current environment、seed/hash、重复次数、peak 采样方法和脱敏命令；
+   sanitized harness 经一次绑定独立审查后删除，只保留 runthrough 证据。
+
+最终 exact ICC 假设通过，但 12×1080p 与 8×1080p visible DOM grid 分别达到
++259.031 MiB 与 +269.453 MiB，均超过 +192 MiB 止损线。绑定临时 source-tree
+fingerprint `6e12136f051cf8ecb9cc74945391eb1076100c87cda2fd4c0a1399fe4e39768c`
+的独立 strict review 判定 `VALID_STOP`。E0C 没有 PASS，不冻结 product ICC
+allowlist、image count、cumulative pixels 或其他容量；E1-E5 继续 blocked。
 
 ## v1.8 历史候选摘要（非生效方案）
 
@@ -673,6 +732,12 @@ mise run check
   均加载成功；确定性 JPEG 经 `OffscreenCanvas` 重编码后仍含 470-byte
   `ICC_PROFILE` APP2，main 按 v1.8 严格规则拒绝。触发 Stop，不放宽规则，
   不冻结 count/pixel，不进入 E1-E5。
+- 2026-08-09 / v1.9：用户选择方案 A，只授权 E0C 验证当前 Chromium Worker
+  的单一、完整、字节相等 sRGB ICC APP2 payload。任意变体继续 fail closed；
+  E0C 不授权产品实现，也不恢复历史 E1-E5 切片。
+- 2026-08-09 / E0C evidence：exact ICC 与十个 APP2 adversarial cases 通过，
+  但 12×1080p 与最终 8×1080p visible DOM grid 均超过 +192 MiB。独立审查
+  判定 `VALID_STOP`；harness 删除，不运行 `review-ready`，不冻结容量。
 
 ## Convergence 记录
 
@@ -700,7 +765,9 @@ mise run check
 - Epoch 3 / revision round 2：v1.8 只执行 `RC-E3-R2`，将 E0B 的
   production grid 依赖替换为 OS-temp 可见 DOM harness；E4/E5 的真实
   product grid 回归/验收边界不变。
-- 当前判断：v1.8 的 no-dependency same-MIME Worker 候选在 JPEG metadata
-  gate 失败。方案不是 implementation-ready；E1-E5 blocked，等待用户批准
-  新门禁。新门禁可改变输入类型、canonicalization executor、metadata
-  policy、容量和切片/文件细节。
+- Epoch 4 / E0C：方案 A 的 exact ICC 假设通过，但 visible-grid capacity
+  stop line 失败。独立 reviewer 认为 failure delta 的采样顺序有效，不是需要
+  局部修复的 harness 假失败；lifecycle/metadata 只能描述为 probe coverage，
+  不能写成生产验证。
+- 当前判断：方案不是 implementation-ready；没有 executable E slice。
+  E1-E5 blocked，等待用户决定是否以新的显示/内存策略重开门禁。

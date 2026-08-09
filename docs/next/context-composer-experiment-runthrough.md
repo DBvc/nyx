@@ -1,14 +1,16 @@
 # Context Composer Experiment Runthrough
 
-Status: E0 and E0B stopped; E1-E5 blocked; a new user decision is required.
+Status: E0, E0B, and E0C stopped; E1-E5 blocked; a new user decision is required.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
-No capacity limit of any kind is frozen. A revised user-approved gate may change
-input types, canonicalization executor, metadata policy, capacities, and
-slice/file details.
+No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
+candidate but failed the visible-DOM whole-process memory stop line. This is not
+product implementation permission.
 
 Probe date: 2026-08-09
+
+E0C plan baseline: `d25ea7a`
 
 Plan: [context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md)
 
@@ -236,6 +238,74 @@ therefore stopped before lifecycle, visible-DOM peak, or current-thread
 count/pixel evidence could be accepted. Partial PNG timings are not promoted
 into a PASS, and no direction choice or capacity limit is inferred from them.
 
+### E0C exact-ICC and visible-grid failure record
+
+User decision A authorized one bounded OS-temp run. The harness used the same
+sandbox/context-isolation flags, one static Vite module Worker, transferable/
+typed buffers, synthetic fixtures, main `nativeImage` decode, and Node 24's
+standard-library `zlib.crc32`. It imported no production Renderer component and
+changed no product code, dependency, IPC contract, persisted state, or OCaml
+protocol.
+
+Executed redacted command shapes:
+
+```sh
+E0C_ROOT="<OS temp>/nyx-context-composer-exp-01"
+REPO_ROOT="<repo>"
+"$REPO_ROOT/apps/desktop/node_modules/.bin/electron-vite" build "$E0C_ROOT" -c "$E0C_ROOT/electron.vite.config.ts"
+E0C_RUN_MODE=full "$REPO_ROOT/apps/desktop/node_modules/.bin/electron" "$E0C_ROOT" --user-data-dir="$E0C_ROOT/user-data-full-<run>"
+```
+
+The production build emitted a separate static `image-worker-<hash>.js` chunk.
+E0C stopped before rerunning dev and `app.asar`; their earlier E0B loading result
+remains historical evidence only.
+
+Exact JPEG result, reproduced in the ICC-only run and every full run:
+
+| Evidence             | Value                                                                     |
+| -------------------- | ------------------------------------------------------------------------- |
+| Repetitions per run  | 3 identical canonical outputs                                             |
+| Canonical bytes/hash | 1038 / `f699c04d6b8c309403f2c69c9c58c2eddd2b4e7e4f5aa64851dc177ef0258d8f` |
+| Marker sequence      | `APP0,APP2,DQT,DQT,SOF0,DHT,DHT,DHT,DHT,SOS,EOI`                          |
+| Exact APP0 payload   | `4a46494600010100000100010000`                                            |
+| APP2                 | index 1; 470 bytes; sequence 1; count 1                                   |
+| APP2 payload hash    | `c3bb12de30d7357252ec3a5ec781bd2f8a6dd8c69dd7d3de97bbac262d9e1fd4`        |
+| ICC bytes/hash       | 456 / `12afb4d9953adee0607d347daee5b78b18d6b3cab2d572b88970703f5edb37bc`  |
+| ICC header           | size 456; `mntr`; `RGB `; `XYZ `; `acsp`                                  |
+
+Main accepted the exact output and rejected ten direct canonical variants:
+single-byte mutation, missing byte, extra byte, sequence mutation, count
+mutation, repeated APP2, additional APP2, split APP2, reordered APP2, and
+truncated JPEG.
+
+The bounded metadata probe reached the grid gate after checking JPEG visual
+orientation and canonical removal of synthetic EXIF orientation, GPS/device,
+XMP, COM, PNG text, and PNG eXIf inputs. The timing/lifecycle harness also
+reached the grid gate after its embedded stop checks. These are probe coverage,
+not production lifecycle validation or a complete direct-injection rejection
+matrix.
+
+Two visible real-`<img>` grid candidates failed:
+
+| Candidate      | Cumulative pixels | Baseline working set | Peak working set |        Delta | Result |
+| -------------- | ----------------: | -------------------: | ---------------: | -----------: | ------ |
+| 12 × 1920×1080 |        24,883,200 |          831.016 MiB |     1090.047 MiB | +259.031 MiB | fail   |
+| 8 × 1920×1080  |        16,588,800 |          838.141 MiB |     1107.594 MiB | +269.453 MiB | fail   |
+
+Each source buffer existed before the baseline. The candidate then created
+distinct Blobs/object URLs and real `<img>` elements, mounted them in a visible
+grid, awaited `img.decode()`, two animation frames, and 100 ms while main sampled
+main+Renderer+Worker/GPU process working set every 20 ms. Both deltas exceed the
+fixed +192 MiB stop line. The lower count did not justify further capacity
+search; E0C stopped as bounded.
+
+The sanitized source-tree fingerprint was
+`6e12136f051cf8ecb9cc74945391eb1076100c87cda2fd4c0a1399fe4e39768c`.
+An independent strict review bound that fingerprint and returned `VALID_STOP`
+with high confidence. It found the memory failure valid and warned that the
+lifecycle/metadata results must remain probe-scoped. The reviewed OS-temp
+harness and synthetic outputs were then deleted.
+
 ## Historical v1.8 candidate limits (status reference)
 
 This is the status reference for v1.8's historical candidate values. No
@@ -270,6 +340,15 @@ E0B result: **STOP**.
 - the native JPEG encoder emits an ICC APP2 segment that v1.8 requires main to
   reject, so the no-dependency same-MIME Worker candidate fails its metadata gate
 - no capacity limit of any kind is frozen
-- E1-E5 remain blocked; continuing requires a user-approved revised gate, which
-  may change input types, canonicalization executor, metadata policy,
-  capacities, and slice/file details
+- policy A then authorized the bounded E0C evidence run recorded above; E0B
+  itself remained stopped
+
+E0C result: **STOP**.
+
+- the exact ICC hypothesis passed, but it is not frozen for product use
+- both bounded visible-grid candidates exceeded the fixed whole-process memory
+  stop line
+- independent strict review returned `VALID_STOP`; no local harness repair or
+  third capacity candidate is authorized
+- no capacity limit is frozen; Plan-First `review-ready` was not run
+- E1-E5 remain blocked pending a new user-approved direction and reviewed gate

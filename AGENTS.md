@@ -80,8 +80,11 @@ Still out of scope:
 Multimodal behavior remains out of scope for ordinary work. Context Composer
 E0 stopped on main-thread encoding; E0B then stopped because Chromium's native
 JPEG output violated the failed v1.8 candidate's sealed metadata allowlist.
-E1-E5 remain blocked until the user approves a revised feasibility gate. No
-capacity limit is frozen.
+The user approved only the bounded E0C exact-ICC feasibility gate. E0C then
+stopped because visible 12×1080p and 8×1080p DOM grids exceeded the fixed
+whole-process memory stop line. The exact Chromium ICC evidence is not product
+implementation permission. E1-E5 remain blocked pending a new user decision,
+and no capacity limit is frozen.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -182,16 +185,15 @@ The candidate-limit table in
 `docs/next/context-composer-experiment-runthrough.md` is the status reference;
 no capacity limit of any kind is frozen.
 
-Until a user-approved revised feasibility gate passes, the only active E
-invariants are that E1-E5 remain blocked, Electron main remains authoritative
-for validation, metadata policy, file IO, durable ownership, target resolution,
-Provider mapping, and safe errors, and no product implementation or scope
-expansion is authorized. A revised gate may change input types,
-canonicalization executor, metadata policy, capacities, and slice/file details.
+There is no executable E slice after E0C Stop. E1-E5 remain blocked, Electron
+main remains authoritative for validation, metadata policy, file IO, durable
+ownership, target resolution, Provider mapping, and safe errors, and no product
+implementation or scope expansion is authorized. Any continuation requires a
+new user-approved feasibility gate.
 
-E0 and E0B failure evidence is recorded in
+E0, E0B, and E0C failure evidence is recorded in
 `docs/next/context-composer-experiment-runthrough.md`. E1 through E5 remain
-blocked until a revised gate passes and the plan completes its review gate.
+blocked pending a new user decision and reviewed gate.
 
 This fifth workstream does not authorize PDF/doc/audio/video input, remote file
 upload, a general Asset service, arbitrary content parts, capability inference
