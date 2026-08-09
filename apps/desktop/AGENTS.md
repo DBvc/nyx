@@ -86,7 +86,8 @@ This subproject owns:
   gate. This is feasibility evidence, not selection of a product protocol by
   itself. The later v3.0 plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf`
   and passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
-  `RC-E2-CODE-03`. E3 is the only executable slice, and E4-E5 remain blocked.
+  `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
+  the only executable slice, and E5 remains blocked.
   Electron main must remain authoritative
   for validation, metadata policy, file IO, durable state, Provider mapping, and
   errors. OCaml remains a text-only projection. No scope expansion is authorized.
@@ -237,13 +238,13 @@ freezing a scheme, URL shape, or transport. E0F passed its bounded OS-temp
 feasibility gate, but it does not by itself select a product protocol or freeze
 a product capacity. The later v3.0 plan passed `RC-V3-PLAN-03`; E1 completed at
 `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
-`RC-E2-CODE-03`. E3 is the only executable slice, and E4-E5 remain blocked.
-Main authority and durable ownership remain active E boundaries; no scope
-expansion is authorized.
+`RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
+the only executable slice, and E5 remains blocked. Main authority and durable
+ownership remain active E boundaries; no scope expansion is authorized.
 
 E0 through E0F evidence is recorded in
-`../../docs/next/context-composer-experiment-runthrough.md`. E3 is executable;
-E4-E5 remain blocked by their ordered prerequisites.
+`../../docs/next/context-composer-experiment-runthrough.md`. E4 is executable;
+E5 remains blocked by its ordered prerequisite.
 
 Still not allowed in this fifth workstream:
 

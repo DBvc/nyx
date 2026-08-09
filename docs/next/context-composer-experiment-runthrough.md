@@ -2,8 +2,9 @@
 
 Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
 implementation plan passed `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
-`RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
-executable, and E4-E5 remain blocked by ordered prerequisites.
+`RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`; E3
+completed at `7677868` and passed `RC-E3-CODE-02`. E4 is executable, and E5
+remains blocked by its ordered prerequisite.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -610,7 +611,20 @@ desktop suite passed with 385 tests and 16 skips; typecheck, compatibility
 typecheck, lint, format check, production build, and `runtime:chat-state:check`
 also passed. E2 added no Provider image mapping, Renderer image UI, new IPC
 namespace, dependency, database, general Asset service, or OCaml type. E3 is
-the only executable next slice.
+the only executable next slice at the E2 completion point.
+
+## E3 implementation record
+
+E3 completed at `7677868` and independent review `RC-E3-CODE-02` passed.
+Electron main now materializes ordered transient Provider image parts from the
+committed v3 record and canonical files while Runtime remains a text-only
+projection. Safe `content_rejected` handling, durable-before-Renderer errors,
+Retry/target-switch reuse, image-only turns, and Stop/Reset races are covered.
+The desktop suite passed with 401 tests and 17 skips; typecheck, compatibility
+typecheck, lint, format check, production build, and
+`runtime:chat-state:check` with 9 cases also passed. E3 added no
+Renderer/Composer UI, Worker, new IPC namespace, capability registry, remote
+upload, dependency, or OCaml type. E4 is the only executable next slice.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -658,5 +672,5 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  the reviewed v3.0 plan authorized E1-E2, which subsequently completed; E3 is
-  now executable while E4-E5 remain ordered
+  the reviewed v3.0 plan authorized E1-E3, which subsequently completed; E4 is
+  now executable while E5 remains ordered

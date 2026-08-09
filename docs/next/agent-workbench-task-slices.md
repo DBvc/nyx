@@ -89,8 +89,9 @@ Use relative documentation links. Do not add local absolute paths.
   security, memory, and `app.asar` loading in OS temp. The later v3.0 plan passed
   `RC-V3-PLAN-03`. E1 then completed at `1bf91cf` and passed
   `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
-  now the only executable E slice, and E4-E5 remain ordered. E0F itself froze no
-  product capacity or protocol; v3.0 selects them.
+  complete at `7677868` and passed `RC-E3-CODE-02`. E4 is now the only
+  executable E slice, and E5 remains ordered. E0F itself froze no product
+  capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
@@ -1567,8 +1568,9 @@ Do not:
 Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
 review on 2026-08-09. The v3.0 stable-image-URL plan passed `RC-V3-PLAN-03`;
 E1 completed at `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6`
-and passed `RC-E2-CODE-03`. E3 is the only executable E slice, and E4-E5 remain
-ordered and blocked.
+and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
+`RC-E3-CODE-02`. E4 is the only executable E slice, and E5 remains ordered and
+blocked.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1593,8 +1595,8 @@ They are non-operative and are not implementation permission. The rewritten
 E1-E5 sections near the end of this workstream describe the reviewed v3.0 plan.
 The active E invariants are:
 
-- E1-E2 are complete and independently reviewed; E3 is executable; E4-E5
-  remain blocked by their ordered prerequisites
+- E1-E3 are complete and independently reviewed; E4 is executable; E5 remains
+  blocked by its ordered prerequisite
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2355,7 +2357,7 @@ service, or OCaml type.
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: executable. E3 is the only permitted next E slice.
+Status: completed at `7677868`; independent review `RC-E3-CODE-02` passed.
 
 Allowed files:
 
@@ -2401,11 +2403,22 @@ mise run desktop:test
 mise run runtime:chat-state:check
 ```
 
+Recorded result: Electron main now derives ordered text/image Provider messages
+from the committed v3 record and bounded canonical reader while Runtime remains
+text-only. Image-bearing 400/413/415 responses become the fixed retryable
+`content_rejected` error without exposing upstream bodies, ids, paths, or
+Base64. Stop, Reset, Retry, target switching, image-only turns, and durable-
+before-Renderer ordering are covered. The desktop suite passed with 401 tests
+and 17 skips; typecheck, compatibility typecheck, lint, format check, production
+build, and `runtime:chat-state:check` with 9 cases also passed. E3 added no
+Renderer/Composer UI, Worker, new IPC namespace, capability registry, remote
+upload, dependency, or OCaml type.
+
 ## E4: Composer Images, Thread Display, And Hydration
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until E3 is implemented and reviewed.
+Status: executable. E4 is the only permitted next E slice.
 
 Allowed files:
 
