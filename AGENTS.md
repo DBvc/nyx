@@ -86,9 +86,10 @@ whole-process memory stop line. E0D later proved the preview-only message grid
 but stopped because its temporary fresh-byte/Blob/object-URL full-open path
 exceeded the same memory line. Neither result is product implementation
 permission or proof that derived previews are generally infeasible. E1-E5
-remain blocked. The user approved only E0E: an OS-temp feasibility gate for one
-stable, main-authorized, opaque local image URL that streams a canonical file
-without sending JS-owned full bytes or paths through preload/IPC. E0E then
+remained blocked at the E0D stop. The user approved only E0E: an OS-temp
+feasibility gate for one stable, main-authorized, opaque local image URL that
+streams a canonical file without sending JS-owned full bytes or paths through
+preload/IPC. E0E then
 stopped because Chromium removed a non-default explicit port before the standard
 custom-protocol handler, so the sealed exact-route authorization rule could not
 reject it. E0F then passed its reviewed OS-temp gate: Chromium's canonical
@@ -96,7 +97,11 @@ request identity gave canonical/alias native-cache reuse, main revocation still
 invalidated the warmed URL, Renderer byte-read paths stayed blocked, three
 isolated preview/full-view runs stayed below the fixed memory line, and the same
 build loaded from `app.asar`. This is feasibility evidence, not product
-implementation permission. No capacity or product protocol is currently frozen.
+implementation permission by itself. The later v3.0 stable-image-URL plan passed
+independent review as `RC-V3-PLAN-03`; E1 is now the only executable slice and
+is limited to shared image refs plus current-thread v3 schema/migration. E2-E5
+remain blocked. No file import, protocol, Provider image mapping, or Composer UI
+is authorized in E1.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -190,19 +195,19 @@ E0B also did not pass. In the recorded environment, the OS-temp
 production-shape Vite Worker harness loaded its static Worker in dev, build,
 and `app.asar`; this was not production Renderer integration. Chromium's JPEG
 encoder emitted an ICC APP2 segment that the failed v1.8 candidate's sealed
-main allowlist correctly rejected. The Worker/JPEG/allowlist design, every
-numeric limit, and the E1-E5 slice and file lists are historical candidate
+main allowlist correctly rejected. The old v1.8 Worker/JPEG/allowlist design,
+every numeric limit, and its E1-E5 slice and file lists are historical candidate
 material only: they are non-operative and are not implementation permission.
 The candidate-limit table in
 `docs/next/context-composer-experiment-runthrough.md` is the status reference;
 no capacity limit of any kind is frozen.
 
-E0F passed its bounded feasibility gate and independent review. No E slice is
-currently executable. E1-E5 remain blocked until a revised implementation plan
-passes independent review. Electron main remains authoritative for validation,
-metadata policy, file IO, durable ownership, target resolution, Provider
-mapping, and safe errors, and no product implementation or scope expansion is
-authorized.
+E0F passed its bounded feasibility gate and independent review. The later v3.0
+stable-image-URL plan passed `RC-V3-PLAN-03`; E1 is the only executable slice,
+and E2-E5 remain blocked by their ordered prerequisites. Electron main remains
+authoritative for validation, metadata policy, file IO, durable ownership,
+target resolution, Provider mapping, and safe errors. Product changes are
+authorized only inside the named active slice; no scope expansion is allowed.
 
 E0 through E0F evidence is recorded in
 `docs/next/context-composer-experiment-runthrough.md`.

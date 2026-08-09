@@ -1,18 +1,18 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: E0F feasibility gate passed independent review; revised implementation plan pending
+> Status: v3.0 sealed after independent review; E1 is executable, E2-E5 remain blocked
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v2.3 记录 E0F 已通过下述临时证据门，但仍不授权产品实现。v2.1 E0E、v2.0 E0D、
+> v3.0 把已通过的 Worker、preview 与 stable URL 证据组合成生效方案；独立
+> review 已以 `RC-V3-PLAN-03` PASS。v2.1 E0E、v2.0 E0D、
 > v1.9 E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现
 > 方案或 scope 授权。
-> Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
-> 生效，也不构成实现许可。
+> 旧 v1.8 的 Worker/JPEG allowlist、容量数值以及 E1-E5 切片均已失效；只有
+> 下述 v3.0 选择与重写后的 E1-E5 切片生效。
 >
-> 当前生效约束：没有可执行 E slice；E1-E5 blocked，等待 revised implementation
-> plan 与 independent review；未来方案仍由 Electron main 权威验证并持有 durable
-> state；不得开始产品实现或扩大 scope。E0F 没有自动冻结产品容量或协议；状态以
+> 当前生效约束：只允许执行 E1；E2-E5 必须等待前置切片实现、验证与 review。
+> Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
 >
@@ -20,6 +20,348 @@
 > arm64 与已记录的 synthetic fixtures：OS-temp production-shape Vite
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
+
+## v3.0 生效方案：stable image URL 的最小多模态闭环
+
+### 一句话方案
+
+PNG/JPEG 通过 picker、paste 或 drop 进入原生 textarea Composer；sandboxed
+Renderer 的一个 Web Worker 一次 decode，同时生成移除来源 metadata 的 same-MIME
+canonical 与 512-edge PNG preview；JPEG 只保留已实测的固定 ICC。Electron main
+严格验证并先持久化图片 pair，
+再提交 current-thread v3 pending turn；只有收到 main 的 `chat:accepted` 后，
+Renderer 才清草稿并插入消息。已发送与 hydration 图片只使用 main-authorized
+`nyx-image:` stable URL；Provider 仍由 main 临时构造 data URL，OCaml 仍只有文字投影。
+
+这不是通用附件或 Asset 平台。首轮 assistant 仍只输出现有文字流；未来富文本、
+HTML、Artifact 与 Generative UI 使用独立的 assistant output model，不把它们预埋进
+本轮 user image contract。
+
+### 范围与固定选择
+
+| 问题          | v3.0 选择                                                                |
+| ------------- | ------------------------------------------------------------------------ |
+| 输入          | text、PNG、JPEG；支持 text-only、image-only、text + ordered images       |
+| 入口          | 原生 file input、系统粘贴、拖放；普通文字 paste/drop 保持浏览器行为      |
+| 内容模型      | 现有 `content` + 可选有序 `imageRefs`；不引入通用 parts union            |
+| 转换          | 一个 lazy sandboxed module Worker；`createImageBitmap + OffscreenCanvas` |
+| durable owner | Electron main 的 current-thread v3 record 与同级 image pair 目录         |
+| 消息显示      | preview stable URL；原图只在一个原生 `<dialog>` 内按需加载               |
+| Provider      | 现有 OpenAI-compatible Chat Completions；main 临时 data URL              |
+| capability    | 当前 target 一律 `unknown`，诚实尝试；不猜 model/provider 名             |
+| Runtime       | OCaml 只接收 `userContent`，image-only 使用空字符串                      |
+
+明确不做 PDF/文档/音频/视频、HEIC/SVG/GIF/WebP、OCR、裁剪/标注、拖动排序、
+远程 upload/file id、hash dedupe、跨 thread 共享、数据库、通用 Asset/thumbnail
+service、Worker pool、capability registry、assistant image/rich output、新 OCaml
+协议或新 IPC namespace。真实 target 若只接受远程上传而不接受 inline image data URL，
+本实验对该 target fail closed，不扩 scope。
+
+### 证据如何约束设计
+
+| 已有证据            | v3.0 采用的结论                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| E0 main encode STOP | main 只验证，不同步重编码                                                               |
+| E0B/E0C             | Worker same-MIME canonicalization 可用；JPEG 只接受已证实的 exact APP0/APP2             |
+| E0D                 | 持久化 512-edge PNG preview；消息流不 decode 全尺寸历史图                               |
+| E0F                 | full/preview 使用 standard+secure main-authorized stable URL 与 native cache            |
+| E0 request-build    | 当前 thread canonical 总量保留 32 MiB 上界，E5 必须复测真实 UI + request-build 组合峰值 |
+
+E0F 的临时 scheme 名与 harness 不直接复制；复用的是 canonical Request identity、
+main-only id authorization、`net.fetch(file:)` streaming、Renderer JS byte isolation、
+native cache reuse 与 restart revocation 这些已经通过的行为。
+
+### Owner 与数据流
+
+```mermaid
+flowchart LR
+  Draft["Renderer draft<br/>File + derived preview URL"]
+  Worker["sandboxed Worker<br/>canonical + preview bytes"]
+  Bridge["existing startChat bridge<br/>optional image refs + new bytes"]
+  Main["Electron main<br/>strict validation"]
+  Files["current-thread image pairs"]
+  Record["current-thread v3 JSON<br/>content + refs only"]
+  Accepted["chat:accepted<br/>identity only"]
+  Protocol["nyx-image protocol<br/>preview/full stable URLs"]
+  View["Renderer thread projection<br/>refs + availability"]
+  Provider["OpenAI-compatible provider<br/>transient data URLs"]
+  Runtime["OCaml runtime<br/>text only"]
+
+  Draft --> Worker --> Bridge --> Main
+  Main --> Files --> Record --> Accepted
+  Record --> Protocol
+  Accepted --> View
+  Protocol --> View
+  Record --> Provider
+  Record --> Runtime
+```
+
+- Renderer 只拥有未发送草稿、短命 preview object URL、Worker 生命周期和可重建
+  UI projection；accepted 后立即丢弃 canonical/preview bytes 并 revoke draft URL。
+- Electron main 单独拥有接受策略、file IO、durable record、协议授权、Provider
+  materialization、target resolution 与错误净化。Worker 输出始终是不可信输入。
+- Provider 不看到 local path、Nyx image id、preview 或原文件名；Renderer 不看到
+  local path、full bytes、credentials 或 raw Provider config。
+
+### 最小 shared contract
+
+新增边界类型只有：
+
+```ts
+interface NyxChatImageRef {
+  imageId: string
+  mediaType: 'image/png' | 'image/jpeg'
+  width: number
+  height: number
+}
+
+interface NyxChatNewImage {
+  imageId: string
+  canonicalBytes: Uint8Array
+  previewBytes: Uint8Array
+}
+```
+
+- `turnUserMessage.imageRefs` 与 request `newImages` 都是可选字段；text-only 请求继续
+  完全省略，保持现有 text body 与 bridge fixture。含图 `new_user_message` 必须两者
+  同序一一对应；Retry 固定不带 `newImages`，复用 durable refs/files。
+- `NyxChatInputMessage` 保持现有纯文字 compatibility list。Renderer 仍提交它供 main
+  比对；main 从 durable record 单独重建含 refs 的 main-only Provider messages。
+  Compatibility history 必须为每个 durable user turn 保留一项；含 refs 的 image-only
+  user 也必须保留
+  `{ role: 'user', content: '' }`，确保下一轮、Retry 与 hydration 后的 history 一致。
+- Renderer message projection 可带 `images: Array<NyxChatImageRef & { available: boolean }>`；
+  availability 不是 durable identity。record 不存 URL、bytes、path、data URL、原文件名
+  或 Renderer 声明的 byte size。
+- `chat:accepted` 只增加 `requestId`、`userMessageId`、`assistantMessageId` 与
+  `turnIntent`；不返回 bytes、refs、content、URL、target 或 transaction metadata。
+  Renderer 用被锁定且已被 main 严格接受的 active turn 构造消息。
+
+URL shape 是一个窄 shared boundary：`nyx-image://preview/<uuid>` 与
+`nyx-image://full/<uuid>`。只共享 scheme/variant 与 URL builder；main route parser、
+record authorization 和 file path 仍是 main-only。图片 ID 在 current thread 内永不
+复用，因此 URL 对同一 immutable pair 稳定。
+
+### v3 record 与 file layout
+
+- `CurrentThreadRecordV3` 保留 v2 全部字段；每个 turn 增加 required `imageRefs`，
+  可为空。含图时 `userContent` 可为空；二者不能同时为空。
+- v1/v2 stable read 不写盘。v1 的文字 mutation/recovery 仍只到 v2；v2 的文字
+  mutation/recovery 保持 v2。第一次成功接受含图 turn 才把完整历史升级 v3，旧 turn
+  补空 refs；一旦是 v3，后续 text-only turn 继续写 v3 空 refs。
+- refs 是 user turn identity；append、target bind、terminal settlement、Retry 都不能
+  改写。全 thread `imageId` 唯一，Retry 只更新 request id 与 assistant 状态。
+- 文件固定为 `userData/threads/current-thread-assets/<imageId>.full` 与
+  `<imageId>.preview`；目录 `0700`，文件 `0600`，JSON 永不保存绝对路径。
+- unknown future version/malformed record fail closed：不覆写、不 Provider send、
+  不协议授权、也不执行 orphan cleanup。
+
+### 固定的首轮 guardrails
+
+这些是该实验的实现常量，不是跨设备承诺；E5 在真实 product grid 和完整 request
+build 中复核，任一 stop line miss 都阻止完成。
+
+| 限制                       |                                         值 |
+| -------------------------- | -----------------------------------------: |
+| MIME                       |                                 PNG / JPEG |
+| images / turn              |                                          4 |
+| Renderer source / image    |                                      8 MiB |
+| canonical / image          |                                      8 MiB |
+| preview / image            |                                      1 MiB |
+| new canonical / turn       |                                     16 MiB |
+| current-thread canonical   |                                     32 MiB |
+| current-thread preview     |                                     12 MiB |
+| current-thread images      |                                         12 |
+| current-thread full pixels |                                 24,883,200 |
+| max full pixels            |                                  8,294,400 |
+| max edge                   |                                    8192 px |
+| preview                    | max edge 512; max 262,144 pixels; PNG only |
+
+Preview dimensions由 full dimensions 使用固定 scale 公式计算；main 要求 Worker
+输出与期望整数尺寸完全一致。main 从真实 bytes、header、decode 与 file stat 计算
+所有预算，不信任 Renderer byte count。孤儿文件不计入当前 thread budget。
+
+### Worker 与 main trust boundary
+
+1. Renderer 先拒绝 empty、超过 8 MiB、声明 MIME 与 PNG/JPEG magic 冲突、header
+   截断、edge/pixels 超限；随后把 owned source buffer transfer 给唯一 Worker。Draft
+   保留原 `File`/`Blob` 引用直到 Worker ready；ready 后立即释放 source 引用，只保留
+   canonical/preview buffers 与一份 preview URL。Worker crash/decode/encode failure
+   保留 source，允许用户 Retry 或 remove，不保留 bitmap、canvas 或第二份 full bytes。
+2. Worker 用 `createImageBitmap(..., { imageOrientation: 'from-image' })` decode 一次，
+   画入同尺寸 full canvas，输出 same-MIME canonical；同一 decoded bitmap 再输出
+   固定 512-edge PNG preview。JPEG quality 固定 0.95；source/full/preview buffers
+   使用 transfer，bitmap/canvas 在每个 terminal path 释放。
+3. Main 严格拒绝 request/nested extra fields、非 UUID、ref/payload 顺序或数量不符、
+   重复/已存在 id、budget 超限。先用无状态 header parser 限制尺寸，再分别用
+   `nativeImage.createFromBuffer` 交叉校验 MIME 与 decode dimensions；main 不重编码。
+4. Full PNG 只允许正确顺序的 `IHDR`、一个或多个 `IDAT`、`IEND`；拒绝全部
+   ancillary metadata。Preview 额外要求 `image/png`、固定计算尺寸和同一严格 chunks。
+5. JPEG marker sequence 必须精确为
+   `APP0,APP2,DQT,DQT,SOF0,DHT,DHT,DHT,DHT,SOS,EOI`；APP0 payload 必须是
+   `4a46494600010100000100010000`，APP2 必须恰好一个且 sequence=1/count=1。
+   APP2 payload SHA-256 必须是
+   `c3bb12de30d7357252ec3a5ec781bd2f8a6dd8c69dd7d3de97bbac262d9e1fd4`，
+   ICC bytes SHA-256 必须是
+   `12afb4d9953adee0607d347daee5b78b18d6b3cab2d572b88970703f5edb37bc`。
+   任一 mutation/extra/split/reorder、APP1/APP3-APP15、COM 或任意 APP0 fail closed。
+6. Electron/Chromium upgrade 若改变 exact output，fixture 必须先失败并重新走证据/
+   review；不得按版本、profile name 或相似 hash 自动放宽。
+
+Renderer parser 只提供早反馈；main parser、decode 和预算才是安全边界。Main 每张
+validation 的同步段继续 ≤250 ms；Worker heartbeat gap ≤50 ms，4 张 ordinary ready
+≤1.5 s，单张 4K high-entropy ready ≤1 s，whole-process peak delta ≤192 MiB。
+
+### Durable acceptance 与竞态
+
+新消息按以下唯一顺序执行：
+
+1. Renderer 等所有 draft `ready`，锁定文字、图片和 target，生成 fresh request/
+   message/image IDs，进入 `accepting`；草稿保持可见但不可修改。
+2. Main parse/validate 全部 pair；每张 image 先写 temp，再 rename `.full` 和
+   `.preview` final。任一失败都不写 record，尽力删除本轮 final；cleanup 失败只留
+   unreachable orphan，下次 Send 使用 fresh IDs。
+3. 所有 pair final 后，Coordinator 才 create/append v3 pending record。record rename
+   resolve 是唯一 durable commit 点；其后到 prepared result 不得再做 fallible IO/
+   parse。只有 manager 仍拥有同一 active session 时才发 `chat:accepted`。
+4. Renderer 收到 accepted 后才 revoke draft preview URL、丢弃 byte buffers、清除对应
+   Composer 内容、插入 user + pending assistant，并把 captured target 写入
+   `committedTarget`。随后可起草下一轮，但 active response 结束前不能再 Send。
+5. Main 再 resolve target、persist attribution、投影 Runtime、materialize Provider
+   messages 并发起请求。
+
+Retry 只生成新 request id、锁定当前 target；main 把同一 durable failed turn 转回
+pending 后发 accepted，不复制/重写图片。Renderer accepted 前保留原 assistant error
+和当前未发送 Composer draft，accepted 后才把 assistant 改回 pending。
+
+当前 adapter contract 只承诺本地 app-process crash 边界：`rename` resolve 才提交，
+reject 表示 final 未改变；record rename 后无 fallible post-step。图片已 rename、record
+未 commit 时 crash 可留 orphan；record commit 后 crash 在 restart 被 pending recovery
+恢复。这里不宣称 power-loss/OS/filesystem durability，也不加 fsync、transaction manager、
+第二个 Store 或 fresh-disk recovery。
+
+- accepted 前 parser/image/record failure：解锁并保留完整草稿，不插消息，不改
+  `committedTarget`，不触发 target/Runtime/Provider。
+- Stop 在 record commit 前生效：AbortSignal 在 pair 间、write 前、record 前检查；
+  cleanup 后用现有 `chat:error(cancelled)` 结束 accepting，草稿保留。
+- Stop 与 commit 竞速且 record 已提交：先 accepted，再 settle cancelled；不 resolve
+  target/Runtime/Provider。
+- New thread 先使 active session 失效并 abort，等待旧 operation，再 reset record；
+  record reset 成功后才删除 image directory。目录删除失败只留不可达 orphan；record
+  reset 失败则旧 record/files 保持可恢复。失效 session 不发迟到 accepted/error。
+- target bind write 失败发生在 accepted 后：不启动 Runtime/Provider，也不尝试新的
+  模糊 terminal write；Renderer 复用现有非 Retry `unknown` safe error 并提示重启，
+  restart 将 unbound pending 恢复成 retryable interrupted turn。
+
+### Stable image protocol 与 hydration
+
+- 在 `app.ready` 前注册 product scheme `nyx-image`，privileges 只有 `standard` 与
+  `secure`；显式禁用 Fetch API、CORS、CSP bypass、Service Worker、extensions 与
+  media stream。`protocol.handle` 在 ready 后使用 default session。
+- Authorization 只使用 handler 收到的 canonical Request：GET、exact scheme、host
+  `preview | full`、一个 UUID path segment、无 observable query。Chromium 已抹除的
+  raw port/case/fragment 是同一 identity；unknown id/host、traversal、query、non-GET
+  fail closed，credentials 在 handler 前失败。
+- Handler 每次 cache miss 从 current durable record 确认 id 仍被引用，再构造 main-only
+  deterministic path，拒绝 symlink/non-file/empty/oversized file，并用
+  `net.fetch(file:)` 的 `Response.body` streaming 返回。Measured path 不 `readFile`/
+  `arrayBuffer` full bytes；preview 固定返回 `image/png`，full 使用 durable ref MIME，
+  response 使用 immutable native-cache headers。
+- Snapshot 只返回 refs + availability，不返回 bytes/URL/path。Hydration 对每个 pair 做
+  bounded stat/header availability check；一张缺失只变 placeholder，不阻断文字/其他图。
+  Provider/Retry/继续对话需要任一 missing/corrupt full 时整体 fail closed，不静默省略。
+- Renderer 通过 shared URL builder 显示 preview；dialog 打开时 DOM 最多一个 full
+  `<img>`，close 后移除。Sent/hydrated images 不创建 Blob/object URL；E0F native cache
+  负责重复 open。New thread 清空 projection，image IDs 永不复用；逻辑删除不承诺
+  forensic secure erase。
+- Reconcile 只在 record 成功解析为已知 version 后删除未引用 pair/temp；record 不存在
+  可清整个 directory。malformed/unknown record 禁止 GC。
+
+这里不承诺同一进程内撤销一个 Renderer 已经渲染过的 immutable native-cache URL：
+New thread 会清 DOM、删除授权记录且 image id 永不复用，Renderer JS 仍不能读取 bytes；
+若旧 URL 被故意保留，它可能在该进程退出前再次显示。要求即时撤销将需要禁用 native
+cache 或增加 token/version owner，都会推翻 E0F 的内存路径，本实验不引入。
+
+### Provider、错误与 Runtime
+
+- Main-only Provider message 从 v3 record 构造；text-only 保持现有 string content。
+  含图 user 使用 text-first content array，随后按 refs 顺序追加
+  `{ type: 'image_url', image_url: { url: 'data:<mime>;base64,...' } }`；image-only
+  不制造空 text part。system/assistant 保持 string。
+- Provider build 用同一个 bounded canonical reader，顺序读取、复验并 materialize；
+  body/log/snapshot/error 不出现 path、image id、original filename 或 Base64 回显。
+- 现有 target 没有可信 capability，一律 `unknown` 并尝试。Image-bearing 400/413/415
+  映射为 v3-only safe retryable `content_rejected`；先 durable settle，再发 error，用户
+  可换 target Retry。Text-only 400 继续是现有 non-retryable `invalid_request`。
+- Runtime replay/start 只投影 `userContent`；image-only 传空字符串。Provider context
+  永远不从 OCaml state 反推，不改 OCaml type、action 或 NDJSON protocol。
+
+### Renderer 体验
+
+- 保留现有 textarea。上方增加紧凑 preview shelf 与一个 accessible attachment button，
+  触发 hidden native file input。Paste 只接管图片 items；drop 只有在包含支持图片时
+  prevent navigation。第 5 张或超限立即用 `aria-live` 说明。
+- Draft 状态只有 `preparing | ready | failed`。Preparing 显示 skeleton，不 decode
+  full source 到 DOM；ready 从 Worker preview bytes 建立一个 object URL；failed 保留
+  原 source 并显示 Retry/remove。每项有序号、状态和明确 remove button；不支持 reorder。
+- Send 条件为 trimmed text 或至少一张 image，且全部 draft ready。Enter/Shift+Enter/
+  IME 保持现状。Accepting 时草稿锁定且 Stop 可用；accepted 后才清该快照。Streaming
+  时仍可编辑下一轮草稿，但不能 Send。
+- User message 固定 text-first、preview grid second。Image-only sidebar title/preview 为
+  `Image`。Unavailable pair 使用固定 placeholder。点击 available preview 用原生
+  `<dialog>` 打开 stable full URL；Escape、focus return 与按钮 label 可访问。
+- Draft preview URL 在 remove、accepted、New thread、unmount、stale Worker result 和
+  error replacement 中恰好 revoke；sent/hydrated path 没有 Renderer URL cache/helper。
+
+### 实现切片与放行顺序
+
+`RC-V3-PLAN-03` 已 PASS，当前只解锁 E1；每片提交、验证、review 后才进入下一片：
+
+1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
+   snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
+2. **E2 — main import + accepted + protocol**：strict parser/validation、pair files、
+   orphan/reset、stable URL handler、availability、`chat:accepted` 与 Stop/New thread
+   commit boundary；不启用 UI ingress/Provider images。
+3. **E3 — Provider + Runtime projection**：main-only materialization、text body parity、
+   image array、`content_rejected`、Retry、empty text Runtime regressions。
+4. **E4 — Composer + thread UI**：Worker、picker/paste/drop、draft lifecycle、accepted
+   reducer、preview grid、dialog、placeholders；首次启用 product ingress。
+5. **E5 — full acceptance + docs**：自动和真实 target runthrough、combined product
+   memory、packaged protocol/Worker、restart/rollback，失败回到 owning slice。
+
+任何片都不得顺手加入 general Asset abstraction、new IPC namespace、dependency、
+utility process、contenteditable、capability policy 或 assistant rich output。
+
+### 必须留下的自动验证
+
+- v1/v2 byte-stable read、v1 text→v2、v2 text stays v2、first image→v3、v3 text stays
+  v3、unknown v4/malformed no-write/no-GC。
+- request/ref/pair parser 的 extra-field、UUID、ordering、budget、magic/header/decode、
+  exact PNG/JPEG metadata adversarial fixtures；Electron upgrade 改 ICC 时测试先失败。
+- image pair write/rename/record failure、cleanup double failure、crash orphan、reset order、
+  pending recovery、bind failure；accepted 绝不早于 record commit。
+- protocol canonical alias、unknown/query/host/traversal/non-GET/credentials、fetch/XHR/
+  canvas negative、path leak、native cache exact-once、restart revocation、`app.asar`。
+- text-only Provider body byte-for-byte parity；text+image/image-only/multi-turn ordering；
+  32 MiB bounded read/request build；safe error no Base64/path；target switch Retry no copy。
+- reducer pre-accepted failure retains draft/target/error state；accepted new/retry commit；
+  Stop before/after commit、New thread stale event、Worker stale result、all draft URL revokes。
+- packaged product 通过真实 E4 import handler 分别跑 4 张 ordinary 与单张 4K
+  high-entropy fixture，覆盖 picker/paste/drop 到 Worker 与 main validation：4 张 ready
+  ≤1.5 s、4K ready ≤1 s、heartbeat gap ≤50 ms、单张 main sync ≤250 ms、各自
+  whole-process peak delta ≤192 MiB。
+- product grid at 12 refs/24,883,200 pixels, max-image grid + one full dialog, and 32 MiB
+  Provider build while UI is mounted: open ≤500 ms、heartbeat ≤50 ms、main sync ≤250 ms、
+  whole-process peak delta ≤192 MiB，repeated full open post-close plateau 继续采用
+  E0F 16/8 MiB noise allowance。任一失败 E5 不完成。
+
+### Rollout 与 forward-only 边界
+
+这是个人本地应用，不建 feature flag、telemetry 或灰度系统。E1-E5 与真实 runthrough
+全过后才进入日常使用。一旦写入 v3，即使暂时移除新图片入口，也必须保留 v3 reader、
+protocol display、历史 Provider reconstruction、Retry、missing/corrupt fail-closed、
+safe error 与 orphan/reset；不能只保留“看得到图”却破坏继续对话。旧 binary 不承诺
+读取 future v3，回退通过 git/backup 明确处理，不伪装成双写兼容。
 
 ## v2.2 已完成修订：E0F canonical request identity 门禁
 
@@ -993,6 +1335,11 @@ mise run check
 - 2026-08-09 / v2.3：E0F identity、revocation、security、三次 memory 与
   `app.asar` gate 全部通过；独立 evidence review 在一次 packaged-source scoped
   repair 后 PASS。结果只进入 revised implementation plan，不直接解锁 E1-E5。
+- 2026-08-09 / v3.0：用 stable main-authorized URL 替换历史方案的
+  accepted/hydration bytes；把 `chat:accepted` 收窄为 durable identity handoff，
+  保留 current-thread v3、Worker canonicalization、main-only Provider materialization
+  与 text-only Runtime projection。`RC-V3-PLAN-03` 关闭三项有界 finding 后 PASS，
+  只解锁 E1。
 
 ## Convergence 记录
 
@@ -1039,5 +1386,12 @@ mise run check
 - Epoch 10 / E0F evidence：canonical identity/native cache、restart revocation、
   Renderer byte isolation、三次 memory 与 `app.asar` load 全部通过；独立 review
   在补足 packaged runtime marker 后 PASS。
-- 当前判断：feasibility direction 已成立，但旧 v1.8 E1-E5 仍是失效候选，方案
-  尚未 implementation-ready。下一步只允许修订 implementation plan 并独立 review。
+- Epoch 11 / v3.0 plan rewrite：重新沿当前 request、durable coordinator、Provider、
+  Runtime 与 Renderer reducer 链路核对 owner；删除 accepted/snapshot full bytes、
+  fresh recovery 与通用 Asset 倾向，形成 stable URL 的最小 E1-E5 候选。
+- Epoch 11 / `RC-V3-PLAN-02`：独立 full gate 判定方向正确但有 2 S1、1 S2
+  局部缺口。修订只保留 image-only 空 user compatibility entry、补 packaged real
+  import 性能门、把 source `File` 生命周期延长到 Worker ready；没有改 owner、协议、
+  容量或 scope。
+- 当前判断：v3.0 已通过独立 review 并 implementation-ready；只有 E1 可执行，
+  E2-E5 继续等待前置切片实现、验证与 review。

@@ -1,7 +1,8 @@
 # Context Composer Experiment Runthrough
 
-Status: E0 through E0E stopped; E0F passed bounded independent review; no E
-slice is executable; E1-E5 remain blocked pending a revised implementation plan.
+Status: E0 through E0E stopped; E0F passed bounded independent review; the v3.0
+implementation plan passed `RC-V3-PLAN-03`. E1 is executable; E2-E5 remain
+blocked by ordered prerequisites.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -11,7 +12,8 @@ preview-only grid, then failed the same line on its temporary full-open data
 path. E0E then failed its sealed exact-route security rule before memory
 measurement. E0F then proved the bounded canonical request/native-cache
 direction in OS temp. This is feasibility evidence, not product implementation
-permission or a frozen product protocol/capacity.
+permission or a frozen product protocol/capacity. The later reviewed v3.0 plan,
+not E0F by itself, selects the product constants and protocol for E1-E5.
 
 Probe date: 2026-08-09
 
@@ -394,9 +396,9 @@ full-image transport.
 
 The reviewed OS-temp harness and synthetic outputs were then deleted.
 
-E0D result: **STOP**. No count, cumulative-pixel, preview, product ICC, or
-transport value is frozen. E1-E5 remain blocked pending a new user-approved
-feasibility gate and review.
+E0D result: **STOP**. At this gate's conclusion no count, cumulative-pixel,
+preview, product ICC, or transport value was frozen, and E1-E5 remained blocked.
+Later E0F/v3.0 evidence and review supersede only the current execution status.
 
 ### E0E stable-asset URL security failure record
 
@@ -485,8 +487,9 @@ The reviewed OS-temp harness and synthetic outputs were then deleted.
 E0E result: **STOP**. Memory repetitions and `app.asar` were correctly not run.
 No capacity, ICC, preview, scheme, URL, or transport value is frozen. This
 rejects only E0E's sealed standard-scheme exact-route model; it does not prove
-all stable local URL directions infeasible. E1-E5 remain blocked pending a new
-user-approved feasibility gate and review.
+all stable local URL directions infeasible. At that point E1-E5 remained blocked
+pending a new user-approved feasibility gate and review; the current status is
+at the top of this document.
 
 ### E0F passed evidence record
 
@@ -581,9 +584,9 @@ the `app.asar` contents against the production build, and returned PASS.
 
 The reviewed OS-temp harness, generated images, profiles, and App bundle were
 then deleted. E0F result: **PASS**. This proves only the bounded feasibility
-direction in the recorded environment. Product protocol, shared/IPC contracts,
-capacity policy, ICC policy, and E1-E5 remain unfrozen until a revised
-implementation plan passes independent review.
+direction in the recorded environment. E0F itself did not freeze product
+protocol, shared/IPC contracts, capacity, or ICC policy; the later v3.0 plan made
+those choices and passed `RC-V3-PLAN-03`.
 
 ## Historical v1.8 candidate limits (status reference)
 
@@ -631,4 +634,4 @@ E0C result: **STOP**.
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
 - later E0F passed its bounded canonical-request/native-cache feasibility gate;
-  E1-E5 remain blocked until a revised implementation plan passes review
+  the reviewed v3.0 plan now makes E1 executable while E2-E5 remain ordered

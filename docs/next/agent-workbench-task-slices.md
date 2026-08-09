@@ -86,15 +86,14 @@ Use relative documentation links. Do not add local absolute paths.
   non-default explicit port before the standard custom-protocol handler, so its
   exact-route authorization rule could not reject the alias. User-approved
   `E0F` then passed post-normalization identity, native-cache revocation,
-  security, memory, and `app.asar` loading in OS temp. No E slice is currently
-  executable; `E1` through `E5` remain blocked until a revised implementation
-  plan passes independent review. No product capacity or protocol is frozen.
+  security, memory, and `app.asar` loading in OS temp. The later v3.0 plan passed
+  `RC-V3-PLAN-03`; E1 is now the only executable E slice and E2-E5 remain
+  ordered. E0F itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
-- The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
+- The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
-  permission. Any revised gate may change those details. It still may not
-  authorize product implementation or scope expansion before approval.
+  permission. Only the reviewed v3.0 plan and active named slice authorize work.
 
 ## A0: Scope Gate Docs
 
@@ -1564,8 +1563,8 @@ Do not:
 ## E Workstream: Context Composer Experiment
 
 Status: E0 through E0E stopped on 2026-08-09. E0F passed its bounded independent
-review on 2026-08-09. No E slice is currently executable; E1-E5 remain blocked
-until a revised implementation plan passes independent review.
+review on 2026-08-09. The v3.0 stable-image-URL plan passed `RC-V3-PLAN-03`;
+E1 is the only executable E slice and E2-E5 remain ordered and blocked.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1580,15 +1579,17 @@ standard-scheme shape. The user then approved policy A for E0F: authorize the
 canonical request identity delivered to the handler and treat syntactic
 spellings erased by Chromium as aliases of the same resource. The resulting
 OS-temp gate passed identity/cache reuse, revocation, security, memory, and
-packaged loading. This does not authorize product code or E1-E5. This document
-remains the higher-priority scope gate if a conflict appears.
+packaged loading. E0F alone did not authorize product code; the later reviewed
+v3.0 plan now authorizes E1 only. This document remains the higher-priority
+scope gate if a conflict appears.
 
-The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
-E1-E5 file and requirement lists below are failed historical candidate material.
-They are non-operative and are not implementation permission. The active E
-invariants are:
+The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and its old
+E1-E5 file and requirement lists are failed historical candidate material.
+They are non-operative and are not implementation permission. The rewritten
+E1-E5 sections near the end of this workstream describe the reviewed v3.0 plan.
+The active E invariants are:
 
-- E1-E5 remain blocked
+- E1 is executable; E2-E5 remain blocked by their ordered prerequisites
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -1598,9 +1599,10 @@ invariants are:
   a product protocol, shared contract, preload/IPC shape, or capacity policy
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
-- no product implementation or scope expansion is authorized
-- any continuation requires a revised user-approved implementation plan and
-  independent review
+- product implementation is authorized only inside the named active slice; no
+  scope expansion is authorized
+- v3.0 in the technical plan is the only current implementation plan and passed
+  independent review as `RC-V3-PLAN-03`
 
 Failure evidence is defined in
 [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md);
@@ -1859,7 +1861,9 @@ Observed result:
   `6e12136f051cf8ecb9cc74945391eb1076100c87cda2fd4c0a1399fe4e39768c`
   and returned `VALID_STOP`; the reviewed OS-temp harness was then deleted
 
-No capacity or product ICC allowlist is frozen. E1-E5 remain blocked.
+At E0C Stop, no capacity or product ICC allowlist was frozen and E1-E5 remained
+blocked. Later E0F/v3.0 evidence and review supersede only the current execution
+status recorded at the top of this workstream.
 
 Validation:
 
@@ -2209,10 +2213,7 @@ git diff --check
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked until a revised implementation plan passes independent review.
-
-The file list and requirements below are failed v1.8 historical candidate
-material, non-operative, and not implementation permission.
+Status: executable. E1 is the only permitted next E slice.
 
 Allowed files:
 
@@ -2220,7 +2221,6 @@ Allowed files:
 apps/desktop/shared/chat/types.ts
 apps/desktop/shared/chat/snapshot.ts
 apps/desktop/shared/contracts/desktop.ts only for required type propagation
-apps/desktop/electron/preload/index.ts only for required type propagation
 apps/desktop/electron/main/current-thread/schemas.ts
 apps/desktop/electron/main/current-thread/store.ts
 apps/desktop/electron/main/current-thread/session-coordinator.ts
@@ -2228,15 +2228,29 @@ apps/desktop/electron/main/current-thread/snapshot.ts
 corresponding near-source tests
 ```
 
-Required: add ordered `imageRefs`, Worker-canonical new-image bytes, accepted
-canonical bytes, image-only validation, stable Retry identity, and lazy v3
-migration. Keep v1/v2 stable reads byte-stable; upgrade only on the first
-image-bearing mutation; keep later text turns in v3; store no
-bytes/Base64/paths/original filenames in JSON; fail closed on malformed or
-unknown future records.
+Required:
 
-Do not implement file import, Provider mapping, Composer UI, a new bridge method
-or IPC channel, Connections changes, OCaml types, or text-only behavior changes.
+- add `NyxChatImageRef`, optional new-message refs/pair payload boundary types,
+  and user-message image availability projection without changing the existing
+  text-only compatibility message list
+- add current-thread v3 with required per-turn ordered refs; content may be empty
+  only when refs are non-empty; keep image identity stable across terminal
+  transitions and Retry and unique across the current thread
+- keep v1/v2 stable reads byte-stable; v1 text mutation/recovery still reaches
+  only v2, v2 text stays v2, first image-bearing mutation upgrades the complete
+  record to v3, and later v3 text turns carry empty refs
+- keep JSON free of bytes, URLs, paths, data URLs, original filenames, and
+  Renderer-declared byte sizes; malformed/unknown future records fail closed
+- update provider-history and snapshot pure projections for v3 refs; the
+  snapshot mapper accepts an explicit set of available ids and E1 passes an
+  empty set, so it performs no file IO. E2 wires the real bounded availability
+  result without adding a second snapshot model
+- preserve image-only turns as `{ role: 'user', content: '' }` in the pure
+  text compatibility history; cover next-turn, Retry, and hydration mapping
+
+Do not implement file import, `chat:accepted`, stable URLs, Provider mapping,
+Composer UI, a new bridge method/channel, Connections changes, OCaml types, or
+text-only behavior changes.
 
 Validation:
 
@@ -2251,10 +2265,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked until a revised implementation plan passes independent review.
-
-The file list and requirements below are failed v1.8 historical candidate
-material, non-operative, and not implementation permission.
+Status: blocked until E1 is implemented and reviewed.
 
 Allowed files:
 
@@ -2265,8 +2276,10 @@ apps/desktop/electron/main/current-thread/store.ts
 apps/desktop/electron/main/current-thread/file-adapter.ts
 apps/desktop/electron/main/current-thread/session-coordinator.ts
 apps/desktop/electron/main/current-thread/snapshot.ts
-one direct image helper under apps/desktop/electron/main/current-thread/
+apps/desktop/electron/main/current-thread/image-files.ts
+apps/desktop/electron/main/current-thread/image-protocol.ts
 apps/desktop/shared/chat/image-file.ts
+apps/desktop/shared/chat/image-url.ts
 apps/desktop/shared/chat/events.ts
 corresponding near-source tests
 ```
@@ -2274,30 +2287,38 @@ corresponding near-source tests
 Required:
 
 - validate request shape, UUID ids, byte budgets, PNG/JPEG magic, pre-decode
-  dimensions/pixels, decoded size, and MIME agreement
+  dimensions/pixels, decoded size, canonical/preview pair agreement, and MIME
+  agreement
 - keep one stateless shared byte parser for Renderer preflight and independent
   main validation; do not add a validator service or mutable cache
 - treat canonical payload as untrusted; use header parsing plus Electron
-  `nativeImage` decode for MIME/dimension agreement, reject metadata-bearing
-  PNG chunks, JPEG APP1-APP15/COM, and arbitrary/repeated/extended APP0;
-  allow at most the exact minimal JFIF APP0 shape with no thumbnail or arbitrary
-  payload only if production Worker fixtures prove it necessary, and do not
-  synchronously re-encode
-- write canonical files before the pending record and emit `chat:accepted` only
-  from `ChatSessionManager` after record commit
+  `nativeImage` decode for MIME/dimension agreement; accept only the v3.0 exact
+  PNG chunks and byte-equal JPEG JFIF/ICC evidence, and never synchronously
+  re-encode
+- write `.full` and `.preview` final files before the pending record; emit the
+  identity-only `chat:accepted` only from `ChatSessionManager` after record
+  commit and before target resolution
 - compose one current-thread image owner from `userData`; use it for coordinator
-  prepare/reset/reconcile and snapshot bounded reads without a second Store
-- keep snapshot hydration on the same bounded image read and return safe
-  unavailable descriptions without failing unrelated text/images
+  prepare/reset/reconcile, protocol routing, Provider reads, and snapshot
+  availability without a second Store
+- register `nyx-image` before ready with only standard+secure privileges; handle
+  exact canonical `preview|full` GET routes, authorize ids from the current
+  durable record, and stream `net.fetch(file:)` without Renderer/full userland
+  bytes or local paths
+- snapshot returns refs + pair availability only; no bytes/URL/path. Missing
+  pairs do not fail unrelated text/images, while Provider/Retry fail closed
 - use one local write contract: `rename` resolve is committed; reject leaves the
   final path unchanged; do no fallible work after record rename before returning
 - provide one main-only bounded image read that rejects symlinks, non-files,
-  empty/truncated/mismatched/oversized files
+  empty/truncated/mismatched/oversized files; protocol cache-miss serving uses
+  bounded stat/header checks plus native streaming rather than that full read
+- cover Stop before/after record commit, New thread reset-before-directory-delete,
+  orphan reconcile, target-bind write failure, and stale session suppression
 
-Do not add fsync/power-loss claims, a second Store, transaction manager,
-fresh-disk recovery, database, general Asset service, remote upload, another
-IPC, a codec dependency, `utilityProcess`, or Runtime/Provider side effects
-after failed prepare/bind.
+Do not add fsync/power-loss claims, cache/token manager, a second Store,
+transaction manager, fresh-disk recovery, database, general Asset service,
+remote upload, another IPC namespace, a codec dependency, `utilityProcess`, or
+Runtime/Provider side effects after failed prepare/bind.
 
 Validation:
 
@@ -2313,10 +2334,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked until a revised implementation plan passes independent review.
-
-The file list and requirements below are failed v1.8 historical candidate
-material, non-operative, and not implementation permission.
+Status: blocked until E1-E2 are implemented and reviewed.
 
 Allowed files:
 
@@ -2326,17 +2344,28 @@ apps/desktop/electron/main/chat/session.ts
 apps/desktop/shared/chat/types.ts
 apps/desktop/electron/main/current-thread/schemas.ts
 apps/desktop/electron/main/current-thread/session-coordinator.ts
+apps/desktop/electron/main/current-thread/image-files.ts
 apps/desktop/electron/main/current-thread/runtime-replay.ts
 corresponding near-source tests
 ```
 
-Required: preserve exact text-only wire shape; map image-bearing turns to
-text-first arrays and transient data URLs in `imageRefs` order; construct
-historical context from durable files and fail closed on unavailable refs; map
-image-bearing 400/413/415 to safe retryable `content_rejected`; switch target on
-Retry without copying files; add `content_rejected` once to the shared chat
-error code, v3 persisted safe-error schema/message, and coordinator settlement
-without changing v1/v2 schemas; project only `userContent` to OCaml.
+Required:
+
+- preserve the existing text-only Provider request byte-for-byte; derive every
+  image-bearing Provider message in main from the durable v3 record and the E2
+  bounded canonical reader
+- use a text-first content array followed by ordered transient data URLs;
+  image-only messages omit the empty text part, and missing/corrupt files fail
+  the whole build instead of silently dropping refs
+- add `content_rejected` once to the shared error codes and v3 safe-error
+  schema; map only image-bearing 400/413/415 to that retryable safe error, write
+  the terminal record before emitting it, and never expose Provider bodies,
+  Base64, ids, or paths
+- let target-switch Retry reuse the same refs/files without copy or rewrite;
+  retain current text-only 400 behavior
+- keep Runtime start/replay text-only, projecting exactly `userContent`; an
+  image-only turn projects the empty string and does not change OCaml types or
+  protocol
 
 Do not add capability inference/cache/registry, provider-specific parameters,
 remote upload, raw Provider errors, or any new OCaml message/type.
@@ -2355,10 +2384,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked until a revised implementation plan passes independent review.
-
-The file list and requirements below are failed v1.8 historical candidate
-material, non-operative, and not implementation permission.
+Status: blocked until E1-E3 are implemented and reviewed.
 
 Allowed files:
 
@@ -2370,19 +2396,34 @@ apps/desktop/src/ui/chat/chat-presenters.ts
 apps/desktop/src/ui/chat/image-canonicalizer.worker.ts
 apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
 apps/desktop/src/ui/chat/components/ChatComposer.tsx
+apps/desktop/src/ui/chat/components/ChatThread.tsx
 apps/desktop/src/ui/chat/components/ChatMessage.tsx
 corresponding near-source tests and existing chat styles
 ```
 
-Required: preserve the textarea; normalize picker/paste/drop into one draft
-path; use one lazy sandboxed Web Worker for `preparing → ready | failed`;
-transfer source/canonical buffers; support ordered previews/remove/image-only;
-allow Send only when all images are ready; retain the locked draft until
-`chat:accepted`; use canonical accepted/hydrated bytes for the message grid;
-discard stale Worker results; provide native dialog, missing placeholder,
-keyboard/`aria-live` behavior; and release every Worker, bitmap, buffer, and
-object URL on its terminal path. The historical candidate proposed testing the
-real product message grid at limits that E0B never froze.
+Required:
+
+- preserve the textarea and normalize picker/paste/drop images into one draft
+  path; ordinary text paste/drop retains browser behavior
+- use one lazy sandboxed Worker for `preparing -> ready | failed`; transfer
+  source/canonical/preview buffers, discard stale results, and release every
+  Worker, bitmap, buffer, and draft object URL on its terminal path
+- support ordered preview/remove and image-only Send; Send is enabled only when
+  all images are ready, and the captured draft remains visible and locked until
+  the identity-only `chat:accepted`
+- make accepted the reducer commit point: before it, failure retains draft,
+  target, and existing Retry error; after it, clear only the captured draft and
+  insert/update the turn. A streaming response may coexist with a new editable
+  draft, but that draft cannot Send
+- retain the original `File`/`Blob` only until Worker ready; failed drafts keep
+  it for Retry/remove, while ready drafts release it and retain only the two
+  outbound buffers plus preview URL. Do not retain bitmap/canvas/full DOM bytes
+- keep image-only user entries in the text compatibility mapper so next-turn,
+  Retry, and hydrated requests match main's durable history
+- use E2 stable preview/full URLs for sent and hydrated images, never accepted
+  or snapshot bytes and never a Renderer cache; render one native dialog with
+  at most one full image, an unavailable placeholder, focus return, keyboard
+  behavior, labels, and `aria-live` feedback
 
 Do not add contenteditable/rich text, drag sorting, crop/annotation/OCR, a
 global image cache, Worker pool/manager, third-party image/image-processing
@@ -2403,11 +2444,7 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked until a revised implementation plan passes independent review
-and E1-E4 are implemented.
-
-The file list and requirements below are failed v1.8 historical candidate
-material, non-operative, and not implementation permission.
+Status: blocked until E1-E4 are implemented and reviewed.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:
@@ -2419,14 +2456,29 @@ docs/next/agent-workbench-task-slices.md
 docs/next/context-composer-experiment-runthrough.md
 ```
 
-Required: prove text/image paths, Stop before/after commit, Retry/target switch,
-bind failure, restart/interrupted pending, New thread, orphan reconcile,
-missing/corrupt image, metadata removal, object URLs, text-only regression, and
-v3 behavior after disabling new ingress. The historical candidate proposed
-exercising the real product message grid at limits that E0B never froze.
-Complete one real target text+image and image-only run, use a second target for
-reject/switch/retry when available, and record exact redacted evidence without
-claiming unobserved behavior.
+Required:
+
+- prove text-only parity plus text+image, image-only, ordered multi-image,
+  hydration, missing/corrupt placeholder and fail-closed Provider/Retry paths
+- prove accepted ordering, failure-before-accept retention, Stop before/after
+  commit, bind failure, restart/interrupted pending, stale events, New thread
+  reset ordering, orphan reconcile, and every draft object-URL terminal path
+- rerun the protocol canonical-alias/security/JS-read/cache/restart-revocation
+  matrix and production Worker from the packaged app; evidence must bind the
+  running app to the reviewed build
+- through the real E4 import handler in that packaged product, run four ordinary
+  images and one high-entropy 4K image across picker/paste/drop -> Worker -> main
+  validation; record 4-image ready <=1.5 s, 4K ready <=1 s, heartbeat <=50 ms,
+  single-image main sync <=250 ms, and each whole-process peak delta <=192 MiB
+- mount the real product grid at 12 refs/24,883,200 full pixels, open the max
+  image in the single dialog, and build the 32 MiB Provider request concurrently;
+  require open <=500 ms, heartbeat <=50 ms, main sync <=250 ms, whole-process
+  peak delta <=192 MiB, and the E0F 16/8 MiB post-close plateau allowance
+- complete one real target text+image and image-only run; use a second target for
+  reject/switch/retry when available, and record exact redacted evidence without
+  claiming unobserved behavior
+- verify that disabling new image ingress still preserves v3 read/display,
+  historical Provider reconstruction, Retry, safe errors, and reset/reconcile
 
 Do not fix failed acceptance outside its owning E1-E4 boundary or broaden E into
 documents/remote files, general assets/parts, capability policy, assistant rich
