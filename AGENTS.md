@@ -86,7 +86,10 @@ whole-process memory stop line. E0D later proved the preview-only message grid
 but stopped because its temporary fresh-byte/Blob/object-URL full-open path
 exceeded the same memory line. Neither result is product implementation
 permission or proof that derived previews are generally infeasible. E1-E5
-remain blocked pending a new user decision; no capacity is currently frozen.
+remain blocked. The user approved only E0E: an OS-temp feasibility gate for one
+stable, main-authorized, opaque local image URL that streams a canonical file
+without sending JS-owned full bytes or paths through preload/IPC. No capacity is
+currently frozen.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -187,15 +190,16 @@ The candidate-limit table in
 `docs/next/context-composer-experiment-runthrough.md` is the status reference;
 no capacity limit of any kind is frozen.
 
-There is no executable E slice after E0D Stop. E1-E5 remain blocked, Electron
-main remains authoritative for validation, metadata policy, file IO, durable
-ownership, target resolution, Provider mapping, and safe errors, and no product
-implementation or scope expansion is authorized. Any continuation requires a
-new user-approved feasibility gate.
+E0E is the only executable E slice after E0D Stop. It may use only an OS-temp
+production-shape harness to test a stable opaque custom-scheme URL mapped and
+served by Electron main. E1-E5 remain blocked, Electron main remains
+authoritative for validation, metadata policy, file IO, durable ownership,
+target resolution, Provider mapping, and safe errors, and no product
+implementation or scope expansion is authorized.
 
-E0, E0B, E0C, and E0D failure evidence is recorded in
-`docs/next/context-composer-experiment-runthrough.md`. E1 through E5 remain
-blocked pending a new user decision and reviewed gate.
+E0 through E0D failure evidence and the pending E0E evidence contract are
+recorded in `docs/next/context-composer-experiment-runthrough.md`. E1 through E5
+remain blocked until E0E passes and the plan completes review.
 
 This fifth workstream does not authorize PDF/doc/audio/video input, remote file
 upload, a general Asset service, arbitrary content parts, capability inference

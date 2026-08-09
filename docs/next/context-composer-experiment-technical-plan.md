@@ -1,17 +1,18 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: Blocked after E0D evidence — E0/E0B/E0C/E0D STOP, user decision required
+> Status: E0E stable-asset URL gate authorized; evidence and independent review pending
 >
 > Plan ID: `context-composer-exp-01`
 >
-> v2.0 E0D 已停止，不再授权继续取证或产品实现。v1.9 E0C 与其余
-> v1.8 正文是失败的历史候选与证据记录，不是当前实现方案或 scope 授权。
+> v2.1 只授权下述 E0E 临时证据门，不授权产品实现。v2.0 E0D、v1.9
+> E0C 与其余 v1.8 正文是失败的历史候选与证据记录，不是当前实现方案或
+> scope 授权。
 > Worker/JPEG/allowlist、全部容量数值以及 E1-E5 的切片和文件清单均不
 > 生效，也不构成实现许可。
 >
-> 当前生效约束：没有 executable E slice；E1-E5 blocked；未来方案仍由
-> Electron main 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有
-> 冻结任何容量限制；状态以
+> 当前生效约束：只有 E0E 可执行；E1-E5 blocked；未来方案仍由 Electron
+> main 权威验证并持有 durable state；不得开始产品实现或扩大 scope。没有冻结
+> 任何容量限制；状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
 >
@@ -19,6 +20,70 @@
 > arm64 与已记录的 synthetic fixtures：OS-temp production-shape Vite
 > Worker harness 的静态 Worker 在 dev、build、`app.asar` 加载，但 synthetic
 > JPEG 输出 ICC APP2，触发 v1.8 候选 allowlist 的拒绝条件。
+
+## v2.1 生效修订：E0E 稳定、main 授权的图片 URL 门禁
+
+用户在 2026-08-09 批准推荐方向。E0E 只验证一个问题：E0D 已证明 derived
+preview grid 可行后，能否让 full view 使用稳定、opaque、main-authorized 的本地
+URL，从而避免每次 open 都通过 preload/IPC 创建 JS-owned full typed array、Blob
+和 object URL，并保持既有安全与 +192 MiB 内存线。
+
+### Owner、身份与生命周期
+
+- 核心实体只有 prepared image file 与 opaque asset id；一份 immutable file
+  只有一个 process-lifetime stable URL
+- Electron main 单独持有 id → validated file record；Renderer 只看到 URL、MIME、
+  safe dimensions 和 label，不看到 path、map 或 JS-owned full bytes
+- probe-only scheme `nyx-e0e-asset` 在 `app.ready` 前只注册 `standard`、`secure`；
+  不启用 CSP bypass、Service Worker、Fetch API、CORS、extension 或 media stream
+- handler 只接受 exact host、单段 opaque id、无 query/credentials/port 的 GET；
+  unknown、traversal 或其他 method 返回 generic 404/405
+- authorized file 由 `net.fetch(file:)` 流入一个 streaming `Response`；measured
+  path 不调用 `readFile`/`arrayBuffer`，不构造 full Buffer/typed array，不创建 Blob
+
+该 scheme 名、URL shape、map 和 handler 都是 OS-temp evidence plumbing，不是
+product protocol、shared type、preload method、persisted schema 或 migration 选择。
+未来 owner 仍是 current-thread main durable state；E0E 不提前实现它。
+
+### 为什么只测这一条路
+
+- Renderer 缓存 object URL 仍需要 JS-owned full bytes，并把释放策略移到 UI；不测
+- `file:` URL 暴露本地路径并绕过 main authorization；拒绝
+- data URL/Base64 增加复制与常驻体积；拒绝
+- token service、Asset service、Service Worker 或 general cache 都超出本问题；不建
+
+### E0E 可证伪矩阵
+
+1. 在 OS temp 重建最小 Electron/Vite harness，保持 default session、sandbox、
+   context isolation 和 no Node integration。准备一张 3840×2160、7.5-8 MiB
+   canonical 与八张 1920×1080 image，并为九张图各准备一个 max-edge 512 PNG
+   preview；所有 file 在 measurement 前由 main 注册。
+2. Security run 必须证明：authorized `<img>` 可加载；Renderer 不能通过任何 JS API
+   读取 bytes，至少 `fetch` 与 `XMLHttpRequest` 都失败，canvas readback 被
+   cross-origin 阻断；三者任一成功即 Stop。unknown id、query、credentials/port、
+   encoded traversal、wrong host、non-GET fail closed；surface/error/log 不出现 path。
+3. Production build 必须加载协议与图片。只有 security/memory 尚未 Stop 时才打包
+   `app.asar` 并跑 smoke；没跑不得沿用 E0B 结果代替。
+4. 三个 fresh production-build process 分别先挂载九个 stable preview URL，await
+   decode/load/error、两帧与 settled，再取 500 ms baseline。随后用同一个 stable 4K
+   URL open/close 三次；每次只允许一个 full DOM node，close 后 remove 并等 500 ms，
+   取最后 200 ms sample 的 post-close working-set median。
+5. 每 20 ms 采 main+Renderer+Worker/GPU whole-process working set；记录每次 open、
+   heartbeat、main sync、handler hits、URL equality、post-close working set 与 live full
+   count。固定线沿用 open ≤500 ms、heartbeat ≤50 ms、main sync ≤250 ms、每个
+   process peak delta ≤192 MiB。首轮 warm-up 后必须 plateau：second、third
+   post-close median 各自不得高于 first 16 MiB，third 不得高于 second 8 MiB。
+
+16/8 MiB 都严格小于一帧 4K RGBA，只是 plateau noise allowance，不是产品内存
+预算。若 stable URL 仍超过 peak line、首轮后继续增长、安全隔离失败，或需要
+cache/service/token manager/new product IPC/dependency 才成立，E0E Stop；不得在
+门禁内换 transport。
+
+### 验证与 handoff
+
+计划只允许五份 docs tracked change，probe 全部留在 OS temp。sanitized harness
+保留到一次绑定的 independent strict review，之后删除。E0E 全部 PASS 也只能回到
+技术方案收敛，不能直接解锁历史 E1-E5。
 
 ## v2.0 历史修订：E0D 派生预览与按需原图门禁（已停止）
 
@@ -824,6 +889,8 @@ mise run check
 - 2026-08-09 / E0D evidence：preview grid 三次均低于 +46 MiB，但临时
   fresh-byte/Blob/object-URL full-open 路径达到 +271.047 MiB。独立审查判定
   `VALID_STOP`；不冻结容量、preview 常量或 product transport。
+- 2026-08-09 / v2.1：用户批准 E0E，只验证 main-authorized stable opaque URL；
+  不批准 Renderer full-byte cache、file URL、Asset service 或 product protocol。
 
 ## Convergence 记录
 
@@ -860,5 +927,7 @@ mise run check
   service、virtualization、多级 preview 或 product implementation。
 - Epoch 6 / E0D evidence：preview-only grid 方向成立，但 sealed temporary
   full-open path 超出内存线。reviewer 判定为有效 Stop，并要求只做路径级结论。
-- 当前判断：方案不是 implementation-ready；没有 executable E slice。
-  E1-E5 blocked，等待用户决定是否以新的 full-image transport/lifetime 门禁继续。
+- Epoch 7 / user decision：用户批准 E0E stable main-authorized asset URL gate，
+  只在 OS temp 证明 security、lifetime 与 memory，不选 product contract。
+- 当前判断：只有 E0E 可继续取证，方案仍不是 implementation-ready。
+  E1-E5 blocked；E0E 任一 Stop 条件出现时返回用户决策。

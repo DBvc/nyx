@@ -1,20 +1,23 @@
 # Context Composer Experiment Runthrough
 
-Status: E0, E0B, E0C, and E0D stopped; E1-E5 blocked; a new user decision is
-required.
+Status: E0 through E0D stopped; E0E stable-asset URL gate authorized; evidence
+pending; E1-E5 blocked.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
 No capacity limit or product ICC allowlist is frozen. E0C proved an exact ICC
 candidate but failed the full-image visible-DOM memory line. E0D proved the
 preview-only grid, then failed the same line on its temporary full-open data
-path. This is not product implementation permission.
+path. User-approved E0E tests one stable opaque URL authorized and served by
+Electron main. This is not product implementation permission.
 
 Probe date: 2026-08-09
 
 E0C plan baseline: `d25ea7a`
 
 E0D plan baseline: `cef901b`
+
+E0E plan baseline: `dba1a14`
 
 Plan: [context-composer-experiment-technical-plan.md](./context-composer-experiment-technical-plan.md)
 
@@ -391,6 +394,42 @@ E0D result: **STOP**. No count, cumulative-pixel, preview, product ICC, or
 transport value is frozen. E1-E5 remain blocked pending a new user-approved
 feasibility gate and review.
 
+### E0E pending evidence contract
+
+E0E reopens only E0D's full-open transport/lifetime assumption. A probe-only
+standard+secure custom scheme maps one stable opaque URL to one main-authorized
+immutable local file. Renderer receives display metadata and URLs only; it must
+not receive a JS-owned full typed array, Buffer, local path, raw file error,
+Blob, or object URL through preload/IPC.
+
+The protocol keeps Fetch API, CORS, CSP bypass, Service Workers, extensions, and
+media streaming privileges disabled. Security evidence must prove authorized
+`<img>` loading while Renderer cannot read bytes through any JS API. At minimum,
+`fetch` and `XMLHttpRequest` must fail and canvas readback must be cross-origin
+blocked; any success stops the gate. Exact GET/host/single-id routes pass and
+unknown id, query, credentials/port, wrong host, encoded traversal, and non-GET
+shapes fail closed without a path leak. The handler must stream
+`net.fetch(file:)` into `Response.body` without a userland full-file read or
+buffer.
+
+The measured maximum-image dataset remains one 3840×2160 near-boundary 7.5-8
+MiB canonical plus eight distinct 1920×1080 images, with one max-edge 512 PNG
+preview each. Three fresh production-build processes mount nine stable preview
+URLs before a 500 ms baseline, then open/close the same stable 4K URL three times
+with one full DOM node at most and 500 ms post-close waits. Each post-close value
+is the median over the final 200 ms. Main samples the whole process group every
+20 ms.
+
+Each open must be ≤500 ms, heartbeat ≤50 ms, main sync ≤250 ms, and each
+fresh-process peak delta ≤192 MiB. Third post-close working set may be no more
+than 16 MiB above first post-close, second may be no more than 16 MiB above
+first, and third may be no more than 8 MiB above second. These plateau allowances
+are strictly below one 4K RGBA frame. Security failure, path/full-byte exposure,
+memory failure, or need for a service/cache/token manager/product code, IPC, or
+dependency stops E0E. Production build is required; `app.asar` smoke runs only
+if the earlier gates pass. No capacity, ICC, preview, scheme, or transport value
+is frozen before the full matrix and independent review pass.
+
 ## Historical v1.8 candidate limits (status reference)
 
 This is the status reference for v1.8's historical candidate values. No
@@ -436,5 +475,5 @@ E0C result: **STOP**.
 - independent strict review returned `VALID_STOP`; no local harness repair or
   third capacity candidate is authorized
 - no capacity limit is frozen; Plan-First `review-ready` was not run
-- E0D also returned `VALID_STOP`; E1-E5 remain blocked pending a new
-  user-approved direction and reviewed gate
+- user-approved E0E may test the stable main-authorized URL direction recorded
+  above; E1-E5 remain blocked until that gate and review pass

@@ -82,8 +82,10 @@ Use relative documentation links. Do not add local absolute paths.
   8×1080p grids exceeded the fixed whole-process memory line. User-approved
   `E0D` proved the preview-only grid, then stopped when its temporary
   fresh-byte/Blob/object-URL full-open path exceeded the same line. No E slice is
-  executable; `E1` through `E5` remain blocked pending a new user decision. No
-  capacity limit or product ICC allowlist is frozen. Evidence is recorded in
+  implemented. User-approved `E0E` is the only executable slice and tests a
+  stable, main-authorized opaque local URL in OS temp only. `E1` through `E5`
+  remain blocked. No capacity limit or product ICC allowlist is frozen. Evidence
+  is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The v1.8 PNG/JPEG/Worker design and E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
@@ -1557,17 +1559,18 @@ Do not:
 
 ## E Workstream: Context Composer Experiment
 
-Status: E0, E0B, E0C, and E0D stopped on 2026-08-09. There is no executable E
-slice; E1-E5 remain blocked pending a new user decision.
+Status: E0, E0B, E0C, and E0D stopped on 2026-08-09. E0E is the only executable
+E slice; E1-E5 remain blocked.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
 whole-process memory stop line. E0D then proved the preview-only grid but stopped
 when its temporary full-open path copied fresh bytes through IPC into a new Blob
 and object URL on each open and exceeded the same line. This narrow result does
-not disprove derived previews or select a product transport. It does not
-authorize product code or E1-E5. This document remains the higher-priority scope
-gate if a conflict appears.
+not disprove derived previews or select a product transport. The user then
+approved only E0E: an OS-temp gate for a stable opaque URL authorized and served
+by main. It does not authorize product code or E1-E5. This document remains the
+higher-priority scope gate if a conflict appears.
 
 The v1.8 Worker/JPEG/allowlist design, capacity values, stop lines, and all
 E1-E5 file and requirement lists below are failed historical candidate material.
@@ -1577,6 +1580,8 @@ invariants are:
 - E1-E5 remain blocked
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
+- E0E may test only a stable opaque custom-scheme URL; it may not add a product
+  protocol, shared contract, preload/IPC method, cache, or Asset service
 - Electron main remains authoritative for validation, metadata policy, file IO,
   durable ownership, target resolution, Provider mapping, and safe errors
 - no product implementation or scope expansion is authorized
@@ -1955,11 +1960,101 @@ mise run desktop:format-check
 git diff --check
 ```
 
+## E0E: Stable Main-Authorized Asset URL Feasibility
+
+Type: temporary Electron custom-protocol security/memory probe and plan/docs
+evidence only.
+
+Status: authorized by the user on 2026-08-09; evidence and independent review
+pending. E0E is not product implementation permission.
+
+Allowed tracked files:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/context-composer-experiment-technical-plan.md
+docs/next/context-composer-experiment-runthrough.md
+```
+
+Required:
+
+- recreate a minimal OS-temp production-shape Electron/Vite harness with the
+  current default session, sandbox/context isolation, no production Renderer
+  imports, no product code, no new dependency, and synthetic images
+- register one probe-only standard and secure scheme before `app.ready`; do not
+  enable CSP bypass, Service Workers, Fetch API support, CORS, extensions, or
+  streaming-media privileges
+- give each prepared file one immutable opaque id and one stable URL shaped like
+  `nyx-e0e-asset://full/<opaque-id>`; the name is evidence plumbing, not a
+  product naming or contract decision
+- keep an Electron-main-only id-to-file map; Renderer may receive only stable
+  URLs, MIME, safe dimensions, and display labels, never full JS-owned bytes,
+  local paths, raw file errors, or map contents through preload/IPC
+- validate and register synthetic files before measurement; the protocol handler
+  must accept only `GET`, the exact host and one opaque-id path segment, reject
+  query/credentials/port/unknown/encoded traversal shapes, and return generic
+  404/405 responses without path disclosure
+- serve an authorized immutable file with Electron `net.fetch(file:)` and a
+  streaming `Response` body; do not call `arrayBuffer()`, `readFile`, create
+  a full userland Buffer/typed array, or create a Renderer Blob/object URL in the
+  measured path
+- prove one authorized image loads as `<img>`, Renderer cannot read its bytes
+  through any JS API, and at minimum both `fetch` and `XMLHttpRequest` fail while
+  canvas readback is cross-origin blocked; any successful JS byte-read stops the
+  gate. Unauthorized URL variants must fail closed, and the stable URL must not
+  reveal the local file path
+- build the production harness and, only if the security/memory gate has not
+  stopped, load one authorized image from `app.asar` packaging
+- prepare the E0D maximum-image shape: one 3840×2160 near-boundary 7.5-8 MiB
+  canonical image plus eight distinct 1920×1080 images, each with one
+  aspect-preserving PNG preview whose maximum edge is 512 px
+- in each fresh production-build Electron process, mount the nine stable preview
+  URLs, await decode/load/error and two animation frames, then take a 500 ms
+  whole-process baseline before opening the same stable 4K URL
+- open, close, and reopen the one 4K image three times, never hold two full DOM
+  images, never change its URL, wait 500 ms after each close, and record the
+  median post-close working set over the final 200 ms plus protocol handler
+  request count
+- repeat the fresh full-open scenario three times; sample
+  main+Renderer+Worker/GPU whole-process working set every 20 ms and record
+  baseline/peak/delta, each open time, heartbeat gap, main synchronous segment,
+  handler hits, stable URL equality, post-close values, and live full-image count
+- retain the sanitized harness and synthetic files through one bound independent
+  review, then delete them and keep only redacted evidence in the runthrough
+
+Fixed stop lines: security cases fail closed; Renderer cannot JS-fetch or canvas
+read back the full image through fetch, XHR, canvas, or another observed JS byte
+path; no local path/full IPC bytes/Blob URL appear; heartbeat gap ≤50 ms; main
+synchronous segment ≤250 ms; each 4K open ready ≤500 ms; every fresh-process
+whole-process peak delta ≤192 MiB. After the first-open warm-up, post-close
+working set must plateau: second and third post-close medians are each no more
+than 16 MiB above the first, and the third is no more than 8 MiB above the
+second. Both noise allowances are strictly below one 4K RGBA frame and are leak
+stop lines, not product budgets.
+
+Stop instead of widening E0E if the protocol exposes JS-readable bytes or paths,
+authorization is ambiguous, any fixed line fails, safe use requires a token
+service/cache/service worker/range transport/new dependency/product code or IPC,
+or a different ownership model. Do not test another transport inside E0E.
+
+Validation:
+
+```sh
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
 ## E1: Image Refs And Current-Thread V3
 
 Type: shared chat contract and current-thread schema/migration only.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0E evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2001,7 +2096,7 @@ mise run desktop:test
 
 Type: Electron-main validation, canonical storage, and acceptance lifecycle.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0E evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2063,7 +2158,7 @@ mise run desktop:test
 Type: existing OpenAI-compatible mapping, safe errors, and text-only Runtime
 projection.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0E evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2105,7 +2200,7 @@ mise run runtime:chat-state:check
 
 Type: bounded Renderer interaction and projection.
 
-Status: blocked pending a new user-approved feasibility gate and review.
+Status: blocked until E0E evidence and the revised plan pass independent review.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
@@ -2153,8 +2248,8 @@ mise run desktop:build
 
 Type: acceptance verification and documentation sync.
 
-Status: blocked pending a new user-approved feasibility gate and review, and
-E1-E4 are implemented.
+Status: blocked until E0E evidence and the revised plan pass independent review,
+and E1-E4 are implemented.
 
 The file list and requirements below are failed v1.8 historical candidate
 material, non-operative, and not implementation permission.
