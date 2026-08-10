@@ -1,4 +1,5 @@
 import type {
+  NyxChatDocumentRef,
   NyxChatError,
   NyxChatImageRef,
   NyxChatInputMessage,
@@ -12,7 +13,7 @@ import type {
   NyxCurrentThreadSnapshot,
   NyxCurrentThreadSnapshotError,
 } from '../../../shared/chat/snapshot'
-import type { ChatImageDraft, ChatState } from './chat-types'
+import type { ChatDocumentDraft, ChatImageDraft, ChatState } from './chat-types'
 import { initialChatState } from './chat-types'
 
 type ChatAction =
@@ -54,6 +55,31 @@ type ChatAction =
   | {
       type: 'draft-image-removed'
       imageId: string
+    }
+  | {
+      type: 'draft-documents-added'
+      documents: ReadonlyArray<ChatDocumentDraft>
+    }
+  | {
+      type: 'draft-document-preparing'
+      documentId: string
+    }
+  | {
+      type: 'draft-document-ready'
+      documentId: string
+      document: Omit<NyxChatDocumentRef, 'documentId'>
+      sourceBytes: Uint8Array
+      extractedTextBytes: Uint8Array
+      extractedFromSha256: string
+    }
+  | {
+      type: 'draft-document-failed'
+      documentId: string
+      error: string
+    }
+  | {
+      type: 'draft-document-removed'
+      documentId: string
     }
   | {
       type: 'composer-notice-changed'
@@ -213,6 +239,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         messages: action.snapshot.messages.map((message) => ({
           ...message,
           ...(message.images ? { images: message.images.map((image) => ({ ...image })) } : {}),
+          ...(message.documents
+            ? { documents: message.documents.map((document) => ({ ...document })) }
+            : {}),
           ...(message.error ? { error: { ...message.error } } : {}),
           ...(message.targetAttribution
             ? { targetAttribution: { ...message.targetAttribution } }
@@ -228,6 +257,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                   ? {
                       imageRefs: action.snapshot.retryableTurn.turnUserMessage.imageRefs.map(
                         (imageRef) => ({ ...imageRef }),
+                      ),
+                    }
+                  : {}),
+                ...(action.snapshot.retryableTurn.turnUserMessage.documentRefs
+                  ? {
+                      documentRefs: action.snapshot.retryableTurn.turnUserMessage.documentRefs.map(
+                        (documentRef) => ({ ...documentRef }),
                       ),
                     }
                   : {}),
@@ -342,6 +378,89 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         composerError: null,
       }
 
+    case 'draft-documents-added':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftDocuments: [...state.draftDocuments, ...action.documents],
+        composerError: null,
+      }
+
+    case 'draft-document-preparing':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftDocuments: state.draftDocuments.map((document) =>
+          document.id === action.documentId && document.status === 'failed'
+            ? {
+                id: document.id,
+                name: document.name,
+                mediaType: document.mediaType,
+                status: 'preparing',
+                source: document.source,
+              }
+            : document,
+        ),
+        composerError: null,
+      }
+
+    case 'draft-document-ready':
+      return {
+        ...state,
+        draftDocuments: state.draftDocuments.map((document) =>
+          document.id === action.documentId && document.status === 'preparing'
+            ? {
+                id: document.id,
+                name: document.name,
+                mediaType: document.mediaType,
+                status: 'ready',
+                source: null,
+                document: action.document,
+                sourceBytes: action.sourceBytes,
+                extractedTextBytes: action.extractedTextBytes,
+                extractedFromSha256: action.extractedFromSha256,
+              }
+            : document,
+        ),
+      }
+
+    case 'draft-document-failed':
+      return {
+        ...state,
+        draftDocuments: state.draftDocuments.map((document) =>
+          document.id === action.documentId && document.status === 'preparing'
+            ? {
+                id: document.id,
+                name: document.name,
+                mediaType: document.mediaType,
+                status: 'failed',
+                source: document.source,
+                error: action.error,
+              }
+            : document,
+        ),
+        composerNotice: action.error,
+      }
+
+    case 'draft-document-removed':
+      if (isComposerLocked(state)) {
+        return state
+      }
+
+      return {
+        ...state,
+        draftDocuments: state.draftDocuments.filter(
+          (document) => document.id !== action.documentId,
+        ),
+        composerError: null,
+      }
+
     case 'composer-notice-changed':
       return {
         ...state,
@@ -422,6 +541,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           targetSelection: action.targetSelection,
           capturedInput: state.input,
           capturedDraftImageIds: state.draftImages.map((image) => image.id),
+          capturedDraftDocumentIds: state.draftDocuments.map((document) => document.id),
           userMessage: action.userMessage,
           assistantMessage: action.assistantMessage,
         },
@@ -463,11 +583,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
 
       const capturedImageIds = new Set(activeTurn.capturedDraftImageIds)
+      const capturedDocumentIds = new Set(activeTurn.capturedDraftDocumentIds)
 
       return {
         ...state,
         input: state.input === activeTurn.capturedInput ? '' : state.input,
         draftImages: state.draftImages.filter((image) => !capturedImageIds.has(image.id)),
+        draftDocuments: state.draftDocuments.filter(
+          (document) => !capturedDocumentIds.has(document.id),
+        ),
         activeTurn: { ...activeTurn, accepted: true },
         committedTarget: { ...activeTurn.targetSelection },
         retryableTurn: null,
@@ -590,6 +714,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           targetSelection: action.targetSelection,
           capturedInput: '',
           capturedDraftImageIds: [],
+          capturedDraftDocumentIds: [],
         },
         composerError: null,
       }

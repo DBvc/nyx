@@ -2972,6 +2972,7 @@ document text, allowed tracked files are exactly:
 ```text
 apps/desktop/package.json
 pnpm-lock.yaml
+apps/desktop/electron-builder.config.mjs
 apps/desktop/electron/main/chat/client.ts
 apps/desktop/electron/main/chat/client.test.ts
 apps/desktop/src/styles/index.css
@@ -2997,7 +2998,10 @@ The five S0 documentation files and the D1 file list remain allowed. Add only
 the exact `pdfjs-dist` version proven by G1. D2 owns the feature-local Worker,
 picker/drop draft and cards, accepted-only clearing, local text materialization,
 safe attachment errors, deterministic Stop races, and the real packaged
-resource gate. Any need for a new protocol, IPC namespace, generic attachment
+resource gate. The user approved the one-file packaging amendment on 2026-08-10:
+the existing electron-builder `files` owner must exclude PDF.js's unused optional
+Node canvas packages from the Renderer-only product path. Any need for a new
+protocol, IPC namespace, generic attachment
 abstraction, or file outside these lists is a Stop.
 
 ### document-attachments/D3: Product acceptance and status

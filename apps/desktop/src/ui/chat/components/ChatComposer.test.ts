@@ -1,13 +1,20 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentProps } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { ChatComposer, isSupportedComposerImageType, shouldSendComposerKey } from './ChatComposer'
+import {
+  ChatComposer,
+  isSupportedComposerDocumentName,
+  isSupportedComposerImageType,
+  routeDroppedComposerFiles,
+  shouldSendComposerKey,
+} from './ChatComposer'
 
 const defaultProps: ComponentProps<typeof ChatComposer> = {
   input: 'Hello',
   draftImages: [],
+  draftDocuments: [],
   isBusy: false,
   isAccepting: false,
   canSend: true,
@@ -27,9 +34,12 @@ const defaultProps: ComponentProps<typeof ChatComposer> = {
   targetStatus: null,
   targetValue: 'target-1',
   onAddImages: () => undefined,
+  onAddDocuments: () => undefined,
   onInputChange: () => undefined,
   onRemoveImage: () => undefined,
+  onRemoveDocument: () => undefined,
   onRetryImage: () => undefined,
+  onRetryDocument: () => undefined,
   onTargetChange: () => undefined,
   onSend: () => undefined,
   onStop: () => undefined,
@@ -93,6 +103,38 @@ describe('isSupportedComposerImageType', () => {
     ['text/plain', false],
   ])('maps %s to %s', (type, expected) => {
     expect(isSupportedComposerImageType(type)).toBe(expected)
+  })
+})
+
+describe('isSupportedComposerDocumentName', () => {
+  it.each([
+    ['notes.txt', true],
+    ['README.MD', true],
+    ['table.csv', true],
+    ['report.pdf', true],
+    ['archive.zip', false],
+  ])('maps %s to %s', (name, expected) => {
+    expect(isSupportedComposerDocumentName(name)).toBe(expected)
+  })
+})
+
+describe('routeDroppedComposerFiles', () => {
+  it('does not route an image-only drop through the document limit path', () => {
+    const onAddImages = vi.fn()
+    const onAddDocuments = vi.fn()
+    const image = new File(['image'], 'image.png', { type: 'image/png' })
+
+    expect(routeDroppedComposerFiles([image], onAddImages, onAddDocuments)).toBe(true)
+    expect(onAddImages).toHaveBeenCalledWith([image])
+    expect(onAddDocuments).not.toHaveBeenCalled()
+  })
+
+  it('forwards every selected document so the one-document limit is explicit', () => {
+    const onAddDocuments = vi.fn()
+    const documents = [new File(['a'], 'a.txt'), new File(['b'], 'b.pdf')]
+
+    expect(routeDroppedComposerFiles(documents, vi.fn(), onAddDocuments)).toBe(true)
+    expect(onAddDocuments).toHaveBeenCalledWith(documents)
   })
 })
 
@@ -265,6 +307,44 @@ describe('ChatComposer', () => {
     expect(markup).toContain('Couldn’t prepare')
     expect(markup).toContain('aria-label="Retry attachment 3"')
     expect(markup).toContain('aria-label="Remove attachment 1"')
+  })
+
+  it('renders compact ready and failed document drafts', () => {
+    const markup = renderComposer({
+      draftDocuments: [
+        {
+          id: 'ready-document',
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          status: 'ready',
+          source: null,
+          document: {
+            name: 'notes.txt',
+            mediaType: 'text/plain',
+            byteLength: 2048,
+            extractedByteLength: 20,
+          },
+          sourceBytes: new Uint8Array([1]),
+          extractedTextBytes: new Uint8Array([2]),
+          extractedFromSha256: 'a'.repeat(64),
+        },
+        {
+          id: 'failed-document',
+          name: 'report.pdf',
+          mediaType: 'application/pdf',
+          status: 'failed',
+          source: new File(['bad'], 'report.pdf'),
+          error: 'Nyx could not read this PDF.',
+        },
+      ],
+    })
+
+    expect(markup).toContain('aria-label="Attached documents"')
+    expect(markup).toContain('notes.txt')
+    expect(markup).toContain('Text · 2 KB')
+    expect(markup).toContain('Nyx could not read this PDF.')
+    expect(markup).toContain('aria-label="Retry document 2"')
+    expect(markup).toContain('aria-label="Remove document 1"')
   })
 
   it('locks the captured Composer while waiting for accepted', () => {

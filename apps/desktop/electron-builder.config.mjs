@@ -77,7 +77,14 @@ export default {
   directories: {
     output: `dist/mac-${packageFlavor}`,
   },
-  files: ['out/main/**/*', 'out/preload/**/*', 'out/renderer/**/*', 'package.json'],
+  files: [
+    'out/main/**/*',
+    'out/preload/**/*',
+    'out/renderer/**/*',
+    'package.json',
+    '!node_modules/@napi-rs/canvas{,/**/*}',
+    '!node_modules/@napi-rs/canvas-*/**/*',
+  ],
   extraResources: [
     {
       from: '.package-resources/runtime/nyx-runtime',

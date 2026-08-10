@@ -85,6 +85,26 @@ describe('chat presenters', () => {
     expect(threadPreview([imageOnly])).toBe('Image')
   })
 
+  it('uses the filename for document-only thread summaries', () => {
+    const documentOnly = message({
+      role: 'user',
+      content: '',
+      documents: [
+        {
+          documentId: '00000000-0000-4000-8000-000000000010',
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          byteLength: 5,
+          extractedByteLength: 5,
+          available: true,
+        },
+      ],
+    })
+
+    expect(threadTitle([documentOnly])).toBe('notes.txt')
+    expect(threadPreview([documentOnly])).toBe('notes.txt')
+  })
+
   it('falls back for an empty thread shell', () => {
     expect(threadTitle([])).toBe('New thread')
     expect(threadPreview([])).toBe('Ready for a new thread')

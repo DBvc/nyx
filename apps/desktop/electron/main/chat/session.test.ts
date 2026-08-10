@@ -697,8 +697,9 @@ describe('ChatSessionManager provider resolver', () => {
     expect(streamChatCompletion).not.toHaveBeenCalled()
   })
 
-  it('keeps product document requests fail-closed before durability or execution', () => {
-    const prepare = vi.fn()
+  it('routes valid product document requests through durability before execution', () => {
+    const preparation = deferred<PreparedCurrentThreadTurn>()
+    const prepare = vi.fn(() => preparation.promise)
     const resolveChatTarget = vi.fn()
     const sender = mockSender()
     const manager = new ChatSessionManager({
@@ -714,17 +715,51 @@ describe('ChatSessionManager provider resolver', () => {
       newDocuments: [newDocument],
     })
 
+    expect(sentChatEvents(sender)).toEqual([])
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnUserMessage: expect.objectContaining({ documentRefs: [documentRef] }),
+        newDocuments: [newDocument],
+      }),
+      expect.any(AbortSignal),
+    )
+    expect(resolveChatTarget).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('rejects new and Retry document requests when current-thread durability is unavailable', () => {
+    const resolveChatTarget = vi.fn()
+    const sender = mockSender()
+    const manager = new ChatSessionManager({ resolveChatTarget })
+    const request = {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
+      messages: [{ role: 'user' as const, content: '' }],
+      newDocuments: [newDocument],
+    }
+
+    manager.start(sender, request)
+    const { newDocuments: _newDocuments, ...retryRequest } = request
+    manager.start(sender, { ...retryRequest, turnIntent: 'retry_failed_response' })
+
     expect(sentChatEvents(sender)).toEqual([
       expect.objectContaining({
         type: 'chat:error',
         error: {
           code: 'invalid_request',
-          message: 'Document attachments are not available yet.',
+          message: 'Document attachments require current-thread durability.',
+          retryable: false,
+        },
+      }),
+      expect.objectContaining({
+        type: 'chat:error',
+        error: {
+          code: 'invalid_request',
+          message: 'Document attachments require current-thread durability.',
           retryable: false,
         },
       }),
     ])
-    expect(prepare).not.toHaveBeenCalled()
     expect(resolveChatTarget).not.toHaveBeenCalled()
     expect(streamChatCompletion).not.toHaveBeenCalled()
   })
@@ -1698,7 +1733,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     expect(sentChatEvents(sender).at(-1)).toMatchObject({
       error: {
         code: 'invalid_request',
-        message: 'A current-thread image is unavailable.',
+        message: 'A current-thread attachment is unavailable.',
         retryable: false,
       },
     })

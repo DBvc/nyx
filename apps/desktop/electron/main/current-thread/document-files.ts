@@ -47,7 +47,7 @@ function decodeText(bytes: Uint8Array) {
   let text: string
 
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
   } catch {
     throw new CurrentThreadDocumentFilesError('invalid_request', 'Document text is not UTF-8.')
   }
@@ -213,25 +213,33 @@ export class CurrentThreadDocumentFiles {
           throw new Error('Document source sidecar mismatch.')
         }
 
-        const text = await this.fileAdapter.readBytes(
-          paths.text,
-          nyxChatDocumentLimits.extractedBytesPerDocument,
-        )
-
-        if (
-          text.byteLength !== ref.extractedByteLength ||
-          sha256(text) !== ref.extractedTextSha256
-        ) {
-          throw new Error('Document sidecar mismatch.')
-        }
-
-        decodeText(text)
+        await this.readExtractedText(ref)
       } catch {
         throw new CurrentThreadDocumentFilesError(
           'unavailable',
           'A current-thread document is unavailable.',
         )
       }
+    }
+  }
+
+  async readExtractedText(ref: CurrentThreadDocumentRefV4) {
+    try {
+      const text = await this.fileAdapter.readBytes(
+        this.paths(ref.documentId).text,
+        nyxChatDocumentLimits.extractedBytesPerDocument,
+      )
+
+      if (text.byteLength !== ref.extractedByteLength || sha256(text) !== ref.extractedTextSha256) {
+        throw new Error('Document sidecar mismatch.')
+      }
+
+      return decodeText(text)
+    } catch {
+      throw new CurrentThreadDocumentFilesError(
+        'unavailable',
+        'A current-thread document is unavailable.',
+      )
     }
   }
 

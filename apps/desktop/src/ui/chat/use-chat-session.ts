@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
+import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
 import type {
   NyxCurrentThreadResetError,
@@ -8,13 +9,21 @@ import type {
 } from '../../../shared/chat/snapshot'
 import type {
   NyxChatError,
+  NyxChatDocumentMediaType,
   NyxChatInputMessage,
   NyxChatMessage,
+  NyxChatNewDocument,
   NyxChatNewImage,
   NyxChatTargetSelection,
 } from '../../../shared/chat/types'
 import { chatReducer } from './chat-reducer'
-import { initialChatState, type ChatImageDraft, type ChatState } from './chat-types'
+import {
+  initialChatState,
+  type ChatDocumentDraft,
+  type ChatImageDraft,
+  type ChatState,
+} from './chat-types'
+import type { DocumentExtractorRequest, DocumentExtractorResult } from './document-extractor.worker'
 import type {
   ImageCanonicalizerRequest,
   ImageCanonicalizerResult,
@@ -71,7 +80,10 @@ export function toRequestMessages(messages: ReadonlyArray<NyxChatMessage>): NyxC
       continue
     }
 
-    if (message.content.length === 0 && !(message.role === 'user' && message.images?.length)) {
+    if (
+      message.content.length === 0 &&
+      !(message.role === 'user' && (message.images?.length || message.documents?.length))
+    ) {
       continue
     }
 
@@ -88,6 +100,12 @@ interface UseChatSessionOptions {
   connectionStatus: ConnectionStatusState
   refreshConnections: () => Promise<void>
   getLatestConnectionRequestEpoch: () => number
+}
+
+interface DocumentPreparationOperation {
+  worker: Worker
+  draftId: string
+  timeout: number
 }
 
 type TargetCatalogAction =
@@ -145,14 +163,17 @@ export function deriveTargetCatalogAction(
 }
 
 export function canSubmitChat(state: ChatState, connectionStatus: ConnectionStatusState) {
-  const hasContent = state.input.trim().length > 0 || state.draftImages.length > 0
+  const hasContent =
+    state.input.trim().length > 0 || state.draftImages.length > 0 || state.draftDocuments.length > 0
   const imagesReady = state.draftImages.every((image) => image.status === 'ready')
+  const documentsReady = state.draftDocuments.every((document) => document.status === 'ready')
 
   return (
     state.hydrationStatus === 'ready' &&
     state.resetStatus === 'idle' &&
     hasContent &&
     imagesReady &&
+    documentsReady &&
     !state.activeRequestId &&
     connectionStatus.kind === 'ready' &&
     state.targetInitialized &&
@@ -182,9 +203,13 @@ export function useChatSession({
   const projectionGeneration = useRef(initialChatState.projectionGeneration)
   const stateRef = useRef(state)
   const workerRef = useRef<Worker | null>(null)
+  const documentWorkerRef = useRef<DocumentPreparationOperation | null>(null)
   const liveDraftsRef = useRef(new Set<string>())
+  const liveDocumentDraftsRef = useRef(new Set<string>())
   const workerDraftsRef = useRef(new Set<string>())
   const pendingDraftsRef = useRef(new Map<string, ReadonlyArray<string>>())
+  const pendingDocumentDraftsRef = useRef(new Map<string, ReadonlyArray<string>>())
+  const submittingRef = useRef(false)
   stateRef.current = state
 
   function failDraft(imageId: string, error = 'Nyx could not prepare this image.') {
@@ -328,6 +353,140 @@ export function useChatSession({
     }
   }
 
+  function stopDocumentWorker(target?: string | DocumentPreparationOperation) {
+    const active = documentWorkerRef.current
+
+    if (
+      !active ||
+      (typeof target === 'string' && active.draftId !== target) ||
+      (typeof target === 'object' && active !== target)
+    ) {
+      return
+    }
+
+    window.clearTimeout(active.timeout)
+    active.worker.terminate()
+    documentWorkerRef.current = null
+  }
+
+  function failDocumentDraft(
+    documentId: string,
+    error = 'Nyx could not prepare this document.',
+    operation?: DocumentPreparationOperation,
+  ) {
+    if (operation && documentWorkerRef.current !== operation) {
+      return
+    }
+
+    stopDocumentWorker(operation ?? documentId)
+
+    if (liveDocumentDraftsRef.current.has(documentId)) {
+      dispatch({ type: 'draft-document-failed', documentId, error })
+    }
+  }
+
+  async function prepareDraftDocument(
+    documentId: string,
+    source: File,
+    mediaType: NyxChatDocumentMediaType,
+  ) {
+    if (
+      source.size === 0 ||
+      source.size > nyxChatDocumentLimits.sourceBytesPerDocument ||
+      !isNyxChatDocumentName(source.name, mediaType)
+    ) {
+      failDocumentDraft(documentId, 'Use a supported document no larger than 8 MB.')
+      return
+    }
+
+    let operation: DocumentPreparationOperation | undefined
+
+    try {
+      const worker = new Worker(new URL('./document-extractor.worker.ts', import.meta.url), {
+        type: 'module',
+        name: 'nyx-document-extractor',
+      })
+      operation = { worker, draftId: documentId, timeout: 0 }
+      operation.timeout = window.setTimeout(() => {
+        failDocumentDraft(documentId, 'Document preparation timed out.', operation)
+      }, 10_000)
+      documentWorkerRef.current = operation
+
+      worker.onmessage = (event: MessageEvent<DocumentExtractorResult>) => {
+        const result = event.data
+
+        if (documentWorkerRef.current !== operation) {
+          return
+        }
+
+        if (result.draftId !== documentId) {
+          failDocumentDraft(documentId, 'Nyx could not prepare this document.', operation)
+          return
+        }
+
+        if (!result.ok) {
+          failDocumentDraft(documentId, result.error, operation)
+          return
+        }
+
+        void source
+          .arrayBuffer()
+          .then((sourceBuffer) => {
+            if (
+              documentWorkerRef.current !== operation ||
+              !liveDocumentDraftsRef.current.has(documentId)
+            ) {
+              return
+            }
+
+            const extractedTextBytes = new Uint8Array(result.extractedText)
+
+            if (
+              sourceBuffer.byteLength !== source.size ||
+              extractedTextBytes.byteLength === 0 ||
+              extractedTextBytes.byteLength > nyxChatDocumentLimits.extractedBytesPerDocument ||
+              !/^[0-9a-f]{64}$/u.test(result.sourceSha256)
+            ) {
+              failDocumentDraft(documentId, 'Nyx could not prepare this document.', operation)
+              return
+            }
+
+            stopDocumentWorker(operation)
+            dispatch({
+              type: 'draft-document-ready',
+              documentId,
+              document: {
+                name: source.name,
+                mediaType,
+                byteLength: source.size,
+                extractedByteLength: extractedTextBytes.byteLength,
+              },
+              sourceBytes: new Uint8Array(sourceBuffer),
+              extractedTextBytes,
+              extractedFromSha256: result.sourceSha256,
+            })
+          })
+          .catch(() => {
+            failDocumentDraft(documentId, 'Nyx could not prepare this document.', operation)
+          })
+      }
+
+      worker.onerror = (event) => {
+        event.preventDefault()
+        failDocumentDraft(documentId, 'Nyx could not prepare this document.', operation)
+      }
+
+      const request: DocumentExtractorRequest = { draftId: documentId, source, mediaType }
+      worker.postMessage(request)
+    } catch {
+      if (operation) {
+        failDocumentDraft(documentId, 'Nyx could not prepare this document.', operation)
+      } else {
+        failDocumentDraft(documentId)
+      }
+    }
+  }
+
   function releaseDrafts(imageIds?: ReadonlySet<string>) {
     const releasedIds = new Set<string>()
 
@@ -346,10 +505,26 @@ export function useChatSession({
 
   function releaseAllDrafts() {
     releaseDrafts()
+    releaseDocumentDrafts()
     pendingDraftsRef.current.clear()
+    pendingDocumentDraftsRef.current.clear()
     workerDraftsRef.current.clear()
     workerRef.current?.terminate()
     workerRef.current = null
+  }
+
+  function releaseDocumentDrafts(documentIds?: ReadonlySet<string>) {
+    for (const document of stateRef.current.draftDocuments) {
+      if (
+        (documentIds && !documentIds.has(document.id)) ||
+        !liveDocumentDraftsRef.current.has(document.id)
+      ) {
+        continue
+      }
+
+      liveDocumentDraftsRef.current.delete(document.id)
+      stopDocumentWorker(document.id)
+    }
   }
 
   useEffect(() => releaseAllDrafts, [])
@@ -365,11 +540,19 @@ export function useChatSession({
     const unsubscribe = chat.subscribe((event: NyxChatEvent) => {
       switch (event.type) {
         case 'chat:accepted': {
+          submittingRef.current = false
           const capturedDraftIds = pendingDraftsRef.current.get(event.requestId)
 
           if (capturedDraftIds) {
             releaseDrafts(new Set(capturedDraftIds))
             pendingDraftsRef.current.delete(event.requestId)
+          }
+
+          const capturedDocumentDraftIds = pendingDocumentDraftsRef.current.get(event.requestId)
+
+          if (capturedDocumentDraftIds) {
+            releaseDocumentDrafts(new Set(capturedDocumentDraftIds))
+            pendingDocumentDraftsRef.current.delete(event.requestId)
           }
 
           dispatch({
@@ -409,7 +592,9 @@ export function useChatSession({
           return
 
         case 'chat:error':
+          submittingRef.current = false
           pendingDraftsRef.current.delete(event.requestId)
+          pendingDocumentDraftsRef.current.delete(event.requestId)
           dispatch({
             type: 'request-failed',
             requestId: event.requestId,
@@ -522,6 +707,54 @@ export function useChatSession({
     }
   }
 
+  function addDraftDocuments(sources: ReadonlyArray<File>) {
+    if (
+      state.hydrationStatus !== 'ready' ||
+      state.resetStatus === 'resetting' ||
+      (state.activeTurn && !state.activeTurn.accepted)
+    ) {
+      return
+    }
+
+    if (liveDocumentDraftsRef.current.size > 0 || sources.length !== 1) {
+      dispatch({
+        type: 'composer-notice-changed',
+        notice: 'You can attach one document per message.',
+      })
+      return
+    }
+
+    const source = sources[0]!
+    const extension = source.name.slice(source.name.lastIndexOf('.')).toLowerCase()
+    const mediaTypeByExtension: Partial<Record<string, NyxChatDocumentMediaType>> = {
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.csv': 'text/csv',
+    }
+    const mediaType = mediaTypeByExtension[extension]
+
+    if (!mediaType || !isNyxChatDocumentName(source.name, mediaType)) {
+      dispatch({
+        type: 'composer-notice-changed',
+        notice: 'Use a TXT, Markdown, CSV, or text-based PDF file.',
+      })
+      return
+    }
+
+    const id = crypto.randomUUID()
+    const draft: ChatDocumentDraft = {
+      id,
+      name: source.name,
+      mediaType,
+      status: 'preparing',
+      source,
+    }
+    liveDocumentDraftsRef.current.add(id)
+    dispatch({ type: 'draft-documents-added', documents: [draft] })
+    void prepareDraftDocument(id, source, mediaType)
+  }
+
   function removeDraftImage(imageId: string) {
     if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
       return
@@ -554,15 +787,63 @@ export function useChatSession({
     void prepareDraftImage(imageId, image.source)
   }
 
+  function removeDraftDocument(documentId: string) {
+    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+      return
+    }
+
+    if (!state.draftDocuments.some((document) => document.id === documentId)) {
+      return
+    }
+
+    releaseDocumentDrafts(new Set([documentId]))
+    dispatch({ type: 'draft-document-removed', documentId })
+  }
+
+  function retryDraftDocument(documentId: string) {
+    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+      return
+    }
+
+    const document = state.draftDocuments.find(
+      (candidate) => candidate.id === documentId && candidate.status === 'failed',
+    )
+
+    if (!document || document.status !== 'failed') {
+      return
+    }
+
+    dispatch({ type: 'draft-document-preparing', documentId })
+    void prepareDraftDocument(documentId, document.source, document.mediaType)
+  }
+
   async function sendCurrentInput() {
     const prompt = state.input.trim()
     const targetSelection = state.targetDraft
 
-    if (!canSubmitChat(state, connectionStatus) || !targetSelection || !window.nyx) {
+    if (
+      submittingRef.current ||
+      !canSubmitChat(state, connectionStatus) ||
+      !targetSelection ||
+      !window.nyx
+    ) {
       return
     }
 
-    const readyImages = state.draftImages.filter((image) => image.status === 'ready')
+    const readyImages = state.draftImages.filter(
+      (image): image is Extract<ChatImageDraft, { status: 'ready' }> =>
+        image.status === 'ready' && liveDraftsRef.current.has(image.id),
+    )
+    const readyDocuments = state.draftDocuments.filter(
+      (document): document is Extract<ChatDocumentDraft, { status: 'ready' }> =>
+        document.status === 'ready' && liveDocumentDraftsRef.current.has(document.id),
+    )
+
+    if (prompt.length === 0 && readyImages.length === 0 && readyDocuments.length === 0) {
+      return
+    }
+
+    submittingRef.current = true
     const requestId = crypto.randomUUID()
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
@@ -575,10 +856,21 @@ export function useChatSession({
       canonicalBytes: image.canonicalBytes,
       previewBytes: image.previewBytes,
     }))
+    const documentRefs = readyDocuments.map((document) => ({
+      documentId: crypto.randomUUID(),
+      ...document.document,
+    }))
+    const newDocuments: NyxChatNewDocument[] = readyDocuments.map((document, index) => ({
+      documentId: documentRefs[index]!.documentId,
+      sourceBytes: document.sourceBytes,
+      extractedTextBytes: document.extractedTextBytes,
+      extractedFromSha256: document.extractedFromSha256,
+    }))
     const turnUserMessage = {
       id: userMessageId,
       content: prompt,
       ...(imageRefs.length > 0 ? { imageRefs } : {}),
+      ...(documentRefs.length > 0 ? { documentRefs } : {}),
     }
     const requestMessages = [
       ...toRequestMessages(state.messages),
@@ -587,6 +879,10 @@ export function useChatSession({
     pendingDraftsRef.current.set(
       requestId,
       readyImages.map((image) => image.id),
+    )
+    pendingDocumentDraftsRef.current.set(
+      requestId,
+      readyDocuments.map((document) => document.id),
     )
 
     dispatch({
@@ -602,6 +898,14 @@ export function useChatSession({
         status: 'completed',
         ...(imageRefs.length > 0
           ? { images: imageRefs.map((imageRef) => ({ ...imageRef, available: true })) }
+          : {}),
+        ...(documentRefs.length > 0
+          ? {
+              documents: documentRefs.map((documentRef) => ({
+                ...documentRef,
+                available: true,
+              })),
+            }
           : {}),
       },
       assistantMessage: {
@@ -623,9 +927,12 @@ export function useChatSession({
         messages: requestMessages,
         targetSelection,
         ...(newImages.length > 0 ? { newImages } : {}),
+        ...(newDocuments.length > 0 ? { newDocuments } : {}),
       })
     } catch (error) {
+      submittingRef.current = false
       pendingDraftsRef.current.delete(requestId)
+      pendingDocumentDraftsRef.current.delete(requestId)
       dispatch({
         type: 'request-failed',
         requestId,
@@ -748,6 +1055,7 @@ export function useChatSession({
     const refreshOperation = refreshConnections()
     const resetCatalogEpoch = getLatestConnectionRequestEpoch()
     releaseAllDrafts()
+    submittingRef.current = false
     dispatch({
       type: 'clear-chat',
       generation,
@@ -778,8 +1086,11 @@ export function useChatSession({
       })
     },
     addDraftImages,
+    addDraftDocuments,
     removeDraftImage,
+    removeDraftDocument,
     retryDraftImage,
+    retryDraftDocument,
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,

@@ -163,4 +163,34 @@ describe('ChatMessage', () => {
     expect(markup).toContain('Attached image 1 is unavailable')
     expect(markup).not.toContain('nyx-image://')
   })
+
+  it('renders durable document cards without exposing bytes or paths', () => {
+    const markup = renderUser({
+      documents: [
+        {
+          documentId: '00000000-0000-4000-8000-000000000010',
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          byteLength: 5,
+          extractedByteLength: 5,
+          available: true,
+        },
+        {
+          documentId: '00000000-0000-4000-8000-000000000011',
+          name: 'missing.pdf',
+          mediaType: 'application/pdf',
+          byteLength: 10,
+          extractedByteLength: 4,
+          available: false,
+        },
+      ],
+    })
+
+    expect(markup).toContain('aria-label="Attached documents"')
+    expect(markup).toContain('notes.txt')
+    expect(markup).toContain('Text document')
+    expect(markup).toContain('missing.pdf')
+    expect(markup).toContain('Document unavailable')
+    expect(markup).not.toContain('/private/')
+  })
 })

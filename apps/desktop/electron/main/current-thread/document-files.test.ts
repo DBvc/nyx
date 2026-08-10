@@ -91,6 +91,9 @@ describe('CurrentThreadDocumentFiles', () => {
       new Set([documentRef.documentId]),
     )
     await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).resolves.toBeUndefined()
+    await expect(documents.readExtractedText(record.turns[0]!.documentRefs[0]!)).resolves.toBe(
+      'hello document',
+    )
 
     await writeFile(sourcePath, new TextEncoder().encode('jello document'))
     await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).resolves.toBeUndefined()
@@ -102,6 +105,9 @@ describe('CurrentThreadDocumentFiles', () => {
     await writeFile(sourcePath, new TextEncoder().encode('jello document'))
 
     await writeFile(textPath, new TextEncoder().encode('jello document'))
+    await expect(
+      documents.readExtractedText(record.turns[0]!.documentRefs[0]!),
+    ).rejects.toMatchObject({ code: 'unavailable' })
     await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).rejects.toMatchObject({
       code: 'unavailable',
     })
@@ -139,6 +145,29 @@ describe('CurrentThreadDocumentFiles', () => {
         documents: [newDocument()],
       }),
     ).rejects.toMatchObject({ code: 'invalid_request' })
+  })
+
+  it('preserves a UTF-8 BOM across text validation and storage', async () => {
+    const { documents } = await createDocuments()
+    const bomSource = Uint8Array.from([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode('hello document'),
+    ])
+    const [storedRef] = await documents.writeNewDocuments({
+      record: null,
+      refs: [
+        {
+          ...documentRef,
+          byteLength: bomSource.byteLength,
+          extractedByteLength: bomSource.byteLength,
+        },
+      ],
+      documents: [newDocument(bomSource)],
+    })
+
+    await expect(documents.readExtractedText(storedRef!)).resolves.toBe('\ufeffhello document')
   })
 
   it('rolls back source when cancellation wins between sidecar writes', async () => {

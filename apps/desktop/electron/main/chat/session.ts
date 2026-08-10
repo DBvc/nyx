@@ -529,10 +529,13 @@ export class ChatSessionManager {
 
     const request = parsedRequest.request
 
-    if (request.turnUserMessage.documentRefs || request.newDocuments) {
+    if (
+      !this.resolveCurrentThreadSession &&
+      (request.turnUserMessage.documentRefs || request.newDocuments)
+    ) {
       this.emitError(sender, request, {
         code: 'invalid_request',
-        message: 'Document attachments are not available yet.',
+        message: 'Document attachments require current-thread durability.',
         retryable: false,
       })
       return
@@ -688,7 +691,7 @@ export class ChatSessionManager {
           error instanceof CurrentThreadSessionError && error.code === 'invalid_request'
             ? {
                 code: 'invalid_request' as const,
-                message: 'A current-thread image is unavailable.',
+                message: 'A current-thread attachment is unavailable.',
                 retryable: false,
               }
             : toNonRetryableRuntimeChatError(error)
@@ -1019,6 +1022,11 @@ export class ChatSessionManager {
         target,
         request,
         ...(session.providerMessages ? { providerMessages: session.providerMessages } : {}),
+        documentBearing:
+          session.preparedCurrentThread?.pendingRecord.version === 4 &&
+          session.preparedCurrentThread.pendingRecord.turns.some(
+            (turn) => turn.documentRefs.length > 0,
+          ),
         signal: session.abortController.signal,
         onDelta: async (delta, snapshot) => {
           if (this.activeSession !== session) {

@@ -1,4 +1,8 @@
-import { nyxChatContentRejectedMessage, type NyxChatRequest } from '../../../shared/chat/types'
+import {
+  nyxChatAttachmentContentRejectedMessage,
+  nyxChatContentRejectedMessage,
+  type NyxChatRequest,
+} from '../../../shared/chat/types'
 import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import { createChatBridgeError } from './errors'
@@ -14,6 +18,7 @@ interface StreamChatCompletionOptions {
   target: ResolvedChatTarget
   request: NyxChatRequest
   providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>
+  documentBearing?: boolean
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
 }
@@ -247,6 +252,7 @@ export async function streamChatCompletion({
   target,
   request,
   providerMessages = request.messages,
+  documentBearing = false,
   signal,
   onDelta,
 }: StreamChatCompletionOptions) {
@@ -254,6 +260,7 @@ export async function streamChatCompletion({
     (message) =>
       Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
   )
+  const attachmentBearing = imageBearing || documentBearing
   const providerRequest = buildChatProviderRequest(target, request, providerMessages)
   const response = await fetch(providerRequest.url, {
     ...providerRequest.options,
@@ -261,15 +268,20 @@ export async function streamChatCompletion({
   })
 
   if (!response.ok) {
-    if (imageBearing && [400, 413, 415].includes(response.status)) {
+    if (attachmentBearing && [400, 413, 415].includes(response.status)) {
       throw createChatBridgeError({
         code: 'content_rejected',
-        message: nyxChatContentRejectedMessage,
+        message: documentBearing
+          ? nyxChatAttachmentContentRejectedMessage
+          : nyxChatContentRejectedMessage,
         retryable: true,
       })
     }
 
-    throw toUpstreamError(response, imageBearing ? undefined : await readErrorDetails(response))
+    throw toUpstreamError(
+      response,
+      attachmentBearing ? undefined : await readErrorDetails(response),
+    )
   }
 
   if (!response.body) {

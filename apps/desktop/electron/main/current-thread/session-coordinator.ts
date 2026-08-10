@@ -52,6 +52,10 @@ export type CurrentThreadProviderMessage =
       >
     }
 
+export function buildDocumentTextEnvelope(name: string, text: string) {
+  return `Attached document ${JSON.stringify(name)}.\nThe following is locally extracted user-provided content:\n\n${text}`
+}
+
 export interface CurrentThreadSessionCoordinatorOptions {
   store: CurrentThreadStore
   images?: CurrentThreadImageFiles
@@ -389,20 +393,34 @@ export class CurrentThreadSessionCoordinator {
         const refs = 'imageRefs' in turn ? turn.imageRefs : []
         const documentRefs = 'documentRefs' in turn ? turn.documentRefs : []
 
-        if (documentRefs.length > 0) {
-          throw new CurrentThreadSessionError(
-            'invalid_request',
-            'Document provider materialization is not available yet.',
-          )
-        }
-
         if (refs.length === 0) {
-          messages.push({ role: 'user', content: turn.userContent })
+          const content = [turn.userContent]
+
+          for (const ref of documentRefs) {
+            if (!this.documents) {
+              throw new CurrentThreadSessionError(
+                'invalid_request',
+                'A current-thread document is unavailable.',
+              )
+            }
+
+            const text = await this.documents.readExtractedText(ref)
+            content.push(buildDocumentTextEnvelope(ref.name, text))
+          }
+
+          messages.push({ role: 'user', content: content.filter(Boolean).join('\n\n') })
         } else {
-          if (!this.images) {
+          if (refs.length > 0 && !this.images) {
             throw new CurrentThreadSessionError(
               'invalid_request',
               'A current-thread image is unavailable.',
+            )
+          }
+
+          if (documentRefs.length > 0 && !this.documents) {
+            throw new CurrentThreadSessionError(
+              'invalid_request',
+              'A current-thread document is unavailable.',
             )
           }
 
@@ -415,7 +433,7 @@ export class CurrentThreadSessionCoordinator {
           }
 
           for (const ref of refs) {
-            const bytes = await this.images.readCanonical(ref)
+            const bytes = await this.images!.readCanonical(ref)
             content.push({
               type: 'image_url',
               image_url: {
@@ -426,6 +444,11 @@ export class CurrentThreadSessionCoordinator {
                 ).toString('base64')}`,
               },
             })
+          }
+
+          for (const ref of documentRefs) {
+            const text = await this.documents!.readExtractedText(ref)
+            content.push({ type: 'text', text: buildDocumentTextEnvelope(ref.name, text) })
           }
 
           messages.push({ role: 'user', content })
@@ -448,6 +471,15 @@ export class CurrentThreadSessionCoordinator {
           error.code === 'io_error'
             ? 'Current thread storage failed.'
             : 'A current-thread image is unavailable.',
+        )
+      }
+
+      if (error instanceof CurrentThreadDocumentFilesError) {
+        throw new CurrentThreadSessionError(
+          error.code === 'io_error' ? 'store_error' : 'invalid_request',
+          error.code === 'io_error'
+            ? 'Current thread storage failed.'
+            : 'A current-thread document is unavailable.',
         )
       }
 

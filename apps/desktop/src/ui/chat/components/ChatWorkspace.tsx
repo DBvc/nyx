@@ -219,8 +219,11 @@ export function ChatWorkspace() {
     setInput,
     setTargetSelection,
     addDraftImages,
+    addDraftDocuments,
     removeDraftImage,
+    removeDraftDocument,
     retryDraftImage,
+    retryDraftDocument,
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,
@@ -396,14 +399,18 @@ export function ChatWorkspace() {
                 composerError={state.composerError}
                 composerNotice={state.composerNotice}
                 disabled={state.hydrationStatus !== 'ready' || isResetting}
+                draftDocuments={state.draftDocuments}
                 draftImages={state.draftImages}
                 input={state.input}
                 isAccepting={isAccepting}
                 isBusy={isBusy}
                 onAddImages={addDraftImages}
+                onAddDocuments={addDraftDocuments}
                 onInputChange={setInput}
                 onRemoveImage={removeDraftImage}
+                onRemoveDocument={removeDraftDocument}
                 onRetryImage={retryDraftImage}
+                onRetryDocument={retryDraftDocument}
                 targetAction={
                   targetPresentation.action === 'refresh'
                     ? {

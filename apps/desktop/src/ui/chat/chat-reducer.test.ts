@@ -351,6 +351,7 @@ describe('chatReducer', () => {
       targetSelection,
       capturedInput: 'Hello Nyx',
       capturedDraftImageIds: [],
+      capturedDraftDocumentIds: [],
       userMessage,
       assistantMessage,
     })
@@ -427,6 +428,63 @@ describe('chatReducer', () => {
     expect(submitted.messages).toEqual([])
     expect(accepted.draftImages).toEqual([])
     expect(accepted.messages[0]).toEqual(imageUserMessage)
+  })
+
+  it('retains a document before acceptance and clears only the captured draft after acceptance', () => {
+    const documentId = '00000000-0000-4000-8000-000000000010'
+    const draft = {
+      id: 'document-draft-1',
+      name: 'notes.txt',
+      mediaType: 'text/plain' as const,
+      status: 'ready' as const,
+      source: null,
+      document: {
+        name: 'notes.txt',
+        mediaType: 'text/plain' as const,
+        byteLength: 5,
+        extractedByteLength: 5,
+      },
+      sourceBytes: new TextEncoder().encode('hello'),
+      extractedTextBytes: new TextEncoder().encode('hello'),
+      extractedFromSha256: 'a'.repeat(64),
+    }
+    const documentUserMessage = {
+      ...userMessage,
+      content: '',
+      documents: [{ documentId, ...draft.document, available: true }],
+    }
+    const submitted = chatReducer(
+      { ...initialChatState, draftDocuments: [draft] },
+      {
+        type: 'request-submitted',
+        requestId,
+        assistantMessageId,
+        turnUserMessage: {
+          id: userMessageId,
+          content: '',
+          documentRefs: [{ documentId, ...draft.document }],
+        },
+        submittedMessages: [{ role: 'user', content: '' }],
+        userMessage: documentUserMessage,
+        assistantMessage,
+        targetSelection,
+      },
+    )
+    const failedBeforeAcceptance = chatReducer(submitted, {
+      type: 'request-failed',
+      requestId,
+      assistantMessageId,
+      error: retryableError,
+    })
+    const accepted = chatReducer(submitted, {
+      type: 'request-accepted',
+      requestId,
+      assistantMessageId,
+    })
+
+    expect(failedBeforeAcceptance.draftDocuments).toEqual([draft])
+    expect(accepted.draftDocuments).toEqual([])
+    expect(accepted.messages[0]).toEqual(documentUserMessage)
   })
 
   it('keeps the active selection immutable when the Composer draft changes', () => {
@@ -739,6 +797,7 @@ describe('chatReducer', () => {
       targetSelection: { kind: 'env_fallback' },
       capturedInput: '',
       capturedDraftImageIds: [],
+      capturedDraftDocumentIds: [],
     })
     expect(state.retryableTurn).toBeNull()
     expect(state.input).toBe('Next question')

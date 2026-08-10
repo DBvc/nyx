@@ -6,10 +6,18 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
-import { CurrentThreadSessionCoordinator, CurrentThreadSessionError } from './session-coordinator'
+import {
+  buildDocumentTextEnvelope,
+  CurrentThreadSessionCoordinator,
+  CurrentThreadSessionError,
+} from './session-coordinator'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
 import { CurrentThreadDocumentFiles } from './document-files'
-import { parseCurrentThreadRecordV1, parseCurrentThreadRecordV3 } from './schemas'
+import {
+  parseCurrentThreadRecordV1,
+  parseCurrentThreadRecordV3,
+  parseCurrentThreadRecordV4,
+} from './schemas'
 import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
 
@@ -228,9 +236,16 @@ describe('CurrentThreadSessionCoordinator', () => {
       requestId: 'request-2',
       turnIntent: 'retry_failed_response' as const,
     }
-    await expect(coordinator.prepare(retry)).resolves.toMatchObject({
+    const retried = await coordinator.prepare(retry)
+    expect(retried).toMatchObject({
       pendingRecord: { version: 4, turns: [{ attemptRequestId: 'request-2' }] },
     })
+    await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
+      {
+        role: 'user',
+        content: buildDocumentTextEnvelope('notes.txt', 'hello document'),
+      },
+    ])
     await coordinator.bindResolvedTarget('request-2', 'assistant-1', firstAttribution)
     await coordinator.fail('request-2', 'assistant-1', '', {
       code: 'network_error',
@@ -609,6 +624,110 @@ describe('CurrentThreadSessionCoordinator', () => {
       imageRef.imageId,
       imageRef2.imageId,
       imageRef3.imageId,
+    ])
+  })
+
+  it('materializes user text, images, then verified document text in stored order', async () => {
+    const readCanonical = vi.fn(async () => Uint8Array.from([1]))
+    const readExtractedText = vi.fn(async () => 'hello document')
+    const coordinator = new CurrentThreadSessionCoordinator({
+      store: {} as CurrentThreadStore,
+      images: { readCanonical } as unknown as CurrentThreadImageFiles,
+      documents: { readExtractedText } as unknown as CurrentThreadDocumentFiles,
+    })
+    const record = parseCurrentThreadRecordV4({
+      version: 4,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: 'Inspect these',
+          imageRefs: [imageRef],
+          documentRefs: [
+            {
+              ...documentRef,
+              sourceSha256: newDocument.extractedFromSha256,
+              extractedTextSha256: newDocument.extractedFromSha256,
+            },
+          ],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: null,
+          },
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    })
+
+    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect these' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } },
+          {
+            type: 'text',
+            text: buildDocumentTextEnvelope('notes.txt', 'hello document'),
+          },
+        ],
+      },
+    ])
+    expect(readCanonical).toHaveBeenCalledWith(expect.objectContaining(imageRef))
+    expect(readExtractedText).toHaveBeenCalledWith(expect.objectContaining(documentRef))
+    expect(buildDocumentTextEnvelope('quote".txt', 'body')).toContain('"quote\\\".txt"')
+  })
+
+  it('keeps text plus document content in one plain Provider string', async () => {
+    const readExtractedText = vi.fn(async () => 'hello document')
+    const coordinator = new CurrentThreadSessionCoordinator({
+      store: {} as CurrentThreadStore,
+      documents: { readExtractedText } as unknown as CurrentThreadDocumentFiles,
+    })
+    const record = parseCurrentThreadRecordV4({
+      version: 4,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: 'Inspect this',
+          imageRefs: [],
+          documentRefs: [
+            {
+              ...documentRef,
+              sourceSha256: newDocument.extractedFromSha256,
+              extractedTextSha256: newDocument.extractedFromSha256,
+            },
+          ],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: null,
+          },
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    })
+
+    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+      {
+        role: 'user',
+        content: `Inspect this\n\n${buildDocumentTextEnvelope('notes.txt', 'hello document')}`,
+      },
     ])
   })
 

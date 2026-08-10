@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { FileText, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { buildNyxChatImageUrl } from '../../../../shared/chat/image-url'
@@ -73,6 +73,29 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                   </div>
                 ),
               )}
+            </div>
+          ) : null}
+
+          {message.documents?.length ? (
+            <div className='w-[min(70vw,24rem)] space-y-1.5' aria-label='Attached documents'>
+              {message.documents.map((document) => (
+                <div
+                  className='flex min-w-0 items-center gap-2 rounded-xl border border-nyx-line bg-nyx-solid px-3 py-2 text-left'
+                  key={document.documentId}
+                >
+                  <FileText aria-hidden='true' className='h-4 w-4 shrink-0 text-nyx-muted' />
+                  <div className='min-w-0 flex-1'>
+                    <p className='truncate text-[12px] font-medium text-nyx-ink'>{document.name}</p>
+                    <p className='text-[11px] text-nyx-subtle'>
+                      {document.available
+                        ? document.mediaType === 'application/pdf'
+                          ? 'PDF'
+                          : 'Text document'
+                        : 'Document unavailable'}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
 

@@ -78,6 +78,7 @@ async function streamWithResponse(
   signal = new AbortController().signal,
   onDelta = vi.fn(),
   providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>,
+  documentBearing = false,
 ) {
   vi.stubGlobal(
     'fetch',
@@ -88,6 +89,7 @@ async function streamWithResponse(
     target: resolvedTarget,
     request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
     ...(providerMessages ? { providerMessages } : {}),
+    documentBearing,
     signal,
     onDelta,
   })
@@ -324,6 +326,28 @@ describe('streamChatCompletion', () => {
         chatError: {
           code: 'content_rejected',
           message: 'The selected target rejected this image request.',
+          retryable: true,
+        },
+      })
+      await expect(operation).rejects.not.toHaveProperty('chatError.details')
+    },
+  )
+
+  it.each([400, 413, 415])(
+    'maps document-bearing HTTP %s to an attachment-neutral content rejection',
+    async (status) => {
+      const operation = streamWithResponse(
+        new Response('{"error":{"message":"secret provider body"}}', { status }),
+        new AbortController().signal,
+        vi.fn(),
+        [{ role: 'user', content: [{ type: 'text', text: 'document envelope' }] }],
+        true,
+      )
+
+      await expect(operation).rejects.toMatchObject({
+        chatError: {
+          code: 'content_rejected',
+          message: 'The selected target rejected this attachment request.',
           retryable: true,
         },
       })

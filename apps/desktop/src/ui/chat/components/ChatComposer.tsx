@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  FileText,
   Paperclip,
   RotateCcw,
   Square,
@@ -17,11 +18,12 @@ import {
 } from 'react'
 
 import type { NyxChatError } from '../../../../shared/chat/types'
-import type { ChatImageDraft } from '../chat-types'
+import type { ChatDocumentDraft, ChatImageDraft } from '../chat-types'
 
 interface ChatComposerProps {
   input: string
   draftImages: ReadonlyArray<ChatImageDraft>
+  draftDocuments: ReadonlyArray<ChatDocumentDraft>
   isBusy: boolean
   isAccepting: boolean
   canSend: boolean
@@ -44,8 +46,11 @@ interface ChatComposerProps {
   composerNotice: string | null
   onInputChange: (value: string) => void
   onAddImages: (images: ReadonlyArray<Blob>) => void
+  onAddDocuments: (documents: ReadonlyArray<File>) => void
   onRemoveImage: (imageId: string) => void
   onRetryImage: (imageId: string) => void
+  onRemoveDocument: (documentId: string) => void
+  onRetryDocument: (documentId: string) => void
   onTargetChange: (value: string) => void
   onSend: () => void | Promise<void>
   onStop: () => void | Promise<void>
@@ -59,9 +64,39 @@ export function isSupportedComposerImageType(type: string) {
   return type === 'image/png' || type === 'image/jpeg'
 }
 
+export function isSupportedComposerDocumentName(name: string) {
+  return /\.(?:csv|md|pdf|txt)$/iu.test(name)
+}
+
+export function routeDroppedComposerFiles(
+  files: ReadonlyArray<File>,
+  onAddImages: (files: ReadonlyArray<File>) => void,
+  onAddDocuments: (files: ReadonlyArray<File>) => void,
+) {
+  const images = files.filter((file) => isSupportedComposerImageType(file.type))
+  const documents = files.filter((file) => isSupportedComposerDocumentName(file.name))
+
+  if (images.length > 0) {
+    onAddImages(images)
+  }
+
+  if (documents.length > 0) {
+    onAddDocuments(documents)
+  }
+
+  return images.length > 0 || documents.length > 0
+}
+
+function documentSize(byteLength: number) {
+  return byteLength < 1024 * 1024
+    ? `${Math.max(1, Math.round(byteLength / 1024))} KB`
+    : `${(byteLength / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function ChatComposer({
   input,
   draftImages,
+  draftDocuments,
   isBusy,
   isAccepting,
   canSend,
@@ -75,8 +110,11 @@ export function ChatComposer({
   composerNotice,
   onInputChange,
   onAddImages,
+  onAddDocuments,
   onRemoveImage,
   onRetryImage,
+  onRemoveDocument,
+  onRetryDocument,
   onTargetChange,
   onSend,
   onStop,
@@ -121,16 +159,13 @@ export function ChatComposer({
   }
 
   function handleDrop(event: DragEvent<HTMLFormElement>) {
-    const images = [...event.dataTransfer.files].filter((file) =>
-      isSupportedComposerImageType(file.type),
-    )
+    const files = [...event.dataTransfer.files]
 
-    if (images.length === 0) {
+    if (!routeDroppedComposerFiles(files, onAddImages, onAddDocuments)) {
       return
     }
 
     event.preventDefault()
-    onAddImages(images)
   }
 
   const targetPopoverRef = useRef<HTMLDivElement>(null)
@@ -164,7 +199,12 @@ export function ChatComposer({
         className='mx-auto w-full max-w-[48rem]'
         onDragOver={(event) => {
           if (
-            [...event.dataTransfer.items].some((item) => isSupportedComposerImageType(item.type))
+            [...event.dataTransfer.items].some(
+              (item) =>
+                isSupportedComposerImageType(item.type) ||
+                (item.kind === 'file' &&
+                  isSupportedComposerDocumentName(item.getAsFile()?.name ?? '')),
+            )
           ) {
             event.preventDefault()
           }
@@ -173,6 +213,52 @@ export function ChatComposer({
         onSubmit={handleSubmit}
       >
         <div className='rounded-2xl border border-nyx-line bg-nyx-panel px-3.5 pb-2.5 pt-3.5 shadow-sm focus-within:border-nyx-subtle'>
+          {draftDocuments.length > 0 ? (
+            <ol className='mb-3 space-y-2' aria-label='Attached documents'>
+              {draftDocuments.map((document, index) => (
+                <li
+                  className='flex min-w-0 items-center gap-2 rounded-xl border border-nyx-line bg-nyx-solid px-3 py-2'
+                  key={document.id}
+                >
+                  <FileText aria-hidden='true' className='h-4 w-4 shrink-0 text-nyx-muted' />
+                  <div className='min-w-0 flex-1'>
+                    <p className='truncate text-[12px] font-medium text-nyx-ink'>{document.name}</p>
+                    <p className='text-[11px] text-nyx-subtle'>
+                      {`${document.mediaType === 'application/pdf' ? 'PDF' : 'Text'} · ${documentSize(document.status === 'ready' ? document.document.byteLength : document.source.size)} · ${
+                        document.status === 'preparing'
+                          ? 'Preparing…'
+                          : document.status === 'failed'
+                            ? document.error
+                            : 'Ready'
+                      }`}
+                    </p>
+                  </div>
+                  {document.status === 'failed' ? (
+                    <button
+                      aria-label={`Retry document ${index + 1}`}
+                      className='flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-nyx-danger hover:bg-nyx-danger/10'
+                      disabled={disabled || isAccepting}
+                      onClick={() => onRetryDocument(document.id)}
+                      type='button'
+                    >
+                      <RotateCcw aria-hidden='true' className='h-3 w-3' />
+                      Retry
+                    </button>
+                  ) : null}
+                  <button
+                    aria-label={`Remove document ${index + 1}`}
+                    className='flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-nyx-muted hover:bg-nyx-panel hover:text-nyx-ink disabled:opacity-50'
+                    disabled={disabled || isAccepting}
+                    onClick={() => onRemoveDocument(document.id)}
+                    type='button'
+                  >
+                    <X aria-hidden='true' className='h-3.5 w-3.5' />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
           {draftImages.length > 0 ? (
             <ol className='mb-3 grid grid-cols-4 gap-2' aria-label='Attached images'>
               {draftImages.map((image, index) => (
@@ -246,16 +332,24 @@ export function ChatComposer({
           <div className='mt-2 flex h-9 items-center justify-between gap-2'>
             <div className='flex min-w-0 items-center gap-1'>
               <input
-                accept='image/png,image/jpeg'
+                accept='image/png,image/jpeg,.txt,.md,.csv,.pdf'
                 className='sr-only'
                 disabled={disabled || isAccepting}
                 multiple
                 onChange={(event) => {
-                  const images = [...(event.target.files ?? [])]
+                  const files = [...(event.target.files ?? [])]
                   event.target.value = ''
+                  const images = files.filter((file) => isSupportedComposerImageType(file.type))
+                  const documents = files.filter((file) =>
+                    isSupportedComposerDocumentName(file.name),
+                  )
 
                   if (images.length > 0) {
                     onAddImages(images)
+                  }
+
+                  if (documents.length > 0) {
+                    onAddDocuments(documents)
                   }
                 }}
                 ref={fileInputRef}
@@ -263,11 +357,11 @@ export function ChatComposer({
                 type='file'
               />
               <button
-                aria-label='Attach images'
+                aria-label='Attach files'
                 className='flex h-7 w-7 items-center justify-center rounded-lg text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink disabled:opacity-50'
                 disabled={disabled || isAccepting}
                 onClick={() => fileInputRef.current?.click()}
-                title='Attach images'
+                title='Attach files'
                 type='button'
               >
                 <Paperclip aria-hidden='true' className='h-4 w-4' strokeWidth={1.75} />
