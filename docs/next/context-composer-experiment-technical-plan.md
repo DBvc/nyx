@@ -1,7 +1,8 @@
 # Experiment 01：上下文 Composer 技术方案
 
 > Status: E4R stopped at its oversized EXIF-orientation gate and its uncommitted
-> product diff was reversed; E4M and E5 remain stopped; no E slice is executable
+> product diff was reversed; E4L is the only executable E slice; E4M and E5
+> remain stopped
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -20,7 +21,8 @@
 > `RC-E4M-PLAN-02`。E4M 的首个有效 repetition 仍超线，未提交 Worker diff 已
 > 撤回。用户随后批准下述单一 E4R 等比例缩小方案；独立 plan review
 > `RC-E4R-PLAN-03` 已 PASS，但 oversized EXIF gate 证明 native resize 输出方向
-> 错误；未提交 E4R 产品 diff 已撤回，当前没有可执行 E slice。
+> 错误；未提交 E4R 产品 diff 已撤回。用户随后批准下述 E4L 新导入限制，E4L 是
+> 当前唯一实现许可。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -464,6 +466,21 @@ main sync 170.0 ms、观测 recursive peak delta 88,850,432 bytes 均未先失�
 明确的 orientation 产品失败，不是 sampler failure。ordinary matrix 未运行，未提交
 E4R 产品 diff 已精确撤回；v3.3/v3.4 仅保留为失败历史，不再提供实现许可。
 
+### v3.5 E4L：4-MiPixel new-import limit
+
+用户批准先限制超大图片，不再让自动缩图阻塞基础多模态。E4L 只新增一个固定
+4,194,304-pixel 新导入上限：Renderer 从 PNG/JPEG header 得到宽高后、创建 Worker
+之前拒绝超限 source，并通过现有 failed draft 与 composer notice 显示
+`This image is too large. Resize it below 4 MP and try again.`。Electron main 在
+`writeNewImages` 的新 pair validation 上独立拒绝超限 canonical；`readCanonical` 继续
+使用历史 8,294,400-pixel 上限，因此 hydration、Provider build 与 Retry 不迁移旧图。
+
+E4L 不改 byte limit、edge limit、Worker、encoder、preview、schema、IPC、Provider、
+Runtime、UI 结构、格式或依赖。近源测试覆盖 4,194,304-pixel boundary、超一档新写拒绝
+和历史超限读取。自动检查通过后，用 ordinary PNG/JPEG 分别走 picker、paste、drop，
+并确认 oversized source 在 Worker 前失败、提示可见且 draft 可 remove。通过独立 diff
+review 后只提交该限制和状态文档；不恢复 E5。
+
 ### Provider、错误与 Runtime
 
 - Main-only Provider message 从 v3 record 构造；text-only 保持现有 string content。
@@ -498,7 +515,7 @@ E4R 产品 diff 已精确撤回；v3.3/v3.4 仅保留为失败历史，不再提
 ### 实现切片与放行顺序
 
 `RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5、E4M 与 E4R 均已停止，
-当前没有可执行 E slice：
+E4L 是当前唯一可执行 E slice：
 
 1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
    snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
@@ -1589,4 +1606,5 @@ mise run check
   E4M candidate；v3.2 通过 `RC-E4M-PLAN-02` 后执行，但在
   `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff。用户随后批准 v3.3 的单一 E4R
   2048-edge decoder-resize candidate；`RC-E4R-PLAN-03` 已 PASS，但 E4R 在
-  oversized EXIF-orientation gate 停止并撤回未提交产品 diff。当前没有可执行 E slice。
+  oversized EXIF-orientation gate 停止并撤回未提交产品 diff。用户随后批准 E4L
+  4-MiPixel new-import limit；E4L 是当前唯一可执行 E slice。

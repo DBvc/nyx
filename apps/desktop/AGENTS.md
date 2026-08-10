@@ -101,7 +101,10 @@ This subproject owns:
   stopped at its oversized EXIF-orientation gate: the source decoded as portrait
   while the product persisted landscape full and preview output. The ordinary
   matrix was not run and the uncommitted product diff was reversed. No E slice
-  is executable pending a new user decision.
+  was executable until the user approved one bounded E4L fallback: reject new
+  imports above 4,194,304 pixels before Worker decode, enforce the same limit on
+  new main-owned writes, and preserve historical reads. E4L is the only
+  executable E slice.
   Electron main must remain authoritative
   for validation, metadata policy, file IO, durable state, Provider mapping, and
   errors. OCaml remains a text-only projection. No scope expansion is authorized.
@@ -258,13 +261,14 @@ complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
 E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
 `RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
 passed `RC-E4R-PLAN-03`, then stopped at its oversized EXIF-orientation gate;
-its uncommitted product diff was reversed. No E slice is executable.
+its uncommitted product diff was reversed. The user-approved E4L 4-MiPixel
+new-import limit is the only executable E slice.
 Main authority and durable ownership remain active E boundaries; no
 scope expansion is authorized.
 
 E0 through E0F evidence is recorded in
 `../../docs/next/context-composer-experiment-runthrough.md`. E4M and E5 are
-stopped; E4R is also stopped and no E slice is executable.
+stopped; E4R is also stopped and E4L is the only executable E slice.
 
 Still not allowed in this fifth workstream:
 

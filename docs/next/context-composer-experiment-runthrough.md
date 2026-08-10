@@ -16,7 +16,10 @@ decode, without cropping or changing historical-image reads. E4R is blocked
 until independent plan review; E4M and E5 remain stopped. The revised plan then
 passed `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate.
 The ordinary matrix was not run and the uncommitted E4R product diff was
-reversed. No E slice is executable pending a new user decision.
+reversed. No E slice was executable until the user approved the bounded E4L
+fallback: reject new imports above 4,194,304 pixels before Worker decode, enforce
+the same limit on new main-owned writes, and preserve historical reads. E4L is
+the only executable E slice.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -817,7 +820,14 @@ E4R therefore stopped without trying another resize shape, EXIF parser,
 dependency, encoder, size, or transport. The ordinary matrix was not run. The
 six-file product/test diff was precisely reversed, leaving only this evidence
 and status sync. The v3.3 candidate and v3.4 evidence-policy amendment are now
-historical and provide no implementation permission. No E slice is executable.
+historical and provide no implementation permission.
+
+The user subsequently chose the smaller E4L fallback instead of another resize
+implementation. E4L adds no resize path: new images above 4,194,304 pixels are
+rejected in Renderer header preflight before Worker decode, and Electron main
+independently rejects a new canonical pair above the same limit. The historical
+8,294,400-pixel durable reader remains unchanged. E4L is the only executable E
+slice; E4R, E4M, and E5 remain stopped.
 
 ## Historical v1.8 candidate limits (status reference)
 
