@@ -99,7 +99,8 @@ Use relative documentation links. Do not add local absolute paths.
   measured +299.828 MiB. `RC-E4M-EVIDENCE-01` returned `VALID_STOP`, the
   uncommitted Worker change was reversed. The user then approved the bounded
   E4R 2048-edge proportional-resize candidate; its revised plan passed
-  `RC-E4R-PLAN-03`, and E4R is the only executable E slice. E0F
+  `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate and
+  its uncommitted product diff was reversed. No E slice is executable. E0F
   itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
@@ -1584,7 +1585,8 @@ amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
 passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01`. Its
 uncommitted Worker change was reversed. The user then approved E4R as a single
 2048-edge proportional-resize candidate; its revised plan passed
-`RC-E4R-PLAN-03`, and E4R is the only executable E slice.
+`RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate and its
+uncommitted product diff was reversed. No E slice is executable.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1612,8 +1614,8 @@ The active E invariants are:
 - E1-E4 are complete and independently reviewed; the v3.1 canonical-identity
   amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
   gate; the user-approved E4M candidate passed `RC-E4M-PLAN-02` but stopped at
-  `RC-E4M-EVIDENCE-01`; E4R passed `RC-E4R-PLAN-03` and is the only executable
-  E slice
+  `RC-E4M-EVIDENCE-01`; E4R passed `RC-E4R-PLAN-03` but stopped at its oversized
+  EXIF-orientation gate; no E slice is executable
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2547,9 +2549,12 @@ variant inside E4M.
 
 Type: one bounded E4 owning-slice product repair candidate.
 
-Status: executable. The user approved proportional downscale instead of full-4K
-canonical support, and the revised plan passed `RC-E4R-PLAN-03`. E4R is the only
-executable E slice; E4M and E5 remain stopped.
+Status: stopped. The user approved proportional downscale instead of full-4K
+canonical support, and the revised plan passed `RC-E4R-PLAN-03`. The packaged
+oversized EXIF-orientation gate then failed: Chromium independently decoded the
+source as portrait, while the product persisted landscape full and preview
+output. The ordinary matrix was not run and the uncommitted E4R product diff was
+reversed. No E slice is executable pending a new user decision.
 
 Allowed product files:
 
@@ -2586,23 +2591,50 @@ Required:
 - add no UI, setting, dependency, helper layer, Worker/process, IPC, schema,
   cache, original retention, format, Provider/Runtime behavior, or general Asset
   abstraction
-- run the desktop automated checks, then three packaged real 3840x2160 drops in
-  fresh processes with different initially empty profiles using the exact
-  retained E5 fixture; every run requires a 2048-edge canonical, 512-edge
-  preview, ready <=1 s, heartbeat <=50 ms, main sync <=250 ms, and recursive
-  whole-process peak delta <=192 MiB; stop on the first failure
-- only after all three pass, use the same build to run one oversized EXIF 90° or
+- because the old OS-temp E5 fixture is no longer present, pre-bind the two-file
+  generator at combined SHA-256 `d7595a...d6eaf`: Electron 41.7.2 / Chromium
+  146 creates one 3840x2160 canvas; seed `0x4e595845` advances xorshift32 once
+  per RGB pixel and writes its three state bytes with alpha 255; the sole encoder
+  call is `canvas.toBlob("image/jpeg", 0.85)`
+- after this amendment passes review, execute that exact generator command once
+  in a separate unmeasured process; the first output must be a 3840x2160 JPEG
+  under the existing 8 MiB source cap, otherwise Stop without changing seed,
+  quality, algorithm, source, or command and without rerunning it; before counted
+  runs bind bytes, SHA-256, size, type, metadata, source hash, command, and
+  Electron/Chromium versions
+- retain the three already recorded fresh-process packaged 4K observations as
+  bounded engineering evidence: all produced 2048x1152 canonical and 512x288
+  preview output, passed product timing lines, and observed 112,041,984 to
+  114,753,536-byte recursive peak deltas; none is a strict memory proof because
+  the sampler validity conditions did not all pass
+- under the user-approved v3.4 evidence-policy amendment, stop iterating the
+  sampler and do not require each `ps` call to return within 30 ms or all three
+  observations to be formally countable; retain the 192 MiB product stop line,
+  so any later observed peak above it still stops E4R
+- use the same build to run one oversized EXIF 90° or
   270° production-Worker fixture and prove correct orientation, aspect ratio,
   no crop, and no stretch; if native resize cannot do this, Stop without an EXIF
   parser or dependency
 - then run the four-ordinary-image packaged real E4 matrix once in another fresh
-  process/profile and preserve its output/timing/memory lines; bind source/build/
-  `app.asar`/commands/process samples/results for independent code/evidence review
+  process/profile and preserve its output/timing/memory observations; sampler
+  execution duration is diagnostic rather than a product gate, while any
+  observed peak above 192 MiB remains a Stop; bind source/build/`app.asar`/
+  commands/process samples/results for independent code/evidence review
 
-If all checks pass, commit only after independent review and resume E5 at its
-unrun remainder. If any fails, reverse the uncommitted E4R product diff, record
-the bounded Stop, and require a new user decision. Do not try a second size,
-encoder, transport, or memory line inside E4R.
+If all product checks pass, commit only after independent review and resume E5
+at its unrun remainder. If product correctness, product timing, or an observed
+memory peak fails, reverse the uncommitted E4R product diff, record the bounded
+Stop, and require a new user decision. Do not try a second size, encoder,
+transport, memory line, or sampler inside E4R.
+
+Recorded outcome: the oversized EXIF orientation-6 source independently decoded
+as 1800x3000, but the packaged product persisted a 2048x1229 full image and a
+512x307 preview instead of the required 1229x2048 and 307x512 portrait outputs.
+Ready was 263.8 ms, heartbeat max gap was 13.4 ms, main sync was 170.0 ms, and
+the observed recursive peak delta was 88,850,432 bytes, so orientation was the
+first product failure. The ordinary matrix was not run. The E4R product diff was
+precisely reversed; this section is historical evidence, not implementation
+permission.
 
 ## E5: Context Composer Lifecycle Acceptance And Docs
 
@@ -2611,7 +2643,7 @@ Type: acceptance verification and documentation sync.
 Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
 import measured +309.859 MiB against the fixed +192 MiB line. Independent review
 `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while E4M is
-stopped and E4R is the only executable E slice.
+stopped and E4R is also stopped. No E slice is executable.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

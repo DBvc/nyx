@@ -1,7 +1,7 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.3 sealed by `RC-E4R-PLAN-03`; E4R is the only executable E slice;
-> E4M and E5 remain stopped
+> Status: E4R stopped at its oversized EXIF-orientation gate and its uncommitted
+> product diff was reversed; E4M and E5 remain stopped; no E slice is executable
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -19,7 +19,8 @@
 > memory gate 停止。用户已批准下述单一 E4M Worker live-set 实验；v3.2 已通过
 > `RC-E4M-PLAN-02`。E4M 的首个有效 repetition 仍超线，未提交 Worker diff 已
 > 撤回。用户随后批准下述单一 E4R 等比例缩小方案；独立 plan review
-> `RC-E4R-PLAN-03` 已 PASS，E4R 是当前唯一实现许可。
+> `RC-E4R-PLAN-03` 已 PASS，但 oversized EXIF gate 证明 native resize 输出方向
+> 错误；未提交 E4R 产品 diff 已撤回，当前没有可执行 E slice。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -416,19 +417,52 @@ Runtime 行为。不得为了 orientation 新增 EXIF parser 或依赖；package
 必须另跑一张长边超过 2048 的 EXIF 90°/270° fixture，验证最终方向、纵横比、无裁剪和
 无拉伸。若当前 Chromium 的 native resize 语义不能同时满足，E4R 直接 Stop。
 
-代码检查通过后，连续跑三次 fresh-process packaged real drop 门禁：复用 E5/E4M 的
-5,801,864-byte、3840x2160 fixture 和 production Worker，必须得到长边 2048 的
-canonical、512-edge preview，并满足 ready <=1 s、heartbeat gap <=50 ms、single-image
-main sync <=250 ms、recursive whole-process peak delta <=192 MiB；每次使用不同的初始
-空 profile，任一次失败立即 Stop。三次通过后，才在同一 new build 的另一个 fresh
-process/profile 单独跑上述 EXIF fixture；它通过后，再用另一个初始空 profile/fresh
-process 跑一次四张 ordinary 图片 matrix。ordinary 输出顺序和既有字节行为不变，并
-满足 ready <=1.5 s、heartbeat <=50 ms、main sync <=250 ms 与 peak delta <=192 MiB。
-全部 evidence 与自动检查通过，再交独立 code/evidence review；通过后提交 E4R 并恢复
-E5 未运行部分。
+旧 E5/E4M fixture 随 OS temp 清理已不可用。替代 fixture 的 generator 在运行前固定：
+两个文件的 combined SHA-256 为
+`d7595a304c33621666d732f5bcdd6939f1c108c6c0b8209c006d52f5383d6eaf`
+（`package.json` 为 `201cc81f...a71ed`，`main.cjs` 为 `722f0e9b...4f56a`）。它在
+Electron 41.7.2 / Chromium 146 的独立未测量 Renderer 中创建 3840x2160 canvas，
+以 seed `0x4e595845` 对每个 RGB pixel 只运行一步 xorshift32 并写入三个 state bytes，
+alpha 固定 255，再且仅以 `canvas.toBlob("image/jpeg", 0.85)` 编码。完整命令形状为
+`NYX_E4R_FIXTURE_OUTPUT="<OS temp>/fixture.jpg" <repo>/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron <OS temp>/nyx-e4r-fixture-generator`。
 
-任一门禁失败立即停止，不试第二种尺寸、encoder 或 transport；精确撤回未提交产品
-diff，只记录该 E4R 候选的证据并重新交给用户决策。
+review 通过后只允许执行上述 generator 一次。首次输出必须正好是 3840x2160 JPEG、
+满足当前 8 MiB source preflight，并绑定 bytes、SHA-256、size、metadata JSON、source
+hash 与命令；任一条件失败立即 Stop，不得换 seed、quality、算法、命令或重跑。
+生成进程退出后，三次门禁只能复用该同一冻结文件，不得每轮重编码或调参。
+
+原 sealed sampler 连续得到三次产品链路一致的 fresh-process packaged 观察，但三次都
+因测量工具自身的有效性条件不能计数：第一版主线程 sampler 的最大间隔为 37.849 ms，
+Worker sampler 为 200.246 ms，最终 async sampler 的启动间隔为 22.714 ms、但一次
+`ps` 返回耗时为 42.737 ms。三次均得到 2048x1152 canonical、512x288 preview，且
+ready、heartbeat、main sync 全部过线；观测 peak delta 分别为 114,229,248、
+114,753,536、112,041,984 bytes，均低于 192 MiB。
+
+用户批准 v3.4 evidence-policy amendment：E4R 不再把单次 `ps` 返回耗时 <=30 ms 或
+三个 repetition 全部形式有效作为提交条件，也不再迭代 sampler。最终 async run 的
+22.714 ms 启动间隔和三次一致结果只作为有明确局限的工程证据，不得写成严格内存
+证明，也不得外推到其他输入或未来 transport。192 MiB 产品止损线保留；后续任一
+观测 peak delta 超线仍立即 Stop。
+
+按 v3.4 gate，E4R 当时只继续在同一 build 的独立 fresh process/profile 跑上述
+EXIF fixture；它通过后，
+再用另一个初始空 profile/fresh process 跑一次四张 ordinary 图片 matrix。EXIF 必须
+证明正确方向、纵横比、无裁剪和无拉伸。ordinary 输出顺序和既有字节行为不变，并
+满足 ready <=1.5 s、heartbeat <=50 ms、main sync <=250 ms；两次都记录 recursive
+whole-process peak delta，任一观测值 >192 MiB 立即 Stop，但 sampler 自身耗时不再
+作为产品失败。全部 evidence 与自动检查通过，再交独立 code/evidence review；通过后
+提交 E4R 并恢复 E5 未运行部分。
+
+任一产品正确性、产品时延或观测内存门禁失败立即停止，不试第二种尺寸、encoder 或
+transport；精确撤回未提交产品 diff，只记录该 E4R 候选的证据并重新交给用户决策。
+
+Recorded outcome：orientation-6 fixture 的 encoded pixels 为 3000x1800，Chromium
+独立 `<img>` 与未 resize `createImageBitmap` 均正确解码为 1800x3000。packaged
+production Worker 路径却持久化 2048x1229 full 与 512x307 preview，而不是要求的
+1229x2048 与 307x512 portrait 输出。ready 263.8 ms、heartbeat max gap 13.4 ms、
+main sync 170.0 ms、观测 recursive peak delta 88,850,432 bytes 均未先失败，因此这是
+明确的 orientation 产品失败，不是 sampler failure。ordinary matrix 未运行，未提交
+E4R 产品 diff 已精确撤回；v3.3/v3.4 仅保留为失败历史，不再提供实现许可。
 
 ### Provider、错误与 Runtime
 
@@ -463,8 +497,8 @@ diff，只记录该 E4R 候选的证据并重新交给用户决策。
 
 ### 实现切片与放行顺序
 
-`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5 与 E4M 已停止。E4R 已通过
-`RC-E4R-PLAN-03`，是当前唯一可执行 E slice：
+`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5、E4M 与 E4R 均已停止，
+当前没有可执行 E slice：
 
 1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
    snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
@@ -1554,5 +1588,5 @@ mise run check
   `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止。用户只批准单一
   E4M candidate；v3.2 通过 `RC-E4M-PLAN-02` 后执行，但在
   `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff。用户随后批准 v3.3 的单一 E4R
-  2048-edge decoder-resize candidate；`RC-E4R-PLAN-03` 已 PASS，E4R 是当前唯一
-  可执行 E slice。
+  2048-edge decoder-resize candidate；`RC-E4R-PLAN-03` 已 PASS，但 E4R 在
+  oversized EXIF-orientation gate 停止并撤回未提交产品 diff。当前没有可执行 E slice。

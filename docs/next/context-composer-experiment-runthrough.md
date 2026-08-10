@@ -14,7 +14,9 @@ Worker change was reversed. The user then approved one E4R review candidate:
 proportionally resize new images above a 2048-pixel long edge during Worker
 decode, without cropping or changing historical-image reads. E4R is blocked
 until independent plan review; E4M and E5 remain stopped. The revised plan then
-passed `RC-E4R-PLAN-03`; E4R is now the only executable E slice.
+passed `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate.
+The ordinary matrix was not run and the uncommitted E4R product diff was
+reversed. No E slice is executable pending a new user decision.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -750,7 +752,72 @@ adds a 2048-pixel long-edge limit only for newly generated canonical images,
 and proposes decoder-time proportional resize with no crop, original retention,
 UI setting, schema, IPC, dependency, or Provider/Runtime change. It is not
 executable until independent plan review passes. `RC-E4R-PLAN-03` subsequently
-passed, so E4R is now the only executable E slice; E4M and E5 remain stopped.
+passed, so E4R was then the only executable E slice; E4M and E5 remained stopped.
+The old E5/E4M source fixture was later absent after OS-temp cleanup. The sealed
+E4R evidence procedure therefore requires one deterministic replacement fixture
+to be generated and frozen before any measured run. Its pre-run generator is
+bound at combined SHA-256 `d7595a...d6eaf`, xorshift32 seed `0x4e595845`, and
+Chromium JPEG quality 0.85; it may execute once after plan review and must Stop
+on an invalid first output. No product behavior or acceptance line changes.
+The one allowed generator execution produced a 5,910,563-byte 3840x2160 JPEG at
+SHA-256
+`04bc4d9bed710998589d6f441e657e0a043861cccdd8afc637d569f6a646f9c2`;
+its metadata JSON is
+`9f15848d603d2d3c172a848711a79835031e7e56b5b0f6bd750cebfc150335d0`.
+Three packaged
+fresh-process product observations then consistently produced 2048x1152 full
+and 512x288 preview images, passed ready/heartbeat/main-sync lines, and observed
+peak deltas of 114,229,248, 114,753,536, and 112,041,984 bytes. They remained
+formally non-counting because successive sampler variants respectively missed
+the <=30 ms interval line or exceeded the <=30 ms `ps` duration line. Independent
+review classified this as measurement-proof failure rather than product-direction
+failure.
+
+The user then approved the v3.4 evidence-policy amendment: preserve those three
+results as bounded engineering evidence, stop iterating the sampler, remove the
+sampler-duration and three-formally-valid-repetition requirements for E4R only,
+and retain 192 MiB as an observed product Stop line. These observations are not
+a strict memory proof and do not generalize beyond the frozen fixture and build.
+At that point, E4R could proceed only to its still-unrun EXIF and ordinary-image
+gates before final independent review and commit.
+
+The EXIF gate used a 42,193-byte 3000x1800 JPEG at SHA-256
+`1bf21d8e840a1c27d8963a9adb2199352ae0ca33802581beb0b9a1d87726b814`,
+with APP1 orientation 6 and four asymmetric color quadrants. The independent
+Chromium inspector was
+`e27013c6685b3119a7de795a9f1a4d01144368e9b1080163a25794bda47710fd`;
+its result at
+`27b28e9c2ef5d6f31604758e233154cbc8431d83fb4854a7139110d1e3c0fcee`
+recorded encoded/native 3000x1800 and both `<img>` and an unresized
+`createImageBitmap` as the expected 1800x3000 portrait. Its redacted command
+shape was
+`NYX_E4R_EXIF_INSPECT_OUTPUT="<OS temp>/exif-inspect.json" <repo>/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron <OS temp>/inspect.cjs <OS temp>/exif-orientation-6.jpg`.
+
+The packaged gate used `app.asar` SHA-256
+`0ca035f5d1a4d85ccdc24b720a413726e641c542f4164a1b9db56e00369d76d9`.
+Its `/out/renderer/assets/image-canonicalizer.worker-SMDugQ0d.js` was 11,110
+bytes at SHA-256
+`8d9129fe886225befbb6095f101e00110d5795ddc15e36322d3eb8f431913840`,
+and the result bound the page URL inside that `app.asar`. The redacted invocation
+was `NYX_E4R_RUN_KIND=exif NYX_E4R_FIXTURE_PATH="<OS temp>/exif-orientation-6.jpg" NYX_E4R_FULL_WIDTH=1229 NYX_E4R_FULL_HEIGHT=2048 NYX_E4R_PREVIEW_WIDTH=307 NYX_E4R_PREVIEW_HEIGHT=512 node <OS temp>/run-4k.mjs 1`.
+
+The packaged product drop completed in 263.8 ms, heartbeat max gap was 13.4 ms,
+main sync was 170.0 ms, and the observed recursive peak delta was 88,850,432
+bytes. However, the production Worker persisted a 2048x1229 landscape full
+image and a 512x307 landscape preview instead of the required 1229x2048 and
+307x512 portrait outputs. Result JSON SHA-256 was
+`abd19af61e61e156d554aae4784d59ce734311eadfab7144dd701afe3ac480ed`;
+its log was
+`6ecbd39da38a9640af1fc38f9397664d97c2473c8565d96aa349044cdfa5b4e1`,
+and the bound harness was
+`0b7bcb4cadfcbfde27fe656e30e7712f670e475523820fee5c37cdadd4292ac6`.
+This is a product orientation failure, not a sampler failure.
+
+E4R therefore stopped without trying another resize shape, EXIF parser,
+dependency, encoder, size, or transport. The ordinary matrix was not run. The
+six-file product/test diff was precisely reversed, leaving only this evidence
+and status sync. The v3.3 candidate and v3.4 evidence-policy amendment are now
+historical and provide no implementation permission. No E slice is executable.
 
 ## Historical v1.8 candidate limits (status reference)
 

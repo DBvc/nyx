@@ -112,8 +112,10 @@ valid 4K repetition still measured +299.828 MiB. The uncommitted Worker change
 was reversed. The user then approved one bounded E4R review candidate:
 decoder-time proportional resize of new images above a 2048-pixel long edge,
 without cropping or changing historical-image reads. The revised plan passed
-`RC-E4R-PLAN-03`; E4R is the only executable E slice, while E4M and E5 remain
-stopped.
+`RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate: the
+source decoded as portrait while the product persisted landscape full and
+preview output. The ordinary matrix was not run and the uncommitted E4R product
+diff was reversed. No E slice is executable pending a new user decision.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -222,7 +224,8 @@ complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
 `RC-E5-PLAN-A-02`, then E5 stopped at `RC-E5-4K-MEMORY-01`. The user-approved
 E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
 `RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
-passed `RC-E4R-PLAN-03`; E4R is the only executable E slice.
+passed `RC-E4R-PLAN-03`, then stopped at the oversized EXIF-orientation gate;
+its uncommitted product diff was reversed. No E slice is executable.
 Electron main remains
 authoritative for validation, metadata policy, file IO, durable ownership,
 target resolution, Provider mapping, and safe errors. Product changes are
