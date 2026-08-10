@@ -94,8 +94,10 @@ Use relative documentation links. Do not add local absolute paths.
   erased credentials before the product handler. The user approved policy A;
   the v3.1 canonical-identity amendment passed `RC-E5-PLAN-A-02`. E5 then stopped
   at the fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned
-  `VALID_STOP`. No E slice is executable pending a new user decision. E0F itself
-  froze no product capacity or protocol; v3.0 selects them.
+  `VALID_STOP`. The user then approved only the bounded E4M candidate; its v3.2
+  amendment passed `RC-E4M-PLAN-02`, so E4M is the only executable E slice and
+  E5 remains stopped. E0F itself froze no product capacity or protocol; v3.0
+  selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
@@ -1575,7 +1577,8 @@ E1 completed at `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6`
 and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
 `RC-E3-CODE-02`; E4 completed at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1
 amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
-`RC-E5-4K-MEMORY-01`. No E slice is executable pending a new user decision.
+`RC-E5-4K-MEMORY-01`. The user approved bounded option A; the v3.2 amendment
+passed `RC-E4M-PLAN-02`. E4M is the only executable E slice; E5 remains stopped.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1602,7 +1605,8 @@ The active E invariants are:
 
 - E1-E4 are complete and independently reviewed; the v3.1 canonical-identity
   amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
-  gate and no E slice is executable
+  gate; the user approved only the bounded E4M candidate, whose v3.2 amendment
+  passed `RC-E4M-PLAN-02`; E4M is the only executable E slice
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2492,14 +2496,52 @@ build also passed, including a separate Worker chunk. E4 added no new IPC,
 dependency, Renderer cache, rich text, assistant image output, Provider policy,
 or OCaml change.
 
+## E4M: Worker Live-Set Repair Gate
+
+Type: one bounded E4 owning-slice repair experiment.
+
+Status: executable. The v3.2 amendment passed bound independent review as
+`RC-E4M-PLAN-02`; E4M is the only executable E slice and E5 remains stopped.
+
+Allowed product file:
+
+```text
+apps/desktop/src/ui/chat/image-canonicalizer.worker.ts
+```
+
+Required:
+
+- preserve the exact current decode, canonical/preview bytes policy, parser,
+  transfer, sequential Worker, safe error, and main-owned validation behavior
+- clear the source after decode; draw both canvases while the bitmap is valid,
+  then close it before encoding; release each canvas/context after its encode
+  and each encoded Blob immediately after its buffer conversion; `finally`
+  releases every remaining reference without adding a full-resolution copy
+- add no helper, abstraction, dependency, cache, Worker/process, IPC, scheme,
+  capacity, quality, or dimension change
+- build the production Worker and run the exact reviewed 3840×2160 fixture
+  through the packaged real E4 drop path in three fresh processes/profiles
+- preserve the E5 timing lines and require every repetition's recursive whole-
+  process peak delta to remain <=192 MiB; stop on the first failure
+- after all 4K repetitions pass, rerun the four-ordinary-image packaged real E4
+  import matrix in the new build and a fresh process/profile; do not reuse the
+  pre-change evidence, and apply its existing timing and <=192 MiB lines
+- bind source, build, `app.asar`, commands, process tree, samples, and result for
+  independent code/evidence review
+
+If all three repetitions pass, commit only after independent review and resume
+E5 at its unrun remainder. If any fails, reverse the uncommitted Worker change,
+record `VALID_STOP`, and require a new user decision. Do not try a second code
+variant inside E4M.
+
 ## E5: Context Composer Lifecycle Acceptance And Docs
 
 Type: acceptance verification and documentation sync.
 
 Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
 import measured +309.859 MiB against the fixed +192 MiB line. Independent review
-`RC-E5-4K-MEMORY-01` returned `VALID_STOP`; no E slice is executable pending a
-new user decision.
+`RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while the bounded
+E4M candidate executes under `RC-E4M-PLAN-02`.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

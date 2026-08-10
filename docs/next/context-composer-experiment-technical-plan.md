@@ -1,7 +1,8 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.1 sealed; E1-E4 completed and reviewed; E5 stopped after
-> `RC-E5-4K-MEMORY-01` VALID_STOP; no E slice is executable pending user decision
+> Status: v3.2 sealed by `RC-E4M-PLAN-02`; E1-E4 completed and reviewed; E5
+> stopped after `RC-E5-4K-MEMORY-01` VALID_STOP; E4M is the only executable E
+> slice
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -16,7 +17,8 @@
 > `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在 `7677868` 完成并通过
 > `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过 `RC-E4-CODE-02`。下述 v3.1
 > amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在 fresh-process 4K import
-> memory gate 停止，等待新的用户决策。
+> memory gate 停止。用户已批准下述单一 E4M Worker live-set 实验；v3.2 已通过
+> `RC-E4M-PLAN-02`，只授权 E4M。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -321,6 +323,49 @@ high-entropy JPEG source 为 5,801,864 bytes，canonical 为 8,359,933 bytes，p
 `RC-E5-4K-MEMORY-01` 判定 `VALID_STOP`：峰值属于 import Worker 相位，不是后续
 Provider build；无需重测。E5 的 grid/32 MiB Provider、revocation 与 real-target
 remainder 未运行，当前没有可执行 E slice。
+
+### v3.2 E4M：单一 Worker live-set 修复门禁
+
+用户批准 option A：保留 3840×2160 high-entropy fixture、现有编码输出和固定
+`+192 MiB` 红线，只验证当前 Worker 是否因 `ImageBitmap`、full/preview
+`OffscreenCanvas` 与编码结果存活期重叠而制造峰值。初审发现两个局部缺口，修订后
+`RC-E4M-PLAN-02` 已 PASS。E4M 是唯一可执行 E slice；E5 继续 stopped。
+
+唯一允许的产品改动是
+`apps/desktop/src/ui/chat/image-canonicalizer.worker.ts` 内的资源释放顺序：保存已解码
+宽高；decode 完成后清掉 source 引用；在 bitmap 有效时完成 preview/full 两次 draw；
+随即 `close()` 并清掉 bitmap；每个 canvas 的 `convertToBlob()` 完成后立即把宽高归零
+并清掉 canvas/context 引用；每个 encoded Blob 的 `arrayBuffer()` 完成后立即清掉
+Blob 引用。其后只保留必须 transfer 的 canonical/preview buffers，执行同一 parser 并
+发出同一结果。异常路径仍由 `finally` 清掉尚未释放的 source、Blob、bitmap、canvas
+与 context。不得增加 full-resolution copy，也不得改变 decode、same-MIME canonical、
+JPEG 0.95、512-edge PNG preview、顺序 Worker、错误文案、transfer、main validation 或
+任何可观察产品语义。
+
+不得引入 helper/抽象、缓存、Worker pool、第二 Worker、utility process、新依赖、
+WebCodecs、新 IPC/scheme、质量/尺寸/数量调整或红线调整。普通单元测试无法证明
+whole-process native live set；本切片的最小可运行回归检查就是现有 production build
+加 packaged real E4 drop path，不为测试制造新的产品抽象。
+
+门禁绑定原 E5 fixture：source SHA-256
+`c6d1517e598eae00fedb027712334268315a60b7dda3704ce6f9f28508f4a19d`、
+5,801,864 bytes、3840×2160。每次使用新的空 profile 与 fresh process，页面稳定后
+以 20 ms 间隔取 20 个 whole-process baseline samples 并用 median；随后约每
+20-27 ms 累加 app root 与 descendants RSS，从真实 drop 到 accepted/main-validation
+settle，Provider build 前结束。连续三次均须满足 ready ≤1 s、heartbeat gap ≤50 ms、
+single-image main sync ≤250 ms、peak delta ≤192 MiB，并绑定实际 `app.asar` hash；
+任一次失败立即 `VALID_STOP`，不运行余下 repetition 或 E5 remainder。
+
+三次 4K 均通过后，必须在同一新 build 的另一个 fresh process/profile 中重跑四张
+ordinary fixture 的 packaged real E4 import matrix；不得沿用改动前证据。四张图须保持
+顺序、全部 ready/accepted，4-image ready ≤1.5 s、heartbeat gap ≤50 ms、单张 main
+sync ≤250 ms、whole-process peak delta ≤192 MiB。它失败同样使 E4M `VALID_STOP`；
+只有 4K repetitions 与 ordinary matrix 全过，才可进入独立 review。
+
+E4M 通过还须完成桌面 typecheck、compat、lint、test、build、format-check、
+`git diff --check` 与独立 code/evidence review。通过后才提交产品改动并恢复 E5；若
+失败，则用精确反向 patch 撤回未提交的 Worker diff，只记录证据，下一步重新由用户
+选择 downscale、放宽内存预算或停止实验。
 
 ### Provider、错误与 Runtime
 
@@ -1443,4 +1488,5 @@ mise run check
   `RC-E1-CODE-02`；E2 已在 `36e32e6` 完成并通过 `RC-E2-CODE-03`；E3 已在
   `7677868` 完成并通过 `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过
   `RC-E4-CODE-02`。v3.1 amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在
-  `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止，等待用户决策。
+  `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止。用户只批准单一
+  E4M candidate；v3.2 已通过 `RC-E4M-PLAN-02`，E4M 是唯一可执行 E slice。

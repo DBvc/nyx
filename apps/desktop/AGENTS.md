@@ -90,8 +90,10 @@ This subproject owns:
   complete at `b13d3b8` and passed `RC-E4-CODE-02`. `RC-E5-EVIDENCE-01` stopped
   the first packaged run because Chromium erased credentials before the handler.
   The user-approved v3.1 amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
-  the fresh-process 4K memory gate. `RC-E5-4K-MEMORY-01` returned `VALID_STOP`;
-  no E slice is executable pending a new user decision.
+  the fresh-process 4K memory gate. `RC-E5-4K-MEMORY-01` returned `VALID_STOP`.
+  The user approved only bounded option A: one E4M Worker live-set repair
+  candidate. Its v3.2 amendment passed `RC-E4M-PLAN-02`; E4M is the only
+  executable E slice and E5 remains stopped.
   Electron main must remain authoritative
   for validation, metadata policy, file IO, durable state, Provider mapping, and
   errors. OCaml remains a text-only projection. No scope expansion is authorized.
@@ -244,13 +246,15 @@ a product capacity. The later v3.0 plan passed `RC-V3-PLAN-03`; E1 completed at
 `1bf91cf` and passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
 `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
 complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
-`RC-E5-PLAN-A-02`; E5 then stopped at `RC-E5-4K-MEMORY-01`. No E slice is
-currently executable.
+`RC-E5-PLAN-A-02`; E5 then stopped at `RC-E5-4K-MEMORY-01`. The user-approved
+E4M candidate passed plan review as `RC-E4M-PLAN-02` and is the only executable
+E slice.
 Main authority and durable ownership remain active E boundaries; no
 scope expansion is authorized.
 
 E0 through E0F evidence is recorded in
-`../../docs/next/context-composer-experiment-runthrough.md`. E5 is stopped.
+`../../docs/next/context-composer-experiment-runthrough.md`. E5 is stopped; E4M
+is the only executable E slice.
 
 Still not allowed in this fifth workstream:
 

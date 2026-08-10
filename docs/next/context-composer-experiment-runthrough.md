@@ -7,7 +7,9 @@ completed at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8`
 and passed `RC-E4-CODE-02`. E5 stopped at `RC-E5-EVIDENCE-01`; the user approved
 policy A and the v3.1 amendment passed `RC-E5-PLAN-A-02`. E5 then stopped at the
 fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. No E
-slice is executable pending a new user decision.
+slice was executable pending a new user decision. The user approved bounded
+option A: one E4M Worker live-set repair candidate. Its v3.2 plan passed
+`RC-E4M-PLAN-02`; E4M is the only executable E slice and E5 remains stopped.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -696,6 +698,11 @@ E5 remainder stopped immediately. Combined product grid/32 MiB Provider,
 restart revocation, and real-target acceptance were not run. The OS-temp app,
 profiles, fixtures, and redacted evidence remain retained pending the next user
 decision and one bound documentation review.
+
+The user then approved option A: keep the exact 4K fixture and +192 MiB line and
+test one behavior-preserving Worker resource-lifetime reorder. The candidate may
+run under the bound `RC-E4M-PLAN-02` plan; it may not introduce a second variant,
+lower quality/size, raise the line, or resume E5 early.
 
 ## Historical v1.8 candidate limits (status reference)
 
