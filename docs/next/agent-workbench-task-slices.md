@@ -97,7 +97,9 @@ Use relative documentation links. Do not add local absolute paths.
   `VALID_STOP`. The user then approved only the bounded E4M candidate; its v3.2
   amendment passed `RC-E4M-PLAN-02`, but the first valid 4K repetition still
   measured +299.828 MiB. `RC-E4M-EVIDENCE-01` returned `VALID_STOP`, the
-  uncommitted Worker change was reversed, and no E slice is executable. E0F
+  uncommitted Worker change was reversed. The user then approved the bounded
+  E4R 2048-edge proportional-resize candidate; its revised plan passed
+  `RC-E4R-PLAN-03`, and E4R is the only executable E slice. E0F
   itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
@@ -1580,7 +1582,9 @@ and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
 amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
 `RC-E5-4K-MEMORY-01`. The user approved bounded option A; the v3.2 amendment
 passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01`. Its
-uncommitted Worker change was reversed; no E slice is executable.
+uncommitted Worker change was reversed. The user then approved E4R as a single
+2048-edge proportional-resize candidate; its revised plan passed
+`RC-E4R-PLAN-03`, and E4R is the only executable E slice.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1608,7 +1612,8 @@ The active E invariants are:
 - E1-E4 are complete and independently reviewed; the v3.1 canonical-identity
   amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
   gate; the user-approved E4M candidate passed `RC-E4M-PLAN-02` but stopped at
-  `RC-E4M-EVIDENCE-01`; no E slice is executable
+  `RC-E4M-EVIDENCE-01`; E4R passed `RC-E4R-PLAN-03` and is the only executable
+  E slice
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2538,14 +2543,75 @@ E5 at its unrun remainder. If any fails, reverse the uncommitted Worker change,
 record `VALID_STOP`, and require a new user decision. Do not try a second code
 variant inside E4M.
 
+## E4R: 2048-Edge Decoder Resize Gate
+
+Type: one bounded E4 owning-slice product repair candidate.
+
+Status: executable. The user approved proportional downscale instead of full-4K
+canonical support, and the revised plan passed `RC-E4R-PLAN-03`. E4R is the only
+executable E slice; E4M and E5 remain stopped.
+
+Allowed product files:
+
+```text
+apps/desktop/shared/chat/image-file.ts
+apps/desktop/electron/main/current-thread/image-file.test.ts
+apps/desktop/electron/main/current-thread/image-files.ts
+apps/desktop/electron/main/current-thread/image-files.test.ts
+apps/desktop/src/ui/chat/image-canonicalizer.worker.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+```
+
+Required:
+
+- keep the existing 8192-edge / 8,294,400-pixel source preflight and historical
+  durable reader so pre-E4R images remain valid for hydration, Provider build,
+  and Retry
+- add one fixed 2048-pixel canonical long-edge limit for new imports only;
+  proportionally downscale without crop or upscale via `createImageBitmap`
+  resize options before the full canonical canvas is allocated
+- before allocating the full canvas, verify the oriented bitmap's long edge and
+  aspect ratio; do not assume source SOF width/height has the same orientation
+  as the bitmap after EXIF orientation
+- preserve same-MIME canonical output, JPEG 0.95, 512-edge PNG preview, strict
+  parser, sequential Worker, transferable buffers, and all existing owner and
+  accepted/durable boundaries
+- have Worker reject an over-limit output and Electron main independently
+  enforce the new limit only while validating a newly written pair; do not apply
+  the new limit in `readCanonical`
+- add a boundary regression using one valid `>2048` canonical that remains under
+  the historical source limits: new `writeNewImages` rejects it while historical
+  `readCanonical` succeeds
+- add no UI, setting, dependency, helper layer, Worker/process, IPC, schema,
+  cache, original retention, format, Provider/Runtime behavior, or general Asset
+  abstraction
+- run the desktop automated checks, then three packaged real 3840x2160 drops in
+  fresh processes with different initially empty profiles using the exact
+  retained E5 fixture; every run requires a 2048-edge canonical, 512-edge
+  preview, ready <=1 s, heartbeat <=50 ms, main sync <=250 ms, and recursive
+  whole-process peak delta <=192 MiB; stop on the first failure
+- only after all three pass, use the same build to run one oversized EXIF 90° or
+  270° production-Worker fixture and prove correct orientation, aspect ratio,
+  no crop, and no stretch; if native resize cannot do this, Stop without an EXIF
+  parser or dependency
+- then run the four-ordinary-image packaged real E4 matrix once in another fresh
+  process/profile and preserve its output/timing/memory lines; bind source/build/
+  `app.asar`/commands/process samples/results for independent code/evidence review
+
+If all checks pass, commit only after independent review and resume E5 at its
+unrun remainder. If any fails, reverse the uncommitted E4R product diff, record
+the bounded Stop, and require a new user decision. Do not try a second size,
+encoder, transport, or memory line inside E4R.
+
 ## E5: Context Composer Lifecycle Acceptance And Docs
 
 Type: acceptance verification and documentation sync.
 
 Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
 import measured +309.859 MiB against the fixed +192 MiB line. Independent review
-`RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while the bounded
-E4M candidate is also stopped at `RC-E4M-EVIDENCE-01`; no E slice is executable.
+`RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while E4M is
+stopped and E4R is the only executable E slice.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

@@ -10,7 +10,11 @@ fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. No E
 slice was executable pending a new user decision. The user approved bounded
 option A: one E4M Worker live-set repair candidate. Its v3.2 plan passed
 `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01`. The uncommitted
-Worker change was reversed; no E slice is executable pending user decision.
+Worker change was reversed. The user then approved one E4R review candidate:
+proportionally resize new images above a 2048-pixel long edge during Worker
+decode, without cropping or changing historical-image reads. E4R is blocked
+until independent plan review; E4M and E5 remain stopped. The revised plan then
+passed `RC-E4R-PLAN-03`; E4R is now the only executable E slice.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -739,6 +743,14 @@ and E5 remainder were not run. The sole uncommitted Worker diff was precisely
 reversed, so product behavior remains at E4 commit `b13d3b8`. The evidence root
 remains in OS temp, local and uncommitted, for audit. This result does not select
 downscale, a higher memory budget, or any other product direction.
+
+The user subsequently selected the bounded downscale direction. The v3.3 E4R
+candidate keeps the existing abnormal-source and historical durable-read limits,
+adds a 2048-pixel long-edge limit only for newly generated canonical images,
+and proposes decoder-time proportional resize with no crop, original retention,
+UI setting, schema, IPC, dependency, or Provider/Runtime change. It is not
+executable until independent plan review passes. `RC-E4R-PLAN-03` subsequently
+passed, so E4R is now the only executable E slice; E4M and E5 remain stopped.
 
 ## Historical v1.8 candidate limits (status reference)
 

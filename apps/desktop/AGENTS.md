@@ -94,8 +94,11 @@ This subproject owns:
   The user approved only bounded option A: one E4M Worker live-set repair
   candidate. Its v3.2 amendment passed `RC-E4M-PLAN-02`, then E4M stopped at
   `RC-E4M-EVIDENCE-01` when the first valid 4K repetition still measured
-  +299.828 MiB. The uncommitted Worker change was reversed; no E slice is
-  executable pending a new user decision.
+  +299.828 MiB. The uncommitted Worker change was reversed. The user then
+  approved one bounded E4R review candidate: decoder-time proportional resize
+  of new images above a 2048-pixel long edge, without cropping or changing
+  historical-image reads. The revised plan passed `RC-E4R-PLAN-03`; E4R is the
+  only executable E slice, while E4M and E5 remain stopped.
   Electron main must remain authoritative
   for validation, metadata policy, file IO, durable state, Provider mapping, and
   errors. OCaml remains a text-only projection. No scope expansion is authorized.
@@ -250,13 +253,14 @@ a product capacity. The later v3.0 plan passed `RC-V3-PLAN-03`; E1 completed at
 complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
 `RC-E5-PLAN-A-02`; E5 then stopped at `RC-E5-4K-MEMORY-01`. The user-approved
 E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
-`RC-E4M-EVIDENCE-01`; no E slice is currently executable.
+`RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
+passed `RC-E4R-PLAN-03`; E4R is the only executable E slice.
 Main authority and durable ownership remain active E boundaries; no
 scope expansion is authorized.
 
 E0 through E0F evidence is recorded in
 `../../docs/next/context-composer-experiment-runthrough.md`. E4M and E5 are
-stopped; no E slice is currently executable.
+stopped; E4R is the only executable E slice.
 
 Still not allowed in this fifth workstream:
 

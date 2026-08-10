@@ -1,7 +1,7 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.2 executed; E4M stopped at `RC-E4M-EVIDENCE-01` VALID_STOP; E5
-> remains stopped; no E slice is executable pending user decision
+> Status: v3.3 sealed by `RC-E4R-PLAN-03`; E4R is the only executable E slice;
+> E4M and E5 remain stopped
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -18,7 +18,8 @@
 > amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在 fresh-process 4K import
 > memory gate 停止。用户已批准下述单一 E4M Worker live-set 实验；v3.2 已通过
 > `RC-E4M-PLAN-02`。E4M 的首个有效 repetition 仍超线，未提交 Worker diff 已
-> 撤回；当前没有可执行 E slice。
+> 撤回。用户随后批准下述单一 E4R 等比例缩小方案；独立 plan review
+> `RC-E4R-PLAN-03` 已 PASS，E4R 是当前唯一实现许可。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -322,7 +323,7 @@ high-entropy JPEG source 为 5,801,864 bytes，canonical 为 8,359,933 bytes，p
 +309.859 MiB，超过固定 +192 MiB。独立 evidence review
 `RC-E5-4K-MEMORY-01` 判定 `VALID_STOP`：峰值属于 import Worker 相位，不是后续
 Provider build；无需重测。E5 的 grid/32 MiB Provider、revocation 与 real-target
-remainder 未运行，当前没有可执行 E slice。
+remainder 当时未运行，E5 在该 Stop 后不可执行。
 
 ### v3.2 E4M：单一 Worker live-set 修复门禁
 
@@ -377,6 +378,58 @@ ready 234.6 ms、heartbeat 11.9 ms、main sync 228.7 ms 均过线，但 baseline
 ordinary matrix 或 E5 remainder，未提交 Worker diff 已精确撤回。该结论只否决
 E4M 的单一 live-set reorder，不外推到其他产品方向。
 
+### v3.3 E4R：2048-edge decoder resize
+
+用户批准把大图自动等比例缩小，而不是继续为 full 4K canonical 增加复杂度。E4R 是
+唯一候选：新导入图片若长边超过 2048，Renderer 把已经从 source header 解析出的宽高
+传给现有顺序 Worker；Worker 在 `createImageBitmap` decode 时请求 `resizeWidth`、
+`resizeHeight` 与 `resizeQuality: "high"`，然后沿用现有 same-MIME canonical、JPEG
+0.95、512-edge PNG preview、parser 和 transferable buffer 路径。图片不裁剪、不放大，
+也不保存原图。长边不超过 2048 的 ordinary path 不传 resize 选项。Worker 在创建
+full canvas 前必须核对 oriented bitmap 的长边与原图纵横比；不能依赖 source SOF
+横竖方向等于 EXIF orientation 后的横竖方向。
+
+现有 8192-edge / 8,294,400-pixel source preflight 与 durable read validator 保持不变：
+前者继续拒绝异常输入，后者保证 E4R 前已经持久化的大图仍可 hydration、Provider build
+和 Retry。新增 2048-edge 限制只约束新 canonical：Worker 必须拒绝 native resize 后仍
+超限的输出；Electron main 必须在 `writeNewImages` 的 pair validation 中再次拒绝超限
+新写入，但 `readCanonical` 不得使用该新限制。不开 schema migration，不改旧 record。
+近源回归必须用同一份仍满足旧限制但长边超过 2048 的 canonical，证明
+`writeNewImages` 拒绝新 pair，而 `readCanonical` 仍可读取历史文件。
+
+允许改动仅限现有图片导入链及近源测试：
+
+```text
+apps/desktop/shared/chat/image-file.ts
+apps/desktop/electron/main/current-thread/image-file.test.ts
+apps/desktop/electron/main/current-thread/image-files.ts
+apps/desktop/electron/main/current-thread/image-files.test.ts
+apps/desktop/src/ui/chat/image-canonicalizer.worker.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+```
+
+实现只新增一个固定 2048 常量、一个复用现有 preview 算法形状的等比例尺寸 helper、
+Worker request 的 source 宽高和现有边界上的 canonical 门禁。不得新增 UI、设置项、quality
+knob、依赖、Worker/process、IPC、schema、缓存、Asset abstraction、格式或 Provider /
+Runtime 行为。不得为了 orientation 新增 EXIF parser 或依赖；packaged production Worker
+必须另跑一张长边超过 2048 的 EXIF 90°/270° fixture，验证最终方向、纵横比、无裁剪和
+无拉伸。若当前 Chromium 的 native resize 语义不能同时满足，E4R 直接 Stop。
+
+代码检查通过后，连续跑三次 fresh-process packaged real drop 门禁：复用 E5/E4M 的
+5,801,864-byte、3840x2160 fixture 和 production Worker，必须得到长边 2048 的
+canonical、512-edge preview，并满足 ready <=1 s、heartbeat gap <=50 ms、single-image
+main sync <=250 ms、recursive whole-process peak delta <=192 MiB；每次使用不同的初始
+空 profile，任一次失败立即 Stop。三次通过后，才在同一 new build 的另一个 fresh
+process/profile 单独跑上述 EXIF fixture；它通过后，再用另一个初始空 profile/fresh
+process 跑一次四张 ordinary 图片 matrix。ordinary 输出顺序和既有字节行为不变，并
+满足 ready <=1.5 s、heartbeat <=50 ms、main sync <=250 ms 与 peak delta <=192 MiB。
+全部 evidence 与自动检查通过，再交独立 code/evidence review；通过后提交 E4R 并恢复
+E5 未运行部分。
+
+任一门禁失败立即停止，不试第二种尺寸、encoder 或 transport；精确撤回未提交产品
+diff，只记录该 E4R 候选的证据并重新交给用户决策。
+
 ### Provider、错误与 Runtime
 
 - Main-only Provider message 从 v3 record 构造；text-only 保持现有 string content。
@@ -410,8 +463,8 @@ E4M 的单一 live-set reorder，不外推到其他产品方向。
 
 ### 实现切片与放行顺序
 
-`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5 在 v3.1 amendment 通过
-独立 review 后成为唯一可执行切片：
+`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5 与 E4M 已停止。E4R 已通过
+`RC-E4R-PLAN-03`，是当前唯一可执行 E slice：
 
 1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
    snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
@@ -1500,4 +1553,6 @@ mise run check
   `RC-E4-CODE-02`。v3.1 amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在
   `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止。用户只批准单一
   E4M candidate；v3.2 通过 `RC-E4M-PLAN-02` 后执行，但在
-  `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff；当前无可执行 E slice。
+  `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff。用户随后批准 v3.3 的单一 E4R
+  2048-edge decoder-resize candidate；`RC-E4R-PLAN-03` 已 PASS，E4R 是当前唯一
+  可执行 E slice。

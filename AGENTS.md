@@ -109,7 +109,11 @@ memory gate. `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. The user approved only
 bounded option A: one E4M Worker live-set repair candidate. Its v3.2 amendment
 passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01` when its first
 valid 4K repetition still measured +299.828 MiB. The uncommitted Worker change
-was reversed; no E slice is executable pending a new user decision.
+was reversed. The user then approved one bounded E4R review candidate:
+decoder-time proportional resize of new images above a 2048-pixel long edge,
+without cropping or changing historical-image reads. The revised plan passed
+`RC-E4R-PLAN-03`; E4R is the only executable E slice, while E4M and E5 remain
+stopped.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -217,7 +221,8 @@ passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
 complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
 `RC-E5-PLAN-A-02`, then E5 stopped at `RC-E5-4K-MEMORY-01`. The user-approved
 E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
-`RC-E4M-EVIDENCE-01`; no E slice is currently executable.
+`RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
+passed `RC-E4R-PLAN-03`; E4R is the only executable E slice.
 Electron main remains
 authoritative for validation, metadata policy, file IO, durable ownership,
 target resolution, Provider mapping, and safe errors. Product changes are
