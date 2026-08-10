@@ -9,7 +9,8 @@ policy A and the v3.1 amendment passed `RC-E5-PLAN-A-02`. E5 then stopped at the
 fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. No E
 slice was executable pending a new user decision. The user approved bounded
 option A: one E4M Worker live-set repair candidate. Its v3.2 plan passed
-`RC-E4M-PLAN-02`; E4M is the only executable E slice and E5 remains stopped.
+`RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01`. The uncommitted
+Worker change was reversed; no E slice is executable pending user decision.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -703,6 +704,41 @@ The user then approved option A: keep the exact 4K fixture and +192 MiB line and
 test one behavior-preserving Worker resource-lifetime reorder. The candidate may
 run under the bound `RC-E4M-PLAN-02` plan; it may not introduce a second variant,
 lower quality/size, raise the line, or resume E5 early.
+
+## E4M bounded live-set candidate
+
+The v3.2 amendment passed `RC-E4M-PLAN-02`, and its one-file Worker change passed
+typecheck, compatibility typecheck, lint, 417 tests with 17 skips, production
+build, format check, and independent code review `RC-E4M-CODE-01`. The packaged
+`app.asar` SHA-256 was
+`ab578dd7bc4023c911549fb7dcee67e226d1715f5cc9e6557e3e5180ccd3d722`; its
+production Worker chunk SHA-256 was
+`9dee4651f453f159b6875d7f5605d9766fdd869090e9a9740813b81cd7d4ccd0`.
+The page URL was inside that archive. The exact 5,801,864-byte fixture retained
+SHA-256 `c6d1517e598eae00fedb027712334268315a60b7dda3704ce6f9f28508f4a19d`.
+
+An initial non-counting run reached accepted but the temporary harness used the
+wrong final `app.asar` path and therefore wrote no evidence. The repaired harness
+used a different, initially empty profile for the first valid repetition. It
+bound the local fixture to a real `File`, dispatched the product drop handler,
+loaded the production Worker, and produced the expected 8,359,933-byte canonical
+and 500,128-byte preview before main accepted the turn.
+
+Ready was 234.6 ms, heartbeat max gap 11.9 ms, and main sync 228.7 ms. Twenty
+stable baseline samples had a 424.172 MiB median. Recursive app-root plus
+descendant RSS sampling peaked at 724.000 MiB around t=179.7 ms, before Worker
+ready: delta +299.828 MiB against the fixed +192 MiB line. Several consecutive
+samples were over the line. The actual maximum sampling interval was 28.115 ms;
+independent review found that the slightly sparse interval could miss a higher
+peak but could not manufacture this sustained failure. Provider activity began
+after the ready-time peak and cannot explain it.
+
+`RC-E4M-EVIDENCE-01` returned `VALID_STOP` and marked only this sealed single
+live-set reorder direction failed. Repetitions 2/3, the new-build ordinary matrix,
+and E5 remainder were not run. The sole uncommitted Worker diff was precisely
+reversed, so product behavior remains at E4 commit `b13d3b8`. The evidence root
+remains in OS temp, local and uncommitted, for audit. This result does not select
+downscale, a higher memory budget, or any other product direction.
 
 ## Historical v1.8 candidate limits (status reference)
 

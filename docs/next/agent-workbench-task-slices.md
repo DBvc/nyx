@@ -95,9 +95,10 @@ Use relative documentation links. Do not add local absolute paths.
   the v3.1 canonical-identity amendment passed `RC-E5-PLAN-A-02`. E5 then stopped
   at the fresh-process 4K memory gate; `RC-E5-4K-MEMORY-01` returned
   `VALID_STOP`. The user then approved only the bounded E4M candidate; its v3.2
-  amendment passed `RC-E4M-PLAN-02`, so E4M is the only executable E slice and
-  E5 remains stopped. E0F itself froze no product capacity or protocol; v3.0
-  selects them.
+  amendment passed `RC-E4M-PLAN-02`, but the first valid 4K repetition still
+  measured +299.828 MiB. `RC-E4M-EVIDENCE-01` returned `VALID_STOP`, the
+  uncommitted Worker change was reversed, and no E slice is executable. E0F
+  itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
@@ -1578,7 +1579,8 @@ and passed `RC-E2-CODE-03`; E3 completed at `7677868` and passed
 `RC-E3-CODE-02`; E4 completed at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1
 amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at
 `RC-E5-4K-MEMORY-01`. The user approved bounded option A; the v3.2 amendment
-passed `RC-E4M-PLAN-02`. E4M is the only executable E slice; E5 remains stopped.
+passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01`. Its
+uncommitted Worker change was reversed; no E slice is executable.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1605,8 +1607,8 @@ The active E invariants are:
 
 - E1-E4 are complete and independently reviewed; the v3.1 canonical-identity
   amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
-  gate; the user approved only the bounded E4M candidate, whose v3.2 amendment
-  passed `RC-E4M-PLAN-02`; E4M is the only executable E slice
+  gate; the user-approved E4M candidate passed `RC-E4M-PLAN-02` but stopped at
+  `RC-E4M-EVIDENCE-01`; no E slice is executable
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2500,8 +2502,10 @@ or OCaml change.
 
 Type: one bounded E4 owning-slice repair experiment.
 
-Status: executable. The v3.2 amendment passed bound independent review as
-`RC-E4M-PLAN-02`; E4M is the only executable E slice and E5 remains stopped.
+Status: stopped. The v3.2 amendment passed `RC-E4M-PLAN-02`, but the first valid
+4K repetition failed the fixed memory line and `RC-E4M-EVIDENCE-01` returned
+`VALID_STOP`. Repetitions 2/3 and the ordinary matrix were not run; the
+uncommitted Worker change was reversed.
 
 Allowed product file:
 
@@ -2541,7 +2545,7 @@ Type: acceptance verification and documentation sync.
 Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
 import measured +309.859 MiB against the fixed +192 MiB line. Independent review
 `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while the bounded
-E4M candidate executes under `RC-E4M-PLAN-02`.
+E4M candidate is also stopped at `RC-E4M-EVIDENCE-01`; no E slice is executable.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

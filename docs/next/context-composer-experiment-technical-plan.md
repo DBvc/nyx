@@ -1,8 +1,7 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: v3.2 sealed by `RC-E4M-PLAN-02`; E1-E4 completed and reviewed; E5
-> stopped after `RC-E5-4K-MEMORY-01` VALID_STOP; E4M is the only executable E
-> slice
+> Status: v3.2 executed; E4M stopped at `RC-E4M-EVIDENCE-01` VALID_STOP; E5
+> remains stopped; no E slice is executable pending user decision
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -18,7 +17,8 @@
 > `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过 `RC-E4-CODE-02`。下述 v3.1
 > amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在 fresh-process 4K import
 > memory gate 停止。用户已批准下述单一 E4M Worker live-set 实验；v3.2 已通过
-> `RC-E4M-PLAN-02`，只授权 E4M。
+> `RC-E4M-PLAN-02`。E4M 的首个有效 repetition 仍超线，未提交 Worker diff 已
+> 撤回；当前没有可执行 E slice。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -329,7 +329,8 @@ remainder 未运行，当前没有可执行 E slice。
 用户批准 option A：保留 3840×2160 high-entropy fixture、现有编码输出和固定
 `+192 MiB` 红线，只验证当前 Worker 是否因 `ImageBitmap`、full/preview
 `OffscreenCanvas` 与编码结果存活期重叠而制造峰值。初审发现两个局部缺口，修订后
-`RC-E4M-PLAN-02` 已 PASS。E4M 是唯一可执行 E slice；E5 继续 stopped。
+`RC-E4M-PLAN-02` 已 PASS。在 plan seal 时 E4M 成为唯一可执行 E slice，E5 保持
+stopped；当前执行结果见本节末尾。
 
 唯一允许的产品改动是
 `apps/desktop/src/ui/chat/image-canonicalizer.worker.ts` 内的资源释放顺序：保存已解码
@@ -366,6 +367,15 @@ E4M 通过还须完成桌面 typecheck、compat、lint、test、build、format-c
 `git diff --check` 与独立 code/evidence review。通过后才提交产品改动并恢复 E5；若
 失败，则用精确反向 patch 撤回未提交的 Worker diff，只记录证据，下一步重新由用户
 选择 downscale、放宽内存预算或停止实验。
+
+实际执行中，代码先通过 typecheck、compat、lint、417 tests/17 skips、production
+build、format-check、`RC-E4M-CODE-01`。fresh profile 的首个有效 4K repetition
+ready 234.6 ms、heartbeat 11.9 ms、main sync 228.7 ms 均过线，但 baseline median
+424.172 MiB、peak 724.000 MiB、delta +299.828 MiB，峰值仍在 Worker ready 前。
+`RC-E4M-EVIDENCE-01` 判定 `VALID_STOP`：28.115 ms 最大采样间隔不能制造持续多个
+样本的超线，且 Provider 不能解释 ready 前峰值。按计划未运行 repetitions 2/3、
+ordinary matrix 或 E5 remainder，未提交 Worker diff 已精确撤回。该结论只否决
+E4M 的单一 live-set reorder，不外推到其他产品方向。
 
 ### Provider、错误与 Runtime
 
@@ -1489,4 +1499,5 @@ mise run check
   `7677868` 完成并通过 `RC-E3-CODE-02`；E4 已在 `b13d3b8` 完成并通过
   `RC-E4-CODE-02`。v3.1 amendment 已通过 `RC-E5-PLAN-A-02`；E5 随后在
   `RC-E5-4K-MEMORY-01` 的 fresh-process 4K memory gate 停止。用户只批准单一
-  E4M candidate；v3.2 已通过 `RC-E4M-PLAN-02`，E4M 是唯一可执行 E slice。
+  E4M candidate；v3.2 通过 `RC-E4M-PLAN-02` 后执行，但在
+  `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff；当前无可执行 E slice。

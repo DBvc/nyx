@@ -107,8 +107,9 @@ canonical-identity amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at the
 fresh-process 4K
 memory gate. `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. The user approved only
 bounded option A: one E4M Worker live-set repair candidate. Its v3.2 amendment
-passed `RC-E4M-PLAN-02`; E4M is the only executable E slice and E5 remains
-stopped.
+passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01` when its first
+valid 4K repetition still measured +299.828 MiB. The uncommitted Worker change
+was reversed; no E slice is executable pending a new user decision.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -215,8 +216,8 @@ passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
 `RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
 complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
 `RC-E5-PLAN-A-02`, then E5 stopped at `RC-E5-4K-MEMORY-01`. The user-approved
-E4M candidate passed plan review as `RC-E4M-PLAN-02` and is the only executable
-E slice.
+E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
+`RC-E4M-EVIDENCE-01`; no E slice is currently executable.
 Electron main remains
 authoritative for validation, metadata policy, file IO, durable ownership,
 target resolution, Provider mapping, and safe errors. Product changes are
