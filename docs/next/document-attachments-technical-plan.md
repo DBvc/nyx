@@ -3,8 +3,8 @@
 Status: v2.5 user-approved scope reduction after
 `RC-DOC-G1-EVIDENCE-01`. The first local slice supports strict text and
 text-bearing PDF only. DOCX is deferred rather than replaced with another
-parser candidate. No product slice is executable until the v2.5 amendment
-passes independent review and the reduced G1 gate passes.
+parser candidate. D1 completed at `42e4ade` and passed
+`RC-DOC-D1-CODE-03`; D2 is the only executable product slice.
 
 ## Conclusion
 
@@ -527,3 +527,5 @@ Strict review should try to disprove:
 - v2.5 records the user's option A after `RC-DOC-G1-EVIDENCE-01`: defer DOCX,
   remove Mammoth/fflate and every DOCX acceptance requirement, and resume only
   the strict-text/PDF G1 remainder before D1.
+- D1 landed at `42e4ade` and passed `RC-DOC-D1-CODE-03`. It added only the
+  fail-closed v4 durability foundation; D2 is now the only executable slice.

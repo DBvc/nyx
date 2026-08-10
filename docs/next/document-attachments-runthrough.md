@@ -7,19 +7,21 @@ archive even though the sealed policy required rejection before Mammoth. That
 first candidate left G1 incomplete. The user approved option A: defer DOCX and
 continue only strict text plus text-bearing PDF. The reduced v2.5 amendment passed
 `RC-DOC-V25-PLAN-01`. The reduced OS-temp G1 gate then passed
-`RC-DOC-G1-REDUCED-EVIDENCE-01`; only D1 is now executable. D2-D3 remain
-blocked, and DOCX remains deferred.
+`RC-DOC-G1-REDUCED-EVIDENCE-01`. D1 completed at `42e4ade` and passed
+`RC-DOC-D1-CODE-03`; only D2 is now executable. D3 remains blocked, and DOCX
+remains deferred.
 
 ## Bound Artifacts
 
 | Artifact                                                   | Identity                                                                         | Status                                   |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
-| Repository baseline                                        | `43a202029a6b1efde8a8308ffac06102aaa78851`                                       | reviewed S0 commit and G1 run HEAD       |
+| Repository baseline                                        | `42e4adebe1644c68b7ed04c072293457ad33841b`                                       | reviewed D1 implementation commit        |
 | [technical plan](./document-attachments-technical-plan.md) | v2.5, SHA-256 `38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c` | `RC-DOC-V25-PLAN-01` PASS                |
-| [active task slices](./agent-workbench-task-slices.md)     | `document-attachments/D1`                                                        | only executable local slice              |
+| [active task slices](./agent-workbench-task-slices.md)     | `document-attachments/D2`                                                        | only executable local slice              |
 | v2.5 five-document plan artifact                           | SHA-256 `185964a27ded914f4d71c92da3ded94fe6ca6383a9ddf0b5beb24b628b05b70b`       | `RC-DOC-V25-PLAN-01`, independent accept |
 | G1 OS-temp artifact                                        | `document-g1-stop-v1.1`                                                          | `RC-DOC-G1-EVIDENCE-01`                  |
 | Reduced G1 OS-temp artifact                                | `document-g1-reduced-v1.2`                                                       | `RC-DOC-G1-REDUCED-EVIDENCE-01` PASS     |
+| D1 reviewed artifact                                       | SHA-256 `f83e2b87b2ea1225bd6c290ec69c7c0eeae20962f7c2e99c85a674ea5b4aa348`       | `RC-DOC-D1-CODE-03` PASS                 |
 
 The earlier inline Chat Completions `file_data` result remains
 `PASS_VALID_STOP` under `RC-DOC-G0-EVIDENCE-02`. It rejects only that tested
@@ -132,7 +134,8 @@ sealed ZIP64 rejection rule through its allowed public metadata path. It does
 not prove PDF extraction, TXT/MD/CSV decoding, all DOCX extraction, or the
 unrun matrices impossible. The user approved option A on 2026-08-10: the first
 local slice omits DOCX and resumes only the strict-text/PDF G1 remainder after
-the v2.5 amendment passes independent review. D1-D3 remain blocked.
+the v2.5 amendment passes independent review. At that point D1-D3 remained
+blocked.
 
 ## G1 Reduced Remainder
 
@@ -142,6 +145,19 @@ PDF output, malformed/encrypted/no-text/page/output bounds, cancellation,
 timeout, source parity, Worker termination, and the unchanged heartbeat,
 main-sync, and whole-process memory lines. No DOCX parser or second candidate
 is allowed.
+
+## D1 Result
+
+D1 landed at `42e4ade` and passed independent review
+`RC-DOC-D1-CODE-03`. It added the v4 current-thread contract, main-owned source
+and extracted-text sidecars, shared raw attachment preflight, rollback,
+reconciliation, Retry, reset, safe snapshot metadata, and a production
+fail-closed guard.
+
+Verification passed: desktop typecheck, compatibility typecheck, lint,
+format-check, build, and 440 tests with 17 skipped; runtime chat-state check
+passed 9 tests; `git diff --check` passed. D1 added no document UI, Provider
+materialization, DOCX support, native protocol, or new product dependency.
 
 ### Reduced G1 result
 
@@ -231,5 +247,5 @@ This result proves only the reviewed local strict-text and text-bearing-PDF
 candidate in the recorded environment. It does not prove scanned-PDF, OCR,
 page-image, DOCX, native Provider PDF, or packaged product behavior. The
 unchanged first-slice limits are now frozen; raising one still requires a new
-user decision. D1 may begin, while D2 must repeat the real packaged Worker and
+user decision. D1 is complete. D2 must repeat the real packaged Worker and
 resource gate before product behavior is enabled.

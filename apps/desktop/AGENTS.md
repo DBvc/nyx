@@ -299,11 +299,13 @@ Explicit `document-attachments` workstream status:
   DOCX; DOCX is deferred; the reduced strict-text/PDF v2.5 amendment passed
   `RC-DOC-V25-PLAN-01`, and the reduced OS-temp G1 gate passed
   `RC-DOC-G1-REDUCED-EVIDENCE-01`
-- only `document-attachments/D1` is executable; `document-attachments/D2` and
-  `document-attachments/D3` remain ordered and blocked; native PDF `N0/N1`
-  remains non-executable
-- this status does not reopen E4R, E4M, or E5 and does not yet authorize product
+- `document-attachments/D1` completed at `42e4ade` and passed
+  `RC-DOC-D1-CODE-03`; it remains fail-closed and does not enable product
   document input
+- only `document-attachments/D2` is executable;
+  `document-attachments/D3` remains blocked; native PDF `N0/N1` remains
+  non-executable
+- this status does not reopen E4R, E4M, or E5
 
 ## Contract Rules
 

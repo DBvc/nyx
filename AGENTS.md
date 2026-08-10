@@ -260,12 +260,13 @@ contrary to the sealed fail-closed rule. At that point G1 was incomplete and no
 document-attachments slice was executable until the reduced strict-text/PDF
 v2.5 amendment passed independent review. It passed
 `RC-DOC-V25-PLAN-01`. The reduced OS-temp G1 gate then passed
-`RC-DOC-G1-REDUCED-EVIDENCE-01`; only `document-attachments/D1` is now
-executable. DOCX is deferred. `document-attachments/D2` and
-`document-attachments/D3` remain ordered and blocked; native PDF `N0/N1` is
-outside the local workstream and remains non-executable. This status does not
-reopen any stopped Context Composer E slice and does not yet authorize document
-input in the product.
+`RC-DOC-G1-REDUCED-EVIDENCE-01`. `document-attachments/D1` completed at
+`42e4ade` and passed `RC-DOC-D1-CODE-03`; it added only the fail-closed v4
+durability foundation and did not enable product document input.
+`document-attachments/D2` is now the only executable slice. DOCX is deferred.
+`document-attachments/D3` remains blocked; native PDF `N0/N1` is outside the
+local workstream and remains non-executable. This status does not reopen any
+stopped Context Composer E slice.
 
 ## Workspace Boundary
 

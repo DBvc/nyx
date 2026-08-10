@@ -122,10 +122,11 @@ Use relative documentation links. Do not add local absolute paths.
   ZIP64 DOCX. The user then approved option A. The reduced v2.5 G1 amendment is
   bound at the hash above and passed `RC-DOC-V25-PLAN-01`; only the reduced
   OS-temp G1 gate was executable. It passed
-  `RC-DOC-G1-REDUCED-EVIDENCE-01`; only `document-attachments/D1` is now
-  executable. `document-attachments/D2` and `document-attachments/D3` remain
-  ordered and blocked, and native PDF `N0/N1` remains outside this local
-  workstream. This status does not reopen any stopped E slice.
+  `RC-DOC-G1-REDUCED-EVIDENCE-01`. `document-attachments/D1` completed at
+  `42e4ade` and passed `RC-DOC-D1-CODE-03`; only
+  `document-attachments/D2` is now executable. `document-attachments/D3`
+  remains blocked, and native PDF `N0/N1` remains outside this local workstream.
+  This status does not reopen any stopped E slice.
 
 ## A0: Scope Gate Docs
 
@@ -2782,9 +2783,10 @@ the reviewed candidate accepted a valid ZIP64 DOCX. The user approved option A:
 defer DOCX and continue strict text plus text-bearing PDF. The reduced v2.5 G1
 amendment passed `RC-DOC-V25-PLAN-01`, so only the reduced OS-temp G1 gate is
 executable. It then passed `RC-DOC-G1-REDUCED-EVIDENCE-01`; only
-`document-attachments/D1` is now executable. `document-attachments/D2` and
-`document-attachments/D3` remain blocked in that order. Native PDF `N0/N1` is
-not part of this executable local workstream.
+`document-attachments/D1` became executable. D1 completed at `42e4ade` and
+passed `RC-DOC-D1-CODE-03`; only `document-attachments/D2` is now executable.
+`document-attachments/D3` remains blocked. Native PDF `N0/N1` is not part of
+this executable local workstream.
 
 The amended plan is
 [document-attachments-technical-plan.md](./document-attachments-technical-plan.md)
@@ -2920,7 +2922,7 @@ candidate, silently remove another format, or raise a limit.
 
 ### document-attachments/D1: Contract, v4 durability, and document files
 
-Status: the only executable document-attachments slice after reviewed G1 PASS.
+Status: complete at `42e4ade`; independent review `RC-DOC-D1-CODE-03` passed.
 
 Allowed tracked production and near-source test files are exactly:
 
@@ -2962,7 +2964,7 @@ a deployable attachment feature.
 
 ### document-attachments/D2: Local vertical slice
 
-Status: blocked until independently reviewed D1 PASS.
+Status: the only executable document-attachments slice after reviewed D1 PASS.
 
 In addition to the D1 files needed to remove the guard and materialize verified
 document text, allowed tracked files are exactly:
