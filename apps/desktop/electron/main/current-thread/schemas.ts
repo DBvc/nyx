@@ -1,12 +1,15 @@
 import { z } from 'zod'
 
 import {
+  nyxChatAttachmentContentRejectedMessage,
   nyxChatContentRejectedMessage,
+  nyxChatDocumentMediaTypes,
   nyxChatImageMediaTypes,
   type NyxChatImageRef,
   type NyxChatTargetAttribution,
   type NyxChatTargetSelection,
 } from '../../../shared/chat/types'
+import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 
 export const currentThreadAssistantStatusesV1 = [
   'pending',
@@ -494,19 +497,184 @@ export const currentThreadRecordV3Schema = z
 export type TurnRecordV3 = z.infer<typeof turnRecordV3Schema>
 export type SafeThreadErrorRecordV3 = z.infer<typeof safeThreadErrorRecordV3Schema>
 export type CurrentThreadRecordV3 = z.infer<typeof currentThreadRecordV3Schema>
-export type MutableTurnRecord = TurnRecordV2 | TurnRecordV3
-export type MutableCurrentThreadRecord = CurrentThreadRecordV2 | CurrentThreadRecordV3
+export const safeThreadErrorMessagesV4 = {
+  ...safeThreadErrorMessagesV3,
+  content_rejected: nyxChatAttachmentContentRejectedMessage,
+} as const satisfies Record<CurrentThreadErrorCodeV3, string>
+
+const safeErrorMessageV4Schema = z.enum([
+  ...Object.values(safeThreadErrorMessagesV4),
+  interruptedThreadErrorMessageV1,
+])
+
+export const safeThreadErrorRecordV4Schema = z
+  .object({
+    code: z.enum(currentThreadErrorCodesV3),
+    message: safeErrorMessageV4Schema,
+    retryable: z.boolean(),
+  })
+  .strict()
+  .superRefine((error, context) => {
+    const expectedMessage = safeThreadErrorMessagesV4[error.code]
+    const isInterrupted =
+      error.code === 'unknown' && error.message === interruptedThreadErrorMessageV1
+
+    if (error.message !== expectedMessage && !isInterrupted) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A persisted chat error must use its fixed safe message.',
+        path: ['message'],
+      })
+    }
+  })
+
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/u)
+
+export const chatDocumentRefV4Schema = z
+  .object({
+    documentId: z.uuid(),
+    name: nonEmptyStringSchema,
+    mediaType: z.enum(nyxChatDocumentMediaTypes),
+    byteLength: z.number().int().positive().max(nyxChatDocumentLimits.sourceBytesPerDocument),
+    extractedByteLength: z
+      .number()
+      .int()
+      .positive()
+      .max(nyxChatDocumentLimits.extractedBytesPerDocument),
+    sourceSha256: sha256Schema,
+    extractedTextSha256: sha256Schema,
+  })
+  .strict()
+  .superRefine((ref, context) => {
+    if (!isNyxChatDocumentName(ref.name, ref.mediaType)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Document name and media type must be an allowlisted basename pair.',
+        path: ['name'],
+      })
+    }
+  })
+
+export type CurrentThreadDocumentRefV4 = z.infer<typeof chatDocumentRefV4Schema>
+
+export const turnRecordV4Schema = z
+  .object({
+    ...turnRecordV3Schema.shape,
+    imageRefs: z.array(chatImageRefSchema),
+    documentRefs: z.array(chatDocumentRefV4Schema).max(nyxChatDocumentLimits.documentsPerTurn),
+    error: safeThreadErrorRecordV4Schema.nullable(),
+  })
+  .strict()
+  .superRefine(refineAssistantState)
+  .superRefine((turn, context) => {
+    if (
+      turn.userContent.length === 0 &&
+      turn.imageRefs.length === 0 &&
+      turn.documentRefs.length === 0
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A user turn must contain text or at least one attachment reference.',
+        path: ['userContent'],
+      })
+    }
+  })
+
+export const currentThreadRecordV4Schema = z
+  .object({
+    version: z.literal(4),
+    threadId: nonEmptyStringSchema,
+    turns: z.array(turnRecordV4Schema).min(1),
+    createdAt: nonEmptyStringSchema,
+    updatedAt: nonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((record, context) => {
+    const messageIds = record.turns.flatMap((turn) => [turn.userMessageId, turn.assistantMessageId])
+    const requestIds = record.turns.map((turn) => turn.attemptRequestId)
+    const pendingIndexes = record.turns.flatMap((turn, index) =>
+      turn.assistantStatus === 'pending' ? [index] : [],
+    )
+    const imageIds = record.turns.flatMap((turn) => turn.imageRefs.map((ref) => ref.imageId))
+    const documentIds = record.turns.flatMap((turn) =>
+      turn.documentRefs.map((ref) => ref.documentId),
+    )
+
+    if (new Set(messageIds).size !== messageIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread message ids must be unique.',
+        path: ['turns'],
+      })
+    }
+    if (new Set(requestIds).size !== requestIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread latest attempt request ids must be unique.',
+        path: ['turns'],
+      })
+    }
+    if (
+      pendingIndexes.length > 1 ||
+      pendingIndexes.some((index) => index !== record.turns.length - 1)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only the final turn may be pending.',
+        path: ['turns'],
+      })
+    }
+    if (new Set(imageIds).size !== imageIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread image ids must be unique.',
+        path: ['turns'],
+      })
+    }
+    if (new Set(documentIds).size !== documentIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread document ids must be unique.',
+        path: ['turns'],
+      })
+    }
+    if (
+      documentIds.length > nyxChatDocumentLimits.currentThreadDocuments ||
+      record.turns.reduce(
+        (total, turn) =>
+          total + turn.documentRefs.reduce((sum, ref) => sum + ref.extractedByteLength, 0),
+        0,
+      ) > nyxChatDocumentLimits.currentThreadExtractedBytes
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current thread document capacity must remain bounded.',
+        path: ['turns'],
+      })
+    }
+  })
+
+export type TurnRecordV4 = z.infer<typeof turnRecordV4Schema>
+export type SafeThreadErrorRecordV4 = z.infer<typeof safeThreadErrorRecordV4Schema>
+export type CurrentThreadRecordV4 = z.infer<typeof currentThreadRecordV4Schema>
+export type MutableTurnRecord = TurnRecordV2 | TurnRecordV3 | TurnRecordV4
+export type MutableCurrentThreadRecord =
+  | CurrentThreadRecordV2
+  | CurrentThreadRecordV3
+  | CurrentThreadRecordV4
 export type CurrentThreadRecord = CurrentThreadRecordV1 | MutableCurrentThreadRecord
 
 export const currentThreadRecordSchema = z.discriminatedUnion('version', [
   currentThreadRecordV1Schema,
   currentThreadRecordV2Schema,
   currentThreadRecordV3Schema,
+  currentThreadRecordV4Schema,
 ])
 
 const mutableCurrentThreadRecordSchema = z.discriminatedUnion('version', [
   currentThreadRecordV2Schema,
   currentThreadRecordV3Schema,
+  currentThreadRecordV4Schema,
 ])
 
 export function createSafeThreadErrorRecordV1(input: {
@@ -550,6 +718,17 @@ export function createSafeThreadErrorRecordV3(input: {
   }
 }
 
+export function createSafeThreadErrorRecordV4(input: {
+  code: CurrentThreadErrorCodeV3
+  retryable: boolean
+}): SafeThreadErrorRecordV4 {
+  return {
+    code: input.code,
+    message: safeThreadErrorMessagesV4[input.code],
+    retryable: input.retryable,
+  }
+}
+
 export function createInterruptedThreadErrorRecordV2(): SafeThreadErrorRecordV2 {
   return {
     code: 'unknown',
@@ -570,6 +749,10 @@ export function parseCurrentThreadRecordV3(value: unknown): CurrentThreadRecordV
   return currentThreadRecordV3Schema.parse(value)
 }
 
+export function parseCurrentThreadRecordV4(value: unknown): CurrentThreadRecordV4 {
+  return currentThreadRecordV4Schema.parse(value)
+}
+
 export function parseMutableCurrentThreadRecord(value: unknown): MutableCurrentThreadRecord {
   return mutableCurrentThreadRecordSchema.parse(value)
 }
@@ -581,6 +764,10 @@ export function parseCurrentThreadRecord(value: unknown): CurrentThreadRecord {
 export function upgradeCurrentThreadRecordForMutation(
   record: CurrentThreadRecord,
 ): MutableCurrentThreadRecord {
+  if (record.version === 4) {
+    return parseCurrentThreadRecordV4(record)
+  }
+
   if (record.version === 3) {
     return parseCurrentThreadRecordV3(record)
   }
@@ -601,7 +788,11 @@ export function upgradeCurrentThreadRecordForMutation(
 
 export function upgradeCurrentThreadRecordForImageMutation(
   record: CurrentThreadRecord,
-): CurrentThreadRecordV3 {
+): CurrentThreadRecordV3 | CurrentThreadRecordV4 {
+  if (record.version === 4) {
+    return parseCurrentThreadRecordV4(record)
+  }
+
   if (record.version === 3) {
     return parseCurrentThreadRecordV3(record)
   }
@@ -614,6 +805,28 @@ export function upgradeCurrentThreadRecordForImageMutation(
     turns: upgradedRecord.turns.map((turn) => ({
       ...turn,
       imageRefs: [],
+    })),
+  })
+}
+
+export function upgradeCurrentThreadRecordForDocumentMutation(
+  record: CurrentThreadRecord,
+): CurrentThreadRecordV4 {
+  if (record.version === 4) {
+    return parseCurrentThreadRecordV4(record)
+  }
+
+  const upgradedRecord = upgradeCurrentThreadRecordForImageMutation(record)
+
+  return parseCurrentThreadRecordV4({
+    ...upgradedRecord,
+    version: 4,
+    turns: upgradedRecord.turns.map((turn) => ({
+      ...turn,
+      documentRefs: [],
+      ...(turn.error?.code === 'content_rejected'
+        ? { error: createSafeThreadErrorRecordV4(turn.error) }
+        : {}),
     })),
   })
 }

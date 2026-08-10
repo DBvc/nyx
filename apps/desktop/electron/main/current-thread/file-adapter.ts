@@ -105,7 +105,7 @@ export function createCurrentThreadFileAdapter(): CurrentThreadFileAdapter {
       const directoryStat = await lstat(directoryPath)
 
       if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
-        throw new Error('Image storage is not a regular directory.')
+        throw new Error('Attachment storage is not a regular directory.')
       }
 
       await chmod(directoryPath, mode)

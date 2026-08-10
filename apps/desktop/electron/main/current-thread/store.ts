@@ -6,11 +6,14 @@ import {
   createInterruptedThreadErrorRecordV2,
   parseCurrentThreadRecord,
   parseMutableCurrentThreadRecord,
+  upgradeCurrentThreadRecordForDocumentMutation,
   upgradeCurrentThreadRecordForImageMutation,
   upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecord,
   type CurrentThreadRecordV2,
   type CurrentThreadRecordV3,
+  type CurrentThreadRecordV4,
+  type CurrentThreadDocumentRefV4,
   type MutableCurrentThreadRecord,
   type MutableTurnRecord,
 } from './schemas'
@@ -50,9 +53,11 @@ interface CreateCurrentThreadInputBase {
 }
 
 type NonEmptyImageRefs = readonly [NyxChatImageRef, ...NyxChatImageRef[]]
+type NonEmptyDocumentRefs = readonly [CurrentThreadDocumentRefV4, ...CurrentThreadDocumentRefV4[]]
 
 export type CreateCurrentThreadInput = CreateCurrentThreadInputBase &
-  ({ imageRefs?: undefined } | { imageRefs: NonEmptyImageRefs })
+  ({ imageRefs?: undefined } | { imageRefs: NonEmptyImageRefs }) &
+  ({ documentRefs?: undefined } | { documentRefs: NonEmptyDocumentRefs })
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
@@ -109,7 +114,11 @@ function recordsEqual(left: unknown, right: unknown) {
 }
 
 function recordImageRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 3 ? (record.turns[index]?.imageRefs ?? []) : []
+  return record.version === 3 || record.version === 4 ? (record.turns[index]?.imageRefs ?? []) : []
+}
+
+function recordDocumentRefs(record: CurrentThreadRecord, index: number) {
+  return record.version === 4 ? (record.turns[index]?.documentRefs ?? []) : []
 }
 
 function assertStableIdentity(
@@ -129,6 +138,10 @@ function assertStableIdentity(
         currentTurn.assistantMessageId !== nextTurn.assistantMessageId ||
         currentTurn.userContent !== nextTurn.userContent ||
         !recordsEqual(recordImageRefs(currentRecord, index), recordImageRefs(nextRecord, index)) ||
+        !recordsEqual(
+          recordDocumentRefs(currentRecord, index),
+          recordDocumentRefs(nextRecord, index),
+        ) ||
         currentTurn.createdAt !== nextTurn.createdAt
       )
     })
@@ -195,7 +208,14 @@ function assertValidTransition(
 ) {
   assertStableIdentity(currentRecord, nextRecord)
 
-  if (currentRecord.version === 3 && nextRecord.version !== 3) {
+  if (currentRecord.version === 4 && nextRecord.version !== 4) {
+    throw new CurrentThreadStoreError(
+      'invalid_transition',
+      'Current thread version 4 records cannot be downgraded.',
+    )
+  }
+
+  if (currentRecord.version === 3 && nextRecord.version < 3) {
     throw new CurrentThreadStoreError(
       'invalid_transition',
       'Current thread version 3 records cannot be downgraded.',
@@ -213,10 +233,23 @@ function assertValidTransition(
     )
   }
 
+  if (
+    currentRecord.version !== 4 &&
+    nextRecord.version === 4 &&
+    nextRecord.turns.length !== currentRecord.turns.length + 1
+  ) {
+    throw new CurrentThreadStoreError(
+      'invalid_transition',
+      'Current thread version 4 begins only with an appended document turn.',
+    )
+  }
+
   const upgradedCurrent =
-    nextRecord.version === 3
-      ? upgradeCurrentThreadRecordForImageMutation(currentRecord)
-      : upgradeCurrentThreadRecordForMutation(currentRecord)
+    nextRecord.version === 4
+      ? upgradeCurrentThreadRecordForDocumentMutation(currentRecord)
+      : nextRecord.version === 3
+        ? upgradeCurrentThreadRecordForImageMutation(currentRecord)
+        : upgradeCurrentThreadRecordForMutation(currentRecord)
 
   if (currentRecord.version === nextRecord.version && recordsEqual(currentRecord, nextRecord)) {
     return
@@ -231,13 +264,18 @@ function assertValidTransition(
     )
     const appendedTurn = nextTurns.at(-1)
     const appendedImageRefs = recordImageRefs(nextRecord, nextTurns.length - 1)
+    const appendedDocumentRefs = recordDocumentRefs(nextRecord, nextTurns.length - 1)
 
     if (
       previousTurnsUnchanged &&
       appendedTurn?.assistantStatus === 'pending' &&
       appendedTurn.targetBinding !== null &&
       appendedTurn.targetBinding.attribution === null &&
-      (currentRecord.version === 3 || nextRecord.version !== 3 || appendedImageRefs.length > 0)
+      (currentRecord.version === 3 ||
+        currentRecord.version === 4 ||
+        nextRecord.version !== 3 ||
+        appendedImageRefs.length > 0) &&
+      (currentRecord.version === 4 || nextRecord.version !== 4 || appendedDocumentRefs.length > 0)
     ) {
       return
     }
@@ -297,11 +335,20 @@ export class CurrentThreadStore {
   }
 
   create(
-    input: CreateCurrentThreadInputBase & { imageRefs?: undefined },
+    input: CreateCurrentThreadInputBase & { imageRefs?: undefined; documentRefs?: undefined },
   ): Promise<CurrentThreadRecordV2>
   create(
-    input: CreateCurrentThreadInputBase & { imageRefs: NonEmptyImageRefs },
+    input: CreateCurrentThreadInputBase & {
+      imageRefs: NonEmptyImageRefs
+      documentRefs?: undefined
+    },
   ): Promise<CurrentThreadRecordV3>
+  create(
+    input: CreateCurrentThreadInputBase & {
+      imageRefs?: NonEmptyImageRefs
+      documentRefs: NonEmptyDocumentRefs
+    },
+  ): Promise<CurrentThreadRecordV4>
   create(input: CreateCurrentThreadInput): Promise<MutableCurrentThreadRecord>
   create(input: CreateCurrentThreadInput) {
     return this.enqueue(async () => {
@@ -315,7 +362,7 @@ export class CurrentThreadStore {
       }
 
       const now = this.now()
-      const { targetSelection, imageRefs, ...turnInput } = input
+      const { targetSelection, imageRefs, documentRefs, ...turnInput } = input
 
       if (imageRefs && imageRefs.length === 0) {
         throw new CurrentThreadStoreError(
@@ -324,13 +371,23 @@ export class CurrentThreadStore {
         )
       }
 
+      if (documentRefs && documentRefs.length === 0) {
+        throw new CurrentThreadStoreError(
+          'invalid_transition',
+          'Current thread version 4 requires at least one document reference at creation.',
+        )
+      }
+
+      const version = documentRefs ? 4 : imageRefs ? 3 : 2
+
       const record = parseMutableCurrentThreadRecord({
-        version: imageRefs ? 3 : 2,
+        version,
         threadId: this.generateId(),
         turns: [
           {
             ...turnInput,
             ...(imageRefs ? { imageRefs } : {}),
+            ...(documentRefs ? { documentRefs, imageRefs: imageRefs ?? [] } : {}),
             assistantContent: '',
             assistantStatus: 'pending',
             error: null,
@@ -356,6 +413,7 @@ export class CurrentThreadStore {
 
   write(record: CurrentThreadRecordV2): Promise<CurrentThreadRecordV2>
   write(record: CurrentThreadRecordV3): Promise<CurrentThreadRecordV3>
+  write(record: CurrentThreadRecordV4): Promise<CurrentThreadRecordV4>
   write(record: MutableCurrentThreadRecord): Promise<MutableCurrentThreadRecord>
   write(record: MutableCurrentThreadRecord) {
     return this.enqueue(async () => {

@@ -3,15 +3,18 @@ import type { WebContents } from 'electron'
 import type { NyxChatEvent, NyxChatErrorEvent } from '../../../shared/chat/events'
 import type { NyxCurrentThreadResetResult } from '../../../shared/chat/snapshot'
 import {
+  type NyxChatDocumentRef,
   isNyxChatTurnIntent,
   type NyxChatCancellationRequest,
   type NyxChatImageRef,
   type NyxChatInputMessage,
   type NyxChatNewImage,
+  type NyxChatNewDocument,
   type NyxChatRequest,
   type NyxChatTargetAttribution,
   type NyxChatTargetSelection,
 } from '../../../shared/chat/types'
+import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
   resolveEnvChatTargetSelection,
@@ -94,11 +97,25 @@ const requestKeys = new Set([
   'messages',
   'targetSelection',
   'newImages',
+  'newDocuments',
   'systemPrompt',
 ])
-const turnUserMessageKeys = new Set(['id', 'content', 'imageRefs'])
+const turnUserMessageKeys = new Set(['id', 'content', 'imageRefs', 'documentRefs'])
 const imageRefKeys = new Set(['imageId', 'mediaType', 'width', 'height'])
 const newImageKeys = new Set(['imageId', 'canonicalBytes', 'previewBytes'])
+const documentRefKeys = new Set([
+  'documentId',
+  'name',
+  'mediaType',
+  'byteLength',
+  'extractedByteLength',
+])
+const newDocumentKeys = new Set([
+  'documentId',
+  'sourceBytes',
+  'extractedTextBytes',
+  'extractedFromSha256',
+])
 const imageIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function invalidRequest(message: string): NyxChatErrorEvent['error'] {
@@ -244,6 +261,93 @@ function parseNewImages(value: unknown): NyxChatNewImage[] | null {
   return new Set(images.map((image) => image.imageId)).size === images.length ? images : null
 }
 
+function parseDocumentRefs(value: unknown): NyxChatDocumentRef[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > nyxChatDocumentLimits.documentsPerTurn
+  ) {
+    return null
+  }
+
+  const refs: NyxChatDocumentRef[] = []
+
+  for (const ref of value) {
+    if (
+      !isRecord(ref) ||
+      !hasOnlyKeys(ref, documentRefKeys) ||
+      typeof ref.documentId !== 'string' ||
+      !imageIdPattern.test(ref.documentId) ||
+      typeof ref.name !== 'string' ||
+      (ref.mediaType !== 'application/pdf' &&
+        ref.mediaType !== 'text/plain' &&
+        ref.mediaType !== 'text/markdown' &&
+        ref.mediaType !== 'text/csv') ||
+      !isNyxChatDocumentName(ref.name, ref.mediaType) ||
+      !Number.isInteger(ref.byteLength) ||
+      (ref.byteLength as number) <= 0 ||
+      (ref.byteLength as number) > nyxChatDocumentLimits.sourceBytesPerDocument ||
+      !Number.isInteger(ref.extractedByteLength) ||
+      (ref.extractedByteLength as number) <= 0 ||
+      (ref.extractedByteLength as number) > nyxChatDocumentLimits.extractedBytesPerDocument
+    ) {
+      return null
+    }
+
+    refs.push({
+      documentId: ref.documentId,
+      name: ref.name,
+      mediaType: ref.mediaType,
+      byteLength: ref.byteLength as number,
+      extractedByteLength: ref.extractedByteLength as number,
+    })
+  }
+
+  return new Set(refs.map((ref) => ref.documentId)).size === refs.length ? refs : null
+}
+
+function parseNewDocuments(value: unknown): NyxChatNewDocument[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > nyxChatDocumentLimits.documentsPerTurn
+  ) {
+    return null
+  }
+
+  const documents: NyxChatNewDocument[] = []
+
+  for (const document of value) {
+    if (
+      !isRecord(document) ||
+      !hasOnlyKeys(document, newDocumentKeys) ||
+      typeof document.documentId !== 'string' ||
+      !imageIdPattern.test(document.documentId) ||
+      !(document.sourceBytes instanceof Uint8Array) ||
+      !(document.extractedTextBytes instanceof Uint8Array) ||
+      document.sourceBytes.byteLength <= 0 ||
+      document.sourceBytes.byteLength > nyxChatDocumentLimits.sourceBytesPerDocument ||
+      document.extractedTextBytes.byteLength <= 0 ||
+      document.extractedTextBytes.byteLength > nyxChatDocumentLimits.extractedBytesPerDocument ||
+      typeof document.extractedFromSha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/u.test(document.extractedFromSha256)
+    ) {
+      return null
+    }
+
+    documents.push({
+      documentId: document.documentId,
+      sourceBytes: document.sourceBytes,
+      extractedTextBytes: document.extractedTextBytes,
+      extractedFromSha256: document.extractedFromSha256,
+    })
+  }
+
+  return new Set(documents.map((document) => document.documentId)).size === documents.length
+    ? documents
+    : null
+}
+
 function parseChatRequest(value: unknown): ChatRequestParseResult {
   const correlation = requestCorrelation(value)
   const malformed = (message: string): ChatRequestParseResult => ({
@@ -262,6 +366,11 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
       ? parseImageRefs(value.turnUserMessage.imageRefs)
       : []
   const newImages = value.newImages === undefined ? [] : parseNewImages(value.newImages)
+  const documentRefs =
+    isRecord(value.turnUserMessage) && value.turnUserMessage.documentRefs !== undefined
+      ? parseDocumentRefs(value.turnUserMessage.documentRefs)
+      : []
+  const newDocuments = value.newDocuments === undefined ? [] : parseNewDocuments(value.newDocuments)
 
   if (
     !nonEmptyString(value.requestId) ||
@@ -274,7 +383,11 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
     typeof value.turnUserMessage.content !== 'string' ||
     !imageRefs ||
     !newImages ||
-    (value.turnUserMessage.content.length === 0 && imageRefs.length === 0)
+    !documentRefs ||
+    !newDocuments ||
+    (value.turnUserMessage.content.length === 0 &&
+      imageRefs.length === 0 &&
+      documentRefs.length === 0)
   ) {
     return malformed(
       'Chat requests must include ids, intent, the current user message, and at least one provider message.',
@@ -293,6 +406,16 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
     (value.turnIntent === 'retry_failed_response' && newImages.length !== 0)
   ) {
     return malformed('Chat image refs and new payloads do not match the turn intent.')
+  }
+
+  if (
+    (value.turnIntent === 'new_user_message' &&
+      ((documentRefs.length === 0 && newDocuments.length !== 0) ||
+        (documentRefs.length !== newDocuments.length && documentRefs.length > 0) ||
+        documentRefs.some((ref, index) => ref.documentId !== newDocuments[index]?.documentId))) ||
+    (value.turnIntent === 'retry_failed_response' && newDocuments.length !== 0)
+  ) {
+    return malformed('Chat document refs and new payloads do not match the turn intent.')
   }
 
   const targetSelection = parseTargetSelection(value.targetSelection)
@@ -314,10 +437,12 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
       id: value.turnUserMessage.id,
       content: value.turnUserMessage.content,
       ...(imageRefs.length > 0 ? { imageRefs } : {}),
+      ...(documentRefs.length > 0 ? { documentRefs } : {}),
     },
     messages,
     targetSelection,
     ...(newImages.length > 0 ? { newImages } : {}),
+    ...(newDocuments.length > 0 ? { newDocuments } : {}),
     ...(value.systemPrompt === undefined ? {} : { systemPrompt: value.systemPrompt }),
   }
 
@@ -403,6 +528,15 @@ export class ChatSessionManager {
     }
 
     const request = parsedRequest.request
+
+    if (request.turnUserMessage.documentRefs || request.newDocuments) {
+      this.emitError(sender, request, {
+        code: 'invalid_request',
+        message: 'Document attachments are not available yet.',
+        retryable: false,
+      })
+      return
+    }
 
     if (this.resetOperation) {
       this.emitError(sender, request, {
@@ -535,7 +669,8 @@ export class ChatSessionManager {
 
     if (
       session.currentThreadSession &&
-      session.preparedCurrentThread?.pendingRecord.version === 3
+      (session.preparedCurrentThread?.pendingRecord.version === 3 ||
+        session.preparedCurrentThread?.pendingRecord.version === 4)
     ) {
       try {
         session.providerMessages = await session.currentThreadSession.materializeProviderMessages(

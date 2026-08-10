@@ -9,14 +9,17 @@ import {
   createSafeThreadErrorRecordV1,
   createSafeThreadErrorRecordV2,
   createSafeThreadErrorRecordV3,
+  parseCurrentThreadRecordV4,
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
   parseCurrentThreadRecordV3,
   upgradeCurrentThreadRecordForImageMutation,
   upgradeCurrentThreadRecordForMutation,
+  upgradeCurrentThreadRecordForDocumentMutation,
   type CurrentThreadRecordV1,
   type CurrentThreadRecordV2,
   type CurrentThreadRecordV3,
+  type CurrentThreadRecordV4,
 } from './schemas'
 import { CurrentThreadStore, CurrentThreadStoreError, type CreateCurrentThreadInput } from './store'
 
@@ -60,6 +63,15 @@ const imageRef = {
   mediaType: 'image/png',
   width: 640,
   height: 480,
+} as const
+const documentRef = {
+  documentId: '00000000-0000-4000-8000-000000000010',
+  name: 'notes.txt',
+  mediaType: 'text/plain',
+  byteLength: 5,
+  extractedByteLength: 5,
+  sourceSha256: 'a'.repeat(64),
+  extractedTextSha256: 'b'.repeat(64),
 } as const
 
 function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
@@ -132,6 +144,23 @@ function pendingRecordV3(overrides: Partial<CurrentThreadRecordV3> = {}) {
         },
         createdAt: '2026-07-10T00:00:00.000Z',
         updatedAt: '2026-07-10T00:00:00.000Z',
+      },
+    ],
+    createdAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:00:00.000Z',
+    ...overrides,
+  })
+}
+
+function pendingRecordV4(overrides: Partial<CurrentThreadRecordV4> = {}) {
+  return parseCurrentThreadRecordV4({
+    version: 4,
+    threadId: 'thread-1',
+    turns: [
+      {
+        ...pendingRecordV3().turns[0]!,
+        imageRefs: [imageRef],
+        documentRefs: [documentRef],
       },
     ],
     createdAt: '2026-07-10T00:00:00.000Z',
@@ -318,6 +347,149 @@ describe('CurrentThreadStore', () => {
           assistantStatus: 'failed',
           error: { code: 'unknown', retryable: true },
         },
+      ],
+    })
+  })
+
+  it('recovers a pending version-4 turn without changing attachment identity', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, `${JSON.stringify(pendingRecordV4())}\n`, 'utf8')
+
+    await expect(
+      createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' }).read(),
+    ).resolves.toMatchObject({
+      version: 4,
+      turns: [
+        {
+          imageRefs: [imageRef],
+          documentRefs: [documentRef],
+          assistantStatus: 'failed',
+          error: { code: 'unknown', retryable: true },
+        },
+      ],
+    })
+  })
+
+  it('creates version 4 only with a real document and never downgrades it', async () => {
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: '',
+      imageRefs: [imageRef],
+      documentRefs: [documentRef],
+      targetSelection,
+    })
+
+    expect(created).toMatchObject({
+      version: 4,
+      turns: [{ imageRefs: [imageRef], documentRefs: [documentRef] }],
+    })
+
+    await expect(
+      store.write(
+        parseCurrentThreadRecordV4({
+          ...created,
+          turns: [
+            {
+              ...created.turns[0]!,
+              documentRefs: [{ ...documentRef, name: 'changed.txt' }],
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'identity_mismatch' })
+
+    await expect(
+      store.write(
+        parseCurrentThreadRecordV3({
+          ...created,
+          version: 3,
+          turns: created.turns.map(({ documentRefs: _documents, ...turn }) => turn),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CurrentThreadStoreError)
+    await expect(store.read()).resolves.toMatchObject({ version: 4 })
+  })
+
+  it('upgrades every historical version shape to v4 without losing attachment arrays', () => {
+    const records = [pendingRecordV1(), pendingRecord(), pendingRecordV3()]
+
+    expect(records.map((record) => upgradeCurrentThreadRecordForDocumentMutation(record))).toEqual(
+      records.map((record) =>
+        expect.objectContaining({
+          version: 4,
+          turns: [
+            expect.objectContaining({
+              imageRefs: record.version === 3 ? [imageRef] : [],
+              documentRefs: [],
+            }),
+          ],
+        }),
+      ),
+    )
+  })
+
+  it('upgrades v3 on a document append while preserving images and neutralizing its safe error', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    const failedV3 = parseCurrentThreadRecordV3({
+      ...pendingRecordV3(),
+      turns: [
+        {
+          ...pendingRecordV3().turns[0]!,
+          assistantStatus: 'failed',
+          error: createSafeThreadErrorRecordV3({ code: 'content_rejected', retryable: true }),
+        },
+      ],
+    })
+    const contents = `${JSON.stringify(failedV3, null, 2)}\n`
+    await adapter.ensureParentDirectory(filePath)
+    await writeFile(filePath, contents, 'utf8')
+    const store = createStore(filePath)
+
+    await expect(store.read()).resolves.toEqual(failedV3)
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
+
+    const upgraded = upgradeCurrentThreadRecordForDocumentMutation(failedV3)
+    const appended = parseCurrentThreadRecordV4({
+      ...upgraded,
+      turns: [
+        ...upgraded.turns,
+        {
+          attemptRequestId: 'request-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          userContent: '',
+          imageRefs: [],
+          documentRefs: [documentRef],
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: { selection: targetSelection, attribution: null },
+          createdAt: '2026-07-11T01:00:00.000Z',
+          updatedAt: '2026-07-11T01:00:00.000Z',
+        },
+      ],
+      updatedAt: '2026-07-11T01:00:00.000Z',
+    })
+
+    await expect(store.write(appended)).resolves.toMatchObject({
+      version: 4,
+      turns: [
+        {
+          imageRefs: [imageRef],
+          documentRefs: [],
+          error: {
+            code: 'content_rejected',
+            message: 'The selected target rejected this attachment request.',
+            retryable: true,
+          },
+        },
+        { documentRefs: [documentRef] },
       ],
     })
   })
@@ -1171,6 +1343,50 @@ describe('CurrentThreadRecordV3 schema', () => {
             imageRefs: [{ ...imageRef, localPath: '/private/image.png' }],
           },
         ],
+      }),
+    ).toThrow()
+  })
+})
+
+describe('CurrentThreadRecordV4 schema', () => {
+  it('rejects duplicate identities and an over-budget extracted-text history', () => {
+    const base = pendingRecordV4()
+    const turn = base.turns[0]!
+
+    expect(() =>
+      parseCurrentThreadRecordV4({
+        ...base,
+        turns: [
+          turn,
+          {
+            ...turn,
+            attemptRequestId: 'request-2',
+            userMessageId: 'user-2',
+            assistantMessageId: 'assistant-2',
+            assistantStatus: 'completed',
+          },
+        ],
+      }),
+    ).toThrow()
+
+    expect(() =>
+      parseCurrentThreadRecordV4({
+        ...base,
+        turns: [0, 1, 2].map((index) => ({
+          ...turn,
+          attemptRequestId: `request-${index}`,
+          userMessageId: `user-${index}`,
+          assistantMessageId: `assistant-${index}`,
+          imageRefs: [],
+          documentRefs: [
+            {
+              ...documentRef,
+              documentId: `00000000-0000-4000-8000-${(20 + index).toString().padStart(12, '0')}`,
+              extractedByteLength: 100 * 1024,
+            },
+          ],
+          assistantStatus: 'completed',
+        })),
       }),
     ).toThrow()
   })

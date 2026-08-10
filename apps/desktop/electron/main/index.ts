@@ -33,6 +33,7 @@ import {
 import { CurrentThreadSessionCoordinator } from './current-thread/session-coordinator'
 import { CurrentThreadStore } from './current-thread/store'
 import { CurrentThreadImageFiles } from './current-thread/image-files'
+import { CurrentThreadDocumentFiles } from './current-thread/document-files'
 import { registerNyxImageProtocol, registerNyxImageScheme } from './current-thread/image-protocol'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
 import { configureMainAutoUpdate } from './update/service'
@@ -115,6 +116,7 @@ function createMainCurrentThreadStoreResolver() {
 function createMainCurrentThreadSessionResolver(
   resolveStore: ReturnType<typeof createMainCurrentThreadStoreResolver>,
   resolveImages: ReturnType<typeof createMainCurrentThreadImageFilesResolver>,
+  resolveDocuments: ReturnType<typeof createMainCurrentThreadDocumentFilesResolver>,
 ) {
   let session: CurrentThreadSessionCoordinator | undefined
 
@@ -122,8 +124,20 @@ function createMainCurrentThreadSessionResolver(
     session ??= new CurrentThreadSessionCoordinator({
       store: resolveStore(),
       images: resolveImages(),
+      documents: resolveDocuments(),
     })
     return session
+  }
+}
+
+function createMainCurrentThreadDocumentFilesResolver() {
+  let documents: CurrentThreadDocumentFiles | undefined
+
+  return () => {
+    documents ??= new CurrentThreadDocumentFiles({
+      directoryPath: join(app.getPath('userData'), 'threads', 'current-thread-documents'),
+    })
+    return documents
   }
 }
 
@@ -148,9 +162,11 @@ function createMainCurrentThreadImageFilesResolver() {
 
 const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
 const resolveCurrentThreadImages = createMainCurrentThreadImageFilesResolver()
+const resolveCurrentThreadDocuments = createMainCurrentThreadDocumentFilesResolver()
 const resolveCurrentThreadSession = createMainCurrentThreadSessionResolver(
   resolveCurrentThreadStore,
   resolveCurrentThreadImages,
+  resolveCurrentThreadDocuments,
 )
 const chatSessionManager = new ChatSessionManager({
   createRuntimeChatStateClient: createMainRuntimeChatStateClient,
@@ -161,6 +177,7 @@ const connectionsService = createMainConnectionsService()
 const currentThreadSnapshotService = new CurrentThreadSnapshotService({
   resolveReader: resolveCurrentThreadStore,
   resolveImages: resolveCurrentThreadImages,
+  resolveDocuments: resolveCurrentThreadDocuments,
 })
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
@@ -255,6 +272,7 @@ app.whenReady().then(async () => {
   try {
     const record = await resolveCurrentThreadStore().read()
     await resolveCurrentThreadImages().reconcile(record)
+    await resolveCurrentThreadDocuments().reconcile(record)
   } catch {
     // Malformed or unknown records must not authorize cleanup.
   }

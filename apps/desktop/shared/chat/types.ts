@@ -49,6 +49,8 @@ export const nyxChatErrorCodes = [
 export type NyxChatErrorCode = (typeof nyxChatErrorCodes)[number]
 
 export const nyxChatContentRejectedMessage = 'The selected target rejected this image request.'
+export const nyxChatAttachmentContentRejectedMessage =
+  'The selected target rejected this attachment request.'
 
 export interface NyxChatError {
   code: NyxChatErrorCode
@@ -83,10 +85,39 @@ export interface NyxChatMessageImage extends NyxChatImageRef {
   available: boolean
 }
 
+export const nyxChatDocumentMediaTypes = [
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+] as const
+
+export type NyxChatDocumentMediaType = (typeof nyxChatDocumentMediaTypes)[number]
+
+export interface NyxChatDocumentRef {
+  documentId: string
+  name: string
+  mediaType: NyxChatDocumentMediaType
+  byteLength: number
+  extractedByteLength: number
+}
+
+export interface NyxChatNewDocument {
+  documentId: string
+  sourceBytes: Uint8Array
+  extractedTextBytes: Uint8Array
+  extractedFromSha256: string
+}
+
+export interface NyxChatMessageDocument extends NyxChatDocumentRef {
+  available: boolean
+}
+
 export interface NyxChatTurnUserMessage {
   id: string
   content: string
   imageRefs?: ReadonlyArray<NyxChatImageRef>
+  documentRefs?: ReadonlyArray<NyxChatDocumentRef>
 }
 
 export type NyxChatTargetSelection =
@@ -118,6 +149,7 @@ export interface NyxChatMessage {
   content: string
   status: NyxChatMessageStatus
   images?: ReadonlyArray<NyxChatMessageImage>
+  documents?: ReadonlyArray<NyxChatMessageDocument>
   error?: NyxChatError
   canRetry?: boolean
   targetAttribution?: NyxChatTargetAttribution
@@ -132,6 +164,7 @@ export interface NyxChatRequest {
   messages: ReadonlyArray<NyxChatInputMessage>
   targetSelection: NyxChatTargetSelection
   newImages?: ReadonlyArray<NyxChatNewImage>
+  newDocuments?: ReadonlyArray<NyxChatNewDocument>
   systemPrompt?: string
 }
 

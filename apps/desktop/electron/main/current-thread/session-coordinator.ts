@@ -1,24 +1,31 @@
 import type {
   NyxChatError,
+  NyxChatDocumentRef,
   NyxChatImageRef,
   NyxChatInputMessage,
   NyxChatRequest,
   NyxChatTargetAttribution,
 } from '../../../shared/chat/types'
+import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import {
   createSafeThreadErrorRecordV2,
   createSafeThreadErrorRecordV3,
+  createSafeThreadErrorRecordV4,
+  parseCurrentThreadRecordV4,
   parseCurrentThreadRecordV3,
   parseCurrentThreadRecordV2,
   parseMutableCurrentThreadRecord,
   upgradeCurrentThreadRecordForImageMutation,
+  upgradeCurrentThreadRecordForDocumentMutation,
   upgradeCurrentThreadRecordForMutation,
   type CurrentThreadRecord,
   type MutableCurrentThreadRecord,
   type MutableTurnRecord,
+  type CurrentThreadDocumentRefV4,
 } from './schemas'
 import type { CurrentThreadStore } from './store'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
+import { CurrentThreadDocumentFilesError, type CurrentThreadDocumentFiles } from './document-files'
 
 export class CurrentThreadSessionError extends Error {
   constructor(
@@ -48,6 +55,7 @@ export type CurrentThreadProviderMessage =
 export interface CurrentThreadSessionCoordinatorOptions {
   store: CurrentThreadStore
   images?: CurrentThreadImageFiles
+  documents?: CurrentThreadDocumentFiles
   now?: () => string
 }
 
@@ -92,7 +100,30 @@ function imageRefsEqual(
 }
 
 function recordTurnImageRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 3 ? record.turns[index]!.imageRefs : []
+  return record.version === 3 || record.version === 4 ? record.turns[index]!.imageRefs : []
+}
+
+function recordTurnDocumentRefs(record: CurrentThreadRecord, index: number) {
+  return record.version === 4 ? record.turns[index]!.documentRefs : []
+}
+
+function documentRefsEqual(
+  left: ReadonlyArray<CurrentThreadDocumentRefV4>,
+  right: ReadonlyArray<NyxChatDocumentRef>,
+) {
+  return (
+    left.length === right.length &&
+    left.every((ref, index) => {
+      const other = right[index]
+      return (
+        ref.documentId === other?.documentId &&
+        ref.name === other.name &&
+        ref.mediaType === other.mediaType &&
+        ref.byteLength === other.byteLength &&
+        ref.extractedByteLength === other.extractedByteLength
+      )
+    })
+  )
 }
 
 export function toCurrentThreadProviderMessages(record: CurrentThreadRecord | null) {
@@ -112,15 +143,18 @@ export function toCurrentThreadProviderMessages(record: CurrentThreadRecord | nu
 export class CurrentThreadSessionCoordinator {
   private readonly store: CurrentThreadStore
   private readonly images: CurrentThreadImageFiles | undefined
+  private readonly documents: CurrentThreadDocumentFiles | undefined
   private readonly now: () => string
 
   constructor({
     store,
     images,
+    documents,
     now = () => new Date().toISOString(),
   }: CurrentThreadSessionCoordinatorOptions) {
     this.store = store
     this.images = images
+    this.documents = documents
     this.now = now
   }
 
@@ -137,10 +171,14 @@ export class CurrentThreadSessionCoordinator {
 
         this.assertRequestMessages(request, providerMessages)
         await this.images?.reconcile(currentRecord)
+        await this.documents?.reconcile(currentRecord)
 
         const requestImageRefs = request.turnUserMessage.imageRefs ?? []
         const newImages = request.newImages ?? []
+        const requestDocumentRefs = request.turnUserMessage.documentRefs ?? []
+        const newDocuments = request.newDocuments ?? []
         let preparedImageIds: string[] = []
+        let preparedDocumentRefs: CurrentThreadDocumentRefV4[] = []
 
         if (
           requestImageRefs.length !== newImages.length ||
@@ -152,17 +190,56 @@ export class CurrentThreadSessionCoordinator {
           )
         }
 
-        if (requestImageRefs.length > 0) {
-          if (!this.images) {
-            throw new CurrentThreadSessionError('invalid_request', 'Image storage is unavailable.')
+        if (
+          requestDocumentRefs.length !== newDocuments.length ||
+          requestDocumentRefs.some(
+            (ref, index) => ref.documentId !== newDocuments[index]?.documentId,
+          )
+        ) {
+          throw new CurrentThreadSessionError(
+            'invalid_request',
+            'Document refs and payloads do not match.',
+          )
+        }
+
+        await this.assertRawAttachmentCapacity(currentRecord, newImages, newDocuments)
+
+        if (requestDocumentRefs.length > 0) {
+          if (!this.documents) {
+            throw new CurrentThreadSessionError(
+              'invalid_request',
+              'Document storage is unavailable.',
+            )
           }
 
-          preparedImageIds = await this.images.writeNewImages({
+          preparedDocumentRefs = await this.documents.writeNewDocuments({
             record: currentRecord,
-            refs: requestImageRefs,
-            images: newImages,
+            refs: requestDocumentRefs,
+            documents: newDocuments,
             ...(signal ? { signal } : {}),
           })
+        }
+
+        try {
+          throwIfAborted(signal)
+          if (requestImageRefs.length > 0) {
+            if (!this.images) {
+              throw new CurrentThreadSessionError(
+                'invalid_request',
+                'Image storage is unavailable.',
+              )
+            }
+
+            preparedImageIds = await this.images.writeNewImages({
+              record: currentRecord,
+              refs: requestImageRefs,
+              images: newImages,
+              ...(signal ? { signal } : {}),
+            })
+          }
+        } catch (error) {
+          await this.documents?.rollbackDocuments(preparedDocumentRefs.map((ref) => ref.documentId))
+          throw error
         }
 
         let pendingRecord: MutableCurrentThreadRecord
@@ -170,10 +247,13 @@ export class CurrentThreadSessionCoordinator {
         try {
           throwIfAborted(signal)
           pendingRecord = currentRecord
-            ? await this.store.write(this.appendPendingTurn(currentRecord, request))
-            : await this.createPendingThread(request)
+            ? await this.store.write(
+                this.appendPendingTurn(currentRecord, request, preparedDocumentRefs),
+              )
+            : await this.createPendingThread(request, preparedDocumentRefs)
         } catch (error) {
           await this.images?.rollbackImages(preparedImageIds)
+          await this.documents?.rollbackDocuments(preparedDocumentRefs.map((ref) => ref.documentId))
           throw error
         }
 
@@ -187,6 +267,11 @@ export class CurrentThreadSessionCoordinator {
       const failedTurn = currentRecord.turns.at(-1)!
       const requestImageRefs = request.turnUserMessage.imageRefs ?? []
       const failedTurnImageRefs = recordTurnImageRefs(currentRecord, currentRecord.turns.length - 1)
+      const requestDocumentRefs = request.turnUserMessage.documentRefs ?? []
+      const failedTurnDocumentRefs = recordTurnDocumentRefs(
+        currentRecord,
+        currentRecord.turns.length - 1,
+      )
 
       if (
         failedTurn.assistantStatus !== 'failed' ||
@@ -194,7 +279,8 @@ export class CurrentThreadSessionCoordinator {
         failedTurn.userMessageId !== request.userMessageId ||
         failedTurn.assistantMessageId !== request.assistantMessageId ||
         failedTurn.userContent !== request.turnUserMessage.content ||
-        !imageRefsEqual(failedTurnImageRefs, requestImageRefs)
+        !imageRefsEqual(failedTurnImageRefs, requestImageRefs) ||
+        !documentRefsEqual(failedTurnDocumentRefs, requestDocumentRefs)
       ) {
         throw new CurrentThreadSessionError(
           'invalid_request',
@@ -209,8 +295,16 @@ export class CurrentThreadSessionCoordinator {
         )
       }
 
+      if (request.newDocuments !== undefined) {
+        throw new CurrentThreadSessionError(
+          'invalid_request',
+          'Retry cannot include new document payloads.',
+        )
+      }
+
       this.assertRequestMessages(request, currentMessages)
       await this.images?.reconcile(currentRecord)
+      await this.documents?.reconcile(currentRecord)
 
       if (failedTurnImageRefs.length > 0) {
         if (!this.images) {
@@ -218,6 +312,14 @@ export class CurrentThreadSessionCoordinator {
         }
 
         await this.images.assertAvailable(failedTurnImageRefs)
+      }
+
+      if (failedTurnDocumentRefs.length > 0) {
+        if (!this.documents) {
+          throw new CurrentThreadSessionError('invalid_request', 'Document storage is unavailable.')
+        }
+
+        await this.documents.assertAvailable(failedTurnDocumentRefs)
       }
 
       throwIfAborted(signal)
@@ -260,6 +362,13 @@ export class CurrentThreadSessionCoordinator {
         )
       }
 
+      if (error instanceof CurrentThreadDocumentFilesError) {
+        throw new CurrentThreadSessionError(
+          error.code === 'io_error' ? 'store_error' : 'invalid_request',
+          error.code === 'io_error' ? 'Current thread storage failed.' : error.message,
+        )
+      }
+
       if (error instanceof Error && error.name === 'AbortError') {
         throw error
       }
@@ -278,6 +387,14 @@ export class CurrentThreadSessionCoordinator {
     try {
       for (const turn of record.turns) {
         const refs = 'imageRefs' in turn ? turn.imageRefs : []
+        const documentRefs = 'documentRefs' in turn ? turn.documentRefs : []
+
+        if (documentRefs.length > 0) {
+          throw new CurrentThreadSessionError(
+            'invalid_request',
+            'Document provider materialization is not available yet.',
+          )
+        }
 
         if (refs.length === 0) {
           messages.push({ role: 'user', content: turn.userContent })
@@ -418,9 +535,19 @@ export class CurrentThreadSessionCoordinator {
     } catch {
       // The record is already reset; leftover files are unreachable orphans.
     }
+
+    try {
+      await this.documents?.reset()
+    } catch {
+      // The record is already reset; leftover files are unreachable orphans.
+    }
   }
 
-  private appendPendingTurn(record: CurrentThreadRecord, request: NyxChatRequest) {
+  private appendPendingTurn(
+    record: CurrentThreadRecord,
+    request: NyxChatRequest,
+    documentRefs: ReadonlyArray<CurrentThreadDocumentRefV4>,
+  ) {
     const now = this.now()
     const imageRefs = request.turnUserMessage.imageRefs ?? []
     const turn = {
@@ -439,8 +566,22 @@ export class CurrentThreadSessionCoordinator {
       updatedAt: now,
     } as const
 
+    if (record.version === 4 || documentRefs.length > 0) {
+      const upgradedRecord = upgradeCurrentThreadRecordForDocumentMutation(record)
+
+      return parseCurrentThreadRecordV4({
+        ...upgradedRecord,
+        turns: [...upgradedRecord.turns, { ...turn, imageRefs, documentRefs }],
+        updatedAt: now,
+      })
+    }
+
     if (record.version === 3 || imageRefs.length > 0) {
       const upgradedRecord = upgradeCurrentThreadRecordForImageMutation(record)
+
+      if (upgradedRecord.version !== 3) {
+        throw new CurrentThreadSessionError('invalid_request', 'Current thread version is invalid.')
+      }
 
       return parseCurrentThreadRecordV3({
         ...upgradedRecord,
@@ -462,7 +603,10 @@ export class CurrentThreadSessionCoordinator {
     })
   }
 
-  private createPendingThread(request: NyxChatRequest) {
+  private createPendingThread(
+    request: NyxChatRequest,
+    documentRefs: ReadonlyArray<CurrentThreadDocumentRefV4>,
+  ) {
     const input = {
       attemptRequestId: request.requestId,
       userMessageId: request.userMessageId,
@@ -471,6 +615,15 @@ export class CurrentThreadSessionCoordinator {
       targetSelection: request.targetSelection,
     }
     const [firstImageRef, ...remainingImageRefs] = request.turnUserMessage.imageRefs ?? []
+
+    if (documentRefs.length > 0) {
+      const [firstDocumentRef, ...remainingDocumentRefs] = documentRefs
+      return this.store.create({
+        ...input,
+        ...(firstImageRef ? { imageRefs: [firstImageRef, ...remainingImageRefs] } : {}),
+        documentRefs: [firstDocumentRef!, ...remainingDocumentRefs],
+      })
+    }
 
     return firstImageRef
       ? this.store.create({
@@ -521,7 +674,12 @@ export class CurrentThreadSessionCoordinator {
       let safeError: MutableTurnRecord['error'] = null
 
       if (assistantStatus === 'failed' && error) {
-        if (upgradedRecord.version === 3) {
+        if (upgradedRecord.version === 4) {
+          safeError = createSafeThreadErrorRecordV4({
+            code: error.code,
+            retryable: error.retryable,
+          })
+        } else if (upgradedRecord.version === 3) {
           safeError = createSafeThreadErrorRecordV3({
             code: error.code,
             retryable: error.retryable,
@@ -564,6 +722,43 @@ export class CurrentThreadSessionCoordinator {
       }
 
       throw new CurrentThreadSessionError('store_error', 'Current thread storage failed.')
+    }
+  }
+
+  private async assertRawAttachmentCapacity(
+    record: CurrentThreadRecord | null,
+    images: ReadonlyArray<NonNullable<NyxChatRequest['newImages']>[number]>,
+    documents: ReadonlyArray<NonNullable<NyxChatRequest['newDocuments']>[number]>,
+  ) {
+    const hasStoredImages = Boolean(
+      record &&
+      (record.version === 3 || record.version === 4) &&
+      record.turns.some((turn) => turn.imageRefs.length > 0),
+    )
+    const hasStoredDocuments = Boolean(
+      record?.version === 4 && record.turns.some((turn) => turn.documentRefs.length > 0),
+    )
+
+    if ((hasStoredImages || images.length > 0) && !this.images) {
+      throw new CurrentThreadSessionError('invalid_request', 'Image storage is unavailable.')
+    }
+    if ((hasStoredDocuments || documents.length > 0) && !this.documents) {
+      throw new CurrentThreadSessionError('invalid_request', 'Document storage is unavailable.')
+    }
+
+    const existingImageBytes = hasStoredImages ? await this.images!.canonicalBytes(record) : 0
+    const existingDocumentBytes = hasStoredDocuments ? this.documents!.rawBytes(record) : 0
+    const total =
+      existingImageBytes +
+      existingDocumentBytes +
+      images.reduce((sum, image) => sum + image.canonicalBytes.byteLength, 0) +
+      documents.reduce((sum, document) => sum + document.sourceBytes.byteLength, 0)
+
+    if (total > nyxChatDocumentLimits.currentThreadAttachmentBytes) {
+      throw new CurrentThreadSessionError(
+        'invalid_request',
+        'Current-thread attachment capacity was exceeded.',
+      )
     }
   }
 }

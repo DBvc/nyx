@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
 import { createCurrentThreadFileAdapter } from './file-adapter'
 import { CurrentThreadImageFiles } from './image-files'
-import { parseCurrentThreadRecordV3 } from './schemas'
+import { parseCurrentThreadRecordV3, parseCurrentThreadRecordV4 } from './schemas'
 
 const png = Uint8Array.from(
   Buffer.from(
@@ -180,6 +180,24 @@ describe('CurrentThreadImageFiles', () => {
 
     await images.reset()
     await expect(stat(directoryPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('keeps version-4 image authorization intact', async () => {
+    const { images } = await createImages()
+    await images.writeNewImages({
+      record: null,
+      refs: [pngRef],
+      images: [{ imageId, canonicalBytes: png, previewBytes: png }],
+    })
+    const v3 = recordWithImage()
+    const v4 = parseCurrentThreadRecordV4({
+      ...v3,
+      version: 4,
+      turns: v3.turns.map((turn) => ({ ...turn, documentRefs: [] })),
+    })
+
+    await expect(images.readCanonical(v4.turns[0]!.imageRefs[0]!)).resolves.toEqual(png)
+    await expect(images.availableImageIds(v4)).resolves.toEqual(new Set([imageId]))
   })
 
   it('accepts only the sealed Chromium JPEG ICC and rejects a changed profile', async () => {

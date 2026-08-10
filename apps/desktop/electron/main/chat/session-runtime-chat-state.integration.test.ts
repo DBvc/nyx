@@ -281,6 +281,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       writeNewImages: vi.fn(async () => [imageRef.imageId]),
       rollbackImages: vi.fn(async () => undefined),
       readCanonical: vi.fn(async () => newImage.canonicalBytes),
+      canonicalBytes: vi.fn(async () => 0),
       reset: vi.fn(async () => undefined),
     } as unknown as CurrentThreadImageFiles
     const coordinator = new CurrentThreadSessionCoordinator({ store, images })

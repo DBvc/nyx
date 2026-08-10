@@ -63,7 +63,9 @@ function sha256(bytes: Uint8Array) {
 }
 
 function imageRefs(record: CurrentThreadRecord | null) {
-  return record?.version === 3 ? record.turns.flatMap((turn) => turn.imageRefs) : []
+  return record && (record.version === 3 || record.version === 4)
+    ? record.turns.flatMap((turn) => turn.imageRefs)
+    : []
 }
 
 function assertDecodedSize(
@@ -192,6 +194,16 @@ export class CurrentThreadImageFiles {
 
   async reset() {
     await this.fileAdapter.removeDirectory(this.directoryPath)
+  }
+
+  async canonicalBytes(record: CurrentThreadRecord | null) {
+    let total = 0
+
+    for (const ref of imageRefs(record)) {
+      total += await this.regularFileSize(this.paths(ref.imageId).full)
+    }
+
+    return total
   }
 
   async availableImageIds(record: CurrentThreadRecord) {

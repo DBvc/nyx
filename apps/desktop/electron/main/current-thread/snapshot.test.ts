@@ -5,10 +5,12 @@ import {
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
   parseCurrentThreadRecordV3,
+  parseCurrentThreadRecordV4,
   upgradeCurrentThreadRecordForMutation,
 } from './schemas'
 import { CurrentThreadSnapshotService, toCurrentThreadSnapshot } from './snapshot'
 import type { CurrentThreadImageFiles } from './image-files'
+import type { CurrentThreadDocumentFiles } from './document-files'
 
 const noAvailableImageIds = new Set<string>()
 
@@ -51,6 +53,47 @@ const imageRef = {
   width: 640,
   height: 480,
 } as const
+const documentRef = {
+  documentId: '00000000-0000-4000-8000-000000000010',
+  name: 'notes.txt',
+  mediaType: 'text/plain',
+  byteLength: 5,
+  extractedByteLength: 5,
+  sourceSha256: 'a'.repeat(64),
+  extractedTextSha256: 'b'.repeat(64),
+} as const
+
+function failedDocumentOnlyRecord() {
+  return parseCurrentThreadRecordV4({
+    version: 4,
+    threadId: 'thread-1',
+    turns: [
+      {
+        attemptRequestId: 'request-doc',
+        userMessageId: 'user-doc',
+        assistantMessageId: 'assistant-doc',
+        userContent: '',
+        imageRefs: [],
+        documentRefs: [documentRef],
+        assistantContent: '',
+        assistantStatus: 'failed',
+        error: {
+          code: 'network_error',
+          message: 'Nyx could not reach the provider.',
+          retryable: true,
+        },
+        targetBinding: {
+          selection: { kind: 'env_fallback' },
+          attribution: { kind: 'env_fallback', modelId: 'env-model' },
+        },
+        createdAt: '2026-08-10T00:00:00.000Z',
+        updatedAt: '2026-08-10T00:01:00.000Z',
+      },
+    ],
+    createdAt: '2026-08-10T00:00:00.000Z',
+    updatedAt: '2026-08-10T00:01:00.000Z',
+  })
+}
 
 function failedImageOnlyRecord() {
   return parseCurrentThreadRecordV3({
@@ -86,7 +129,7 @@ function failedImageOnlyRecord() {
 describe('toCurrentThreadSnapshot', () => {
   it('maps terminal messages without exposing persisted metadata', () => {
     const record = completedThenFailedRecord()
-    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds)
+    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds, new Set())
 
     expect(snapshot.messages).toEqual([
       {
@@ -156,7 +199,7 @@ describe('toCurrentThreadSnapshot', () => {
       ],
     })
 
-    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds)
+    const snapshot = toCurrentThreadSnapshot(record, noAvailableImageIds, new Set())
 
     expect(snapshot.selectedTarget).toEqual({ kind: 'env_fallback' })
     expect(snapshot.messages.find((message) => message.id === 'assistant-1')).toMatchObject({
@@ -168,7 +211,11 @@ describe('toCurrentThreadSnapshot', () => {
   })
 
   it('rebuilds retry metadata while excluding the failed assistant from provider messages', () => {
-    const snapshot = toCurrentThreadSnapshot(completedThenFailedRecord(), noAvailableImageIds)
+    const snapshot = toCurrentThreadSnapshot(
+      completedThenFailedRecord(),
+      noAvailableImageIds,
+      new Set(),
+    )
 
     expect(snapshot.retryableTurn).toEqual({
       userMessageId: 'user-2',
@@ -189,6 +236,7 @@ describe('toCurrentThreadSnapshot', () => {
     const availableSnapshot = toCurrentThreadSnapshot(
       failedImageOnlyRecord(),
       new Set([imageRef.imageId]),
+      new Set(),
     )
 
     expect(availableSnapshot.messages[0]).toMatchObject({
@@ -203,7 +251,7 @@ describe('toCurrentThreadSnapshot', () => {
     })
 
     expect(
-      toCurrentThreadSnapshot(failedImageOnlyRecord(), noAvailableImageIds).messages[0],
+      toCurrentThreadSnapshot(failedImageOnlyRecord(), noAvailableImageIds, new Set()).messages[0],
     ).toMatchObject({
       images: [{ ...imageRef, available: false }],
     })
@@ -230,7 +278,7 @@ describe('toCurrentThreadSnapshot', () => {
       updatedAt: '2026-07-11T00:05:00.000Z',
     })
 
-    const snapshot = toCurrentThreadSnapshot(laterCompletedRecord, noAvailableImageIds)
+    const snapshot = toCurrentThreadSnapshot(laterCompletedRecord, noAvailableImageIds, new Set())
     const historicalFailure = snapshot.messages.find((message) => message.id === 'assistant-2')
 
     expect(historicalFailure).toMatchObject({
@@ -256,7 +304,7 @@ describe('toCurrentThreadSnapshot', () => {
       ],
     })
 
-    expect(() => toCurrentThreadSnapshot(pendingRecord, noAvailableImageIds)).toThrow()
+    expect(() => toCurrentThreadSnapshot(pendingRecord, noAvailableImageIds, new Set())).toThrow()
   })
 })
 
@@ -303,5 +351,45 @@ describe('CurrentThreadSnapshotService', () => {
       images: [{ ...imageRef, available: true }],
     })
     expect(images.availableImageIds).toHaveBeenCalledWith(record)
+  })
+
+  it('projects only safe document metadata and resolves its availability in main', async () => {
+    const record = failedDocumentOnlyRecord()
+    const documents = {
+      availableDocumentIds: vi.fn(async () => new Set([documentRef.documentId])),
+    } as unknown as CurrentThreadDocumentFiles
+    const service = new CurrentThreadSnapshotService({
+      resolveReader: () => ({ read: async () => record }),
+      resolveDocuments: () => documents,
+    })
+
+    const result = await service.getSnapshot()
+
+    expect(result.ok && result.value?.messages[0]).toEqual({
+      id: 'user-doc',
+      role: 'user',
+      content: '',
+      status: 'completed',
+      documents: [
+        {
+          documentId: documentRef.documentId,
+          name: documentRef.name,
+          mediaType: documentRef.mediaType,
+          byteLength: documentRef.byteLength,
+          extractedByteLength: documentRef.extractedByteLength,
+          available: true,
+        },
+      ],
+    })
+    expect(JSON.stringify(result)).not.toMatch(/sha256|aaaa|bbbb/u)
+    expect(result.ok && result.value?.retryableTurn?.turnUserMessage.documentRefs).toEqual([
+      {
+        documentId: documentRef.documentId,
+        name: documentRef.name,
+        mediaType: documentRef.mediaType,
+        byteLength: documentRef.byteLength,
+        extractedByteLength: documentRef.extractedByteLength,
+      },
+    ])
   })
 })

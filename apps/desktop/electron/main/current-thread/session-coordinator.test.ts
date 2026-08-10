@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import { CurrentThreadSessionCoordinator, CurrentThreadSessionError } from './session-coordinator'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
+import { CurrentThreadDocumentFiles } from './document-files'
 import { parseCurrentThreadRecordV1, parseCurrentThreadRecordV3 } from './schemas'
 import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
@@ -41,6 +43,24 @@ const imageRef3 = {
   ...imageRef,
   imageId: '00000000-0000-4000-8000-000000000003',
 } as const
+const imageRef4 = {
+  ...imageRef,
+  imageId: '00000000-0000-4000-8000-000000000004',
+} as const
+const documentSource = new TextEncoder().encode('hello document')
+const documentRef = {
+  documentId: '00000000-0000-4000-8000-000000000010',
+  name: 'notes.txt',
+  mediaType: 'text/plain',
+  byteLength: documentSource.byteLength,
+  extractedByteLength: documentSource.byteLength,
+} as const
+const newDocument = {
+  documentId: documentRef.documentId,
+  sourceBytes: documentSource,
+  extractedTextBytes: documentSource,
+  extractedFromSha256: createHash('sha256').update(documentSource).digest('hex'),
+} as const
 
 async function createCoordinator() {
   const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-session-'))
@@ -70,6 +90,7 @@ async function createCoordinator() {
       }
     },
     readCanonical: async (ref: typeof imageRef) => Uint8Array.from([Number(ref.imageId.slice(-1))]),
+    canonicalBytes: async () => availableImageIds.size,
     reset: async () => {
       availableImageIds.clear()
     },
@@ -167,6 +188,286 @@ describe('CurrentThreadSessionCoordinator', () => {
       ),
     ).rejects.toMatchObject({ code: 'store_error' })
     expect(rollbackImages).toHaveBeenCalledWith([imageRef.imageId])
+  })
+
+  it('commits document sidecars before v4, reuses refs on Retry, and detects corruption', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-document-session-'))
+    tempDirs.push(dir)
+    const store = new CurrentThreadStore({
+      filePath: join(dir, 'current-thread.json'),
+      generateId: () => 'thread-doc',
+      now: () => '2026-08-10T00:00:00.000Z',
+    })
+    const documentDirectory = join(dir, 'documents')
+    const documents = new CurrentThreadDocumentFiles({ directoryPath: documentDirectory })
+    const coordinator = new CurrentThreadSessionCoordinator({ store, documents })
+    const request = newRequest({
+      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
+      messages: [{ role: 'user', content: '' }],
+      newDocuments: [newDocument],
+    })
+
+    const prepared = await coordinator.prepare(request)
+    expect(prepared.pendingRecord).toMatchObject({
+      version: 4,
+      turns: [{ imageRefs: [], documentRefs: [expect.objectContaining(documentRef)] }],
+    })
+    await expect(
+      stat(join(documentDirectory, `${documentRef.documentId}.source`)),
+    ).resolves.toBeDefined()
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.fail('request-1', 'assistant-1', '', {
+      code: 'network_error',
+      message: 'private detail',
+      retryable: true,
+    })
+
+    const { newDocuments: _newDocuments, ...retryBase } = request
+    const retry = {
+      ...retryBase,
+      requestId: 'request-2',
+      turnIntent: 'retry_failed_response' as const,
+    }
+    await expect(coordinator.prepare(retry)).resolves.toMatchObject({
+      pendingRecord: { version: 4, turns: [{ attemptRequestId: 'request-2' }] },
+    })
+    await coordinator.bindResolvedTarget('request-2', 'assistant-1', firstAttribution)
+    await coordinator.fail('request-2', 'assistant-1', '', {
+      code: 'network_error',
+      message: 'private detail',
+      retryable: true,
+    })
+
+    await writeFile(
+      join(documentDirectory, `${documentRef.documentId}.text`),
+      new TextEncoder().encode('jello document'),
+    )
+    await expect(coordinator.prepare({ ...retry, requestId: 'request-3' })).rejects.toMatchObject({
+      code: 'invalid_request',
+    })
+  })
+
+  it('rolls back document sidecars when a mixed image write fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-mixed-rollback-'))
+    tempDirs.push(dir)
+    const store = new CurrentThreadStore({ filePath: join(dir, 'current-thread.json') })
+    const documentDirectory = join(dir, 'documents')
+    const documents = new CurrentThreadDocumentFiles({ directoryPath: documentDirectory })
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewImages: vi.fn(async () => {
+        throw new CurrentThreadImageFilesError('io_error', 'failed')
+      }),
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images, documents })
+
+    await expect(
+      coordinator.prepare(
+        newRequest({
+          turnUserMessage: {
+            id: 'user-1',
+            content: '',
+            imageRefs: [imageRef],
+            documentRefs: [documentRef],
+          },
+          messages: [{ role: 'user', content: '' }],
+          newImages: [newImage],
+          newDocuments: [newDocument],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'store_error' })
+    await expect(
+      stat(join(documentDirectory, `${documentRef.documentId}.source`)),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(store.read()).resolves.toBeNull()
+  })
+
+  it('rejects the shared raw attachment budget before either store writes', async () => {
+    const pdfSource = new Uint8Array(8 * 1024 * 1024)
+    pdfSource.set(new TextEncoder().encode('%PDF-'))
+    const pdfText = new TextEncoder().encode('x')
+    const historicalRecord = parseCurrentThreadRecordV3({
+      version: 3,
+      threadId: 'thread-1',
+      turns: [imageRef, imageRef2, imageRef3, imageRef4].map((ref, index) => ({
+        attemptRequestId: `historical-request-${index}`,
+        userMessageId: `historical-user-${index}`,
+        assistantMessageId: `historical-assistant-${index}`,
+        userContent: '',
+        imageRefs: [ref],
+        assistantContent: '',
+        assistantStatus: 'completed',
+        error: null,
+        targetBinding: {
+          selection: { kind: 'env_fallback' },
+          attribution: { kind: 'env_fallback', modelId: 'model' },
+        },
+        createdAt: '2026-08-10T00:00:00.000Z',
+        updatedAt: '2026-08-10T00:00:00.000Z',
+      })),
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    })
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      canonicalBytes: vi.fn(async () => 25 * 1024 * 1024),
+      writeNewImages: vi.fn(),
+    } as unknown as CurrentThreadImageFiles
+    const documents = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewDocuments: vi.fn(),
+    } as unknown as CurrentThreadDocumentFiles
+    const store = {
+      read: vi.fn(async () => historicalRecord),
+    } as unknown as CurrentThreadStore
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images, documents })
+
+    await expect(
+      coordinator.prepare(
+        newRequest({
+          turnUserMessage: {
+            id: 'user-1',
+            content: '',
+            documentRefs: [
+              {
+                ...documentRef,
+                name: 'paper.pdf',
+                mediaType: 'application/pdf',
+                byteLength: pdfSource.byteLength,
+                extractedByteLength: pdfText.byteLength,
+              },
+            ],
+          },
+          messages: [
+            ...historicalRecord.turns.map(() => ({ role: 'user' as const, content: '' })),
+            { role: 'user', content: '' },
+          ],
+          newDocuments: [
+            {
+              ...newDocument,
+              sourceBytes: pdfSource,
+              extractedTextBytes: pdfText,
+              extractedFromSha256: createHash('sha256').update(pdfSource).digest('hex'),
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' })
+    expect(images.writeNewImages).not.toHaveBeenCalled()
+    expect(documents.writeNewDocuments).not.toHaveBeenCalled()
+  })
+
+  it('rolls back documents when cancellation wins before mixed image persistence', async () => {
+    const controller = new AbortController()
+    const rollbackDocuments = vi.fn(async () => undefined)
+    const store = {
+      read: vi.fn(async () => null),
+      create: vi.fn(),
+    } as unknown as CurrentThreadStore
+    const documents = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewDocuments: vi.fn(async () => {
+        controller.abort()
+        return [
+          {
+            ...documentRef,
+            sourceSha256: newDocument.extractedFromSha256,
+            extractedTextSha256: newDocument.extractedFromSha256,
+          },
+        ]
+      }),
+      rollbackDocuments,
+    } as unknown as CurrentThreadDocumentFiles
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewImages: vi.fn(),
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, documents, images })
+
+    await expect(
+      coordinator.prepare(
+        newRequest({
+          turnUserMessage: {
+            id: 'user-1',
+            content: '',
+            imageRefs: [imageRef],
+            documentRefs: [documentRef],
+          },
+          messages: [{ role: 'user', content: '' }],
+          newImages: [newImage],
+          newDocuments: [newDocument],
+        }),
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(rollbackDocuments).toHaveBeenCalledWith([documentRef.documentId])
+    expect(images.writeNewImages).not.toHaveBeenCalled()
+    expect(store.create).not.toHaveBeenCalled()
+  })
+
+  it('rolls back every sidecar when cancellation wins at the final pre-commit barrier', async () => {
+    const controller = new AbortController()
+    const rollbackDocuments = vi.fn(async () => undefined)
+    const rollbackImages = vi.fn(async () => undefined)
+    const store = {
+      read: vi.fn(async () => null),
+      create: vi.fn(),
+    } as unknown as CurrentThreadStore
+    const documents = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewDocuments: vi.fn(async () => [
+        {
+          ...documentRef,
+          sourceSha256: newDocument.extractedFromSha256,
+          extractedTextSha256: newDocument.extractedFromSha256,
+        },
+      ]),
+      rollbackDocuments,
+    } as unknown as CurrentThreadDocumentFiles
+    const images = {
+      reconcile: vi.fn(async () => undefined),
+      writeNewImages: vi.fn(async () => {
+        controller.abort()
+        return [imageRef.imageId]
+      }),
+      rollbackImages,
+    } as unknown as CurrentThreadImageFiles
+    const coordinator = new CurrentThreadSessionCoordinator({ store, documents, images })
+
+    await expect(
+      coordinator.prepare(
+        newRequest({
+          turnUserMessage: {
+            id: 'user-1',
+            content: '',
+            imageRefs: [imageRef],
+            documentRefs: [documentRef],
+          },
+          messages: [{ role: 'user', content: '' }],
+          newImages: [newImage],
+          newDocuments: [newDocument],
+        }),
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(rollbackImages).toHaveBeenCalledWith([imageRef.imageId])
+    expect(rollbackDocuments).toHaveBeenCalledWith([documentRef.documentId])
+    expect(store.create).not.toHaveBeenCalled()
+  })
+
+  it('does not reconcile files after an unknown or malformed durable record', async () => {
+    const images = { reconcile: vi.fn() } as unknown as CurrentThreadImageFiles
+    const documents = { reconcile: vi.fn() } as unknown as CurrentThreadDocumentFiles
+    const store = {
+      read: vi.fn(async () => {
+        throw new Error('future version')
+      }),
+    } as unknown as CurrentThreadStore
+    const coordinator = new CurrentThreadSessionCoordinator({ store, images, documents })
+
+    await expect(coordinator.prepare(newRequest())).rejects.toMatchObject({ code: 'store_error' })
+    expect(images.reconcile).not.toHaveBeenCalled()
+    expect(documents.reconcile).not.toHaveBeenCalled()
   })
 
   it('resets the record before deleting images and ignores unreachable orphan cleanup failure', async () => {
@@ -631,7 +932,7 @@ describe('CurrentThreadSessionCoordinator', () => {
         attribution: envAttributionB,
       },
     })
-    expect(record && toCurrentThreadSnapshot(record, new Set())).toMatchObject({
+    expect(record && toCurrentThreadSnapshot(record, new Set(), new Set())).toMatchObject({
       selectedTarget: { kind: 'env_fallback' },
       messages: [{ id: 'user-1' }, { id: 'assistant-1', targetAttribution: envAttributionB }],
     })

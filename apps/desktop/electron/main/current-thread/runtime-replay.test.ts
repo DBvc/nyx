@@ -6,6 +6,7 @@ import {
   parseCurrentThreadRecordV1,
   parseCurrentThreadRecordV2,
   parseCurrentThreadRecordV3,
+  parseCurrentThreadRecordV4,
   upgradeCurrentThreadRecordForMutation,
 } from './schemas'
 import { replayCurrentThread } from './runtime-replay'
@@ -175,5 +176,49 @@ describe('replayCurrentThread', () => {
       content: '',
     })
     expect(order).toEqual(['submit', 'start', 'append', 'complete'])
+  })
+
+  it('projects a document-only version-4 turn as empty Runtime text', async () => {
+    const order: string[] = []
+    const runtime = client(order)
+    const record = parseCurrentThreadRecordV4({
+      version: 4,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: '',
+          imageRefs: [],
+          documentRefs: [
+            {
+              documentId: '00000000-0000-4000-8000-000000000010',
+              name: 'notes.txt',
+              mediaType: 'text/plain',
+              byteLength: 5,
+              extractedByteLength: 5,
+              sourceSha256: 'a'.repeat(64),
+              extractedTextSha256: 'b'.repeat(64),
+            },
+          ],
+          assistantContent: 'Answer',
+          assistantStatus: 'completed',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'model' },
+          },
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    })
+
+    await replayCurrentThread(runtime, record)
+
+    expect(runtime.submitUserMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '' }))
   })
 })

@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,6 +15,7 @@ import {
   type PreparedCurrentThreadTurn,
 } from '../current-thread/session-coordinator'
 import { CurrentThreadStore } from '../current-thread/store'
+import { CurrentThreadDocumentFiles } from '../current-thread/document-files'
 import {
   RuntimeChatStateClientError,
   type RuntimeChatStateClient,
@@ -57,6 +59,20 @@ const newImage = {
   imageId: imageRef.imageId,
   canonicalBytes: new Uint8Array([1]),
   previewBytes: new Uint8Array([2]),
+} as const
+const documentRef = {
+  documentId: '00000000-0000-4000-8000-000000000010',
+  name: 'notes.txt',
+  mediaType: 'text/plain',
+  byteLength: 1,
+  extractedByteLength: 1,
+} as const
+const documentSource = new Uint8Array([104])
+const newDocument = {
+  documentId: documentRef.documentId,
+  sourceBytes: documentSource,
+  extractedTextBytes: documentSource,
+  extractedFromSha256: createHash('sha256').update(documentSource).digest('hex'),
 } as const
 
 function validRequest(): NyxChatRequest {
@@ -299,6 +315,28 @@ describe('validateChatRequest', () => {
     expect(validateChatRequest(imageRequest)).toBeNull()
     const { newImages: _newImages, ...retryRequest } = imageRequest
     expect(validateChatRequest({ ...retryRequest, turnIntent: 'retry_failed_response' })).toBeNull()
+  })
+
+  it('parses one strict document-only new turn and an existing-document Retry', () => {
+    const documentRequest = {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
+      messages: [{ role: 'user' as const, content: '' }],
+      newDocuments: [newDocument],
+    }
+
+    expect(validateChatRequest(documentRequest)).toBeNull()
+    const { newDocuments: _newDocuments, ...retryRequest } = documentRequest
+    expect(validateChatRequest({ ...retryRequest, turnIntent: 'retry_failed_response' })).toBeNull()
+    expect(
+      validateChatRequest({
+        ...documentRequest,
+        turnUserMessage: {
+          ...documentRequest.turnUserMessage,
+          documentRefs: [{ ...documentRef, name: '../notes.txt' }],
+        },
+      }),
+    ).toMatchObject({ code: 'invalid_request' })
   })
 
   it.each([
@@ -653,6 +691,38 @@ describe('ChatSessionManager provider resolver', () => {
           retryable: false,
         },
       },
+    ])
+    expect(prepare).not.toHaveBeenCalled()
+    expect(resolveChatTarget).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('keeps product document requests fail-closed before durability or execution', () => {
+    const prepare = vi.fn()
+    const resolveChatTarget = vi.fn()
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      resolveChatTarget,
+      resolveCurrentThreadSession: () =>
+        ({ prepare }) as unknown as CurrentThreadSessionCoordinator,
+    })
+
+    manager.start(sender, {
+      ...validRequest(),
+      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
+      messages: [{ role: 'user', content: '' }],
+      newDocuments: [newDocument],
+    })
+
+    expect(sentChatEvents(sender)).toEqual([
+      expect.objectContaining({
+        type: 'chat:error',
+        error: {
+          code: 'invalid_request',
+          message: 'Document attachments are not available yet.',
+          retryable: false,
+        },
+      }),
     ])
     expect(prepare).not.toHaveBeenCalled()
     expect(resolveChatTarget).not.toHaveBeenCalled()
@@ -1818,6 +1888,85 @@ describe('ChatSessionManager durable current thread ordering', () => {
     expect(sentChatEvents(sender).at(-1)).toMatchObject({ status: 'cancelled' })
     expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
     expect(resolveChatTarget).not.toHaveBeenCalled()
+  })
+
+  it('keeps real v4 sidecars when Stop wins immediately after a later commit', async () => {
+    const directoryPath = await mkdtemp(join(tmpdir(), 'nyx-session-v4-stop-'))
+    const documentDirectory = join(directoryPath, 'documents')
+    const store = new CurrentThreadStore({
+      filePath: join(directoryPath, 'current-thread.json'),
+      generateId: () => 'thread-v4',
+      now: () => '2026-08-10T00:00:00.000Z',
+    })
+    const documents = new CurrentThreadDocumentFiles({ directoryPath: documentDirectory })
+    const coordinator = new CurrentThreadSessionCoordinator({ store, documents })
+
+    try {
+      await coordinator.prepare({
+        ...validRequest(),
+        turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
+        messages: [{ role: 'user', content: '' }],
+        newDocuments: [newDocument],
+      })
+      await coordinator.bindResolvedTarget('request-1', 'assistant-1', targetAttribution)
+      await coordinator.complete('request-1', 'assistant-1', 'Indexed')
+
+      let manager!: ChatSessionManager
+      const wrappedCoordinator = {
+        prepare: vi.fn(async (request: NyxChatRequest, signal: AbortSignal) => {
+          const prepared = await coordinator.prepare(request, signal)
+          manager.cancel({ requestId: request.requestId })
+          return prepared
+        }),
+        cancel: vi.fn((requestId: string, assistantMessageId: string, finalContent: string) =>
+          coordinator.cancel(requestId, assistantMessageId, finalContent),
+        ),
+      } as unknown as CurrentThreadSessionCoordinator
+      const resolveChatTarget = vi.fn()
+      const sender = mockSender()
+      manager = new ChatSessionManager({
+        env: runtimeChatStateDisabledEnv,
+        resolveCurrentThreadSession: () => wrappedCoordinator,
+        resolveChatTarget,
+      })
+
+      manager.start(sender, {
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        turnIntent: 'new_user_message',
+        turnUserMessage: { id: 'user-2', content: 'Next' },
+        messages: [
+          { role: 'user', content: '' },
+          { role: 'assistant', content: 'Indexed' },
+          { role: 'user', content: 'Next' },
+        ],
+        targetSelection,
+      })
+
+      await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
+      expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
+        'chat:accepted',
+        'chat:done',
+      ])
+      await expect(store.read()).resolves.toMatchObject({
+        version: 4,
+        turns: [
+          { documentRefs: [expect.objectContaining(documentRef)] },
+          { assistantStatus: 'cancelled', documentRefs: [] },
+        ],
+      })
+      await expect(
+        stat(join(documentDirectory, `${documentRef.documentId}.source`)),
+      ).resolves.toBeDefined()
+      await expect(
+        stat(join(documentDirectory, `${documentRef.documentId}.text`)),
+      ).resolves.toBeDefined()
+      expect(resolveChatTarget).not.toHaveBeenCalled()
+      expect(streamChatCompletion).not.toHaveBeenCalled()
+    } finally {
+      await rm(directoryPath, { recursive: true, force: true })
+    }
   })
 
   it('persists accepted cancellation in the real store while target resolution is pending', async () => {

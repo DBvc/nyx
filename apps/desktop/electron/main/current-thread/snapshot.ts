@@ -7,6 +7,7 @@ import type {
 import type { NyxChatInputMessage } from '../../../shared/chat/types'
 import type { CurrentThreadRecord } from './schemas'
 import type { CurrentThreadImageFiles } from './image-files'
+import type { CurrentThreadDocumentFiles } from './document-files'
 
 export interface CurrentThreadRecordReader {
   read(): Promise<CurrentThreadRecord | null>
@@ -19,6 +20,7 @@ export interface CurrentThreadSnapshotController {
 export interface CurrentThreadSnapshotServiceOptions {
   resolveReader: () => CurrentThreadRecordReader
   resolveImages?: () => CurrentThreadImageFiles
+  resolveDocuments?: () => CurrentThreadDocumentFiles
 }
 
 const snapshotLoadError = {
@@ -26,10 +28,12 @@ const snapshotLoadError = {
   message: 'Nyx could not load the current thread.',
 } as const
 const noAvailableImageIds: ReadonlySet<string> = new Set()
+const noAvailableDocumentIds: ReadonlySet<string> = new Set()
 
 export function toCurrentThreadSnapshot(
   record: CurrentThreadRecord,
   availableImageIds: ReadonlySet<string>,
+  availableDocumentIds: ReadonlySet<string>,
 ): NyxCurrentThreadSnapshot {
   const messages: NyxCurrentThreadMessage[] = []
   const submittedMessages: NyxChatInputMessage[] = []
@@ -39,7 +43,9 @@ export function toCurrentThreadSnapshot(
 
   for (const [index, turn] of record.turns.entries()) {
     const targetBinding = record.version === 1 ? null : record.turns[index]!.targetBinding
-    const imageRefs = record.version === 3 ? record.turns[index]!.imageRefs : []
+    const imageRefs =
+      record.version === 3 || record.version === 4 ? record.turns[index]!.imageRefs : []
+    const documentRefs = record.version === 4 ? record.turns[index]!.documentRefs : []
 
     if (turn.assistantStatus === 'pending') {
       throw new Error('Pending current thread records must be recovered before snapshot mapping.')
@@ -62,6 +68,16 @@ export function toCurrentThreadSnapshot(
               ...imageRef,
               available: availableImageIds.has(imageRef.imageId),
             })),
+          }
+        : {}),
+      ...(documentRefs.length > 0
+        ? {
+            documents: documentRefs.map(
+              ({ sourceSha256: _sourceSha256, extractedTextSha256: _textSha256, ...ref }) => ({
+                ...ref,
+                available: availableDocumentIds.has(ref.documentId),
+              }),
+            ),
           }
         : {}),
     } as const satisfies NyxCurrentThreadMessage
@@ -97,6 +113,15 @@ export function toCurrentThreadSnapshot(
           ...(imageRefs.length > 0
             ? { imageRefs: imageRefs.map((imageRef) => ({ ...imageRef })) }
             : {}),
+          ...(documentRefs.length > 0
+            ? {
+                documentRefs: documentRefs.map(
+                  ({ sourceSha256: _sourceSha256, extractedTextSha256: _textSha256, ...ref }) => ({
+                    ...ref,
+                  }),
+                ),
+              }
+            : {}),
         },
         submittedMessages: submittedMessages.map((message) => ({ ...message })),
       }
@@ -114,10 +139,16 @@ export function toCurrentThreadSnapshot(
 export class CurrentThreadSnapshotService implements CurrentThreadSnapshotController {
   private readonly resolveReader: () => CurrentThreadRecordReader
   private readonly resolveImages: (() => CurrentThreadImageFiles) | undefined
+  private readonly resolveDocuments: (() => CurrentThreadDocumentFiles) | undefined
 
-  constructor({ resolveReader, resolveImages }: CurrentThreadSnapshotServiceOptions) {
+  constructor({
+    resolveReader,
+    resolveImages,
+    resolveDocuments,
+  }: CurrentThreadSnapshotServiceOptions) {
     this.resolveReader = resolveReader
     this.resolveImages = resolveImages
+    this.resolveDocuments = resolveDocuments
   }
 
   async getSnapshot(): Promise<NyxCurrentThreadSnapshotResult> {
@@ -127,10 +158,16 @@ export class CurrentThreadSnapshotService implements CurrentThreadSnapshotContro
         record && this.resolveImages
           ? await this.resolveImages().availableImageIds(record)
           : noAvailableImageIds
+      const availableDocumentIds =
+        record && this.resolveDocuments
+          ? await this.resolveDocuments().availableDocumentIds(record)
+          : noAvailableDocumentIds
 
       return {
         ok: true,
-        value: record ? toCurrentThreadSnapshot(record, availableImageIds) : null,
+        value: record
+          ? toCurrentThreadSnapshot(record, availableImageIds, availableDocumentIds)
+          : null,
       }
     } catch {
       return {
