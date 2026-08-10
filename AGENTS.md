@@ -252,12 +252,11 @@ The explicit `document-attachments` workstream is separate from Context
 Composer. Its reviewed v2.4 local-baseline plan is bound at SHA-256
 `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
 The docs-only `document-attachments/S0` scope lock is bound to review contract
-`RC-DOC-S0-RATCHET-01`. That receipt is valid only when an independent scoped
-re-review passes the current five-document artifact. Until the receipt passes
-and the reviewed scope-lock commit is present in current HEAD, no implementation
-slice is executable. After both conditions hold, only the OS-temp
-`document-attachments/G1` extractor feasibility gate is executable. G1 may not
-change tracked product code or dependencies.
+`RC-DOC-S0-RATCHET-01` and landed at `43a2020`. The OS-temp
+`document-attachments/G1` extractor feasibility gate then stopped under
+`RC-DOC-G1-EVIDENCE-01`: the reviewed candidate accepted a valid ZIP64 DOCX,
+contrary to the sealed fail-closed rule. G1 remains incomplete and no
+document-attachments slice is executable pending the required user choice.
 `document-attachments/D1` through `document-attachments/D3` remain ordered and
 blocked; native PDF `N0/N1` is outside the local workstream and remains
 non-executable. This status does not reopen any stopped Context Composer E slice

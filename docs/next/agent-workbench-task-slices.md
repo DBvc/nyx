@@ -114,14 +114,14 @@ Use relative documentation links. Do not add local absolute paths.
   full strict review at proposal SHA-256
   `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
   Its docs-only `document-attachments/S0` scope lock is bound to review contract
-  `RC-DOC-S0-RATCHET-01`, which is valid only after an independent scoped
-  re-review passes the current five-document artifact. No implementation slice
-  is executable until that receipt passes and the reviewed scope-lock commit is
-  present in current HEAD. After both conditions, only
-  `document-attachments/G1` is executable; `document-attachments/D1` through
-  `document-attachments/D3` remain ordered and blocked, and native PDF `N0/N1`
-  remains outside this local workstream. This status does not reopen any stopped
-  E slice.
+  `RC-DOC-S0-RATCHET-01` and landed at `43a2020`. The OS-temp
+  `document-attachments/G1` gate then stopped under
+  `RC-DOC-G1-EVIDENCE-01` because the reviewed candidate accepted a valid
+  ZIP64 DOCX. G1 remains incomplete; no document-attachments slice is
+  executable pending the required user choice. `document-attachments/D1`
+  through `document-attachments/D3` remain ordered and blocked, and native PDF
+  `N0/N1` remains outside this local workstream. This status does not reopen any
+  stopped E slice.
 
 ## A0: Scope Gate Docs
 
@@ -2772,11 +2772,10 @@ git diff --check
 
 ## F Workstream: Document Attachments Local Baseline
 
-Status: `document-attachments/S0` is the active docs-only scope lock under
-review contract `RC-DOC-S0-RATCHET-01`. No implementation slice is executable
-until an independent scoped re-review passes the current five-document artifact
-and the reviewed scope-lock commit is present in current HEAD. After both
-conditions, `document-attachments/G1` is the only executable slice.
+Status: `document-attachments/S0` passed review and landed at `43a2020`.
+`document-attachments/G1` then stopped under `RC-DOC-G1-EVIDENCE-01` because
+the reviewed candidate accepted a valid ZIP64 DOCX. G1 remains incomplete and
+no document-attachments slice is executable pending the required user choice.
 `document-attachments/D1` through `document-attachments/D3` remain blocked in
 that order. Native PDF `N0/N1` is not part of this executable local workstream.
 
@@ -2891,6 +2890,11 @@ Required:
 ### document-attachments/G1: Bounded extractor gate
 
 Type: OS-temp feasibility evidence only.
+
+Status: `PASS_VALID_STOP` under `RC-DOC-G1-EVIDENCE-01`. The tested candidate
+accepted a valid ZIP64 DOCX, so G1 remains incomplete. Do not continue to D1 or
+silently change the dependency or policy; the next step requires the user to
+choose PDF/text-only first or one new bounded DOCX candidate.
 
 Tracked-file ownership is the same five documentation files allowed by S0. The
 harness and candidate dependency installation must stay in one `mktemp -d`
