@@ -249,18 +249,23 @@ messages. Provider credentials, resolved targets, file IO, and any future
 accepted image bytes remain Electron-main-owned.
 
 The explicit `document-attachments` workstream is separate from Context
-Composer. Its reviewed v2.4 local-baseline plan is bound at SHA-256
-`619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
+Composer. Its v2.5 amendment records the user-approved option A after the
+reviewed v2.4 baseline and is bound at SHA-256
+`38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c`.
 The docs-only `document-attachments/S0` scope lock is bound to review contract
 `RC-DOC-S0-RATCHET-01` and landed at `43a2020`. The OS-temp
 `document-attachments/G1` extractor feasibility gate then stopped under
 `RC-DOC-G1-EVIDENCE-01`: the reviewed candidate accepted a valid ZIP64 DOCX,
-contrary to the sealed fail-closed rule. G1 remains incomplete and no
-document-attachments slice is executable pending the required user choice.
-`document-attachments/D1` through `document-attachments/D3` remain ordered and
-blocked; native PDF `N0/N1` is outside the local workstream and remains
-non-executable. This status does not reopen any stopped Context Composer E slice
-and does not yet authorize document input in the product.
+contrary to the sealed fail-closed rule. At that point G1 was incomplete and no
+document-attachments slice was executable until the reduced strict-text/PDF
+v2.5 amendment passed independent review. It passed
+`RC-DOC-V25-PLAN-01`. The reduced OS-temp G1 gate then passed
+`RC-DOC-G1-REDUCED-EVIDENCE-01`; only `document-attachments/D1` is now
+executable. DOCX is deferred. `document-attachments/D2` and
+`document-attachments/D3` remain ordered and blocked; native PDF `N0/N1` is
+outside the local workstream and remains non-executable. This status does not
+reopen any stopped Context Composer E slice and does not yet authorize document
+input in the product.
 
 ## Workspace Boundary
 

@@ -110,18 +110,22 @@ Use relative documentation links. Do not add local absolute paths.
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
   permission. Only the reviewed v3.0 plan and active named slice authorize work.
-- The separate `document-attachments` local-baseline plan v2.4 passed independent
-  full strict review at proposal SHA-256
-  `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
+- The separate `document-attachments` local-baseline plan v2.5 records the
+  user-approved option A after `RC-DOC-G1-EVIDENCE-01`: strict text and
+  text-bearing PDF remain in the first slice; DOCX is deferred. The amendment
+  is bound at SHA-256
+  `38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c`.
   Its docs-only `document-attachments/S0` scope lock is bound to review contract
   `RC-DOC-S0-RATCHET-01` and landed at `43a2020`. The OS-temp
   `document-attachments/G1` gate then stopped under
   `RC-DOC-G1-EVIDENCE-01` because the reviewed candidate accepted a valid
-  ZIP64 DOCX. G1 remains incomplete; no document-attachments slice is
-  executable pending the required user choice. `document-attachments/D1`
-  through `document-attachments/D3` remain ordered and blocked, and native PDF
-  `N0/N1` remains outside this local workstream. This status does not reopen any
-  stopped E slice.
+  ZIP64 DOCX. The user then approved option A. The reduced v2.5 G1 amendment is
+  bound at the hash above and passed `RC-DOC-V25-PLAN-01`; only the reduced
+  OS-temp G1 gate was executable. It passed
+  `RC-DOC-G1-REDUCED-EVIDENCE-01`; only `document-attachments/D1` is now
+  executable. `document-attachments/D2` and `document-attachments/D3` remain
+  ordered and blocked, and native PDF `N0/N1` remains outside this local
+  workstream. This status does not reopen any stopped E slice.
 
 ## A0: Scope Gate Docs
 
@@ -2774,16 +2778,20 @@ git diff --check
 
 Status: `document-attachments/S0` passed review and landed at `43a2020`.
 `document-attachments/G1` then stopped under `RC-DOC-G1-EVIDENCE-01` because
-the reviewed candidate accepted a valid ZIP64 DOCX. G1 remains incomplete and
-no document-attachments slice is executable pending the required user choice.
-`document-attachments/D1` through `document-attachments/D3` remain blocked in
-that order. Native PDF `N0/N1` is not part of this executable local workstream.
+the reviewed candidate accepted a valid ZIP64 DOCX. The user approved option A:
+defer DOCX and continue strict text plus text-bearing PDF. The reduced v2.5 G1
+amendment passed `RC-DOC-V25-PLAN-01`, so only the reduced OS-temp G1 gate is
+executable. It then passed `RC-DOC-G1-REDUCED-EVIDENCE-01`; only
+`document-attachments/D1` is now executable. `document-attachments/D2` and
+`document-attachments/D3` remain blocked in that order. Native PDF `N0/N1` is
+not part of this executable local workstream.
 
-The reviewed plan is
+The amended plan is
 [document-attachments-technical-plan.md](./document-attachments-technical-plan.md)
-v2.4 at SHA-256
-`619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
-Independent full `plan_strict` review passed for that exact artifact. Evidence
+v2.5 at SHA-256
+`38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c`.
+Its independent review receipt `RC-DOC-V25-PLAN-01` authorized the reduced G1
+gate, which later completed under `RC-DOC-G1-REDUCED-EVIDENCE-01`. Evidence
 belongs in
 [document-attachments-runthrough.md](./document-attachments-runthrough.md).
 
@@ -2810,8 +2818,8 @@ other stopped Context Composer slice.
 
 - The existing attach button and drop path may eventually accept one supported
   document per turn. Clipboard paste remains image-only.
-- The candidate first slice supports strict UTF-8 TXT, Markdown, and CSV;
-  text-bearing PDF; and DOCX only if G1 proves the bounded extractor.
+- The candidate first slice supports strict UTF-8 TXT, Markdown, and CSV plus
+  text-bearing PDF. DOCX is deferred.
 - Renderer owns only the unsent draft and its feature-local Worker. Electron
   main remains authoritative for validation, file IO, capacity, durable state,
   target resolution, Provider mapping, Retry, reconciliation, and safe errors.
@@ -2833,10 +2841,10 @@ other stopped Context Composer slice.
   rich preview, remote file id, or native Provider protocol in this local
   workstream.
 
-### Candidate limits
+### Frozen first-slice limits
 
-G1 may freeze or lower these values. Raising any value requires a new user
-decision and reviewed plan amendment.
+G1 passed with these values unchanged, so they are frozen for D1-D3. Raising
+any value requires a new user decision and reviewed plan amendment.
 
 ```text
 documents per turn:                    1
@@ -2845,8 +2853,6 @@ source bytes per document:             8 MiB
 extracted UTF-8 bytes per document:    128 KiB
 extracted UTF-8 bytes/current thread:  256 KiB
 PDF pages:                              50
-DOCX ZIP entries:                       256
-DOCX declared uncompressed bytes:       32 MiB
 extraction wall-clock timeout:          10 seconds
 ```
 
@@ -2891,33 +2897,30 @@ Required:
 
 Type: OS-temp feasibility evidence only.
 
-Status: `PASS_VALID_STOP` under `RC-DOC-G1-EVIDENCE-01`. The tested candidate
-accepted a valid ZIP64 DOCX, so G1 remains incomplete. Do not continue to D1 or
-silently change the dependency or policy; the next step requires the user to
-choose PDF/text-only first or one new bounded DOCX candidate.
+Status: complete. The first candidate reached `PASS_VALID_STOP` under
+`RC-DOC-G1-EVIDENCE-01` after accepting a valid ZIP64 DOCX. The user approved
+option A: DOCX is deferred. The reduced strict-text/PDF G1 remainder becomes
+executable only after the v2.5 amendment passes independent review. It passed
+`RC-DOC-G1-REDUCED-EVIDENCE-01` without changing product code or dependencies.
 
 Tracked-file ownership is the same five documentation files allowed by S0. The
 harness and candidate dependency installation must stay in one `mktemp -d`
 directory. G1 may not change `apps/desktop/package.json`, `pnpm-lock.yaml`, any
 tracked product/test file, or real current-thread data.
 
-Use exact candidate versions of `pdfjs-dist`, `mammoth`, and `fflate`. Prove
-strict TXT/MD/CSV decoding, exact page-separated PDF output, exact DOCX raw-text
-output, source-digest parity, cancellation, timeout, and the complete malformed,
-encrypted, page/entry/output/expansion, ZIP64, path, split-view, duplicate, and
-Unicode-normalized-name collision matrix in the reviewed plan. fflate alone
-must inspect untrusted ZIP data and rebuild one bounded canonical ZIP before
-Mammoth reads it. Bind source, dependencies, fixtures, commands, results,
-measurements, and environment; obtain independent review; then delete the temp
-harness.
+Use the exact `pdfjs-dist` candidate and the platform `TextDecoder`. Prove
+strict TXT/MD/CSV decoding, exact page-separated PDF output, source-digest
+parity, cancellation, timeout, and the complete malformed, encrypted,
+no-text, page-limit, output-limit, and near-limit matrix in the amended plan.
+Bind source, dependency, fixtures, commands, results, measurements, and
+environment; obtain independent review; then delete the temp harness.
 
-PDF failure stops the workstream for user direction. DOCX failure stops for a
-user choice between a PDF/text-only first release and one new bounded DOCX
-candidate. Do not silently remove a format or raise a limit.
+PDF failure stops the workstream for user direction. Do not add a DOCX
+candidate, silently remove another format, or raise a limit.
 
 ### document-attachments/D1: Contract, v4 durability, and document files
 
-Status: blocked until reviewed G1 PASS.
+Status: the only executable document-attachments slice after reviewed G1 PASS.
 
 Allowed tracked production and near-source test files are exactly:
 
@@ -2989,7 +2992,7 @@ apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts
 ```
 
 The five S0 documentation files and the D1 file list remain allowed. Add only
-the exact parser/ZIP versions proven by G1. D2 owns the feature-local Worker,
+the exact `pdfjs-dist` version proven by G1. D2 owns the feature-local Worker,
 picker/drop draft and cards, accepted-only clearing, local text materialization,
 safe attachment errors, deterministic Stop races, and the real packaged
 resource gate. Any need for a new protocol, IPC namespace, generic attachment
@@ -3003,11 +3006,11 @@ D3 may change the five S0 documentation files. Product/test fixes are allowed
 only by returning to the owning D1 or D2 file list; D3 may add no new product
 file or behavior.
 
-Run the reviewed synthetic TXT, CSV, multi-page PDF, and DOCX matrix in dev and
+Run the reviewed synthetic TXT, CSV, and multi-page PDF matrix in dev and
 the packaged product. Cover document-only, mixed text/image/document, later
 turn, restart, target-switch Retry, Stop, New thread cleanup, no-fetch rejection,
 and existing text/image regression. Record every configured current target;
-at least one must semantically pass TXT, PDF, and DOCX. After independent final
+at least one must semantically pass TXT and PDF. After independent final
 code review, promote only the target/format claims actually observed.
 
 ### Native PDF N0/N1: Deferred and non-executable
@@ -3022,11 +3025,10 @@ id, SDK, adapter registry, or placeholder protocol may be added in advance.
 
 Stop and request user direction if any slice requires:
 
-- synchronous PDF/DOCX parsing on Electron main
+- synchronous PDF parsing on Electron main
 - acceptance before source, extracted text, and pending turn are durable
 - silent text truncation or a higher candidate/resource limit
-- a transitive-only parser/ZIP dependency or two ZIP interpretations of the
-  same untrusted DOCX
+- a transitive-only parser dependency
 - weakening current image durability, validation, Retry, or safe-error behavior
 - a generic Asset service, content-part registry, new IPC namespace, or OCaml
   protocol change

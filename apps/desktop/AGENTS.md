@@ -289,17 +289,19 @@ Still not allowed in this fifth workstream:
 
 Explicit `document-attachments` workstream status:
 
-- the reviewed v2.4 local-baseline plan is bound at SHA-256
-  `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`
+- the v2.5 amendment records the user-approved option A after the reviewed v2.4
+  baseline and is bound at SHA-256
+  `38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c`
 - the docs-only `document-attachments/S0` scope lock is bound to review contract
   `RC-DOC-S0-RATCHET-01` and landed at `43a2020`
 - the OS-temp `document-attachments/G1` extractor gate stopped under
   `RC-DOC-G1-EVIDENCE-01` because the reviewed candidate accepted a valid ZIP64
-  DOCX; G1 remains incomplete and no document-attachments slice is executable
-  pending the required user choice
-- `document-attachments/D1` through `document-attachments/D3` remain ordered and
-  blocked; native PDF `N0/N1` is outside this local workstream and remains
-  non-executable
+  DOCX; DOCX is deferred; the reduced strict-text/PDF v2.5 amendment passed
+  `RC-DOC-V25-PLAN-01`, and the reduced OS-temp G1 gate passed
+  `RC-DOC-G1-REDUCED-EVIDENCE-01`
+- only `document-attachments/D1` is executable; `document-attachments/D2` and
+  `document-attachments/D3` remain ordered and blocked; native PDF `N0/N1`
+  remains non-executable
 - this status does not reopen E4R, E4M, or E5 and does not yet authorize product
   document input
 

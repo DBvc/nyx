@@ -1,10 +1,10 @@
 # Document Attachments: Local Baseline + Native PDF Plan
 
-Status: draft v2.4 after scoped repair `RC-DOC-HYBRID-REV-04`. The earlier
-inline Chat Completions `file_data` candidate ended in `VALID_STOP` and passed
-`RC-DOC-G0-EVIDENCE-02`. No document-attachment product slice is executable
-until this plan passes strict review and the docs-only scope gate below is
-merged.
+Status: v2.5 user-approved scope reduction after
+`RC-DOC-G1-EVIDENCE-01`. The first local slice supports strict text and
+text-bearing PDF only. DOCX is deferred rather than replaced with another
+parser candidate. No product slice is executable until the v2.5 amendment
+passes independent review and the reduced G1 gate passes.
 
 ## Conclusion
 
@@ -19,10 +19,9 @@ Build the useful path first:
    added only for one explicitly configured and live-tested protocol; it is
    never inferred from a hostname or model name.
 
-The first product slice supports `.txt`, `.md`, `.csv`, text-bearing `.pdf`,
-and `.docx` only if the bounded extractor gate passes. It does not add OCR,
-page-image fallback, RAG, remote file ids, capability matrices, or automatic
-Provider fallback.
+The first product slice supports `.txt`, `.md`, `.csv`, and text-bearing
+`.pdf`. It does not add DOCX, OCR, page-image fallback, RAG, remote file ids,
+capability matrices, or automatic Provider fallback.
 
 ## Why The Previous Direction Stopped
 
@@ -48,7 +47,7 @@ Confirmed repository facts:
   the pending turn, and clears the draft only after `chat:accepted`.
 - Current-thread record v3 is image-aware; every image owner has explicit
   version checks that a v4 change must update.
-- The desktop package has no direct PDF, DOCX, or ZIP parsing dependency.
+- The desktop package has no direct PDF parsing dependency.
 - Connections persistence is v1 and both the resolver and connection test are
   fixed to Chat Completions.
 
@@ -56,20 +55,13 @@ Confirmed external facts:
 
 - PDF.js accepts in-memory PDF data and exposes document/page APIs suitable for
   text extraction.
-- Mammoth exposes browser `extractRawText({ arrayBuffer })`, warns that
-  pathological documents can consume high CPU or memory, and recommends
-  isolation with a timeout for untrusted input.
-- fflate exposes streaming ZIP decompression whose output can be counted and
-  terminated, instead of trusting only archive-declared sizes.
 - OpenAI Responses, Anthropic, and Gemini have Provider-specific native PDF
   inputs; their non-PDF behavior is not a universal attachment protocol.
 
 Unknown until the extractor gate:
 
-- whether the selected PDF.js, Mammoth, and fflate builds meet Nyx's parser
-  correctness and resource bounds;
-- whether streaming DOCX preflight can reject actual expansion before Mammoth
-  receives dangerous input;
+- whether the selected PDF.js build meets Nyx's parser correctness and resource
+  bounds;
 - the measured latency of the conservative first-slice limits.
 
 Not run by this planning pass:
@@ -90,9 +82,9 @@ Not run by this planning pass:
    preparation or pre-accept failure never clears it.
 5. Sent and hydrated user messages show a compact document card. This slice
    does not preview or open the document.
-6. A PDF with no extractable text, an encrypted PDF, an over-limit document,
-   or an unsafe DOCX fails in the draft with a direct local explanation. The
-   user is not charged for a Provider request.
+6. A PDF with no extractable text, an encrypted PDF, or an over-limit document
+   fails in the draft with a direct local explanation. The user is not charged
+   for a Provider request.
 7. Provider rejection after durable acceptance keeps the document available
    for target change and Retry.
 
@@ -108,8 +100,6 @@ source bytes per document:             8 MiB
 extracted UTF-8 bytes per document:    128 KiB
 extracted UTF-8 bytes/current thread:  256 KiB
 PDF pages:                              50
-DOCX ZIP entries:                       256
-DOCX declared uncompressed bytes:       32 MiB
 extraction wall-clock timeout:          10 seconds
 ```
 
@@ -126,13 +116,12 @@ never silently truncated.
 
 Accepted media types:
 
-| Extension | Media type                                                                | First representation          |
-| --------- | ------------------------------------------------------------------------- | ----------------------------- |
-| `.txt`    | `text/plain`                                                              | strict UTF-8                  |
-| `.md`     | `text/markdown`                                                           | strict UTF-8                  |
-| `.csv`    | `text/csv`                                                                | strict UTF-8, no table parser |
-| `.pdf`    | `application/pdf`                                                         | page-separated extracted text |
-| `.docx`   | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | raw text if G1 passes         |
+| Extension | Media type        | First representation          |
+| --------- | ----------------- | ----------------------------- |
+| `.txt`    | `text/plain`      | strict UTF-8                  |
+| `.md`     | `text/markdown`   | strict UTF-8                  |
+| `.csv`    | `text/csv`        | strict UTF-8, no table parser |
+| `.pdf`    | `application/pdf` | page-separated extracted text |
 
 Audio, video, legacy `.doc`, spreadsheets, presentations, archives, folders,
 and arbitrary MIME types remain unsupported.
@@ -156,8 +145,7 @@ and arbitrary MIME types remain unsupported.
   thread, and component disposal also terminate outstanding work and release
   references.
 - TXT/MD/CSV use `TextDecoder('utf-8', { fatal: true })`. PDF uses page text
-  only. DOCX uses raw-text extraction; no HTML from Mammoth is rendered or
-  persisted.
+  only.
 
 Extracted text is user-supplied message content, not trusted metadata. A
 compromised Renderer can already alter user text; main still validates every
@@ -169,12 +157,7 @@ thread.
 Add document-specific types, not a future-shaped asset union:
 
 ```ts
-type NyxChatDocumentMediaType =
-  | 'application/pdf'
-  | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  | 'text/plain'
-  | 'text/markdown'
-  | 'text/csv'
+type NyxChatDocumentMediaType = 'application/pdf' | 'text/plain' | 'text/markdown' | 'text/csv'
 
 interface NyxChatDocumentRef {
   documentId: string
@@ -208,9 +191,7 @@ Main is authoritative for acceptance:
 
 - validate UUID, sanitized basename, allowlisted extension/media pair, exact
   byte lengths, count, and both capacity budgets;
-- validate PDF signature; validate text as strict UTF-8 with no NUL; validate
-  DOCX ZIP signature and bounded source size. DOCX decompression and XML
-  handling never run in main;
+- validate PDF signature; validate text as strict UTF-8 with no NUL;
 - hash source and extracted bytes with main's standard crypto implementation;
 - require the Worker-reported source digest to match main's source digest;
 - write both sidecars before committing the pending record;
@@ -306,9 +287,9 @@ starting with OpenAI Responses if that is the configured target:
 4. Extend the existing main switch and normalized stream with exact Responses
    URL, auth, request, event, error, connection-test, and model-refresh logic.
    Do not introduce an adapter registry or SDK for two branches.
-5. Responses sends verified original PDF bytes natively; TXT/MD/CSV/DOCX still
-   use the durable local text projection. Its image mapping must also be tested
-   in the same slice.
+5. Responses sends verified original PDF bytes natively; TXT/MD/CSV still use
+   the durable local text projection. Its image mapping must also be tested in
+   the same slice.
 6. A native rejection never triggers a hidden second Provider request. The
    user changes target and explicitly retries.
 
@@ -337,14 +318,9 @@ This change is docs-only and requires independent review.
 
 ### G1 — Bounded extractor gate
 
-Use an OS-temp Electron Worker harness and exact candidate direct dependencies
-(`pdfjs-dist`, `mammoth`, and `fflate`). It imports no production UI and
-changes no tracked product file. fflate is the sole owner of the untrusted ZIP:
-it streams and counts actual emitted bytes for every entry, rejects unsafe or
-colliding normalized names, and rebuilds the accepted bounded entries as a new
-canonical ZIP. Mammoth receives only that reconstructed ZIP, never the
-original. Do not handwrite a general ZIP parser or ask two ZIP readers to
-interpret the same untrusted archive.
+Use an OS-temp Electron Worker harness and the exact `pdfjs-dist` candidate. It
+imports no production UI and changes no tracked product file. TXT/MD/CSV use
+the platform `TextDecoder`; no second parser candidate is added.
 
 Pass requires:
 
@@ -353,14 +329,6 @@ Pass requires:
   with page boundaries;
 - safe `no_text`, encrypted, malformed, page-limit, cancellation, and timeout
   outcomes;
-- exact normalized raw-text output (or its SHA) from a small DOCX;
-- rejection of malformed, encrypted, ZIP64, path-traversal, entry-count,
-  declared-expansion, actual-expansion, declaration-mismatch/data-descriptor,
-  central-directory/local-header disagreement, duplicate or Unicode-normalized
-  name collision, output-limit, cancellation, and timeout DOCX cases before
-  unsafe work;
-- the reconstructed DOCX contains only unique normalized entries accepted by
-  the bounded fflate pass, and exact Mammoth output is derived from that ZIP;
 - a source digest that still matches the separately reread persistence bytes;
 - no paths or fixture contents in logs and Worker termination after
   success/failure;
@@ -374,9 +342,8 @@ fixtures, exact results, measurements, and environment. Delete the harness
 after independent review. Production build and `app.asar` are intentionally
 tested once, against the real D2 Worker rather than this temporary harness.
 
-PDF failure stops the workstream for user decision. DOCX failure stops for a
-user decision between a PDF/text-only first release and another bounded DOCX
-candidate; it does not silently shrink scope.
+PDF failure stops the workstream for user decision. DOCX is not part of this
+candidate or first product slice.
 
 ### D1 — Contract, v4 durability, and document files
 
@@ -417,9 +384,8 @@ The D1 gate also proves:
 ### D2 — Local vertical slice
 
 Add the document Worker, picker/drop draft flow, cards, accepted-only clearing,
-main local-text materialization, and safe attachment errors. Add all three
-parser/ZIP packages as direct runtime dependencies at the versions proven by
-G1.
+main local-text materialization, and safe attachment errors. Add only the
+`pdfjs-dist` runtime dependency at the version proven by G1.
 
 Gate tests cover picker/drop, prepare/Retry/remove/timeout, double-send and
 remove races, mixed image/document submission, pre-accept retention,
@@ -444,7 +410,7 @@ the first failure stops D2.
 ### D3 — Product acceptance and status
 
 Run ordinary checks, then dev and packaged real-product smoke with synthetic
-non-private TXT, CSV, multi-page PDF, and DOCX fixtures:
+non-private TXT, CSV, and multi-page PDF fixtures:
 
 - record a semantic result for every configured current Chat Completions
   target;
@@ -453,7 +419,7 @@ non-private TXT, CSV, multi-page PDF, and DOCX fixtures:
 - rejected/empty/corrupt/over-limit files never fetch;
 - existing text-only and image-only sends remain unchanged.
 
-At least one configured target must semantically pass TXT, PDF, and DOCX. A
+At least one configured target must semantically pass TXT and PDF. A
 failure on another target is recorded but does not block the local slice and
 must not be described as support for that target. CSV is recorded separately.
 After independent code review, update the active status documents. Claims
@@ -495,11 +461,11 @@ peak delta ≤192 MiB lines stops the candidate instead of raising a limit.
 
 Stop and request user direction if implementation requires:
 
-- synchronous PDF/DOCX parsing on Electron main;
+- synchronous PDF parsing on Electron main;
 - accepting before source bytes, extracted text, and the pending turn are
   durable;
 - silent text truncation;
-- trusting a transitive parser/ZIP dependency without declaring it directly;
+- trusting a transitive parser dependency without declaring it directly;
 - weakening image durability, validation, Retry, or safe-error behavior;
 - a generic Asset service, generic content-part registry, new IPC namespace,
   or OCaml protocol change;
@@ -515,7 +481,7 @@ Stop and request user direction if implementation requires:
 - rich document preview, HTML, Markdown, code-block, or generated-UI rendering
 - citations, search, RAG, embeddings, or cross-document retrieval
 - remote uploads, Provider file reuse, or a shared attachment library
-- audio, video, legacy Office, spreadsheets, presentations, or archives
+- DOCX, audio, video, legacy Office, spreadsheets, presentations, or archives
 - multi-thread history
 - native Anthropic/Gemini implementation in this workstream
 
@@ -558,3 +524,6 @@ Strict review should try to disprove:
 - v2.4 applies `RC-DOC-HYBRID-REV-04`: record commit is the explicit Stop-race
   linearization point, with deterministic pre-commit rollback and post-commit
   accepted-then-cancelled tests in D1 and the real D2 flow.
+- v2.5 records the user's option A after `RC-DOC-G1-EVIDENCE-01`: defer DOCX,
+  remove Mammoth/fflate and every DOCX acceptance requirement, and resume only
+  the strict-text/PDF G1 remainder before D1.
