@@ -233,7 +233,7 @@ export function useChatSession({
           result.width <= 0 ||
           result.height <= 0 ||
           Math.max(result.width, result.height) > nyxChatImageLimits.fullMaxEdge ||
-          pixels > nyxChatImageLimits.fullPixelsPerImage
+          pixels > nyxChatImageLimits.newImagePixelsPerImage
         ) {
           failDraft(result.draftId)
           return
@@ -301,6 +301,11 @@ export function useChatSession({
 
       const parsed = parseNyxChatImageHeader(new Uint8Array(sourceBuffer))
       const pixels = parsed.width * parsed.height
+
+      if (pixels > nyxChatImageLimits.newImagePixelsPerImage) {
+        failDraft(imageId, 'This image is too large. Resize it below 4 MP and try again.')
+        return
+      }
 
       if (
         parsed.mediaType !== source.type ||

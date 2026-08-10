@@ -9,6 +9,7 @@ export const nyxChatImageLimits = {
   currentThreadPreviewBytes: 12 * 1024 * 1024,
   currentThreadImages: 12,
   currentThreadFullPixels: 24_883_200,
+  newImagePixelsPerImage: 4_194_304,
   fullPixelsPerImage: 8_294_400,
   fullMaxEdge: 8192,
   previewMaxEdge: 512,

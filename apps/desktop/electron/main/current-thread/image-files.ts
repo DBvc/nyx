@@ -327,6 +327,13 @@ export class CurrentThreadImageFiles {
   }
 
   private validatePair(ref: NyxChatImageRef, image: NyxChatNewImage) {
+    if (ref.width * ref.height > nyxChatImageLimits.newImagePixelsPerImage) {
+      throw new CurrentThreadImageFilesError(
+        'invalid_request',
+        'Image pixel capacity was exceeded.',
+      )
+    }
+
     this.validateCanonical(ref, image.canonicalBytes)
 
     if (

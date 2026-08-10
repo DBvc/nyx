@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { deflateSync } from 'node:zlib'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -25,6 +26,64 @@ const imageId = '00000000-0000-4000-8000-000000000001'
 const pngRef = { imageId, mediaType: 'image/png', width: 2, height: 1 } as const
 const jpegRef = { imageId, mediaType: 'image/jpeg', width: 2, height: 1 } as const
 const tempDirs: string[] = []
+
+function uint32(value: number) {
+  return Buffer.from([
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  ])
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff
+
+  for (const byte of bytes) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+    }
+  }
+
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(type: string, data: Uint8Array) {
+  const typeBytes = Buffer.from(type)
+  return Buffer.concat([
+    uint32(data.length),
+    typeBytes,
+    data,
+    uint32(crc32(Buffer.concat([typeBytes, data]))),
+  ])
+}
+
+function createDecodablePng(width: number, height: number) {
+  const rowBytes = Math.ceil(width / 8)
+  const raw = Buffer.alloc(height * (rowBytes + 1))
+  let state = 0x4e595845
+
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < rowBytes; column += 1) {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      raw[row * (rowBytes + 1) + 1 + column] = state & 0xff
+    }
+  }
+
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', Buffer.concat([uint32(width), uint32(height), Buffer.from([1, 0, 0, 0, 0])])),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+const boundaryPng = createDecodablePng(2048, 2048)
+const boundaryPreviewPng = createDecodablePng(512, 512)
+const historicalLargePng = createDecodablePng(2049, 2048)
 
 function refAt(index: number, width = 2, height = 1) {
   return {
@@ -145,6 +204,48 @@ describe('CurrentThreadImageFiles', () => {
         images: [{ imageId, canonicalBytes: changedJpeg, previewBytes: png }],
       }),
     ).rejects.toMatchObject({ code: 'invalid_request' })
+  })
+
+  it('limits new images to 4 MiPixels without changing historical reads', async () => {
+    const { directoryPath, images } = await createImages()
+    const boundaryRef = refAt(2, 2048, 2048)
+
+    await expect(
+      images.writeNewImages({
+        record: null,
+        refs: [boundaryRef],
+        images: [
+          {
+            imageId: boundaryRef.imageId,
+            canonicalBytes: boundaryPng,
+            previewBytes: boundaryPreviewPng,
+          },
+        ],
+      }),
+    ).resolves.toEqual([boundaryRef.imageId])
+
+    await images.reset()
+    const historicalRef = refAt(3, 2049, 2048)
+
+    await expect(
+      images.writeNewImages({
+        record: null,
+        refs: [historicalRef],
+        images: [
+          {
+            imageId: historicalRef.imageId,
+            canonicalBytes: png,
+            previewBytes: png,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_request' })
+
+    await mkdir(directoryPath, { recursive: true })
+    await writeFile(join(directoryPath, `${historicalRef.imageId}.full`), historicalLargePng)
+    await expect(images.readCanonical(historicalRef)).resolves.toEqual(
+      Uint8Array.from(historicalLargePng),
+    )
   })
 
   it('removes a committed full file when the preview rename fails', async () => {
