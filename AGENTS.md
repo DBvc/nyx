@@ -20,8 +20,8 @@ broaden unrelated tasks.
 - `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
   thread-first Agent Workbench foundation, current-thread durability, and
-  provider compatibility core tasks, plus the bounded Composer target-selection
-  and Context Composer experiment workstreams.
+  provider compatibility core tasks, plus the bounded Composer target-selection,
+  Context Composer experiment, and document-attachments workstreams.
 
 ## Source of Truth
 
@@ -247,6 +247,21 @@ or registry, assistant rich output, Markdown/HTML/Artifact/Generative UI
 rendering, multi-thread history, a new IPC namespace, or new OCaml protocol
 messages. Provider credentials, resolved targets, file IO, and any future
 accepted image bytes remain Electron-main-owned.
+
+The explicit `document-attachments` workstream is separate from Context
+Composer. Its reviewed v2.4 local-baseline plan is bound at SHA-256
+`619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
+The docs-only `document-attachments/S0` scope lock is bound to review contract
+`RC-DOC-S0-RATCHET-01`. That receipt is valid only when an independent scoped
+re-review passes the current five-document artifact. Until the receipt passes
+and the reviewed scope-lock commit is present in current HEAD, no implementation
+slice is executable. After both conditions hold, only the OS-temp
+`document-attachments/G1` extractor feasibility gate is executable. G1 may not
+change tracked product code or dependencies.
+`document-attachments/D1` through `document-attachments/D3` remain ordered and
+blocked; native PDF `N0/N1` is outside the local workstream and remains
+non-executable. This status does not reopen any stopped Context Composer E slice
+and does not yet authorize document input in the product.
 
 ## Workspace Boundary
 

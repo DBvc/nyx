@@ -110,6 +110,18 @@ Use relative documentation links. Do not add local absolute paths.
 - The old v1.8 PNG/JPEG/Worker design and its E1-E5 slice/file details are failed
   historical candidate material, not an active workstream or implementation
   permission. Only the reviewed v3.0 plan and active named slice authorize work.
+- The separate `document-attachments` local-baseline plan v2.4 passed independent
+  full strict review at proposal SHA-256
+  `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
+  Its docs-only `document-attachments/S0` scope lock is bound to review contract
+  `RC-DOC-S0-RATCHET-01`, which is valid only after an independent scoped
+  re-review passes the current five-document artifact. No implementation slice
+  is executable until that receipt passes and the reviewed scope-lock commit is
+  present in current HEAD. After both conditions, only
+  `document-attachments/G1` is executable; `document-attachments/D1` through
+  `document-attachments/D3` remain ordered and blocked, and native PDF `N0/N1`
+  remains outside this local workstream. This status does not reopen any stopped
+  E slice.
 
 ## A0: Scope Gate Docs
 
@@ -2755,5 +2767,273 @@ mise run runtime:chat-state:check
 mise run desktop:check
 mise run check
 mise run format-check
+git diff --check
+```
+
+## F Workstream: Document Attachments Local Baseline
+
+Status: `document-attachments/S0` is the active docs-only scope lock under
+review contract `RC-DOC-S0-RATCHET-01`. No implementation slice is executable
+until an independent scoped re-review passes the current five-document artifact
+and the reviewed scope-lock commit is present in current HEAD. After both
+conditions, `document-attachments/G1` is the only executable slice.
+`document-attachments/D1` through `document-attachments/D3` remain blocked in
+that order. Native PDF `N0/N1` is not part of this executable local workstream.
+
+The reviewed plan is
+[document-attachments-technical-plan.md](./document-attachments-technical-plan.md)
+v2.4 at SHA-256
+`619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`.
+Independent full `plan_strict` review passed for that exact artifact. Evidence
+belongs in
+[document-attachments-runthrough.md](./document-attachments-runthrough.md).
+
+Inside this F section, unqualified `S0`, `G1`, and `D1` through `D3` refer only
+to the `document-attachments` slices defined here. Outside this section, an
+unqualified `D1` through `D3` still refers to the completed Composer
+target-selection workstream.
+
+The only allowed order is:
+
+```text
+document-attachments/S0
+  -> document-attachments/G1
+  -> document-attachments/D1
+  -> document-attachments/D2
+  -> document-attachments/D3
+```
+
+No later slice may begin before the previous slice passes its evidence and
+independent-review gate. This workstream does not reopen E4R, E4M, E5, or any
+other stopped Context Composer slice.
+
+### Locked local-baseline behavior
+
+- The existing attach button and drop path may eventually accept one supported
+  document per turn. Clipboard paste remains image-only.
+- The candidate first slice supports strict UTF-8 TXT, Markdown, and CSV;
+  text-bearing PDF; and DOCX only if G1 proves the bounded extractor.
+- Renderer owns only the unsent draft and its feature-local Worker. Electron
+  main remains authoritative for validation, file IO, capacity, durable state,
+  target resolution, Provider mapping, Retry, reconciliation, and safe errors.
+- Main durably stores the source bytes and the exact accepted local text
+  projection. Retry, restart, later turns, and target changes reuse that
+  projection instead of reparsing.
+- Existing OpenAI-compatible Chat Completions targets receive the verified
+  local text projection as ordinary user-message text. They never receive the
+  failed inline `file_data` shape.
+- Existing text-only and image-only Provider request bodies remain unchanged.
+- Drafts clear only after durable `chat:accepted`; preparation or pre-accept
+  failure preserves the draft.
+- Missing, changed, invalid, empty, or over-limit document content fails before
+  Provider fetch. Extracted text is never silently truncated.
+- The OCaml protocol remains unchanged. A document-only turn uses the existing
+  attachment-only empty-user-string compatibility projection.
+- Do not introduce a generic Asset service, arbitrary content-part registry,
+  new IPC namespace, capability matrix, automatic route/fallback, RAG, OCR,
+  rich preview, remote file id, or native Provider protocol in this local
+  workstream.
+
+### Candidate limits
+
+G1 may freeze or lower these values. Raising any value requires a new user
+decision and reviewed plan amendment.
+
+```text
+documents per turn:                    1
+documents in the current thread:       8
+source bytes per document:             8 MiB
+extracted UTF-8 bytes per document:    128 KiB
+extracted UTF-8 bytes/current thread:  256 KiB
+PDF pages:                              50
+DOCX ZIP entries:                       256
+DOCX declared uncompressed bytes:       32 MiB
+extraction wall-clock timeout:          10 seconds
+```
+
+Canonical image bytes and document source bytes share the existing 32 MiB
+current-thread attachment budget. The current-thread coordinator owns the one
+cross-store preflight. Existing image count, pixel, format, per-item,
+canonical-byte, preview-byte, and per-turn checks remain unchanged. Extracted
+document text has the separate 256 KiB current-thread budget above.
+
+Resource stop lines for G1 and the real packaged D2 path are:
+
+```text
+Renderer heartbeat gap:                 <= 50 ms
+Electron-main synchronous segment:      <= 250 ms
+whole-process peak working-set delta:   <= 192 MiB
+```
+
+### document-attachments/S0: Docs-only scope lock
+
+Type: documentation only.
+
+Allowed tracked files are exactly:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+docs/next/agent-workbench-task-slices.md
+docs/next/document-attachments-technical-plan.md
+docs/next/document-attachments-runthrough.md
+```
+
+Required:
+
+- bind the reviewed v2.4 plan, strict-review result, exact slice order, allowed
+  files, candidate limits, ownership invariants, and Stop conditions
+- preserve all Context Composer stopped status and historical boundaries
+- make G1 the only next executable slice only after this docs diff passes
+  independent review and its scope-lock commit is present in current HEAD
+- change no product code, tests, dependency, schema, IPC, or persisted data
+
+### document-attachments/G1: Bounded extractor gate
+
+Type: OS-temp feasibility evidence only.
+
+Tracked-file ownership is the same five documentation files allowed by S0. The
+harness and candidate dependency installation must stay in one `mktemp -d`
+directory. G1 may not change `apps/desktop/package.json`, `pnpm-lock.yaml`, any
+tracked product/test file, or real current-thread data.
+
+Use exact candidate versions of `pdfjs-dist`, `mammoth`, and `fflate`. Prove
+strict TXT/MD/CSV decoding, exact page-separated PDF output, exact DOCX raw-text
+output, source-digest parity, cancellation, timeout, and the complete malformed,
+encrypted, page/entry/output/expansion, ZIP64, path, split-view, duplicate, and
+Unicode-normalized-name collision matrix in the reviewed plan. fflate alone
+must inspect untrusted ZIP data and rebuild one bounded canonical ZIP before
+Mammoth reads it. Bind source, dependencies, fixtures, commands, results,
+measurements, and environment; obtain independent review; then delete the temp
+harness.
+
+PDF failure stops the workstream for user direction. DOCX failure stops for a
+user choice between a PDF/text-only first release and one new bounded DOCX
+candidate. Do not silently remove a format or raise a limit.
+
+### document-attachments/D1: Contract, v4 durability, and document files
+
+Status: blocked until reviewed G1 PASS.
+
+Allowed tracked production and near-source test files are exactly:
+
+```text
+apps/desktop/shared/chat/document-file.ts
+apps/desktop/shared/chat/document-file.test.ts
+apps/desktop/shared/chat/types.ts
+apps/desktop/shared/chat/snapshot.ts
+apps/desktop/electron/main/current-thread/schemas.ts
+apps/desktop/electron/main/current-thread/store.ts
+apps/desktop/electron/main/current-thread/store.test.ts
+apps/desktop/electron/main/current-thread/file-adapter.ts
+apps/desktop/electron/main/current-thread/image-files.ts
+apps/desktop/electron/main/current-thread/image-files.test.ts
+apps/desktop/electron/main/current-thread/document-files.ts
+apps/desktop/electron/main/current-thread/document-files.test.ts
+apps/desktop/electron/main/current-thread/session-coordinator.ts
+apps/desktop/electron/main/current-thread/session-coordinator.test.ts
+apps/desktop/electron/main/current-thread/snapshot.ts
+apps/desktop/electron/main/current-thread/snapshot.test.ts
+apps/desktop/electron/main/current-thread/runtime-replay.ts
+apps/desktop/electron/main/current-thread/runtime-replay.test.ts
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/chat/session.test.ts
+apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+```
+
+The five S0 documentation files are also allowed for evidence and status. Any
+new production path or dependency is a Stop and requires a reviewed amendment.
+
+D1 adds only document-specific contracts, current-thread v4, source/text
+sidecars, cross-store preflight, mixed rollback, reconciliation, Retry,
+snapshot, reset, compatibility replay, and the fail-closed main guard described
+in the plan. The guard must reject every product document request before file
+IO, record mutation, acceptance, target resolution, or Provider fetch. D1 is not
+a deployable attachment feature.
+
+### document-attachments/D2: Local vertical slice
+
+Status: blocked until independently reviewed D1 PASS.
+
+In addition to the D1 files needed to remove the guard and materialize verified
+document text, allowed tracked files are exactly:
+
+```text
+apps/desktop/package.json
+pnpm-lock.yaml
+apps/desktop/electron/main/chat/client.ts
+apps/desktop/electron/main/chat/client.test.ts
+apps/desktop/src/styles/index.css
+apps/desktop/src/ui/chat/document-extractor.worker.ts
+apps/desktop/src/ui/chat/chat-types.ts
+apps/desktop/src/ui/chat/chat-reducer.ts
+apps/desktop/src/ui/chat/chat-reducer.test.ts
+apps/desktop/src/ui/chat/chat-presenters.ts
+apps/desktop/src/ui/chat/chat-presenters.test.ts
+apps/desktop/src/ui/chat/thread-items.ts
+apps/desktop/src/ui/chat/thread-items.test.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+apps/desktop/src/ui/chat/components/ChatComposer.tsx
+apps/desktop/src/ui/chat/components/ChatComposer.test.ts
+apps/desktop/src/ui/chat/components/ChatMessage.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.test.tsx
+apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
+apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts
+```
+
+The five S0 documentation files and the D1 file list remain allowed. Add only
+the exact parser/ZIP versions proven by G1. D2 owns the feature-local Worker,
+picker/drop draft and cards, accepted-only clearing, local text materialization,
+safe attachment errors, deterministic Stop races, and the real packaged
+resource gate. Any need for a new protocol, IPC namespace, generic attachment
+abstraction, or file outside these lists is a Stop.
+
+### document-attachments/D3: Product acceptance and status
+
+Status: blocked until independently reviewed D2 PASS.
+
+D3 may change the five S0 documentation files. Product/test fixes are allowed
+only by returning to the owning D1 or D2 file list; D3 may add no new product
+file or behavior.
+
+Run the reviewed synthetic TXT, CSV, multi-page PDF, and DOCX matrix in dev and
+the packaged product. Cover document-only, mixed text/image/document, later
+turn, restart, target-switch Retry, Stop, New thread cleanup, no-fetch rejection,
+and existing text/image regression. Record every configured current target;
+at least one must semantically pass TXT, PDF, and DOCX. After independent final
+code review, promote only the target/format claims actually observed.
+
+### Native PDF N0/N1: Deferred and non-executable
+
+Native PDF does not block the local baseline. N0 may be planned only when one
+configured real target can test a specific native protocol. N1 may begin only
+after N0 semantically proves that target's PDF and image shapes. Neither slice
+is authorized here; no capability field, Connections migration, Provider file
+id, SDK, adapter registry, or placeholder protocol may be added in advance.
+
+### Workstream stop conditions
+
+Stop and request user direction if any slice requires:
+
+- synchronous PDF/DOCX parsing on Electron main
+- acceptance before source, extracted text, and pending turn are durable
+- silent text truncation or a higher candidate/resource limit
+- a transitive-only parser/ZIP dependency or two ZIP interpretations of the
+  same untrusted DOCX
+- weakening current image durability, validation, Retry, or safe-error behavior
+- a generic Asset service, content-part registry, new IPC namespace, or OCaml
+  protocol change
+- remote Provider file ids, automatic routing, hidden fallback requests,
+  hostname/model inference, or a capability matrix
+- a native Provider protocol before a configured live N0 gate passes
+- a file or behavior outside the active slice's exact allowed list
+
+Validation for S0:
+
+```sh
+mise run desktop:format-check
 git diff --check
 ```

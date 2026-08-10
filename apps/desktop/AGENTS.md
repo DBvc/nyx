@@ -7,8 +7,9 @@ scope remains `v1 min chat`.
 
 Connections settings, thread-first UI work, current-thread durability, provider
 compatibility core, Composer target selection, and the bounded Context Composer
-experiment are allowed only when the user explicitly asks to execute the
-corresponding gated agent-workbench workstream or a named slice from
+experiment and document-attachments workstreams are allowed only when the user
+explicitly asks to execute the corresponding gated agent-workbench workstream
+or a named slice from
 `../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
@@ -134,7 +135,8 @@ Not allowed in this phase:
 - agent UI
 - plugin UI
 - artifact UI
-- multimodal behavior outside the explicit Context Composer E slices
+- multimodal behavior outside an explicit active Context Composer or
+  document-attachments slice
 
 Explicit first agent-workbench workstream additions:
 
@@ -284,6 +286,23 @@ Still not allowed in this fifth workstream:
   Generative UI rendering
 - a new chat/thread IPC namespace, new OCaml actions/protocol messages,
   multi-thread history, tools, or agents
+
+Explicit `document-attachments` workstream status:
+
+- the reviewed v2.4 local-baseline plan is bound at SHA-256
+  `619b570f2c673166691b4d9cb6e43e9ff138c3615a0b8ea084fa9bf97e326abc`
+- the docs-only `document-attachments/S0` scope lock is bound to review contract
+  `RC-DOC-S0-RATCHET-01`; its receipt is valid only when an independent scoped
+  re-review passes the current five-document artifact
+- no implementation slice is executable until that receipt passes and the
+  reviewed scope-lock commit is present in current HEAD; after both conditions,
+  only the OS-temp `document-attachments/G1` extractor gate is executable, and
+  it may not change tracked product code or dependencies
+- `document-attachments/D1` through `document-attachments/D3` remain ordered and
+  blocked; native PDF `N0/N1` is outside this local workstream and remains
+  non-executable
+- this status does not reopen E4R, E4M, or E5 and does not yet authorize product
+  document input
 
 ## Contract Rules
 
