@@ -102,8 +102,8 @@ Use relative documentation links. Do not add local absolute paths.
   `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate and
   its uncommitted product diff was reversed. The user then approved bounded E4L:
   reject new imports above 4,194,304 pixels before Worker decode, enforce the
-  same new-write limit in main, and preserve historical reads. E4L is the only
-  executable E slice. E0F
+  same new-write limit in main, and preserve historical reads. E4L completed at
+  `5ed2b06` and passed `RC-E4L-CODE-02`; no E slice is now executable. E0F
   itself froze no product capacity or protocol; v3.0 selects them.
   Evidence is recorded in
   [context-composer-experiment-runthrough.md](./context-composer-experiment-runthrough.md).
@@ -1590,7 +1590,8 @@ uncommitted Worker change was reversed. The user then approved E4R as a single
 2048-edge proportional-resize candidate; its revised plan passed
 `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate and its
 uncommitted product diff was reversed. The user then approved bounded E4L;
-E4L is the only executable E slice.
+E4L completed at `5ed2b06` and passed `RC-E4L-CODE-02`. No E slice is executable
+pending a new user decision.
 
 The user approved E0C policy A on 2026-08-09. The exact ICC assumption passed,
 but E0C stopped when both bounded visible DOM grid candidates exceeded the
@@ -1619,7 +1620,8 @@ The active E invariants are:
   amendment passed `RC-E5-PLAN-A-02`; E5 stopped at the fresh-process 4K memory
   gate; the user-approved E4M candidate passed `RC-E4M-PLAN-02` but stopped at
   `RC-E4M-EVIDENCE-01`; E4R passed `RC-E4R-PLAN-03` but stopped at its oversized
-  EXIF-orientation gate; E4L is the only executable E slice
+  EXIF-orientation gate; E4L completed at `5ed2b06` and passed
+  `RC-E4L-CODE-02`; no E slice is executable
 - E0D evidence is probe-scoped; no E0C capacity, product ICC allowlist, preview
   constant, or full-image transport is frozen by implication
 - E0E evidence is probe-scoped; no scheme, URL shape, protocol, shared contract,
@@ -2559,7 +2561,8 @@ oversized EXIF-orientation gate then failed: Chromium independently decoded the
 source as portrait, while the product persisted landscape full and preview
 output. The ordinary matrix was not run and the uncommitted E4R product diff was
 reversed. The user subsequently approved bounded E4L; E4L is the only executable
-E slice.
+E slice at that point. E4L later completed at `5ed2b06` and passed
+`RC-E4L-CODE-02`.
 
 Allowed product files:
 
@@ -2645,8 +2648,9 @@ permission.
 
 Type: one bounded E4 owning-slice fallback.
 
-Status: executable. E4R, E4M, and E5 remain stopped; E4L is the only executable
-E slice.
+Status: complete at `5ed2b06`; independent diff review `RC-E4L-CODE-02` passed.
+E4R, E4M, and E5 remain stopped; no E slice is executable pending a new user
+decision.
 
 Allowed product files:
 
@@ -2676,6 +2680,16 @@ If automated checks, ordinary acceptance, and independent diff review pass,
 commit E4L. Any data-loss, compatibility, or preflight-bypass finding returns to
 E4L for one bounded repair; do not add resize behavior inside this slice.
 
+Recorded outcome: desktop checks passed with 418 tests and 17 skips plus 9
+runtime chat-state tests. Packaged fresh-profile picker JPEG, paste PNG, and drop
+JPEG imports reached ready and were accepted by main. A 3840x2160 JPEG was
+rejected in Renderer preflight with the visible 4-MP notice, started zero
+Workers, and remained removable. The acceptance artifact was loaded from an
+`app.asar` at SHA-256
+`46c1488bb39c70b59ce76203d2efaed00d1f31e67396a1e467ce4b703f907e68`;
+the result JSON SHA-256 was
+`df5e898b7bd2d3dc6893f12e1aa724cdbf6c2d5199f5f0fc8601bd1b1c8a1a15`.
+
 ## E5: Context Composer Lifecycle Acceptance And Docs
 
 Type: acceptance verification and documentation sync.
@@ -2683,7 +2697,7 @@ Type: acceptance verification and documentation sync.
 Status: stopped. After policy A and `RC-E5-PLAN-A-02`, the fresh-process 4K
 import measured +309.859 MiB against the fixed +192 MiB line. Independent review
 `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. E5 remains stopped while E4M is
-stopped and E4R is also stopped. E4L is the only executable E slice.
+stopped and E4R is also stopped. E4L is complete; no E slice is executable.
 
 Allowed files: E1-E4 production files only for fixes returned to their owning
 slice, corresponding tests, and:

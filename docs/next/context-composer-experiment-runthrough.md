@@ -18,8 +18,10 @@ passed `RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate.
 The ordinary matrix was not run and the uncommitted E4R product diff was
 reversed. No E slice was executable until the user approved the bounded E4L
 fallback: reject new imports above 4,194,304 pixels before Worker decode, enforce
-the same limit on new main-owned writes, and preserve historical reads. E4L is
-the only executable E slice.
+the same limit on new main-owned writes, and preserve historical reads. E4L
+completed at `5ed2b06` and passed `RC-E4L-CODE-02`; packaged picker, paste,
+drop, and oversized preflight acceptance passed. E4R, E4M, and E5 remain
+stopped, and no E slice is executable pending a new user decision.
 
 The v1.8 Worker/JPEG/allowlist design and every capacity value below are failed
 historical candidate material, non-operative, and not implementation permission.
@@ -827,7 +829,30 @@ implementation. E4L adds no resize path: new images above 4,194,304 pixels are
 rejected in Renderer header preflight before Worker decode, and Electron main
 independently rejects a new canonical pair above the same limit. The historical
 8,294,400-pixel durable reader remains unchanged. E4L is the only executable E
-slice; E4R, E4M, and E5 remain stopped.
+slice at that point; E4R, E4M, and E5 remain stopped.
+
+E4L completed at `5ed2b06` and independent diff review `RC-E4L-CODE-02`
+passed. `desktop:check` passed with 418 tests and 17 skips, 9 runtime chat-state
+tests, typecheck, compatibility typecheck, lint, and production build;
+format-check and diff-check also passed. The packaged acceptance used fresh
+profiles for picker, paste, drop, and oversized preflight. The ordinary
+1200x675 JPEG and 800x450 PNG reached ready, started one Worker, and were
+accepted by main through all three ingress paths. The 3840x2160 JPEG failed
+before Worker start, displayed the 4-MP notice, and remained removable. All
+four runs exited without leftover product processes.
+
+The acceptance page loaded from an `app.asar` at SHA-256
+`46c1488bb39c70b59ce76203d2efaed00d1f31e67396a1e467ce4b703f907e68`;
+the Worker SHA-256 was
+`4dbe1a964bdf8760d3f5bafc4749cd25170834f4aac2e7bb61d8512b0ad3b8ad`.
+The ordinary JPEG, ordinary PNG, and oversized JPEG fixture SHA-256 values were
+`be657131d3ae42760492a58e3e6c901b36462f392060b8d64c8537e5071e7d1b`,
+`7a0cf5012a3c783f4b6678877fc4543b0a9d54f5a6054fd2d6f0e6c2554cb357`,
+and `04bc4d9bed710998589d6f441e657e0a043861cccdd8afc637d569f6a646f9c2`.
+The bound harness and result JSON SHA-256 values were
+`08c05e499eafeb3d8437645b4dff31d71c923f10b5343b8e44b8e66df034fe9a`
+and `df5e898b7bd2d3dc6893f12e1aa724cdbf6c2d5199f5f0fc8601bd1b1c8a1a15`.
+E4R, E4M, and E5 remain stopped; no E slice is executable.
 
 ## Historical v1.8 candidate limits (status reference)
 

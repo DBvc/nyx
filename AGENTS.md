@@ -117,8 +117,10 @@ source decoded as portrait while the product persisted landscape full and
 preview output. The ordinary matrix was not run and the uncommitted E4R product
 diff was reversed. The user then approved one bounded E4L fallback: reject new
 imports above 4,194,304 pixels before Worker decode, enforce the same limit on
-new main-owned writes, and preserve historical reads. E4L is the only executable
-E slice.
+new main-owned writes, and preserve historical reads. E4L completed at
+`5ed2b06` and passed `RC-E4L-CODE-02`; packaged picker, paste, drop, and
+oversized preflight acceptance passed. E4R, E4M, and E5 remain stopped, and no
+E slice is executable pending a new user decision.
 
 For the explicit first agent-workbench workstream, only the following additions
 are allowed:
@@ -229,7 +231,8 @@ E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
 `RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
 passed `RC-E4R-PLAN-03`, then stopped at the oversized EXIF-orientation gate;
 its uncommitted product diff was reversed. The user-approved E4L 4-MiPixel
-new-import limit is the only executable E slice.
+new-import limit completed at `5ed2b06` and passed `RC-E4L-CODE-02`. E4R, E4M,
+and E5 remain stopped; no E slice is executable pending a new user decision.
 Electron main remains
 authoritative for validation, metadata policy, file IO, durable ownership,
 target resolution, Provider mapping, and safe errors. Product changes are

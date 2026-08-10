@@ -1,8 +1,7 @@
 # Experiment 01：上下文 Composer 技术方案
 
-> Status: E4R stopped at its oversized EXIF-orientation gate and its uncommitted
-> product diff was reversed; E4L is the only executable E slice; E4M and E5
-> remain stopped
+> Status: E4L completed at `5ed2b06` and passed `RC-E4L-CODE-02`; E4R, E4M,
+> and E5 remain stopped; no E slice is executable pending a new user decision
 >
 > Plan ID: `context-composer-exp-01`
 >
@@ -21,8 +20,8 @@
 > `RC-E4M-PLAN-02`。E4M 的首个有效 repetition 仍超线，未提交 Worker diff 已
 > 撤回。用户随后批准下述单一 E4R 等比例缩小方案；独立 plan review
 > `RC-E4R-PLAN-03` 已 PASS，但 oversized EXIF gate 证明 native resize 输出方向
-> 错误；未提交 E4R 产品 diff 已撤回。用户随后批准下述 E4L 新导入限制，E4L 是
-> 当前唯一实现许可。
+> 错误；未提交 E4R 产品 diff 已撤回。用户随后批准下述 E4L 新导入限制；E4L 已在
+> `5ed2b06` 完成并通过 `RC-E4L-CODE-02`，当前没有可执行 E slice。
 > Electron main 仍权威验证并持有 durable state，不得扩大 scope。历史状态以
 > [runthrough 候选表](./context-composer-experiment-runthrough.md#historical-v18-candidate-limits-status-reference)
 > 为准。
@@ -481,6 +480,11 @@ Runtime、UI 结构、格式或依赖。近源测试覆盖 4,194,304-pixel bound
 并确认 oversized source 在 Worker 前失败、提示可见且 draft 可 remove。通过独立 diff
 review 后只提交该限制和状态文档；不恢复 E5。
 
+Recorded outcome：E4L 已在 `5ed2b06` 完成，独立 diff review
+`RC-E4L-CODE-02` PASS。自动检查、packaged fresh-profile picker/paste/drop ordinary
+导入、main accepted、oversized preflight-before-Worker、可见提示和 remove 均通过。
+历史 `readCanonical` 上限未改。E4R、E4M、E5 继续 stopped；当前无可执行 E slice。
+
 ### Provider、错误与 Runtime
 
 - Main-only Provider message 从 v3 record 构造；text-only 保持现有 string content。
@@ -514,8 +518,8 @@ review 后只提交该限制和状态文档；不恢复 E5。
 
 ### 实现切片与放行顺序
 
-`RC-V3-PLAN-03` 已 PASS，E1-E4 已完成并通过 review；E5、E4M 与 E4R 均已停止，
-E4L 是当前唯一可执行 E slice：
+`RC-V3-PLAN-03` 已 PASS，E1-E4 与 E4L 已完成并通过 review；E5、E4M 与 E4R
+均已停止，当前无可执行 E slice。以下保留既有实现顺序：
 
 1. **E1 — contract + current-thread v3**：image refs、v3 schema/migration、identity、
    snapshot shape；不写文件、不注册 protocol、不改 Provider/UI。
@@ -1607,4 +1611,5 @@ mise run check
   `RC-E4M-EVIDENCE-01` 停止并撤回未提交产品 diff。用户随后批准 v3.3 的单一 E4R
   2048-edge decoder-resize candidate；`RC-E4R-PLAN-03` 已 PASS，但 E4R 在
   oversized EXIF-orientation gate 停止并撤回未提交产品 diff。用户随后批准 E4L
-  4-MiPixel new-import limit；E4L 是当前唯一可执行 E slice。
+  4-MiPixel new-import limit；E4L 已在 `5ed2b06` 完成并通过
+  `RC-E4L-CODE-02`。当前无可执行 E slice。
