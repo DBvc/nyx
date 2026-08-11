@@ -199,8 +199,27 @@ describe('Responses semantic stream and output validation', () => {
     ]
 
     expect(validateResponsesOutputItems(output)).toEqual(output)
+    expect(
+      validateResponsesOutputItems([
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Answer' }],
+        },
+      ]),
+    ).not.toBeNull()
     expect(readResponsesVisibleText(output)).toBe('Answer refusal')
     expect(validateResponsesOutputItems([{ type: 'function_call' }])).toBeNull()
+    expect(
+      validateResponsesOutputItems([
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'in_progress',
+          content: [{ type: 'output_text', text: 'Partial' }],
+        },
+      ]),
+    ).toBeNull()
     expect(
       validateResponsesOutputItems([
         {

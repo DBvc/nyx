@@ -109,7 +109,11 @@ function isJsonValue(value: unknown, depth = 0): value is JsonValue {
 }
 
 function isCompletedAssistantMessage(item: Record<string, unknown>) {
-  if (item.type !== 'message' || item.role !== 'assistant' || item.status !== 'completed') {
+  if (
+    item.type !== 'message' ||
+    item.role !== 'assistant' ||
+    ('status' in item && item.status !== 'completed')
+  ) {
     return false
   }
 
