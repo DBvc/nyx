@@ -132,9 +132,9 @@ Use relative documentation links. Do not add local absolute paths.
 - The explicitly requested `responses-protocol` workstream is active. Its
   implementation source is
   [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
-  S0, G0, the atomic C1+P1 cutover, and D1 are complete. D1 landed at
-  `23077e5`; `responses-protocol/I1` is the sole executable slice and A1 remains
-  blocked on I1.
+  S0, G0, the atomic C1+P1 cutover, D1, and I1 are complete. I1 landed at
+  `0b8a542`; `responses-protocol/A1` is executable and its real-provider matrix
+  awaits manual credential entry through the strict v2 UI.
 
 ## A0: Scope Gate Docs
 
@@ -2089,6 +2089,8 @@ Validation is the C1 matrix plus all current-thread tests.
 
 ### responses-protocol/I1: History replay and durable-first integration
 
+Status: complete at `0b8a542`.
+
 Type: Electron-main session integration.
 
 Allowed files:
@@ -2134,6 +2136,9 @@ git diff --check
 ```
 
 ### responses-protocol/A1: Product acceptance and status sync
+
+Status: in progress; automated and packaged-product checks passed, real-provider
+acceptance awaits manual credential entry.
 
 Type: verification and truthful documentation only.
 

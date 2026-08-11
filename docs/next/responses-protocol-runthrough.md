@@ -1,7 +1,8 @@
 # Responses Protocol Runthrough
 
-Status: `responses-protocol/S0`, G0, the atomic C1+P1 cutover, and D1 passed.
-I1 is the sole executable slice; A1 remains blocked.
+Status: `responses-protocol/S0`, G0, the atomic C1+P1 cutover, D1, and I1
+passed. A1 is executable; its automated and packaged-product checks passed,
+while the real-provider matrix awaits manual credential entry in the new UI.
 
 The active contract is
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
@@ -120,14 +121,46 @@ Validation passed: desktop TypeScript and compatibility typecheck, lint, format
 check, production build, `git diff --check`, 496 desktop tests with 17
 intentional skips, and the runtime-backed chat-state integration check.
 
-| Slice                      | Status        | Evidence  |
-| -------------------------- | ------------- | --------- |
-| `responses-protocol/C1+P1` | completed     | `b3dd897` |
-| `responses-protocol/D1`    | completed     | `23077e5` |
-| `responses-protocol/I1`    | executable    | D1 PASS   |
-| `responses-protocol/A1`    | blocked on I1 | none      |
+| Slice                      | Status      | Evidence  |
+| -------------------------- | ----------- | --------- |
+| `responses-protocol/C1+P1` | completed   | `b3dd897` |
+| `responses-protocol/D1`    | completed   | `23077e5` |
+| `responses-protocol/I1`    | completed   | `0b8a542` |
+| `responses-protocol/A1`    | in progress | I1 PASS   |
 
 I1's original file list omitted the existing Responses `input` builder in
 `chat/client.ts`. The executable I1 scope includes that file and its test only
 for the main-only native-output-item mapping required by the already locked
 exact-identity replay behavior; no protocol or product scope was added.
+
+### I1 History Replay And Durable-First Integration
+
+Status: PASS at `0b8a542` on 2026-08-11.
+
+- Responses input now preserves validated native output items in durable turn
+  order only for the exact current execution identity. Other targets receive
+  the complete visible transcript, including A -> B -> A switching.
+- Completed Responses text and its verified sidecar ref settle together before
+  OCaml projection. A later runtime projection failure discards that runtime
+  client without rewriting the durable user-visible result.
+- Restart continuation, Stop, Retry target switching, New thread reset,
+  same-identity corruption repair, sidecar rollback, and zero Provider calls
+  after failed next-turn runtime rehydration have direct regression coverage.
+- The old current-thread v2 development record was byte-verified in the manual
+  cutover backup and deleted before product exercise. No compatibility reader
+  or migration exists.
+
+Validation passed: desktop TypeScript and compatibility typecheck, lint, format
+check, production build, 503 desktop tests with 17 intentional skips, runtime
+build/test/format/chat-state checks, both root runtime audit scripts, and
+`git diff --check`.
+
+### A1 Partial Acceptance
+
+The macOS arm64 development package, DMG, and ZIP were built and verified. The
+packaged app loaded its Renderer from `app.asar`, its bundled OCaml runtime
+returned `pong`, and the fresh product window reported no page errors or
+console output. The real Chat/Responses acceptance matrix remains pending
+because the strict v2 development Connections store is intentionally empty and
+the API key must be entered manually through the new UI; no old encrypted
+credential was migrated or exposed through automation.
