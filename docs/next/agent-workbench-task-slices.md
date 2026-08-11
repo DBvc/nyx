@@ -134,7 +134,8 @@ Use relative documentation links. Do not add local absolute paths.
   [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
   Only `responses-protocol/S0` is executable until its docs-only scope lock is
   verified and committed. `responses-protocol/G0` is then the sole executable
-  slice; C1 and later remain blocked until the real-relay gate passes.
+  slice; the atomic C1+P1 cutover and later work remain blocked until the
+  real-relay gate passes.
 
 ## A0: Scope Gate Docs
 
@@ -1949,8 +1950,7 @@ slices. The only valid order is:
 ```text
 responses-protocol/S0
   -> responses-protocol/G0
-  -> responses-protocol/C1
-  -> responses-protocol/P1
+  -> responses-protocol/C1+P1
   -> responses-protocol/D1
   -> responses-protocol/I1
   -> responses-protocol/A1
@@ -2023,9 +2023,10 @@ Required proof:
 
 Do not edit product TypeScript. Stop if a global plan stop condition fires.
 
-### responses-protocol/C1: Connections v2 and model protocol config
+### responses-protocol/C1+P1: Atomic configuration and wire cutover
 
-Type: Connections contracts, persistence, resolver, Settings UI, and tests.
+Type: Connections contracts, persistence, resolver, Settings UI, concrete wire
+paths, Connection Test, and tests.
 
 Allowed files:
 
@@ -2033,15 +2034,22 @@ Allowed files:
 apps/desktop/shared/connections/*
 apps/desktop/electron/main/connections/*
 apps/desktop/src/ui/settings/*
+apps/desktop/electron/main/chat/*
 ```
 
 Required: strict Connections v2 and secret-store v2 only; explicit model
 `protocolConfig` and provider new-model default; random credential revision on
 every credential write; exact main-only execution identity; preserve model
-protocol on refresh; editable and bulk-applicable protocol settings.
+protocol on refresh; editable and bulk-applicable protocol settings; one
+discriminated switch with concrete Chat Completions and Responses functions;
+exact instructions/text/image/document mapping; semantic-event and full
+completed-terminal validation; complete output-item preservation; two-request
+Responses Connection Test; all Chat behavior preserved.
 
-Do not edit chat wire code, current-thread, preload/IPC shape, or OCaml. Do not
-add old-schema parsing.
+This is one atomic checkpoint because the resolver protocol union and chat wire
+switch must remain buildable together. Do not edit current-thread, preload/IPC
+shape, or OCaml. Do not add old-schema parsing, persistence, tools, SDKs, new
+public errors, a registry, or a factory.
 
 Validation:
 
@@ -2052,28 +2060,6 @@ mise run desktop:lint
 mise run desktop:test
 git diff --check
 ```
-
-### responses-protocol/P1: Responses wire path and connection validation
-
-Type: Electron-main request/stream mapping plus deterministic fixtures.
-
-Allowed files:
-
-```text
-apps/desktop/electron/main/chat/*
-apps/desktop/electron/main/connections/provider-test.ts
-apps/desktop/electron/main/connections/provider-test.test.ts
-apps/desktop/electron/main/connections/connection-service.ts
-apps/desktop/electron/main/connections/connection-service.test.ts
-```
-
-Required: one discriminated switch with concrete Chat Completions and Responses
-functions; exact instructions/text/image/document mapping; semantic-event and
-full completed-terminal validation; complete output-item preservation;
-two-request Responses Connection Test; all Chat behavior preserved.
-
-Do not persist continuation, edit current-thread, or add tools, SDKs, new public
-errors, registry, or factory. Validation is the C1 matrix plus targeted tests.
 
 ### responses-protocol/D1: Current-thread v5 continuation durability
 

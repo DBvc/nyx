@@ -1,7 +1,7 @@
 # Responses Protocol Runthrough
 
-Status: `responses-protocol/S0` and G0 passed. C1 is the sole executable slice;
-P1 and later remain blocked.
+Status: `responses-protocol/S0` and G0 passed. The atomic C1+P1 cutover is the
+sole executable checkpoint; D1 and later remain blocked.
 
 The active contract is
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
@@ -77,10 +77,9 @@ text, encrypted reasoning payload, or local user-data path is recorded here.
 
 ## Product Slices
 
-| Slice                   | Status        | Evidence |
-| ----------------------- | ------------- | -------- |
-| `responses-protocol/C1` | executable    | G0 PASS  |
-| `responses-protocol/P1` | blocked on C1 | none     |
-| `responses-protocol/D1` | blocked on P1 | none     |
-| `responses-protocol/I1` | blocked on D1 | none     |
-| `responses-protocol/A1` | blocked on I1 | none     |
+| Slice                      | Status        | Evidence |
+| -------------------------- | ------------- | -------- |
+| `responses-protocol/C1+P1` | executable    | G0 PASS  |
+| `responses-protocol/D1`    | blocked on P1 | none     |
+| `responses-protocol/I1`    | blocked on D1 | none     |
+| `responses-protocol/A1`    | blocked on I1 | none     |

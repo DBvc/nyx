@@ -207,14 +207,16 @@ backup formats, feature flags, or legacy unions to product code.
 ```text
 responses-protocol/S0
   -> responses-protocol/G0
-  -> responses-protocol/C1
-  -> responses-protocol/P1
+  -> responses-protocol/C1+P1
   -> responses-protocol/D1
   -> responses-protocol/I1
   -> responses-protocol/A1
 ```
 
 No later slice begins before the previous slice passes its checks and review.
+C1 and P1 are one atomic buildability checkpoint: model-level protocol
+resolution and the discriminated wire switch land together, so no intermediate
+build can misroute or temporarily reject a valid Responses target.
 
 ## Validation Model
 
