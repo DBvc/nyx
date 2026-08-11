@@ -17,6 +17,29 @@ function jsonResponse(value: unknown, status = 200) {
   })
 }
 
+function responsesStream(text: string) {
+  const response = {
+    status: 'completed',
+    reasoning: { context: null },
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text, annotations: [] }],
+      },
+    ],
+  }
+  const body = [
+    { type: 'response.output_text.delta', delta: text },
+    { type: 'response.completed', response },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join('')
+
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
 function abortError() {
   const error = new Error('request url https://api.example.test/v1/chat/completions timed out')
   error.name = 'AbortError'
@@ -67,6 +90,7 @@ describe('ProviderConnectionClient', () => {
         apiKey: 'sk-secret',
         baseUrl: 'https://api.example.test/v1',
         modelId: 'model-1',
+        protocolConfig: { protocol: 'openai-chat-completions' },
       }),
     ).resolves.toEqual({ latencyMs: 47 })
     expect(fetch).toHaveBeenCalledWith(
@@ -92,6 +116,46 @@ describe('ProviderConnectionClient', () => {
     )
   })
 
+  it('tests Responses with a semantic two-request continuation replay', async () => {
+    const fetch = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(responsesStream('TEST_ONE'))
+      .mockResolvedValueOnce(responsesStream('TEST_ONE TEST_TWO'))
+    const client = createProviderConnectionClient({
+      fetch,
+      nowMs: vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(180),
+    })
+
+    await expect(
+      client.testConnection({
+        apiKey: 'sk-secret',
+        baseUrl: 'https://api.example.test/v1',
+        modelId: 'gpt-5.6-sol',
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+      }),
+    ).resolves.toEqual({ latencyMs: 80 })
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const firstBody = JSON.parse(fetch.mock.calls[0]![1]!.body as string)
+    const secondBody = JSON.parse(fetch.mock.calls[1]![1]!.body as string)
+    expect(firstBody).toMatchObject({
+      store: false,
+      stream: true,
+      include: ['reasoning.encrypted_content'],
+    })
+    expect(firstBody).not.toHaveProperty('reasoning')
+    expect(secondBody.input).toEqual([
+      firstBody.input[0],
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'TEST_ONE', annotations: [] }],
+      },
+      expect.objectContaining({ role: 'user' }),
+    ])
+  })
+
   it.each([401, 403])(
     'maps HTTP %s to auth_failed without raw response details',
     async (status) => {
@@ -104,6 +168,7 @@ describe('ProviderConnectionClient', () => {
           apiKey: 'sk-secret',
           baseUrl: 'https://api.example.test/v1',
           modelId: 'model-1',
+          protocolConfig: { protocol: 'openai-chat-completions' },
         }),
       )
 
@@ -127,6 +192,7 @@ describe('ProviderConnectionClient', () => {
         apiKey: 'sk-secret',
         baseUrl: 'https://api.example.test/v1',
         modelId: 'model-1',
+        protocolConfig: { protocol: 'openai-chat-completions' },
       }),
     )
 
@@ -149,6 +215,7 @@ describe('ProviderConnectionClient', () => {
         apiKey: 'sk-secret',
         baseUrl: 'https://api.example.test/v1',
         modelId: 'model-1',
+        protocolConfig: { protocol: 'openai-chat-completions' },
       }),
     )
 

@@ -7,9 +7,15 @@ import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import { createChatBridgeError } from './errors'
 import {
+  decodeOpenAiResponsesStream,
   decodeOpenAiCompatibleStream,
+  readResponsesVisibleText,
+  responsesContinuationLimits,
+  validateResponsesOutputItems,
+  type JsonValue,
   type NormalizedFinishReason,
   type ProviderStreamEvent,
+  type ResponsesContinuationStateV1,
 } from './provider-stream'
 
 const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI assistant.'
@@ -81,14 +87,116 @@ export function buildOpenAiCompatibleChatRequest(
   }
 }
 
+export function buildResponsesUrl(baseUrl: string) {
+  const url = new URL(baseUrl)
+
+  if (url.pathname === '/' || url.pathname === '') {
+    url.pathname = '/v1/responses'
+    return url.toString()
+  }
+
+  if (url.pathname.endsWith('/v1/')) {
+    url.pathname = `${url.pathname}responses`
+    return url.toString()
+  }
+
+  url.pathname = `${url.pathname}responses`
+  return url.toString()
+}
+
+export function buildOpenAiResponsesInput(
+  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+): JsonValue[] {
+  return providerMessages.flatMap((message): JsonValue[] => {
+    if (message.role === 'system') {
+      return []
+    }
+
+    if (typeof message.content === 'string') {
+      return [
+        {
+          role: message.role,
+          content: [{ type: 'input_text', text: message.content }],
+        },
+      ]
+    }
+
+    return [
+      {
+        role: 'user',
+        content: message.content.map((part) =>
+          part.type === 'text'
+            ? { type: 'input_text', text: part.text }
+            : { type: 'input_image', image_url: part.image_url.url },
+        ),
+      },
+    ]
+  })
+}
+
+export function buildOpenAiResponsesInstructions(
+  request: NyxChatRequest,
+  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+) {
+  const systemMessage = providerMessages.find((message) => message.role === 'system')
+
+  return (
+    (typeof systemMessage?.content === 'string' ? systemMessage.content : null) ??
+    request.systemPrompt ??
+    DEFAULT_SYSTEM_PROMPT
+  )
+}
+
+export function buildOpenAiResponsesRequest({
+  target,
+  instructions,
+  input,
+}: {
+  target: ResolvedChatTarget
+  instructions: string
+  input: ReadonlyArray<JsonValue>
+}) {
+  if (target.protocolConfig.protocol !== 'openai-responses') {
+    throw new Error('A Responses request requires a Responses target.')
+  }
+
+  return {
+    url: buildResponsesUrl(target.baseUrl),
+    options: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${target.token}`,
+      },
+      body: JSON.stringify({
+        model: target.modelId,
+        store: false,
+        stream: true,
+        include: ['reasoning.encrypted_content'],
+        instructions,
+        ...(target.protocolConfig.reasoningContext === 'auto'
+          ? {}
+          : { reasoning: { context: target.protocolConfig.reasoningContext } }),
+        input,
+      }),
+    } satisfies RequestInit,
+  }
+}
+
 function buildChatProviderRequest(
   target: ResolvedChatTarget,
   request: NyxChatRequest,
   providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
 ) {
-  switch (target.protocol) {
+  switch (target.protocolConfig.protocol) {
     case 'openai-chat-completions':
       return buildOpenAiCompatibleChatRequest(target, request, providerMessages)
+    case 'openai-responses':
+      return buildOpenAiResponsesRequest({
+        target,
+        instructions: buildOpenAiResponsesInstructions(request, providerMessages),
+        input: buildOpenAiResponsesInput(providerMessages),
+      })
   }
 }
 
@@ -248,6 +356,169 @@ export async function* iterateSseData(stream: ReadableStream<Uint8Array>) {
   }
 }
 
+function readEffectiveReasoningContext(response: Record<string, unknown>) {
+  const reasoning =
+    typeof response.reasoning === 'object' && response.reasoning !== null
+      ? (response.reasoning as Record<string, unknown>)
+      : null
+  const context = reasoning?.context
+
+  return context === 'all_turns' || context === 'current_turn' ? context : null
+}
+
+function parseCompletedResponsesState(
+  response: Record<string, unknown>,
+  target: ResolvedChatTarget,
+) {
+  if (response.status !== 'completed' || target.protocolConfig.protocol !== 'openai-responses') {
+    throw createProviderStreamError('The provider returned an invalid completed Response.')
+  }
+
+  const outputItems = validateResponsesOutputItems(response.output)
+
+  if (!outputItems) {
+    throw createProviderStreamError('The provider returned unsupported Response output items.')
+  }
+
+  const finalContent = readResponsesVisibleText(outputItems)
+
+  if (!finalContent.trim()) {
+    throw createProviderStreamError('The provider returned an empty Response.')
+  }
+
+  const effectiveReasoningContext = readEffectiveReasoningContext(response)
+
+  if (
+    target.protocolConfig.reasoningContext !== 'auto' &&
+    effectiveReasoningContext !== target.protocolConfig.reasoningContext
+  ) {
+    throw createProviderStreamError(
+      'The provider did not honor the selected reasoning context.',
+      'reasoning_context_mismatch=true',
+      false,
+    )
+  }
+
+  const providerState = {
+    version: 1,
+    protocol: 'openai-responses',
+    effectiveReasoningContext,
+    outputItems,
+  } as const satisfies ResponsesContinuationStateV1
+
+  if (
+    Buffer.byteLength(JSON.stringify(providerState)) >
+    responsesContinuationLimits.maxSerializedBytes
+  ) {
+    throw createProviderStreamError(
+      'The provider returned too much continuation state.',
+      'responses_state_too_large=true',
+      false,
+    )
+  }
+
+  return { finalContent, providerState }
+}
+
+export async function streamOpenAiResponses({
+  target,
+  instructions,
+  input,
+  attachmentBearing = false,
+  documentBearing = false,
+  fetcher = fetch,
+  signal,
+  onDelta,
+}: {
+  target: ResolvedChatTarget
+  instructions: string
+  input: ReadonlyArray<JsonValue>
+  attachmentBearing?: boolean
+  documentBearing?: boolean
+  fetcher?: (input: string | URL, init?: RequestInit) => Promise<Response>
+  signal: AbortSignal
+  onDelta: (delta: string, snapshot: string) => void | Promise<void>
+}) {
+  const providerRequest = buildOpenAiResponsesRequest({ target, instructions, input })
+  const response = await fetcher(providerRequest.url, { ...providerRequest.options, signal })
+
+  if (!response.ok) {
+    if (attachmentBearing && [400, 413, 415].includes(response.status)) {
+      throw createChatBridgeError({
+        code: 'content_rejected',
+        message: documentBearing
+          ? nyxChatAttachmentContentRejectedMessage
+          : nyxChatContentRejectedMessage,
+        retryable: true,
+      })
+    }
+
+    throw toUpstreamError(
+      response,
+      attachmentBearing ? undefined : await readErrorDetails(response),
+    )
+  }
+
+  if (!response.body) {
+    throw createChatBridgeError({
+      code: 'upstream_error',
+      message: 'The relay API did not return a response body.',
+      retryable: true,
+    })
+  }
+
+  let streamedContent = ''
+  let terminal: ReturnType<typeof parseCompletedResponsesState> | null = null
+
+  for await (const payload of iterateSseData(response.body)) {
+    if (payload === '[DONE]') {
+      if (!terminal) {
+        throw createProviderStreamError('The Responses stream ended before completion.')
+      }
+      continue
+    }
+
+    const event = decodeOpenAiResponsesStream(payload)
+
+    if (terminal) {
+      throw createProviderStreamError('The provider emitted events after a terminal Response.')
+    }
+
+    switch (event.type) {
+      case 'text-delta':
+        streamedContent += event.text
+        await onDelta(event.text, streamedContent)
+        break
+      case 'reasoning-activity':
+      case 'lifecycle':
+        break
+      case 'completed':
+        if (terminal) {
+          throw createProviderStreamError('The provider emitted duplicate terminal Responses.')
+        }
+        terminal = parseCompletedResponsesState(event.response, target)
+        break
+      case 'terminal-error':
+      case 'error':
+        throw createProviderStreamError('The provider could not complete the Response.')
+    }
+  }
+
+  if (!terminal) {
+    throw createProviderStreamError('The Responses stream ended before completion.')
+  }
+
+  if (terminal.finalContent !== streamedContent) {
+    throw createProviderStreamError(
+      'The streamed Response did not match its completed terminal.',
+      'responses_terminal_mismatch=true',
+      false,
+    )
+  }
+
+  return terminal
+}
+
 export async function streamChatCompletion({
   target,
   request,
@@ -261,6 +532,19 @@ export async function streamChatCompletion({
       Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
   )
   const attachmentBearing = imageBearing || documentBearing
+
+  if (target.protocolConfig.protocol === 'openai-responses') {
+    return streamOpenAiResponses({
+      target,
+      instructions: buildOpenAiResponsesInstructions(request, providerMessages),
+      input: buildOpenAiResponsesInput(providerMessages),
+      attachmentBearing,
+      documentBearing,
+      signal,
+      onDelta,
+    })
+  }
+
   const providerRequest = buildChatProviderRequest(target, request, providerMessages)
   const response = await fetch(providerRequest.url, {
     ...providerRequest.options,

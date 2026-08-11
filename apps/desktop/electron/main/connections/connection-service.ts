@@ -47,7 +47,7 @@ export interface ConnectionsServiceDependencies {
     | 'saveProvider'
     | 'setDefaultTarget'
   >
-  secretStore: Pick<SecretStore, 'deleteSecret' | 'hasSecret' | 'readSecret' | 'writeSecret'>
+  secretStore: Pick<SecretStore, 'deleteSecret' | 'hasSecret' | 'readCredential' | 'writeSecret'>
   credentialActions: {
     reveal(value: string): void | Promise<void>
     copy(value: string): void | Promise<void>
@@ -269,6 +269,7 @@ export class ConnectionsService implements ConnectionsController {
         apiKey,
         baseUrl: normalizeConnectionBaseUrl(provider.baseUrl),
         modelId: model.id,
+        protocolConfig: { ...model.protocolConfig },
       })
 
       return {
@@ -295,7 +296,10 @@ export class ConnectionsService implements ConnectionsController {
       return {
         providerId: provider.id,
         refreshedAt: this.now(),
-        models: merged.provider.models.map((model) => ({ ...model })),
+        models: merged.provider.models.map((model) => ({
+          ...model,
+          protocolConfig: { ...model.protocolConfig },
+        })),
         discoveredCount: merged.discoveredCount,
         preservedManualCount: merged.preservedManualCount,
       } satisfies NyxConnectionRefreshModelsSuccess
@@ -343,7 +347,7 @@ export class ConnectionsService implements ConnectionsController {
     let secret: string | null
 
     try {
-      secret = await this.secretStore.readSecret(provider.id)
+      secret = (await this.secretStore.readCredential(provider.id))?.value ?? null
     } catch {
       return []
     }
@@ -383,7 +387,11 @@ export class ConnectionsService implements ConnectionsController {
     return {
       ...(await this.toProviderSummary(provider)),
       baseUrl: normalizeConnectionBaseUrl(provider.baseUrl),
-      models: provider.models.map((model) => ({ ...model })),
+      defaultProtocolConfigForNewModels: { ...provider.defaultProtocolConfigForNewModels },
+      models: provider.models.map((model) => ({
+        ...model,
+        protocolConfig: { ...model.protocolConfig },
+      })),
     }
   }
 
@@ -438,8 +446,8 @@ export class ConnectionsService implements ConnectionsController {
   }
 
   private async readRequiredSecret(providerId: string) {
-    const secret = await this.secretStore.readSecret(providerId)
-    const apiKey = secret?.trim()
+    const secret = await this.secretStore.readCredential(providerId)
+    const apiKey = secret?.value.trim()
 
     if (!apiKey) {
       operationError({

@@ -4,6 +4,8 @@ import { Copy, Eye, EyeOff } from 'lucide-react'
 import type {
   NyxConnectionModelInput,
   NyxConnectionModelProfile,
+  NyxConnectionModelProtocol,
+  NyxConnectionModelProtocolConfig,
   NyxConnectionProviderDetail,
   NyxConnectionSaveProviderInput,
   NyxConnectionsOverview,
@@ -20,6 +22,7 @@ export interface ProviderModelForm {
   id: string
   displayName: string
   enabled: boolean
+  protocolConfig: NyxConnectionModelProtocolConfig
 }
 
 export interface ProviderForm {
@@ -28,9 +31,26 @@ export interface ProviderForm {
   baseUrl: string
   apiKey: string
   enabled: boolean
+  defaultProtocolConfigForNewModels: NyxConnectionModelProtocolConfig
   models: ProviderModelForm[]
   defaultModelId: string
   useAsDefault: boolean
+}
+
+const chatCompletionsProtocolConfig = {
+  protocol: 'openai-chat-completions',
+} as const satisfies NyxConnectionModelProtocolConfig
+
+function cloneProtocolConfig(
+  protocolConfig: NyxConnectionModelProtocolConfig,
+): NyxConnectionModelProtocolConfig {
+  return { ...protocolConfig }
+}
+
+function protocolConfigFor(protocol: NyxConnectionModelProtocol): NyxConnectionModelProtocolConfig {
+  return protocol === 'openai-responses'
+    ? { protocol, reasoningContext: 'auto' }
+    : cloneProtocolConfig(chatCompletionsProtocolConfig)
 }
 
 interface ConnectionsSettingsPageProps {
@@ -45,11 +65,13 @@ function createEmptyForm(): ProviderForm {
     baseUrl: '',
     apiKey: '',
     enabled: true,
+    defaultProtocolConfigForNewModels: cloneProtocolConfig(chatCompletionsProtocolConfig),
     models: [
       {
         id: '',
         displayName: '',
         enabled: true,
+        protocolConfig: cloneProtocolConfig(chatCompletionsProtocolConfig),
       },
     ],
     defaultModelId: '',
@@ -67,10 +89,14 @@ function formFromProvider(
     baseUrl: provider.baseUrl,
     apiKey: '',
     enabled: provider.enabled,
+    defaultProtocolConfigForNewModels: cloneProtocolConfig(
+      provider.defaultProtocolConfigForNewModels,
+    ),
     models: provider.models.map((model) => ({
       id: model.id,
       displayName: model.displayName === model.id ? '' : model.displayName,
       enabled: model.enabled,
+      protocolConfig: cloneProtocolConfig(model.protocolConfig),
     })),
     defaultModelId: provider.defaultModelId ?? provider.models[0]?.id ?? '',
     useAsDefault: overview.defaultTarget?.providerId === provider.id,
@@ -84,6 +110,7 @@ export function modelFormsFromProfiles(
     id: model.id,
     displayName: model.displayName === model.id ? '' : model.displayName,
     enabled: model.enabled,
+    protocolConfig: cloneProtocolConfig(model.protocolConfig),
   }))
 }
 
@@ -96,6 +123,7 @@ export function normalizeModels(models: ProviderModelForm[]): NyxConnectionModel
     const normalizedModel: NyxConnectionModelInput = {
       id: model.id.trim(),
       enabled: model.enabled,
+      protocolConfig: cloneProtocolConfig(model.protocolConfig),
     }
     const displayName = model.displayName.trim()
 
@@ -351,7 +379,25 @@ export function ConnectionsSettingsPage({
   function addModel() {
     setForm((current) => ({
       ...current,
-      models: [...current.models, { id: '', displayName: '', enabled: true }],
+      models: [
+        ...current.models,
+        {
+          id: '',
+          displayName: '',
+          enabled: true,
+          protocolConfig: cloneProtocolConfig(current.defaultProtocolConfigForNewModels),
+        },
+      ],
+    }))
+  }
+
+  function applyDefaultProtocolToAllModels() {
+    setForm((current) => ({
+      ...current,
+      models: current.models.map((model) => ({
+        ...model,
+        protocolConfig: cloneProtocolConfig(current.defaultProtocolConfigForNewModels),
+      })),
     }))
   }
 
@@ -411,6 +457,9 @@ export function ConnectionsSettingsPage({
         displayName: form.displayName.trim(),
         baseUrl: form.baseUrl.trim(),
         enabled: form.enabled,
+        defaultProtocolConfigForNewModels: cloneProtocolConfig(
+          form.defaultProtocolConfigForNewModels,
+        ),
         models,
         defaultModelId,
       }
@@ -795,6 +844,70 @@ export function ConnectionsSettingsPage({
                 </label>
               </fieldset>
 
+              <section className='rounded-lg border border-nyx-line bg-nyx-canvas p-3'>
+                <div className='flex flex-wrap items-end justify-between gap-3'>
+                  <div className='grid flex-1 gap-3 md:grid-cols-2'>
+                    <label className='space-y-1.5'>
+                      <span className='text-[12px] font-medium text-nyx-ink'>
+                        Protocol for new models
+                      </span>
+                      <select
+                        className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
+                        onChange={(event) => {
+                          updateForm({
+                            defaultProtocolConfigForNewModels: protocolConfigFor(
+                              event.target.value as NyxConnectionModelProtocol,
+                            ),
+                          })
+                        }}
+                        value={form.defaultProtocolConfigForNewModels.protocol}
+                      >
+                        <option value='openai-chat-completions'>Chat Completions</option>
+                        <option value='openai-responses'>Responses</option>
+                      </select>
+                    </label>
+
+                    {form.defaultProtocolConfigForNewModels.protocol === 'openai-responses' ? (
+                      <label className='space-y-1.5'>
+                        <span className='text-[12px] font-medium text-nyx-ink'>
+                          Reasoning context
+                        </span>
+                        <select
+                          className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
+                          onChange={(event) => {
+                            updateForm({
+                              defaultProtocolConfigForNewModels: {
+                                protocol: 'openai-responses',
+                                reasoningContext: event.target.value as
+                                  | 'auto'
+                                  | 'all_turns'
+                                  | 'current_turn',
+                              },
+                            })
+                          }}
+                          value={form.defaultProtocolConfigForNewModels.reasoningContext}
+                        >
+                          <option value='auto'>Auto</option>
+                          <option value='all_turns'>All turns</option>
+                          <option value='current_turn'>Current turn</option>
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  <button
+                    className='h-9 rounded-lg border border-nyx-line-strong bg-nyx-panel px-3 text-[12px] text-nyx-ink hover:bg-nyx-solid'
+                    onClick={applyDefaultProtocolToAllModels}
+                    type='button'
+                  >
+                    Apply to all models
+                  </button>
+                </div>
+                <p className='mt-2 text-[12px] leading-5 text-nyx-muted'>
+                  This default applies only when adding or discovering models. Each saved model
+                  keeps its explicit protocol.
+                </p>
+              </section>
+
               <section>
                 <div className='flex items-center justify-between'>
                   <h3 className='text-[13px] font-semibold text-nyx-ink'>Models</h3>
@@ -851,6 +964,53 @@ export function ConnectionsSettingsPage({
                       >
                         Remove
                       </button>
+                      <div className='grid gap-2 md:col-span-4 md:grid-cols-2'>
+                        <label className='space-y-1.5'>
+                          <span className='text-[12px] font-medium text-nyx-ink'>API protocol</span>
+                          <select
+                            aria-label={`Model ${index + 1} API protocol`}
+                            className='h-8 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-2 text-[12px] text-nyx-ink focus:border-nyx-accent'
+                            onChange={(event) => {
+                              updateModel(index, {
+                                protocolConfig: protocolConfigFor(
+                                  event.target.value as NyxConnectionModelProtocol,
+                                ),
+                              })
+                            }}
+                            value={model.protocolConfig.protocol}
+                          >
+                            <option value='openai-chat-completions'>Chat Completions</option>
+                            <option value='openai-responses'>Responses</option>
+                          </select>
+                        </label>
+                        {model.protocolConfig.protocol === 'openai-responses' ? (
+                          <label className='space-y-1.5'>
+                            <span className='text-[12px] font-medium text-nyx-ink'>
+                              Reasoning context
+                            </span>
+                            <select
+                              aria-label={`Model ${index + 1} reasoning context`}
+                              className='h-8 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-2 text-[12px] text-nyx-ink focus:border-nyx-accent'
+                              onChange={(event) => {
+                                updateModel(index, {
+                                  protocolConfig: {
+                                    protocol: 'openai-responses',
+                                    reasoningContext: event.target.value as
+                                      | 'auto'
+                                      | 'all_turns'
+                                      | 'current_turn',
+                                  },
+                                })
+                              }}
+                              value={model.protocolConfig.reasoningContext}
+                            >
+                              <option value='auto'>Auto</option>
+                              <option value='all_turns'>All turns</option>
+                              <option value='current_turn'>Current turn</option>
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

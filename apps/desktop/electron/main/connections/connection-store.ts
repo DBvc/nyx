@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type {
   NyxConnectionModelInput,
+  NyxConnectionModelProtocolConfig,
   NyxConnectionSaveProviderInput,
   NyxConnectionSetDefaultTargetInput,
 } from '../../../shared/connections/types'
@@ -10,6 +11,7 @@ import {
   type ConnectionModelRecord,
   type ConnectionProviderRecord,
   type ConnectionStoreState,
+  modelProtocolConfigSchema,
   parseConnectionStoreState,
 } from './schemas'
 import { normalizeConnectionBaseUrl } from './url'
@@ -45,19 +47,43 @@ export interface MergeDiscoveredModelsResult {
 }
 
 const emptyConnectionStoreState = {
-  version: 1,
+  version: 2,
   providers: [],
   defaultTarget: null,
 } as const satisfies ConnectionStoreState
 
 function cloneState(state: ConnectionStoreState): ConnectionStoreState {
   return {
-    version: 1,
+    version: 2,
     providers: state.providers.map((provider) => ({
       ...provider,
-      models: provider.models.map((model) => ({ ...model })),
+      defaultProtocolConfigForNewModels: { ...provider.defaultProtocolConfigForNewModels },
+      models: provider.models.map((model) => ({
+        ...model,
+        protocolConfig: { ...model.protocolConfig },
+      })),
     })),
     defaultTarget: state.defaultTarget ? { ...state.defaultTarget } : null,
+  }
+}
+
+function normalizeProtocolConfig(
+  value: NyxConnectionModelProtocolConfig,
+): NyxConnectionModelProtocolConfig {
+  const result = modelProtocolConfigSchema.safeParse(value)
+
+  if (!result.success) {
+    throw new ConnectionStoreError('invalid_input', 'Model protocol configuration is invalid.')
+  }
+
+  return { ...result.data }
+}
+
+function validateState(state: ConnectionStoreState) {
+  try {
+    return parseConnectionStoreState(state)
+  } catch {
+    throw new ConnectionStoreError('invalid_input', 'Connections settings are invalid.')
   }
 }
 
@@ -110,6 +136,7 @@ function normalizeModels(
       displayName,
       enabled: inputModel.enabled ?? existing?.enabled ?? true,
       source: existing?.source ?? 'manual',
+      protocolConfig: normalizeProtocolConfig(inputModel.protocolConfig),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     } satisfies ConnectionModelRecord
@@ -155,6 +182,9 @@ function mergeDiscoveredModels(
         displayName: existing?.displayName ?? modelId,
         enabled: existing?.enabled ?? true,
         source: 'discovered' as const,
+        protocolConfig: existing
+          ? { ...existing.protocolConfig }
+          : { ...provider.defaultProtocolConfigForNewModels },
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       } satisfies ConnectionModelRecord
@@ -250,6 +280,9 @@ export class ConnectionStore {
       displayName: trimRequired(input.displayName, 'displayName'),
       baseUrl: normalizeBaseUrl(input.baseUrl),
       enabled: input.enabled ?? existing?.enabled ?? true,
+      defaultProtocolConfigForNewModels: normalizeProtocolConfig(
+        input.defaultProtocolConfigForNewModels,
+      ),
       models,
       defaultModelId: resolveDefaultModelId(input, existing, models),
       createdAt: existing?.createdAt ?? now,
@@ -269,9 +302,9 @@ export class ConnectionStore {
       state.defaultTarget = null
     }
 
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
 
-    return { ...provider, models: provider.models.map((model) => ({ ...model })) }
+    return cloneState({ version: 2, providers: [provider], defaultTarget: null }).providers[0]!
   }
 
   async deleteProvider(providerId: string): Promise<DeleteProviderResult> {
@@ -288,7 +321,7 @@ export class ConnectionStore {
       state.defaultTarget = null
     }
 
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
 
     return { providerId }
   }
@@ -332,11 +365,11 @@ export class ConnectionStore {
       state.defaultTarget = null
     }
 
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
 
     return {
       provider: cloneState({
-        version: 1,
+        version: 2,
         providers: [provider],
         defaultTarget: null,
       }).providers[0]!,
@@ -350,7 +383,7 @@ export class ConnectionStore {
 
     if (!target) {
       state.defaultTarget = null
-      await this.configFile.write(state)
+      await this.configFile.write(validateState(state))
       return null
     }
 
@@ -365,7 +398,7 @@ export class ConnectionStore {
     }
 
     state.defaultTarget = { providerId, modelId }
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
 
     return { ...state.defaultTarget }
   }

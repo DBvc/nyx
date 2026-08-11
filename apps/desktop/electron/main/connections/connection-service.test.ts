@@ -8,6 +8,8 @@ import { ConnectionStoreError } from './connection-store'
 import type { ConnectionProviderRecord, ConnectionStoreState } from './schemas'
 
 const timestamp = '2026-01-01T00:00:00.000Z'
+const credentialRevision = '00000000-0000-4000-8000-000000000001'
+const chatProtocolConfig = { protocol: 'openai-chat-completions' } as const
 
 function providerRecord(
   overrides: Partial<ConnectionProviderRecord> = {},
@@ -18,12 +20,14 @@ function providerRecord(
     displayName: 'Provider One',
     baseUrl: 'https://token-user:secret@api.example.com/custom/v1?api_key=hidden',
     enabled: true,
+    defaultProtocolConfigForNewModels: chatProtocolConfig,
     models: [
       {
         id: 'model-1',
         displayName: 'Model One',
         enabled: true,
         source: 'manual',
+        protocolConfig: chatProtocolConfig,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
@@ -38,13 +42,17 @@ function providerRecord(
 function cloneProvider(provider: ConnectionProviderRecord): ConnectionProviderRecord {
   return {
     ...provider,
-    models: provider.models.map((model) => ({ ...model })),
+    defaultProtocolConfigForNewModels: { ...provider.defaultProtocolConfigForNewModels },
+    models: provider.models.map((model) => ({
+      ...model,
+      protocolConfig: { ...model.protocolConfig },
+    })),
   }
 }
 
 function cloneState(state: ConnectionStoreState): ConnectionStoreState {
   return {
-    version: 1,
+    version: 2,
     providers: state.providers.map(cloneProvider),
     defaultTarget: state.defaultTarget ? { ...state.defaultTarget } : null,
   }
@@ -77,11 +85,13 @@ function createServiceHarness(initialState: ConnectionStoreState) {
         displayName: input.displayName,
         baseUrl: input.baseUrl,
         enabled: input.enabled ?? true,
+        defaultProtocolConfigForNewModels: { ...input.defaultProtocolConfigForNewModels },
         models: input.models.map((model) => ({
           id: model.id,
           displayName: model.displayName ?? model.id,
           enabled: model.enabled ?? true,
           source: 'manual' as const,
+          protocolConfig: { ...model.protocolConfig },
           createdAt: now,
           updatedAt: now,
         })),
@@ -126,6 +136,7 @@ function createServiceHarness(initialState: ConnectionStoreState) {
           displayName: modelId,
           enabled: true,
           source: 'discovered' as const,
+          protocolConfig: { ...provider.defaultProtocolConfigForNewModels },
           createdAt: timestamp,
           updatedAt: timestamp,
         }))
@@ -153,7 +164,10 @@ function createServiceHarness(initialState: ConnectionStoreState) {
   }
   const secretStore: ConnectionsServiceDependencies['secretStore'] = {
     hasSecret: vi.fn(async (providerId: string) => secrets.has(providerId)),
-    readSecret: vi.fn(async (providerId: string) => secrets.get(providerId) ?? null),
+    readCredential: vi.fn(async (providerId: string) => {
+      const value = secrets.get(providerId)
+      return value ? { value, credentialRevision } : null
+    }),
     writeSecret,
     deleteSecret,
   }
@@ -192,7 +206,7 @@ function createServiceHarness(initialState: ConnectionStoreState) {
 describe('ConnectionsService', () => {
   it('returns a redacted overview without full base URLs or secrets', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: {
         providerId: 'provider-1',
@@ -245,7 +259,7 @@ describe('ConnectionsService', () => {
 
   it('returns editable provider details without URL credentials or query secrets', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -265,7 +279,7 @@ describe('ConnectionsService', () => {
 
   it('reveals and copies stored credentials only through main-owned actions', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -287,7 +301,7 @@ describe('ConnectionsService', () => {
 
   it('does not run credential actions when the saved key is missing', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -303,7 +317,7 @@ describe('ConnectionsService', () => {
 
   it('falls back to env source in overview without exposing env secrets', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -337,7 +351,7 @@ describe('ConnectionsService', () => {
 
   it('preserves provider and model order while exposing env fallback independently', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [
         providerRecord({
           models: [
@@ -346,6 +360,7 @@ describe('ConnectionsService', () => {
               displayName: 'Model One',
               enabled: true,
               source: 'manual',
+              protocolConfig: chatProtocolConfig,
               createdAt: timestamp,
               updatedAt: timestamp,
             },
@@ -354,6 +369,7 @@ describe('ConnectionsService', () => {
               displayName: 'Model Disabled',
               enabled: false,
               source: 'manual',
+              protocolConfig: chatProtocolConfig,
               createdAt: timestamp,
               updatedAt: timestamp,
             },
@@ -362,6 +378,7 @@ describe('ConnectionsService', () => {
               displayName: 'Model Two',
               enabled: true,
               source: 'manual',
+              protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
               createdAt: timestamp,
               updatedAt: timestamp,
             },
@@ -376,6 +393,7 @@ describe('ConnectionsService', () => {
               displayName: 'Model Three',
               enabled: true,
               source: 'manual',
+              protocolConfig: chatProtocolConfig,
               createdAt: timestamp,
               updatedAt: timestamp,
             },
@@ -437,7 +455,7 @@ describe('ConnectionsService', () => {
 
   it('isolates unusable provider credentials while keeping the overview available', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [
         providerRecord(),
         providerRecord({
@@ -454,12 +472,13 @@ describe('ConnectionsService', () => {
     harness.secrets.set('provider-1', 'sk-usable')
     harness.secrets.set('provider-disabled', 'sk-disabled')
     harness.secrets.set('provider-blank', '   ')
-    vi.mocked(harness.secretStore.readSecret).mockImplementation(async (providerId) => {
+    vi.mocked(harness.secretStore.readCredential).mockImplementation(async (providerId) => {
       if (providerId === 'provider-broken') {
         throw new Error('raw decrypt detail')
       }
 
-      return harness.secrets.get(providerId) ?? null
+      const value = harness.secrets.get(providerId)
+      return value ? { value, credentialRevision } : null
     })
 
     const result = await harness.service.overview()
@@ -487,7 +506,7 @@ describe('ConnectionsService', () => {
 
   it('saves provider settings and writes credentials without returning the credential', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -496,6 +515,7 @@ describe('ConnectionsService', () => {
       kind: 'openai-compatible',
       displayName: 'Provider New',
       baseUrl: 'https://api.example.com/v1',
+      defaultProtocolConfigForNewModels: chatProtocolConfig,
       credential: {
         kind: 'api_key',
         value: 'sk-new-secret',
@@ -503,6 +523,7 @@ describe('ConnectionsService', () => {
       models: [
         {
           id: 'model-new',
+          protocolConfig: chatProtocolConfig,
         },
       ],
     })
@@ -521,7 +542,7 @@ describe('ConnectionsService', () => {
 
   it('rejects blank credentials before provider settings are saved', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -530,6 +551,7 @@ describe('ConnectionsService', () => {
       kind: 'openai-compatible',
       displayName: 'Provider New',
       baseUrl: 'https://api.example.com/v1',
+      defaultProtocolConfigForNewModels: chatProtocolConfig,
       credential: {
         kind: 'api_key',
         value: '   ',
@@ -537,6 +559,7 @@ describe('ConnectionsService', () => {
       models: [
         {
           id: 'model-new',
+          protocolConfig: chatProtocolConfig,
         },
       ],
     })
@@ -555,7 +578,7 @@ describe('ConnectionsService', () => {
 
   it('deletes provider settings and the matching stored credential', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -573,7 +596,7 @@ describe('ConnectionsService', () => {
 
   it('sets the default target and returns an updated overview', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -599,7 +622,7 @@ describe('ConnectionsService', () => {
 
   it('maps storage failures to a safe result without leaking raw details', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -622,7 +645,7 @@ describe('ConnectionsService', () => {
 
   it('tests a saved provider with its default enabled model without returning the secret', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -643,13 +666,14 @@ describe('ConnectionsService', () => {
       apiKey: 'sk-super-secret',
       baseUrl: 'https://api.example.com/custom/v1/',
       modelId: 'model-1',
+      protocolConfig: chatProtocolConfig,
     })
     expect(JSON.stringify(result)).not.toContain('sk-super-secret')
   })
 
   it('returns a safe config error when provider credentials are missing', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -669,7 +693,7 @@ describe('ConnectionsService', () => {
 
   it('refreshes discovered models while preserving manual models', async () => {
     const harness = createServiceHarness({
-      version: 1,
+      version: 2,
       providers: [providerRecord()],
       defaultTarget: null,
     })
@@ -693,6 +717,7 @@ describe('ConnectionsService', () => {
             displayName: 'Model One',
             enabled: true,
             source: 'manual',
+            protocolConfig: chatProtocolConfig,
             createdAt: timestamp,
             updatedAt: timestamp,
           },
@@ -701,6 +726,7 @@ describe('ConnectionsService', () => {
             displayName: 'model-2',
             enabled: true,
             source: 'discovered',
+            protocolConfig: chatProtocolConfig,
             createdAt: timestamp,
             updatedAt: timestamp,
           },

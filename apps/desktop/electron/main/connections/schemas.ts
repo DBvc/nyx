@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   nyxConnectionModelSources,
   nyxConnectionProviderKinds,
+  nyxConnectionReasoningContexts,
 } from '../../../shared/connections/types'
 
 const nonEmptyStringSchema = z.string().trim().min(1)
@@ -14,12 +15,23 @@ export const connectionTargetSchema = z
   })
   .strict()
 
+export const modelProtocolConfigSchema = z.discriminatedUnion('protocol', [
+  z.object({ protocol: z.literal('openai-chat-completions') }).strict(),
+  z
+    .object({
+      protocol: z.literal('openai-responses'),
+      reasoningContext: z.enum(nyxConnectionReasoningContexts),
+    })
+    .strict(),
+])
+
 export const connectionModelRecordSchema = z
   .object({
     id: nonEmptyStringSchema,
     displayName: nonEmptyStringSchema,
     enabled: z.boolean(),
     source: z.enum(nyxConnectionModelSources),
+    protocolConfig: modelProtocolConfigSchema,
     createdAt: nonEmptyStringSchema,
     updatedAt: nonEmptyStringSchema,
   })
@@ -36,6 +48,7 @@ export const connectionProviderRecordSchema = z
     displayName: nonEmptyStringSchema,
     baseUrl: z.string().url(),
     enabled: z.boolean(),
+    defaultProtocolConfigForNewModels: modelProtocolConfigSchema,
     models: z.array(connectionModelRecordSchema).min(1),
     defaultModelId: nonEmptyStringSchema.nullable(),
     createdAt: nonEmptyStringSchema,
@@ -64,7 +77,7 @@ export const connectionProviderRecordSchema = z
 
 export const connectionStoreStateSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     providers: z.array(connectionProviderRecordSchema),
     defaultTarget: connectionTargetSchema.nullable(),
   })
@@ -113,6 +126,7 @@ export const secretRecordSchema = z
   .object({
     providerId: nonEmptyStringSchema,
     encryptedValue: nonEmptyStringSchema,
+    credentialRevision: z.uuid(),
     createdAt: nonEmptyStringSchema,
     updatedAt: nonEmptyStringSchema,
   })
@@ -120,7 +134,7 @@ export const secretRecordSchema = z
 
 export const secretStoreStateSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     secrets: z.array(secretRecordSchema),
   })
   .strict()

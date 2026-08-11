@@ -12,6 +12,8 @@ import {
   validateDefaultTargetReadiness,
 } from './ConnectionsSettingsPage'
 
+const chatProtocolConfig = { protocol: 'openai-chat-completions' } as const
+
 function form(overrides: Partial<ProviderForm> = {}): ProviderForm {
   return {
     providerId: null,
@@ -19,11 +21,13 @@ function form(overrides: Partial<ProviderForm> = {}): ProviderForm {
     baseUrl: 'https://api.example.com/v1',
     apiKey: '',
     enabled: true,
+    defaultProtocolConfigForNewModels: chatProtocolConfig,
     models: [
       {
         id: 'model-1',
         displayName: '',
         enabled: true,
+        protocolConfig: chatProtocolConfig,
       },
     ],
     defaultModelId: 'model-1',
@@ -60,6 +64,7 @@ describe('ConnectionsSettingsPage form helpers', () => {
       {
         id: 'model-1',
         enabled: true,
+        protocolConfig: chatProtocolConfig,
       },
     ])
   })
@@ -72,11 +77,13 @@ describe('ConnectionsSettingsPage form helpers', () => {
           id: 'model-1',
           displayName: '',
           enabled: true,
+          protocolConfig: chatProtocolConfig,
         },
         {
           id: 'model-2',
           displayName: '',
           enabled: true,
+          protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
         },
       ],
     })
@@ -152,6 +159,7 @@ describe('ConnectionsSettingsPage form helpers', () => {
           displayName: 'Manual Model',
           enabled: true,
           source: 'manual',
+          protocolConfig: chatProtocolConfig,
           createdAt: '2026-07-08T00:00:00.000Z',
           updatedAt: '2026-07-08T00:00:00.000Z',
         },
@@ -160,6 +168,7 @@ describe('ConnectionsSettingsPage form helpers', () => {
           displayName: 'discovered-model',
           enabled: true,
           source: 'discovered',
+          protocolConfig: { protocol: 'openai-responses', reasoningContext: 'all_turns' },
           createdAt: '2026-07-08T00:00:00.000Z',
           updatedAt: '2026-07-08T00:00:00.000Z',
         },
@@ -169,11 +178,13 @@ describe('ConnectionsSettingsPage form helpers', () => {
         id: 'manual-model',
         displayName: 'Manual Model',
         enabled: true,
+        protocolConfig: chatProtocolConfig,
       },
       {
         id: 'discovered-model',
         displayName: '',
         enabled: true,
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'all_turns' },
       },
     ])
   })

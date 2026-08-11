@@ -6,6 +6,21 @@ export const nyxConnectionModelSources = ['manual', 'discovered'] as const
 
 export type NyxConnectionModelSource = (typeof nyxConnectionModelSources)[number]
 
+export const nyxConnectionModelProtocols = ['openai-chat-completions', 'openai-responses'] as const
+
+export type NyxConnectionModelProtocol = (typeof nyxConnectionModelProtocols)[number]
+
+export const nyxConnectionReasoningContexts = ['auto', 'all_turns', 'current_turn'] as const
+
+export type NyxConnectionReasoningContext = (typeof nyxConnectionReasoningContexts)[number]
+
+export type NyxConnectionModelProtocolConfig =
+  | { protocol: 'openai-chat-completions' }
+  | {
+      protocol: 'openai-responses'
+      reasoningContext: NyxConnectionReasoningContext
+    }
+
 export const nyxConnectionDefaultTargetSources = [
   'persisted_default',
   'env_fallback',
@@ -69,6 +84,7 @@ export interface NyxConnectionModelProfile {
   displayName: string
   enabled: boolean
   source: NyxConnectionModelSource
+  protocolConfig: NyxConnectionModelProtocolConfig
   createdAt: string
   updatedAt: string
 }
@@ -88,6 +104,7 @@ export interface NyxConnectionProviderSummary {
 
 export interface NyxConnectionProviderDetail extends NyxConnectionProviderSummary {
   baseUrl: string
+  defaultProtocolConfigForNewModels: NyxConnectionModelProtocolConfig
   models: ReadonlyArray<NyxConnectionModelProfile>
 }
 
@@ -110,6 +127,7 @@ export interface NyxConnectionModelInput {
   id: string
   displayName?: string
   enabled?: boolean
+  protocolConfig: NyxConnectionModelProtocolConfig
 }
 
 export interface NyxConnectionCredentialInput {
@@ -123,6 +141,7 @@ export interface NyxConnectionSaveProviderInput {
   displayName: string
   baseUrl: string
   enabled?: boolean
+  defaultProtocolConfigForNewModels: NyxConnectionModelProtocolConfig
   credential?: NyxConnectionCredentialInput
   models: ReadonlyArray<NyxConnectionModelInput>
   defaultModelId?: string | null

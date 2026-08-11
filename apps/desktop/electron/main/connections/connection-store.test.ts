@@ -28,10 +28,12 @@ function providerInput() {
     kind: 'openai-compatible' as const,
     displayName: 'Local Relay',
     baseUrl: 'https://relay.example.test/v1',
+    defaultProtocolConfigForNewModels: { protocol: 'openai-chat-completions' as const },
     models: [
       {
         id: 'gpt-5.4',
         displayName: 'GPT 5.4',
+        protocolConfig: { protocol: 'openai-chat-completions' as const },
       },
     ],
   }
@@ -46,7 +48,7 @@ describe('ConnectionStore', () => {
     const store = createStore(await createTempFile('connections.json'))
 
     await expect(store.readState()).resolves.toEqual({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -69,7 +71,7 @@ describe('ConnectionStore', () => {
       modelId: 'gpt-5.4',
     })
     await expect(store.readState()).resolves.toEqual({
-      version: 1,
+      version: 2,
       providers: [
         {
           id: 'provider-1',
@@ -77,12 +79,14 @@ describe('ConnectionStore', () => {
           displayName: 'Local Relay',
           baseUrl: 'https://relay.example.test/v1/',
           enabled: true,
+          defaultProtocolConfigForNewModels: { protocol: 'openai-chat-completions' },
           models: [
             {
               id: 'gpt-5.4',
               displayName: 'GPT 5.4',
               enabled: true,
               source: 'manual',
+              protocolConfig: { protocol: 'openai-chat-completions' },
               createdAt: '2026-07-08T00:00:00.000Z',
               updatedAt: '2026-07-08T00:00:00.000Z',
             },
@@ -135,7 +139,7 @@ describe('ConnectionStore', () => {
     await expect(store.deleteProvider(provider.id)).resolves.toEqual({ providerId: provider.id })
 
     await expect(store.readState()).resolves.toEqual({
-      version: 1,
+      version: 2,
       providers: [],
       defaultTarget: null,
     })
@@ -163,6 +167,7 @@ describe('ConnectionStore', () => {
         {
           id: 'manual-model',
           displayName: 'Manual Model',
+          protocolConfig: { protocol: 'openai-chat-completions' as const },
         },
       ],
     })
@@ -177,6 +182,7 @@ describe('ConnectionStore', () => {
         displayName: 'Manual Model',
         enabled: true,
         source: 'manual',
+        protocolConfig: { protocol: 'openai-chat-completions' },
         createdAt: '2026-07-08T00:00:00.000Z',
         updatedAt: '2026-07-08T00:00:00.000Z',
       },
@@ -185,10 +191,91 @@ describe('ConnectionStore', () => {
         displayName: 'fresh-discovered',
         enabled: true,
         source: 'discovered',
+        protocolConfig: { protocol: 'openai-chat-completions' },
         createdAt: '2026-07-08T00:00:00.000Z',
         updatedAt: '2026-07-08T00:00:00.000Z',
       },
     ])
+  })
+
+  it('preserves existing model protocols and applies the provider default only to new discoveries', async () => {
+    const store = createStore(await createTempFile('connections.json'))
+    const provider = await store.saveProvider({
+      ...providerInput(),
+      defaultProtocolConfigForNewModels: {
+        protocol: 'openai-responses',
+        reasoningContext: 'auto',
+      },
+      models: [
+        {
+          id: 'manual-model',
+          protocolConfig: { protocol: 'openai-chat-completions' },
+        },
+      ],
+    })
+    await store.mergeDiscoveredModels(provider.id, ['existing-discovered'])
+    await store.saveProvider({
+      ...providerInput(),
+      providerId: provider.id,
+      defaultProtocolConfigForNewModels: {
+        protocol: 'openai-responses',
+        reasoningContext: 'all_turns',
+      },
+      models: [
+        {
+          id: 'manual-model',
+          protocolConfig: { protocol: 'openai-chat-completions' },
+        },
+        {
+          id: 'existing-discovered',
+          protocolConfig: {
+            protocol: 'openai-responses',
+            reasoningContext: 'current_turn',
+          },
+        },
+      ],
+    })
+
+    await store.mergeDiscoveredModels(provider.id, ['existing-discovered', 'new-discovered'])
+
+    const models = (await store.readState()).providers[0]!.models
+    expect(
+      models.map(({ id, source, protocolConfig }) => ({ id, source, protocolConfig })),
+    ).toEqual([
+      {
+        id: 'manual-model',
+        source: 'manual',
+        protocolConfig: { protocol: 'openai-chat-completions' },
+      },
+      {
+        id: 'existing-discovered',
+        source: 'discovered',
+        protocolConfig: {
+          protocol: 'openai-responses',
+          reasoningContext: 'current_turn',
+        },
+      },
+      {
+        id: 'new-discovered',
+        source: 'discovered',
+        protocolConfig: {
+          protocol: 'openai-responses',
+          reasoningContext: 'all_turns',
+        },
+      },
+    ])
+  })
+
+  it('rejects the old v1 schema instead of migrating it', async () => {
+    const filePath = await createTempFile('connections.json')
+    const oldJson = JSON.stringify({ version: 1, providers: [], defaultTarget: null })
+    await writeFile(filePath, oldJson, 'utf8')
+    const store = createStore(filePath)
+
+    await expect(store.readState()).rejects.toMatchObject({
+      code: 'schema_invalid',
+    } satisfies Partial<ConfigFileError>)
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(oldJson)
   })
 
   it('fails closed on malformed JSON without overwriting the file', async () => {
@@ -207,7 +294,7 @@ describe('ConnectionStore', () => {
 
   it('fails closed on schema-invalid JSON without overwriting the file', async () => {
     const filePath = await createTempFile('connections.json')
-    const invalidJson = JSON.stringify({ version: 1, providers: 'not-array', defaultTarget: null })
+    const invalidJson = JSON.stringify({ version: 2, providers: 'not-array', defaultTarget: null })
     await writeFile(filePath, invalidJson, 'utf8')
     const store = createStore(filePath)
 
@@ -223,7 +310,7 @@ describe('ConnectionStore', () => {
   it('fails closed when a persisted default target references a missing model', async () => {
     const filePath = await createTempFile('connections.json')
     const invalidJson = JSON.stringify({
-      version: 1,
+      version: 2,
       providers: [
         {
           id: 'provider-1',
@@ -231,12 +318,14 @@ describe('ConnectionStore', () => {
           displayName: 'Local Relay',
           baseUrl: 'https://relay.example.test/v1',
           enabled: true,
+          defaultProtocolConfigForNewModels: { protocol: 'openai-chat-completions' },
           models: [
             {
               id: 'gpt-5.4',
               displayName: 'GPT 5.4',
               enabled: true,
               source: 'manual',
+              protocolConfig: { protocol: 'openai-chat-completions' },
               createdAt: '2026-07-08T00:00:00.000Z',
               updatedAt: '2026-07-08T00:00:00.000Z',
             },

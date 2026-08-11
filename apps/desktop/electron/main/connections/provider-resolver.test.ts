@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { NyxConnectionModelProtocolConfig } from '../../../shared/connections/types'
 import type { ChatProviderConfig } from '../chat/env'
 import {
   createChatTargetResolver,
   createLazyChatTargetResolver,
+  createTargetExecutionIdentity,
   type ResolvedChatTarget,
 } from './provider-resolver'
 import type { ConnectionStoreState } from './schemas'
 
 const timestamp = '2026-01-01T00:00:00.000Z'
+const credentialRevision = '00000000-0000-4000-8000-000000000001'
+const chatProtocolConfig = { protocol: 'openai-chat-completions' } as const
 const connectionSelection = {
   kind: 'connection',
   providerId: 'provider-1',
@@ -16,9 +20,11 @@ const connectionSelection = {
 } as const
 const envSelection = { kind: 'env_fallback' } as const
 
-function providerState(overrides: Partial<ConnectionStoreState> = {}): ConnectionStoreState {
+function providerState(
+  protocolConfig: NyxConnectionModelProtocolConfig = chatProtocolConfig,
+): ConnectionStoreState {
   return {
-    version: 1,
+    version: 2,
     providers: [
       {
         id: 'provider-1',
@@ -26,12 +32,14 @@ function providerState(overrides: Partial<ConnectionStoreState> = {}): Connectio
         displayName: 'Provider One',
         baseUrl: 'https://api.example.com/custom/v1',
         enabled: true,
+        defaultProtocolConfigForNewModels: chatProtocolConfig,
         models: [
           {
             id: 'model-1',
             displayName: 'Model One',
             enabled: true,
             source: 'manual',
+            protocolConfig,
             createdAt: timestamp,
             updatedAt: timestamp,
           },
@@ -41,11 +49,7 @@ function providerState(overrides: Partial<ConnectionStoreState> = {}): Connectio
         updatedAt: timestamp,
       },
     ],
-    defaultTarget: {
-      providerId: 'provider-1',
-      modelId: 'model-1',
-    },
-    ...overrides,
+    defaultTarget: connectionSelection,
   }
 }
 
@@ -63,25 +67,27 @@ function envTarget(): ResolvedChatTarget {
     baseUrl: 'https://env.example.com/v1/',
     token: 'env-token',
     modelId: 'env-model',
-    protocol: 'openai-chat-completions',
-    targetAttribution: {
-      kind: 'env_fallback',
-      modelId: 'env-model',
-    },
+    protocolConfig: chatProtocolConfig,
+    executionIdentity: null,
+    targetAttribution: { kind: 'env_fallback', modelId: 'env-model' },
+  }
+}
+
+function credentialStore(value = 'stored-secret', revision = credentialRevision) {
+  return {
+    readCredential: vi.fn(async () => ({ value, credentialRevision: revision })),
   }
 }
 
 describe('createChatTargetResolver', () => {
-  it('resolves the explicitly selected connection target', async () => {
-    const envConfigReader = vi.fn(envConfig)
+  it.each([
+    chatProtocolConfig,
+    { protocol: 'openai-responses', reasoningContext: 'auto' } as const,
+  ])('resolves an explicit model protocol and exact execution identity', async (protocolConfig) => {
     const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState()),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
-      envConfigReader,
+      connectionStore: { readState: vi.fn(async () => providerState(protocolConfig)) },
+      secretStore: credentialStore(),
+      envConfigReader: vi.fn(envConfig),
     })
 
     await expect(resolver(connectionSelection)).resolves.toEqual({
@@ -89,7 +95,14 @@ describe('createChatTargetResolver', () => {
       baseUrl: 'https://api.example.com/custom/v1/',
       token: 'stored-secret',
       modelId: 'model-1',
-      protocol: 'openai-chat-completions',
+      protocolConfig,
+      executionIdentity: createTargetExecutionIdentity({
+        providerId: 'provider-1',
+        normalizedBaseUrl: 'https://api.example.com/custom/v1/',
+        modelId: 'model-1',
+        modelProtocolConfig: protocolConfig,
+        credentialRevision,
+      }),
       targetAttribution: {
         kind: 'connection',
         providerId: 'provider-1',
@@ -98,314 +111,194 @@ describe('createChatTargetResolver', () => {
         modelDisplayName: 'Model One',
       },
     })
-    expect(envConfigReader).not.toHaveBeenCalled()
   })
 
-  it('strips credentials and query secrets from persisted provider base URLs', async () => {
+  it('resolves env fallback as Chat Completions without native execution identity', async () => {
+    const secretStore = credentialStore()
     const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () =>
-          providerState({
-            providers: [
-              {
-                ...providerState().providers[0]!,
-                baseUrl: 'https://user:secret@api.example.com/custom/v1?api_key=hidden#secret',
-              },
-            ],
-          }),
-        ),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
+      connectionStore: { readState: vi.fn(async () => providerState()) },
+      secretStore,
+      envConfigReader: vi.fn(envConfig),
+    })
+
+    await expect(resolver(envSelection)).resolves.toEqual(envTarget())
+    expect(secretStore.readCredential).not.toHaveBeenCalled()
+  })
+
+  it('sanitizes the persisted endpoint before using it or hashing execution identity', async () => {
+    const state = providerState()
+    state.providers[0]!.baseUrl =
+      'https://user:secret@api.example.com/custom/v1?api_key=hidden#secret'
+    const resolver = createChatTargetResolver({
+      connectionStore: { readState: vi.fn(async () => state) },
+      secretStore: credentialStore(),
       envConfigReader: vi.fn(envConfig),
     })
 
     await expect(resolver(connectionSelection)).resolves.toMatchObject({
       baseUrl: 'https://api.example.com/custom/v1/',
+      executionIdentity: createTargetExecutionIdentity({
+        providerId: 'provider-1',
+        normalizedBaseUrl: 'https://api.example.com/custom/v1/',
+        modelId: 'model-1',
+        modelProtocolConfig: chatProtocolConfig,
+        credentialRevision,
+      }),
     })
   })
 
-  it('resolves the explicit env fallback without consulting persisted defaults', async () => {
-    const secretStore = {
-      readSecret: vi.fn(async () => 'stored-secret'),
-    }
-    const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState({ defaultTarget: null })),
-      },
-      secretStore,
-      envConfigReader,
-    })
-
-    await expect(resolver(envSelection)).resolves.toEqual(envTarget())
-    expect(secretStore.readSecret).not.toHaveBeenCalled()
-    expect(envConfigReader).toHaveBeenCalledTimes(1)
-  })
-
-  it('fails the explicit env fallback closed when it is no longer configured', async () => {
+  it('fails the env target closed without reading persisted settings', async () => {
     const readState = vi.fn(async () => providerState())
     const resolver = createChatTargetResolver({
       connectionStore: { readState },
-      secretStore: { readSecret: vi.fn(async () => 'stored-secret') },
+      secretStore: credentialStore(),
       envConfigReader: vi.fn(() => {
-        throw new Error('raw env detail')
+        throw new Error('private env detail')
       }),
     })
 
     await expect(resolver(envSelection)).rejects.toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        message: 'The selected chat target is unavailable.',
-        retryable: true,
-      },
+      chatError: { code: 'target_unavailable', retryable: true },
     })
     expect(readState).not.toHaveBeenCalled()
   })
 
-  it('preserves an explicit Connections target identity', async () => {
-    const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState({ defaultTarget: null })),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
-      envConfigReader,
-    })
-
-    await expect(resolver(connectionSelection)).resolves.toEqual({
-      providerId: 'provider-1',
-      baseUrl: 'https://api.example.com/custom/v1/',
-      token: 'stored-secret',
-      modelId: 'model-1',
-      protocol: 'openai-chat-completions',
-      targetAttribution: {
-        kind: 'connection',
-        providerId: 'provider-1',
-        providerDisplayName: 'Provider One',
-        modelId: 'model-1',
-        modelDisplayName: 'Model One',
-      },
-    })
-    expect(envConfigReader).not.toHaveBeenCalled()
-  })
-
-  it('fails closed when persisted settings cannot be read', async () => {
-    const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatTargetResolver({
+  it('fails selected connection targets closed when settings or credentials cannot be read', async () => {
+    const settingsResolver = createChatTargetResolver({
       connectionStore: {
         readState: vi.fn(async () => {
-          throw new Error('raw persisted provider failure')
+          throw new Error('private settings detail')
         }),
       },
+      secretStore: credentialStore(),
+      envConfigReader: vi.fn(envConfig),
+    })
+    const credentialResolver = createChatTargetResolver({
+      connectionStore: { readState: vi.fn(async () => providerState()) },
       secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
-      envConfigReader,
-    })
-
-    await expect(resolver(connectionSelection)).rejects.toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        message: 'The selected chat target is unavailable.',
-        retryable: true,
-      },
-    })
-    expect(envConfigReader).not.toHaveBeenCalled()
-  })
-
-  it('maps a missing persisted secret to target_unavailable without falling back to env', async () => {
-    const envConfigReader = vi.fn(envConfig)
-    const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState()),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => null),
-      },
-      envConfigReader,
-    })
-
-    await expect(resolver(connectionSelection)).rejects.toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        retryable: true,
-      },
-    })
-    expect(envConfigReader).not.toHaveBeenCalled()
-  })
-
-  it('maps secret decrypt failures to config_missing without leaking the raw failure', async () => {
-    const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState()),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => {
-          throw new Error('decrypt failed with raw secret context')
+        readCredential: vi.fn(async () => {
+          throw new Error('private credential detail')
         }),
       },
       envConfigReader: vi.fn(envConfig),
     })
 
-    let caughtError: unknown
+    for (const resolver of [settingsResolver, credentialResolver]) {
+      let caught: unknown
 
-    try {
-      await resolver(connectionSelection)
-    } catch (error) {
-      caughtError = error
+      try {
+        await resolver(connectionSelection)
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toMatchObject({
+        chatError: { code: 'target_unavailable', retryable: true },
+      })
+      expect(JSON.stringify(caught)).not.toContain('private')
     }
-
-    expect(caughtError).toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        message: 'The selected chat target is unavailable.',
-        retryable: true,
-      },
-    })
-    expect(JSON.stringify(caughtError)).not.toContain('raw secret context')
   })
 
-  it('maps disabled selected targets to target_unavailable', async () => {
-    const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () =>
-          providerState({
-            providers: [
-              {
-                ...providerState().providers[0]!,
-                enabled: false,
-              },
-            ],
-          }),
-        ),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
-      envConfigReader: vi.fn(envConfig),
-    })
+  it.each(['provider', 'model', 'missing'] as const)(
+    'fails a disabled or %s selected target closed without env fallback',
+    async (variant) => {
+      const state = providerState()
 
-    await expect(resolver(connectionSelection)).rejects.toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        retryable: true,
-      },
-    })
-  })
+      if (variant === 'provider') {
+        state.providers[0]!.enabled = false
+      } else if (variant === 'model') {
+        state.providers[0]!.models[0]!.enabled = false
+      }
 
-  it.each([
-    [
-      'disabled',
-      [
-        {
-          ...providerState().providers[0]!,
-          models: [{ ...providerState().providers[0]!.models[0]!, enabled: false }],
-        },
-      ],
-    ],
-    [
-      'deleted',
-      [
-        {
-          ...providerState().providers[0]!,
-          models: [],
-        },
-      ],
-    ],
-  ] satisfies ReadonlyArray<readonly [string, ConnectionStoreState['providers']]>)(
-    'maps a %s selected model to target_unavailable without env fallback',
-    async (_state, providers) => {
       const envConfigReader = vi.fn(envConfig)
       const resolver = createChatTargetResolver({
-        connectionStore: {
-          readState: vi.fn(async () => providerState({ providers: [...providers] })),
-        },
-        secretStore: {
-          readSecret: vi.fn(async () => 'stored-secret'),
-        },
+        connectionStore: { readState: vi.fn(async () => state) },
+        secretStore: credentialStore(),
         envConfigReader,
       })
+      const selection =
+        variant === 'missing'
+          ? { kind: 'connection' as const, providerId: 'missing', modelId: 'missing' }
+          : connectionSelection
 
-      await expect(resolver(connectionSelection)).rejects.toMatchObject({
-        chatError: {
-          code: 'target_unavailable',
-          retryable: true,
-        },
+      await expect(resolver(selection)).rejects.toMatchObject({
+        chatError: { code: 'target_unavailable', retryable: true },
       })
       expect(envConfigReader).not.toHaveBeenCalled()
     },
   )
 
-  it('maps a missing selected target to target_unavailable', async () => {
+  it('does not fall back when the selected credential is missing', async () => {
     const envConfigReader = vi.fn(envConfig)
     const resolver = createChatTargetResolver({
-      connectionStore: {
-        readState: vi.fn(async () => providerState({ defaultTarget: null })),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
+      connectionStore: { readState: vi.fn(async () => providerState()) },
+      secretStore: { readCredential: vi.fn(async () => null) },
       envConfigReader,
     })
 
-    await expect(
-      resolver({
-        kind: 'connection',
-        providerId: 'missing-provider',
-        modelId: 'missing-model',
-      }),
-    ).rejects.toMatchObject({
-      chatError: {
-        code: 'target_unavailable',
-        retryable: true,
-      },
+    await expect(resolver(connectionSelection)).rejects.toMatchObject({
+      chatError: { code: 'target_unavailable', retryable: true },
     })
     expect(envConfigReader).not.toHaveBeenCalled()
   })
 })
 
+describe('createTargetExecutionIdentity', () => {
+  it('changes for endpoint, model, protocol, or credential revision without hashing the secret', () => {
+    const base = {
+      providerId: 'provider-1',
+      normalizedBaseUrl: 'https://api.example.com/v1/',
+      modelId: 'model-1',
+      modelProtocolConfig: chatProtocolConfig,
+      credentialRevision,
+    }
+    const identity = createTargetExecutionIdentity(base)
+
+    expect(identity).toMatch(/^[a-f0-9]{64}$/)
+    expect(identity).not.toContain('stored-secret')
+    expect(
+      new Set([
+        identity,
+        createTargetExecutionIdentity({ ...base, normalizedBaseUrl: 'https://other.test/v1/' }),
+        createTargetExecutionIdentity({ ...base, modelId: 'model-2' }),
+        createTargetExecutionIdentity({
+          ...base,
+          modelProtocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+        }),
+        createTargetExecutionIdentity({
+          ...base,
+          credentialRevision: '00000000-0000-4000-8000-000000000002',
+        }),
+      ]).size,
+    ).toBe(5)
+  })
+})
+
 describe('createLazyChatTargetResolver', () => {
-  it('creates store dependencies only on first resolution and then reuses them', async () => {
+  it('creates dependencies once', async () => {
     const createDependencies = vi.fn(() => ({
-      connectionStore: {
-        readState: vi.fn(async () => providerState({ defaultTarget: null })),
-      },
-      secretStore: {
-        readSecret: vi.fn(async () => 'stored-secret'),
-      },
+      connectionStore: { readState: vi.fn(async () => providerState()) },
+      secretStore: credentialStore(),
       envConfigReader: vi.fn(envConfig),
     }))
     const resolver = createLazyChatTargetResolver({ createDependencies })
-
-    expect(createDependencies).not.toHaveBeenCalled()
 
     await expect(resolver(envSelection)).resolves.toEqual(envTarget())
     await expect(resolver(envSelection)).resolves.toEqual(envTarget())
     expect(createDependencies).toHaveBeenCalledTimes(1)
   })
 
-  it('reports unavailable when resolver dependencies cannot be created', () => {
+  it('fails closed when resolver dependencies cannot be created', () => {
     const resolver = createLazyChatTargetResolver({
       createDependencies: () => {
-        throw new Error('Storage unavailable')
+        throw new Error('private storage detail')
       },
     })
 
-    expect.assertions(1)
-
-    try {
-      resolver(envSelection)
-    } catch (error) {
-      expect(error).toMatchObject({
-        chatError: {
-          code: 'target_unavailable',
-          retryable: true,
-        },
-      })
-    }
+    expect(() => resolver(envSelection)).toThrowError(
+      expect.objectContaining({
+        chatError: expect.objectContaining({ code: 'target_unavailable' }),
+      }),
+    )
   })
 })

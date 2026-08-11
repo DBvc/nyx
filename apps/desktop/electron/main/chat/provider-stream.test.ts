@@ -5,7 +5,10 @@ import genericOpenAiContentFixture from './fixtures/generic-openai-content.json'
 import glmReasoningContentFixture from './fixtures/glm-reasoning-content.json'
 import {
   decodeOpenAiCompatibleStream,
+  decodeOpenAiResponsesStream,
   normalizeOpenAiCompatibleFinishReason,
+  readResponsesVisibleText,
+  validateResponsesOutputItems,
 } from './provider-stream'
 
 interface ProviderStreamFixture {
@@ -134,5 +137,79 @@ describe('normalizeOpenAiCompatibleFinishReason', () => {
       reason: 'unknown',
       nativeReason: null,
     })
+  })
+})
+
+describe('Responses semantic stream and output validation', () => {
+  it('decodes text, refusal, reasoning activity, terminal, and failure events', () => {
+    expect(
+      decodeOpenAiResponsesStream({ type: 'response.output_text.delta', delta: 'Hello' }),
+    ).toEqual({
+      type: 'text-delta',
+      text: 'Hello',
+    })
+    expect(decodeOpenAiResponsesStream({ type: 'response.refusal.delta', delta: 'No' })).toEqual({
+      type: 'text-delta',
+      text: 'No',
+    })
+    expect(
+      decodeOpenAiResponsesStream({
+        type: 'response.output_item.added',
+        item: { type: 'reasoning' },
+      }),
+    ).toEqual({ type: 'reasoning-activity' })
+    expect(
+      decodeOpenAiResponsesStream({
+        type: 'response.completed',
+        response: { status: 'completed' },
+      }),
+    ).toEqual({ type: 'completed', response: { status: 'completed' } })
+    expect(decodeOpenAiResponsesStream({ type: 'response.incomplete' })).toEqual({
+      type: 'terminal-error',
+      diagnostic: 'incomplete',
+    })
+    expect(decodeOpenAiResponsesStream({ type: 'response.failed' })).toEqual({
+      type: 'terminal-error',
+      diagnostic: 'failed',
+    })
+    expect(decodeOpenAiResponsesStream('{')).toEqual({
+      type: 'error',
+      diagnostic: 'invalid_payload',
+    })
+  })
+
+  it('accepts only encrypted reasoning and completed assistant messages', () => {
+    const output = [
+      {
+        id: 'reasoning-1',
+        type: 'reasoning',
+        encrypted_content: 'opaque',
+        summary: [],
+        content: [],
+      },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [
+          { type: 'output_text', text: 'Answer', annotations: [] },
+          { type: 'refusal', refusal: ' refusal' },
+        ],
+      },
+    ]
+
+    expect(validateResponsesOutputItems(output)).toEqual(output)
+    expect(readResponsesVisibleText(output)).toBe('Answer refusal')
+    expect(validateResponsesOutputItems([{ type: 'function_call' }])).toBeNull()
+    expect(
+      validateResponsesOutputItems([
+        {
+          type: 'reasoning',
+          encrypted_content: 'opaque',
+          summary: [{ type: 'summary_text', text: 'raw reasoning' }],
+        },
+      ]),
+    ).toBeNull()
+    expect(validateResponsesOutputItems(Array.from({ length: 65 }, () => output[1]))).toBeNull()
   })
 })

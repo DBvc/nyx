@@ -770,7 +770,8 @@ describe('ChatSessionManager provider resolver', () => {
       baseUrl: 'https://persisted.example.com/v1/',
       token: 'stored-token',
       modelId: 'stored-model',
-      protocol: 'openai-chat-completions' as const,
+      protocolConfig: { protocol: 'openai-chat-completions' as const },
+      executionIdentity: 'a'.repeat(64),
       targetAttribution,
     }
     const resolveChatTarget = vi.fn(() => target)
@@ -798,7 +799,8 @@ describe('ChatSessionManager provider resolver', () => {
       baseUrl: 'https://env.example.com/v1/',
       token: 'env-token',
       modelId,
-      protocol: 'openai-chat-completions' as const,
+      protocolConfig: { protocol: 'openai-chat-completions' as const },
+      executionIdentity: null,
       targetAttribution: { kind: 'env_fallback' as const, modelId },
     })
     const coordinator = {
@@ -875,7 +877,8 @@ describe('ChatSessionManager provider resolver', () => {
         baseUrl: 'https://persisted.example.com/v1/',
         token: 'stored-token',
         modelId: 'stored-model',
-        protocol: 'openai-chat-completions',
+        protocolConfig: { protocol: 'openai-chat-completions' },
+        executionIdentity: 'a'.repeat(64),
         targetAttribution,
       })
     const sender = mockSender()
@@ -1590,7 +1593,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
         baseUrl: 'https://example.com/v1/',
         token: 'token',
         modelId: 'model',
-        protocol: 'openai-chat-completions' as const,
+        protocolConfig: { protocol: 'openai-chat-completions' as const },
+        executionIdentity: null,
         targetAttribution,
       }
     })
@@ -2017,7 +2021,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
       baseUrl: string
       token: string
       modelId: string
-      protocol: 'openai-chat-completions'
+      protocolConfig: { protocol: 'openai-chat-completions' }
+      executionIdentity: null
       targetAttribution: typeof targetAttribution
     }>()
     const resolveChatTarget = vi.fn(() => targetGate.promise)
@@ -2037,7 +2042,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
         baseUrl: 'https://example.com/v1/',
         token: 'token',
         modelId: 'model',
-        protocol: 'openai-chat-completions',
+        protocolConfig: { protocol: 'openai-chat-completions' },
+        executionIdentity: null,
         targetAttribution,
       })
 
@@ -2398,7 +2404,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
         baseUrl: 'https://example.com/v1/',
         token: 'token',
         modelId: 'model',
-        protocol: 'openai-chat-completions',
+        protocolConfig: { protocol: 'openai-chat-completions' },
+        executionIdentity: 'a'.repeat(64),
         targetAttribution,
       })
       .mockImplementationOnce(() => {

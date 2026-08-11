@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto'
+
 import type { NyxChatTargetAttribution, NyxChatTargetSelection } from '../../../shared/chat/types'
+import type { NyxConnectionModelProtocolConfig } from '../../../shared/connections/types'
 import type { ChatProviderConfig } from '../chat/env'
 import { readChatProviderConfig } from '../chat/env'
 import { ChatBridgeError, createChatBridgeError } from '../chat/errors'
@@ -12,7 +15,8 @@ export interface ResolvedChatTarget {
   baseUrl: string
   token: string
   modelId: string
-  protocol: 'openai-chat-completions'
+  protocolConfig: NyxConnectionModelProtocolConfig
+  executionIdentity: string | null
   targetAttribution: NyxChatTargetAttribution
 }
 
@@ -22,7 +26,7 @@ export type ChatTargetResolver = (
 
 export interface ChatTargetResolverDependencies {
   connectionStore: Pick<ConnectionStore, 'readState'>
-  secretStore: Pick<SecretStore, 'readSecret'>
+  secretStore: Pick<SecretStore, 'readCredential'>
   envConfigReader?: () => ChatProviderConfig
 }
 
@@ -76,16 +80,19 @@ async function readState(connectionStore: Pick<ConnectionStore, 'readState'>) {
   }
 }
 
-async function readSecret(secretStore: Pick<SecretStore, 'readSecret'>, providerId: string) {
+async function readCredential(
+  secretStore: Pick<SecretStore, 'readCredential'>,
+  providerId: string,
+) {
   try {
-    const secret = await secretStore.readSecret(providerId)
-    const trimmedSecret = secret?.trim()
+    const credential = await secretStore.readCredential(providerId)
+    const value = credential?.value.trim()
 
-    if (!trimmedSecret) {
+    if (!credential || !value) {
       throw createTargetUnavailableError()
     }
 
-    return trimmedSecret
+    return { value, credentialRevision: credential.credentialRevision }
   } catch (error) {
     if (error instanceof ChatBridgeError) {
       throw error
@@ -93,6 +100,37 @@ async function readSecret(secretStore: Pick<SecretStore, 'readSecret'>, provider
 
     throw createTargetUnavailableError()
   }
+}
+
+export function createTargetExecutionIdentity({
+  providerId,
+  normalizedBaseUrl,
+  modelId,
+  modelProtocolConfig,
+  credentialRevision,
+}: {
+  providerId: string
+  normalizedBaseUrl: string
+  modelId: string
+  modelProtocolConfig: NyxConnectionModelProtocolConfig
+  credentialRevision: string
+}) {
+  const canonicalProtocolConfig =
+    modelProtocolConfig.protocol === 'openai-responses'
+      ? {
+          protocol: modelProtocolConfig.protocol,
+          reasoningContext: modelProtocolConfig.reasoningContext,
+        }
+      : { protocol: modelProtocolConfig.protocol }
+  const canonical = JSON.stringify({
+    providerId,
+    normalizedBaseUrl,
+    modelId,
+    modelProtocolConfig: canonicalProtocolConfig,
+    credentialRevision,
+  })
+
+  return createHash('sha256').update(canonical).digest('hex')
 }
 
 function readEnvFallback(envConfigReader: () => ChatProviderConfig) {
@@ -104,7 +142,8 @@ function readEnvFallback(envConfigReader: () => ChatProviderConfig) {
       baseUrl: config.baseUrl,
       token: config.token,
       modelId: config.model,
-      protocol: 'openai-chat-completions',
+      protocolConfig: { protocol: 'openai-chat-completions' },
+      executionIdentity: null,
       targetAttribution: {
         kind: 'env_fallback',
         modelId: config.model,
@@ -126,14 +165,24 @@ async function resolvePersistedTarget({
 }: {
   provider: ConnectionProviderRecord
   model: ConnectionProviderRecord['models'][number]
-  secretStore: Pick<SecretStore, 'readSecret'>
+  secretStore: Pick<SecretStore, 'readCredential'>
 }) {
+  const baseUrl = normalizeBaseUrl(provider.baseUrl)
+  const credential = await readCredential(secretStore, provider.id)
+
   return {
     providerId: provider.id,
-    baseUrl: normalizeBaseUrl(provider.baseUrl),
-    token: await readSecret(secretStore, provider.id),
+    baseUrl,
+    token: credential.value,
     modelId: model.id,
-    protocol: 'openai-chat-completions',
+    protocolConfig: { ...model.protocolConfig },
+    executionIdentity: createTargetExecutionIdentity({
+      providerId: provider.id,
+      normalizedBaseUrl: baseUrl,
+      modelId: model.id,
+      modelProtocolConfig: model.protocolConfig,
+      credentialRevision: credential.credentialRevision,
+    }),
     targetAttribution: {
       kind: 'connection',
       providerId: provider.id,

@@ -6,6 +6,9 @@ import type { CurrentThreadProviderMessage } from '../current-thread/session-coo
 import {
   buildChatCompletionsUrl,
   buildOpenAiCompatibleChatRequest,
+  buildOpenAiResponsesInput,
+  buildOpenAiResponsesRequest,
+  buildResponsesUrl,
   buildProviderMessages,
   iterateSseData,
   streamChatCompletion,
@@ -63,7 +66,8 @@ const resolvedTarget: ResolvedChatTarget = {
   baseUrl: 'https://api.example.test/v1/',
   token: 'secret-token',
   modelId: 'glm-5.2',
-  protocol: 'openai-chat-completions',
+  protocolConfig: { protocol: 'openai-chat-completions' },
+  executionIdentity: 'a'.repeat(64),
   targetAttribution: {
     kind: 'connection',
     providerId: 'provider-1',
@@ -71,6 +75,34 @@ const resolvedTarget: ResolvedChatTarget = {
     modelId: 'glm-5.2',
     modelDisplayName: 'GLM 5.2',
   },
+}
+
+const responsesTarget: ResolvedChatTarget = {
+  ...resolvedTarget,
+  modelId: 'gpt-5.6-sol',
+  protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+}
+
+function completedResponse(text = 'Hello') {
+  return {
+    status: 'completed',
+    reasoning: { context: null },
+    output: [
+      {
+        id: 'reasoning-1',
+        type: 'reasoning',
+        encrypted_content: 'encrypted-state',
+        summary: [],
+        content: [],
+      },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text, annotations: [] }],
+      },
+    ],
+  }
 }
 
 async function streamWithResponse(
@@ -95,6 +127,27 @@ async function streamWithResponse(
   })
 
   return { onDelta, result }
+}
+
+async function streamResponses(
+  payloads: ReadonlyArray<unknown>,
+  target: ResolvedChatTarget = responsesTarget,
+  onDelta = vi.fn(),
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => responseFromPayloads(payloads)),
+  )
+
+  return {
+    onDelta,
+    result: await streamChatCompletion({
+      target,
+      request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
+      signal: new AbortController().signal,
+      onDelta,
+    }),
+  }
 }
 
 afterEach(() => {
@@ -266,6 +319,73 @@ describe('buildOpenAiCompatibleChatRequest', () => {
     ])
     expect(request.options.body).not.toContain('00000000-')
     expect(request.options.body).not.toContain('/private/')
+  })
+})
+
+describe('OpenAI Responses request mapping', () => {
+  it.each([
+    ['https://example.com', 'https://example.com/v1/responses'],
+    ['https://example.com/v1/', 'https://example.com/v1/responses'],
+    ['https://example.com/custom/v1/', 'https://example.com/custom/v1/responses'],
+  ])('builds Responses URL from %s', (baseUrl, expected) => {
+    expect(buildResponsesUrl(baseUrl)).toBe(expected)
+  })
+
+  it('maps text, image, instructions, stateless continuation, and auto context exactly', () => {
+    const providerMessages: CurrentThreadProviderMessage[] = [
+      { role: 'system', content: 'System instruction.' },
+      { role: 'assistant', content: 'Prior answer.' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect this.' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } },
+        ],
+      },
+    ]
+    const input = buildOpenAiResponsesInput(providerMessages)
+    const request = buildOpenAiResponsesRequest({
+      target: responsesTarget,
+      instructions: 'System instruction.',
+      input,
+    })
+
+    expect(request.url).toBe('https://api.example.test/v1/responses')
+    expect(JSON.parse(request.options.body)).toEqual({
+      model: 'gpt-5.6-sol',
+      store: false,
+      stream: true,
+      include: ['reasoning.encrypted_content'],
+      instructions: 'System instruction.',
+      input: [
+        {
+          role: 'assistant',
+          content: [{ type: 'input_text', text: 'Prior answer.' }],
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Inspect this.' },
+            { type: 'input_image', image_url: 'data:image/png;base64,AQ==' },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('sends an explicit reasoning context without inference or fallback', () => {
+    const request = buildOpenAiResponsesRequest({
+      target: {
+        ...responsesTarget,
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'all_turns' },
+      },
+      instructions: 'System instruction.',
+      input: [],
+    })
+
+    expect(JSON.parse(request.options.body)).toMatchObject({
+      reasoning: { context: 'all_turns' },
+    })
   })
 })
 
@@ -585,5 +705,129 @@ describe('streamChatCompletion', () => {
     abortController.abort()
 
     await expect(operation).rejects.toMatchObject({ name: 'AbortError' })
+  })
+})
+
+describe('streamChatCompletion with Responses', () => {
+  it('requires one matching completed terminal and returns bounded main-only output state', async () => {
+    const { onDelta, result } = await streamResponses([
+      { type: 'response.created' },
+      { type: 'response.output_item.added', item: { type: 'reasoning' } },
+      { type: 'response.output_text.delta', delta: 'Hel' },
+      { type: 'response.output_text.delta', delta: 'lo' },
+      { type: 'response.completed', response: completedResponse() },
+    ])
+
+    expect(onDelta).toHaveBeenNthCalledWith(1, 'Hel', 'Hel')
+    expect(onDelta).toHaveBeenNthCalledWith(2, 'lo', 'Hello')
+    expect(result).toEqual({
+      finalContent: 'Hello',
+      providerState: {
+        version: 1,
+        protocol: 'openai-responses',
+        effectiveReasoningContext: null,
+        outputItems: completedResponse().output,
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain('private reasoning')
+  })
+
+  it('treats refusal text as the visible assistant answer', async () => {
+    const response = {
+      status: 'completed',
+      reasoning: { context: null },
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{ type: 'refusal', refusal: 'Cannot help.' }],
+        },
+      ],
+    }
+
+    await expect(
+      streamResponses([
+        { type: 'response.refusal.delta', delta: 'Cannot help.' },
+        { type: 'response.completed', response },
+      ]),
+    ).resolves.toMatchObject({ result: { finalContent: 'Cannot help.' } })
+  })
+
+  it.each([
+    [
+      'incomplete',
+      [{ type: 'response.output_text.delta', delta: 'Partial' }, { type: 'response.incomplete' }],
+    ],
+    ['failed', [{ type: 'response.failed' }]],
+    ['top-level error', [{ type: 'error', error: { message: 'private' } }]],
+    ['malformed event', ['{']],
+    ['EOF', [{ type: 'response.output_text.delta', delta: 'Partial' }]],
+    [
+      'empty completed output',
+      [{ type: 'response.completed', response: { ...completedResponse(''), output: [] } }],
+    ],
+    [
+      'reasoning-only completed output',
+      [
+        {
+          type: 'response.completed',
+          response: { ...completedResponse(''), output: [completedResponse().output[0]] },
+        },
+      ],
+    ],
+    [
+      'terminal mismatch',
+      [
+        { type: 'response.output_text.delta', delta: 'Different' },
+        { type: 'response.completed', response: completedResponse() },
+      ],
+    ],
+    [
+      'duplicate terminal',
+      [
+        { type: 'response.output_text.delta', delta: 'Hello' },
+        { type: 'response.completed', response: completedResponse() },
+        { type: 'response.completed', response: completedResponse() },
+      ],
+    ],
+    [
+      'out-of-order lifecycle after terminal',
+      [
+        { type: 'response.output_text.delta', delta: 'Hello' },
+        { type: 'response.completed', response: completedResponse() },
+        { type: 'response.in_progress' },
+      ],
+    ],
+  ])('fails closed on %s', async (_case, payloads) => {
+    await expect(streamResponses(payloads)).rejects.toMatchObject({
+      chatError: { code: 'upstream_error' },
+    })
+  })
+
+  it('rejects unsupported output items and explicit context mismatches', async () => {
+    const unsupported = completedResponse()
+    unsupported.output.unshift({ type: 'function_call' } as (typeof unsupported.output)[number])
+    await expect(
+      streamResponses([
+        { type: 'response.output_text.delta', delta: 'Hello' },
+        { type: 'response.completed', response: unsupported },
+      ]),
+    ).rejects.toMatchObject({ chatError: { code: 'upstream_error' } })
+
+    await expect(
+      streamResponses(
+        [
+          { type: 'response.output_text.delta', delta: 'Hello' },
+          { type: 'response.completed', response: completedResponse() },
+        ],
+        {
+          ...responsesTarget,
+          protocolConfig: { protocol: 'openai-responses', reasoningContext: 'all_turns' },
+        },
+      ),
+    ).rejects.toMatchObject({
+      chatError: { details: 'reasoning_context_mismatch=true', retryable: false },
+    })
   })
 })

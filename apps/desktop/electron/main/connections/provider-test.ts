@@ -1,4 +1,10 @@
-import type { NyxConnectionsSafeError } from '../../../shared/connections/types'
+import type {
+  NyxConnectionModelProtocolConfig,
+  NyxConnectionsSafeError,
+} from '../../../shared/connections/types'
+import { streamOpenAiResponses } from '../chat/client'
+import { ChatBridgeError } from '../chat/errors'
+import type { ResolvedChatTarget } from './provider-resolver'
 import { normalizeConnectionBaseUrl } from './url'
 
 export interface ProviderConnectionRequest {
@@ -8,6 +14,7 @@ export interface ProviderConnectionRequest {
 
 export interface ProviderConnectionTestRequest extends ProviderConnectionRequest {
   modelId: string
+  protocolConfig: NyxConnectionModelProtocolConfig
 }
 
 export interface ProviderConnectionTestSuccess {
@@ -106,6 +113,21 @@ function mapHttpError(response: Response, purpose: 'test' | 'models'): never {
 }
 
 function mapFetchError(error: unknown): never {
+  if (error instanceof ChatBridgeError) {
+    return throwSafe({
+      code:
+        error.chatError.code === 'auth_failed' ||
+        error.chatError.code === 'rate_limited' ||
+        error.chatError.code === 'network_error'
+          ? error.chatError.code
+          : error.chatError.code === 'invalid_request'
+            ? 'unsupported'
+            : 'upstream_error',
+      message: error.chatError.message,
+      retryable: error.chatError.retryable,
+    })
+  }
+
   if (error instanceof Error && error.name === 'AbortError') {
     return throwSafe({
       code: 'network_error',
@@ -139,6 +161,23 @@ function authHeaders(apiKey: string) {
   return {
     Accept: 'application/json',
     Authorization: `Bearer ${apiKey}`,
+  }
+}
+
+function connectionTestTarget({
+  apiKey,
+  baseUrl,
+  modelId,
+  protocolConfig,
+}: ProviderConnectionTestRequest): ResolvedChatTarget {
+  return {
+    providerId: null,
+    baseUrl,
+    token: apiKey,
+    modelId,
+    protocolConfig: { ...protocolConfig },
+    executionIdentity: null,
+    targetAttribution: { kind: 'env_fallback', modelId },
   }
 }
 
@@ -177,11 +216,77 @@ export function createProviderConnectionClient({
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: ProviderConnectionClientOptions = {}): ProviderConnectionClient {
   return {
-    async testConnection({ apiKey, baseUrl, modelId }) {
+    async testConnection(input) {
+      const { apiKey, baseUrl, modelId, protocolConfig } = input
       const timed = createTimedSignal(timeoutMs)
       const startedAt = nowMs()
 
       try {
+        if (protocolConfig.protocol === 'openai-responses') {
+          const target = connectionTestTarget({
+            ...input,
+            baseUrl: normalizeConnectionBaseUrl(baseUrl),
+          })
+          const firstUser = {
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Return exactly TEST_ONE.' }],
+          }
+          const first = await streamOpenAiResponses({
+            target,
+            instructions: 'Follow the synthetic connection test exactly.',
+            input: [firstUser],
+            signal: timed.signal,
+            fetcher: fetch,
+            onDelta: () => {},
+          })
+
+          if (first.finalContent.trim() !== 'TEST_ONE') {
+            return throwSafe({
+              code: 'upstream_error',
+              message: 'The provider failed the first Responses semantic check.',
+              retryable: true,
+            })
+          }
+
+          timed.clear()
+          const replayTimed = createTimedSignal(timeoutMs)
+
+          try {
+            const second = await streamOpenAiResponses({
+              target,
+              instructions: 'Follow the synthetic connection test exactly.',
+              input: [
+                firstUser,
+                ...first.providerState.outputItems,
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'input_text',
+                      text: 'Return your previous answer, one space, then TEST_TWO.',
+                    },
+                  ],
+                },
+              ],
+              signal: replayTimed.signal,
+              fetcher: fetch,
+              onDelta: () => {},
+            })
+
+            if (second.finalContent.trim() !== 'TEST_ONE TEST_TWO') {
+              return throwSafe({
+                code: 'upstream_error',
+                message: 'The provider failed the Responses continuation check.',
+                retryable: true,
+              })
+            }
+          } finally {
+            replayTimed.clear()
+          }
+
+          return { latencyMs: Math.max(0, Math.round(nowMs() - startedAt)) }
+        }
+
         const response = await fetch(buildProviderChatCompletionsUrl(baseUrl), {
           method: 'POST',
           headers: {

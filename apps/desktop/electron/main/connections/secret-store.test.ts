@@ -41,9 +41,12 @@ function createFakeCrypto(available = true): SecretCryptoAdapter {
 }
 
 function createStore(filePath: string, crypto = createFakeCrypto()) {
+  let revision = 0
+
   return createSecretStore({
     filePath,
     crypto,
+    generateRevision: () => `00000000-0000-4000-8000-${String(++revision).padStart(12, '0')}`,
     now: () => '2026-07-08T00:00:00.000Z',
   })
 }
@@ -72,7 +75,7 @@ describe('SecretStore', () => {
     const store = createStore(await createTempFile('secrets.json'))
 
     await expect(store.hasSecret('provider-1')).resolves.toBe(false)
-    await expect(store.readSecret('provider-1')).resolves.toBeNull()
+    await expect(store.readCredential('provider-1')).resolves.toBeNull()
   })
 
   it('persists only encrypted secret payloads and can decrypt them in main', async () => {
@@ -82,13 +85,41 @@ describe('SecretStore', () => {
     await store.writeSecret('provider-1', 'sk-super-secret')
 
     await expect(store.hasSecret('provider-1')).resolves.toBe(true)
-    await expect(store.readSecret('provider-1')).resolves.toBe('sk-super-secret')
+    await expect(store.readCredential('provider-1')).resolves.toEqual({
+      value: 'sk-super-secret',
+      credentialRevision: '00000000-0000-4000-8000-000000000001',
+    })
 
     const raw = await readFile(filePath, 'utf8')
     expect(raw).toContain('encryptedValue')
+    expect(raw).toContain('credentialRevision')
     expect(raw).not.toContain('sk-super-secret')
     expect(raw).not.toContain('apiKey')
     expect(raw).not.toContain('Authorization')
+  })
+
+  it('rotates the credential revision on every secret write', async () => {
+    const store = createStore(await createTempFile('secrets.json'))
+
+    await store.writeSecret('provider-1', 'same-secret')
+    const first = await store.readCredential('provider-1')
+    await store.writeSecret('provider-1', 'same-secret')
+    const second = await store.readCredential('provider-1')
+
+    expect(first?.credentialRevision).toBe('00000000-0000-4000-8000-000000000001')
+    expect(second?.credentialRevision).toBe('00000000-0000-4000-8000-000000000002')
+  })
+
+  it('rejects the old v1 schema instead of migrating it', async () => {
+    const filePath = await createTempFile('secrets.json')
+    const oldJson = JSON.stringify({ version: 1, secrets: [] })
+    await writeFile(filePath, oldJson, 'utf8')
+    const store = createStore(filePath)
+
+    await expect(store.hasSecret('provider-1')).rejects.toMatchObject({
+      code: 'schema_invalid',
+    } satisfies Partial<ConfigFileError>)
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(oldJson)
   })
 
   it('does not fall back to plaintext when encryption is unavailable', async () => {
@@ -106,11 +137,12 @@ describe('SecretStore', () => {
     await writeFile(
       filePath,
       JSON.stringify({
-        version: 1,
+        version: 2,
         secrets: [
           {
             providerId: 'provider-1',
             encryptedValue: Buffer.from('not-sealed', 'utf8').toString('base64'),
+            credentialRevision: '00000000-0000-4000-8000-000000000001',
             createdAt: '2026-07-08T00:00:00.000Z',
             updatedAt: '2026-07-08T00:00:00.000Z',
           },
@@ -120,7 +152,7 @@ describe('SecretStore', () => {
     )
     const store = createStore(filePath)
 
-    await expect(store.readSecret('provider-1')).rejects.toMatchObject({
+    await expect(store.readCredential('provider-1')).rejects.toMatchObject({
       code: 'decrypt_failed',
     } satisfies Partial<SecretStoreError>)
   })
@@ -141,7 +173,7 @@ describe('SecretStore', () => {
 
   it('fails closed on schema-invalid JSON without overwriting the file', async () => {
     const filePath = await createTempFile('secrets.json')
-    const invalidJson = JSON.stringify({ version: 1, secrets: [{ providerId: 'provider-1' }] })
+    const invalidJson = JSON.stringify({ version: 2, secrets: [{ providerId: 'provider-1' }] })
     await writeFile(filePath, invalidJson, 'utf8')
     const store = createStore(filePath)
 

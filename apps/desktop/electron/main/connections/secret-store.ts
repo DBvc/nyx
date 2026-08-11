@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import { createJsonConfigFile } from './config-file'
 import { type SecretRecord, type SecretStoreState, parseSecretStoreState } from './schemas'
 
@@ -28,18 +30,27 @@ export interface ElectronSafeStorageLike {
 export interface SecretStoreOptions {
   filePath: string
   crypto: SecretCryptoAdapter
+  generateRevision?: () => string
   now?: () => string
 }
 
 const emptySecretStoreState = {
-  version: 1,
+  version: 2,
   secrets: [],
 } as const satisfies SecretStoreState
 
 function cloneState(state: SecretStoreState): SecretStoreState {
   return {
-    version: 1,
+    version: 2,
     secrets: state.secrets.map((secret) => ({ ...secret })),
+  }
+}
+
+function validateState(state: SecretStoreState) {
+  try {
+    return parseSecretStoreState(state)
+  } catch {
+    throw new SecretStoreError('invalid_input', 'Stored credentials are invalid.')
   }
 }
 
@@ -70,14 +81,21 @@ export function createSafeStorageSecretCrypto(
 export class SecretStore {
   private readonly configFile: ReturnType<typeof createJsonConfigFile<SecretStoreState>>
   private readonly crypto: SecretCryptoAdapter
+  private readonly generateRevision: () => string
   private readonly now: () => string
 
-  constructor({ filePath, crypto, now = () => new Date().toISOString() }: SecretStoreOptions) {
+  constructor({
+    filePath,
+    crypto,
+    generateRevision = randomUUID,
+    now = () => new Date().toISOString(),
+  }: SecretStoreOptions) {
     this.configFile = createJsonConfigFile({
       filePath,
       parse: parseSecretStoreState,
     })
     this.crypto = crypto
+    this.generateRevision = generateRevision
     this.now = now
   }
 
@@ -89,7 +107,7 @@ export class SecretStore {
     return Boolean(findSecret(await this.readState(), trimRequired(providerId, 'providerId')))
   }
 
-  async readSecret(providerId: string) {
+  async readCredential(providerId: string) {
     if (!this.crypto.isEncryptionAvailable()) {
       throw new SecretStoreError('encryption_unavailable', 'Secret encryption is unavailable.')
     }
@@ -102,7 +120,10 @@ export class SecretStore {
     }
 
     try {
-      return this.crypto.decrypt(secret.encryptedValue)
+      return {
+        value: this.crypto.decrypt(secret.encryptedValue),
+        credentialRevision: secret.credentialRevision,
+      }
     } catch {
       throw new SecretStoreError('decrypt_failed', 'Stored secret could not be decrypted.')
     }
@@ -131,6 +152,7 @@ export class SecretStore {
     const secret = {
       providerId: trimmedProviderId,
       encryptedValue,
+      credentialRevision: this.generateRevision(),
       createdAt: existingIndex >= 0 ? (state.secrets[existingIndex]?.createdAt ?? now) : now,
       updatedAt: now,
     } satisfies SecretRecord
@@ -141,14 +163,14 @@ export class SecretStore {
       state.secrets.push(secret)
     }
 
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
   }
 
   async deleteSecret(providerId: string) {
     const trimmedProviderId = trimRequired(providerId, 'providerId')
     const state = await this.readState()
     state.secrets = state.secrets.filter((secret) => secret.providerId !== trimmedProviderId)
-    await this.configFile.write(state)
+    await this.configFile.write(validateState(state))
 
     return { providerId: trimmedProviderId }
   }
