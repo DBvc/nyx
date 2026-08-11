@@ -4,6 +4,12 @@ Status: Approved architecture direction. The bounded C0-C4 compatibility core
 is completed. Any follow-up execution requires a new named slice in
 [agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
 
+The explicitly requested `responses-protocol` workstream is that follow-up. Its
+exact implementation source is
+[responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
+It supersedes the completed C-workstream limits only inside the active named
+slice.
+
 This document records the complete direction for expanding Nyx beyond its
 bounded first `openai-compatible` connection path. Its approved implementation
 boundary is split into the separately reviewed C slices.
@@ -159,6 +165,13 @@ If future tool protocols require retained or signed reasoning state, that state
 needs a separate explicit security, storage, replay, and redaction design. It
 must not be smuggled into plain assistant text.
 
+The Responses workstream now supplies that separate design for encrypted
+continuation items only. Visible reasoning text remains forbidden. Complete
+validated Responses output items are stored in bounded Electron-main-only
+sidecars, referenced from completed turns, and replayed only to an exact
+execution identity. They do not enter assistant content, Renderer, preload,
+shared chat contracts, OCaml, or logs.
+
 ## Capability Profiles Need Evidence
 
 Capabilities must not be guessed through scattered model-name checks. They also
@@ -197,6 +210,13 @@ Migration rules:
 
 Do not change the persisted schema until a concrete selection requirement,
 migration behavior, and rollback behavior are covered by deterministic tests.
+
+The Responses workstream provides the concrete second protocol, model-level
+selection requirement, strict schemas, tests, and deliberate personal-project
+cutover. For that workstream only, the older compatibility rules above are
+superseded: Connections v1, secret-store v1, and current-thread v1-v4 are
+removed before use and are not parsed or migrated by product code. This is not
+general permission for later schema breaks.
 
 ## Adding A Provider
 

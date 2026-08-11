@@ -7,9 +7,9 @@ scope remains `v1 min chat`.
 
 Connections settings, thread-first UI work, current-thread durability, provider
 compatibility core, Composer target selection, and the bounded Context Composer
-experiment and document-attachments workstreams are allowed only when the user
-explicitly asks to execute the corresponding gated agent-workbench workstream
-or a named slice from
+experiment, document-attachments, and Responses protocol workstreams are
+allowed only when the user explicitly asks to execute the corresponding gated
+agent-workbench workstream or a named slice from
 `../../docs/next/agent-workbench-task-slices.md`.
 
 ## Ownership
@@ -66,6 +66,14 @@ This subproject owns:
   provider payloads, and reasoning activity inside Electron main. They must not
   add shared/preload/renderer contracts or infer runtime behavior from hostnames
   or model names.
+- The named `responses-protocol` workstream may supersede the completed
+  compatibility-core schema, native-protocol, and opaque-reasoning-state
+  prohibitions only inside its active slice. Follow
+  `../../docs/next/responses-protocol-technical-plan.md`: protocol configuration
+  belongs to each model target; complete Responses continuation items stay in
+  integrity-checked Electron-main-only sidecars; Renderer snapshots and OCaml
+  remain provider-state-free; no legacy schema readers or silent fallback are
+  allowed.
 - Composer target-selection slices may expose only safe provider/model selection
   ids, current display labels, availability, and safe attribution through typed
   shared contracts. Electron main must still own resolved targets, base URLs,
@@ -197,6 +205,25 @@ Still not allowed after that third workstream:
 - raw reasoning display, persistence, or reuse as assistant content
 - tools, usage, sources, files, structured output, or native protocol adapters
 - provider calls, credentials, or adapter execution in OCaml
+
+Explicit `responses-protocol` workstream additions, only inside its named
+active slice:
+
+- strict Connections v2 and secret-store v2 with explicit per-model protocol
+  configuration
+- one main-only OpenAI Responses request and semantic-stream path
+- strict current-thread v5 with completed-turn continuation sidecar refs
+- exact-target replay of bounded complete Responses output items
+- durable settlement before runtime projection update
+
+Still not allowed in this workstream:
+
+- legacy v1/v4 readers, schema migrations, protocol detection, silent fallback,
+  or duplicate provider requests
+- tools, usage, sources, structured output, remote file ids, reasoning text
+  display, or unrelated model tuning
+- adapter/capability registries, new IPC/runtime protocols, multi-thread
+  history, or Provider state in Renderer/preload/OCaml
 
 Implemented D1-D4 `composer-target-selection` workstream additions:
 

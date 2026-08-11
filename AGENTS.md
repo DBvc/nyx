@@ -21,7 +21,8 @@ broaden unrelated tasks.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
   thread-first Agent Workbench foundation, current-thread durability, and
   provider compatibility core tasks, plus the bounded Composer target-selection,
-  Context Composer experiment, and document-attachments workstreams.
+  Context Composer experiment, document-attachments, and Responses protocol
+  workstreams.
 
 ## Source of Truth
 
@@ -36,10 +37,12 @@ For ordinary work, when product scope conflicts appear, follow this order:
 For explicit agent-workbench workstream tasks only, follow this order:
 
 1. `docs/next/agent-workbench-task-slices.md`
-2. `docs/next/agent-workbench-direction.md`
-3. `docs/next/provider-adapter-direction.md`
-4. `docs/next/provider-connections-implementation.md`
-5. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
+2. `docs/next/responses-protocol-technical-plan.md` for the named
+   `responses-protocol` workstream only
+3. `docs/next/agent-workbench-direction.md`
+4. `docs/next/provider-adapter-direction.md`
+5. `docs/next/provider-connections-implementation.md`
+6. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
    existing behavior must be preserved
 
 The agent-workbench task slices in this repository supersede earlier external
@@ -176,6 +179,29 @@ parameters, an adapter registry, capability profiles, Connections schema
 changes, Settings or model-picker UI, new shared/IPC contracts, raw reasoning
 exposure or persistence, renderer/OCaml provider integration, tools, or
 structured output.
+
+The explicitly requested `responses-protocol` workstream supersedes those
+completed C-workstream prohibitions only for the named active slice. Its source
+of truth is `docs/next/responses-protocol-technical-plan.md`. It authorizes:
+
+- strict Connections v2 and secret-store v2 development cutovers with explicit
+  per-model Chat Completions or Responses protocol configuration
+- one Electron-main-only Responses request/semantic-stream path using
+  `store: false`
+- one strict current-thread v5 development cutover with completed-turn
+  references to bounded, integrity-checked, main-only Responses continuation
+  sidecars
+- replay of complete validated Responses output items only to the exact
+  matching main-owned execution identity
+- durable-current-thread settlement before OCaml runtime projection update
+
+This workstream intentionally adds no v1/v4 readers, migrations, fallbacks, or
+compatibility aliases. It still does not authorize tools, structured output,
+raw reasoning display, a general adapter/capability registry, new chat/thread
+IPC, multi-thread history, renderer/OCaml provider state, or unrelated model
+tuning. Only `responses-protocol/S0` is executable until its G0 real-relay gate
+passes; later slices must follow the order and stop conditions in the task
+slices document.
 
 The implemented D1-D4 slices of the explicit fourth
 `composer-target-selection` workstream added only:

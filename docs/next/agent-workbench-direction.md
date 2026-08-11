@@ -3,7 +3,8 @@
 Status: First foundation, current-thread durability, and provider compatibility
 core workstreams completed. Composer target-selection D1-D4 implemented and
 automated acceptance passed; interactive D5 provider/restart acceptance remains
-pending.
+pending. The explicitly requested Responses protocol workstream is active at
+its documentation scope lock.
 
 This document defines the direction for explicitly requested
 agent-workbench work. It does not replace the default repository scope for
@@ -164,6 +165,35 @@ The automated D5 acceptance is recorded in
 That runthrough keeps the interactive two-target provider, active-stream switch,
 failure/recovery, and restart matrix pending until it is actually exercised.
 
+## Responses Protocol Workstream (Active)
+
+This separate workstream adds one native OpenAI Responses path without turning
+Nyx into a general provider framework. Its exact source and execution order are
+[responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md)
+and the R section of
+[agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
+
+In scope only for the named active slice:
+
+- strict development cutovers to Connections v2, secret-store v2, and
+  current-thread v5, with no runtime legacy reader or migration;
+- explicit Chat Completions or Responses protocol config on each model target;
+- `store: false` Responses streaming and complete terminal validation;
+- bounded, integrity-checked, Electron-main-only continuation sidecars attached
+  to completed assistant turns;
+- exact-execution-identity replay across turns and restart;
+- durable current-thread settlement before runtime projection update.
+
+Still out of scope:
+
+- protocol inference, silent fallback, adapter/capability registries, tools,
+  structured output, reasoning text display, unrelated model tuning, new IPC,
+  multi-thread history, or Provider state in Renderer/preload/OCaml.
+
+Only the docs-only S0 slice is executable until it passes. The real-relay G0
+gate must then prove complete output-item replay, restart, and A -> B -> A
+interleaving before product TypeScript changes.
+
 ## Product Rules
 
 ### Single Primary Thread
@@ -232,10 +262,13 @@ loading must not spawn the runtime or add protocol messages.
 
 ## Current Thread Lifecycle
 
-Electron main writes a pending turn before provider work and writes one terminal
-record after the runtime transition. Completed and cancelled turns restore with
-their final content. A normal provider failure restores its safe error and last
-terminal draft so Retry can reuse stable message identity.
+Electron main writes a pending turn before provider work. The completed baseline
+writes the terminal record after the runtime transition. The named Responses
+workstream supersedes that ordering when its I1 slice becomes active: durable
+terminal settlement is authoritative and precedes runtime projection. Completed
+and cancelled turns restore with their final content. A normal provider failure
+restores its safe error and last terminal draft so Retry can reuse stable
+message identity.
 
 If the process exits while a turn is pending, the next store load normalizes it
 to the existing `unknown`, retryable interrupted failure. Streaming deltas are
