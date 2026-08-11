@@ -2096,11 +2096,18 @@ Allowed files:
 ```text
 apps/desktop/electron/main/chat/session.ts
 apps/desktop/electron/main/chat/session*.test.ts
+apps/desktop/electron/main/chat/client.ts
+apps/desktop/electron/main/chat/client.test.ts
 apps/desktop/electron/main/current-thread/session-coordinator.ts
 apps/desktop/electron/main/current-thread/session-coordinator.test.ts
 apps/desktop/electron/main/current-thread/runtime-replay.ts
 apps/desktop/electron/main/current-thread/runtime-replay.test.ts
 ```
+
+The two client files are limited to carrying already-validated main-only native
+Responses output items into the existing Responses `input` builder. Without
+that concrete wire mapping, exact-identity native replay cannot be implemented;
+they may not add another protocol or public contract.
 
 Required: resolved-target-aware history; exact-identity native replay and
 visible-text mapping for other targets; atomic completed text plus sidecar ref;

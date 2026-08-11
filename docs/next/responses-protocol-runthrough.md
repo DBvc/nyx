@@ -126,3 +126,8 @@ intentional skips, and the runtime-backed chat-state integration check.
 | `responses-protocol/D1`    | completed     | `23077e5` |
 | `responses-protocol/I1`    | executable    | D1 PASS   |
 | `responses-protocol/A1`    | blocked on I1 | none      |
+
+I1's original file list omitted the existing Responses `input` builder in
+`chat/client.ts`. The executable I1 scope includes that file and its test only
+for the main-only native-output-item mapping required by the already locked
+exact-identity replay behavior; no protocol or product scope was added.
