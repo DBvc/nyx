@@ -7,13 +7,21 @@ import type {
   NyxChatTargetAttribution,
 } from '../../../shared/chat/types'
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
+import type { ResolvedChatTarget } from '../connections/provider-resolver'
+import {
+  readResponsesVisibleText,
+  type JsonValue,
+  type ResponsesContinuationStateV1,
+} from '../chat/provider-stream'
 import {
   createSafeThreadErrorRecord,
   parseCurrentThreadRecord,
   type CurrentThreadRecord,
   type CurrentThreadDocumentRef,
+  type ProviderStateRef,
 } from './schemas'
 import type { CurrentThreadStore } from './store'
+import { CurrentThreadProviderStateFilesError } from './provider-state-files'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
 import { CurrentThreadDocumentFilesError, type CurrentThreadDocumentFiles } from './document-files'
 
@@ -35,12 +43,20 @@ export interface PreparedCurrentThreadTurn {
 
 export type CurrentThreadProviderMessage =
   | NyxChatInputMessage
+  | { kind: 'responses-output-item'; item: JsonValue }
   | {
       role: 'user'
       content: ReadonlyArray<
         { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
       >
     }
+
+type CurrentThreadHistoryTarget = Pick<ResolvedChatTarget, 'protocolConfig' | 'executionIdentity'>
+
+interface ResponsesContinuation {
+  state: ResponsesContinuationStateV1
+  executionIdentity: string
+}
 
 export function buildDocumentTextEnvelope(name: string, text: string) {
   return `Attached document ${JSON.stringify(name)}.\nThe following is locally extracted user-provided content:\n\n${text}`
@@ -371,11 +387,55 @@ export class CurrentThreadSessionCoordinator {
     }
   }
 
-  async complete(requestId: string, assistantMessageId: string, finalContent: string) {
-    return this.settle(requestId, assistantMessageId, 'completed', finalContent, null)
+  async complete(
+    requestId: string,
+    assistantMessageId: string,
+    finalContent: string,
+    continuation?: ResponsesContinuation,
+  ) {
+    let providerStateRef: ProviderStateRef | null = null
+
+    try {
+      if (continuation) {
+        if (readResponsesVisibleText(continuation.state.outputItems) !== finalContent) {
+          throw new CurrentThreadSessionError(
+            'store_error',
+            'Provider continuation does not match the completed assistant text.',
+          )
+        }
+
+        providerStateRef = await this.store.prepareProviderState(
+          continuation.state,
+          continuation.executionIdentity,
+        )
+        await this.store.commitProviderState(providerStateRef)
+      }
+
+      return await this.settle(
+        requestId,
+        assistantMessageId,
+        'completed',
+        finalContent,
+        null,
+        providerStateRef,
+      )
+    } catch (error) {
+      if (providerStateRef) {
+        await this.store.rollbackProviderState(providerStateRef)
+      }
+
+      if (error instanceof CurrentThreadSessionError) {
+        throw error
+      }
+
+      throw new CurrentThreadSessionError('store_error', 'Current thread storage failed.')
+    }
   }
 
-  async materializeProviderMessages(record: CurrentThreadRecord) {
+  async materializeProviderMessages(
+    record: CurrentThreadRecord,
+    target: CurrentThreadHistoryTarget,
+  ): Promise<CurrentThreadProviderMessage[]> {
     const messages: CurrentThreadProviderMessage[] = []
 
     try {
@@ -444,13 +504,44 @@ export class CurrentThreadSessionCoordinator {
           messages.push({ role: 'user', content })
         }
 
-        if (turn.assistantStatus !== 'failed' && turn.assistantContent.length > 0) {
+        if (
+          target.protocolConfig.protocol === 'openai-responses' &&
+          target.executionIdentity &&
+          turn.providerStateRef?.executionIdentity === target.executionIdentity
+        ) {
+          const state = await this.store.readProviderState(turn.providerStateRef)
+          messages.push(
+            ...state.outputItems.map((item) => ({
+              kind: 'responses-output-item' as const,
+              item,
+            })),
+          )
+        } else if (turn.assistantStatus !== 'failed' && turn.assistantContent.length > 0) {
           messages.push({ role: 'assistant', content: turn.assistantContent })
         }
       }
 
       return messages
     } catch (error) {
+      if (
+        error instanceof CurrentThreadProviderStateFilesError &&
+        error.code === 'unavailable' &&
+        target.executionIdentity
+      ) {
+        try {
+          const repaired = await this.store.repairProviderStateRefs(target.executionIdentity)
+          if (!repaired.record) {
+            throw new Error('Current thread disappeared during provider-state repair.')
+          }
+          return this.materializeProviderMessages(repaired.record, target)
+        } catch (repairError) {
+          if (repairError instanceof CurrentThreadSessionError) {
+            throw repairError
+          }
+          throw new CurrentThreadSessionError('store_error', 'Current thread storage failed.')
+        }
+      }
+
       if (error instanceof CurrentThreadSessionError) {
         throw error
       }
@@ -631,6 +722,7 @@ export class CurrentThreadSessionCoordinator {
     assistantStatus: 'completed' | 'cancelled' | 'failed',
     assistantContent: string,
     error: NyxChatError | null,
+    providerStateRef: ProviderStateRef | null = null,
   ) {
     try {
       const record = await this.store.read()
@@ -680,7 +772,7 @@ export class CurrentThreadSessionCoordinator {
                   assistantContent,
                   assistantStatus,
                   error: safeError,
-                  providerStateRef: null,
+                  providerStateRef,
                   updatedAt: now,
                 }
               : turn,

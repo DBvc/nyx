@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
+import type { JsonValue, ResponsesContinuationStateV1 } from '../chat/provider-stream'
 import {
   buildDocumentTextEnvelope,
   CurrentThreadSessionCoordinator,
@@ -27,6 +28,38 @@ const firstAttribution = {
 } as const
 const envAttributionA = { kind: 'env_fallback', modelId: 'env-model-a' } as const
 const envAttributionB = { kind: 'env_fallback', modelId: 'env-model-b' } as const
+const executionIdentityA = 'a'.repeat(64)
+const executionIdentityB = 'b'.repeat(64)
+const responsesOutputItems: JsonValue[] = [
+  {
+    id: 'reasoning-1',
+    type: 'reasoning',
+    encrypted_content: 'encrypted-state',
+    summary: [],
+    content: [],
+  },
+  {
+    id: 'message-1',
+    type: 'message',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: 'Native answer' }],
+  },
+]
+const responsesState: ResponsesContinuationStateV1 = {
+  version: 1,
+  protocol: 'openai-responses',
+  effectiveReasoningContext: null,
+  outputItems: responsesOutputItems,
+}
+const responsesHistoryTarget = {
+  protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+  executionIdentity: executionIdentityA,
+} as const
+const chatHistoryTarget = {
+  protocolConfig: { protocol: 'openai-chat-completions' },
+  executionIdentity: null,
+} as const
 const imageRef = {
   imageId: '00000000-0000-4000-8000-000000000001',
   mediaType: 'image/png',
@@ -254,7 +287,9 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(retried).toMatchObject({
       pendingRecord: { version: 5, turns: [{ attemptRequestId: 'request-2' }] },
     })
-    await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
+    await expect(
+      coordinator.materializeProviderMessages(retried.pendingRecord, chatHistoryTarget),
+    ).resolves.toEqual([
       {
         role: 'user',
         content: buildDocumentTextEnvelope('notes.txt', 'hello document'),
@@ -574,6 +609,126 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(prepared.pendingRecord.turns).toHaveLength(2)
   })
 
+  it('restarts with exact-identity native history and visible text for other targets', async () => {
+    const { coordinator, filePath } = await createCoordinator()
+    await coordinator.prepare(newRequest())
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.complete('request-1', 'assistant-1', 'Native answer', {
+      state: responsesState,
+      executionIdentity: executionIdentityA,
+    })
+
+    const secondSelection = {
+      kind: 'connection' as const,
+      providerId: 'provider-2',
+      modelId: 'model-2',
+    }
+    const secondAttribution = {
+      kind: 'connection' as const,
+      providerId: 'provider-2',
+      providerDisplayName: 'Provider Two',
+      modelId: 'model-2',
+      modelDisplayName: 'Model Two',
+    }
+    await coordinator.prepare(
+      newRequest({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        turnUserMessage: { id: 'user-2', content: 'Switch' },
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Native answer' },
+          { role: 'user', content: 'Switch' },
+        ],
+        targetSelection: secondSelection,
+      }),
+    )
+    await coordinator.bindResolvedTarget('request-2', 'assistant-2', secondAttribution)
+    await coordinator.complete('request-2', 'assistant-2', 'Chat answer')
+
+    const restartedStore = new CurrentThreadStore({ filePath })
+    const restarted = new CurrentThreadSessionCoordinator({ store: restartedStore })
+    const pending = await restarted.prepare(
+      newRequest({
+        requestId: 'request-3',
+        userMessageId: 'user-3',
+        assistantMessageId: 'assistant-3',
+        turnUserMessage: { id: 'user-3', content: 'Back' },
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Native answer' },
+          { role: 'user', content: 'Switch' },
+          { role: 'assistant', content: 'Chat answer' },
+          { role: 'user', content: 'Back' },
+        ],
+      }),
+    )
+
+    await expect(
+      restarted.materializeProviderMessages(pending.pendingRecord, responsesHistoryTarget),
+    ).resolves.toEqual([
+      { role: 'user', content: 'Hello' },
+      ...responsesOutputItems.map((item) => ({ kind: 'responses-output-item', item })),
+      { role: 'user', content: 'Switch' },
+      { role: 'assistant', content: 'Chat answer' },
+      { role: 'user', content: 'Back' },
+    ])
+    await expect(
+      restarted.materializeProviderMessages(pending.pendingRecord, {
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+        executionIdentity: executionIdentityB,
+      }),
+    ).resolves.toEqual([
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Native answer' },
+      { role: 'user', content: 'Switch' },
+      { role: 'assistant', content: 'Chat answer' },
+      { role: 'user', content: 'Back' },
+    ])
+  })
+
+  it('repairs corrupt same-identity state once and rebuilds from visible history', async () => {
+    const { coordinator, store, filePath } = await createCoordinator()
+    await coordinator.prepare(newRequest())
+    await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
+    await coordinator.complete('request-1', 'assistant-1', 'Native answer', {
+      state: responsesState,
+      executionIdentity: executionIdentityA,
+    })
+
+    const completed = await store.read()
+    const stateId = completed!.turns[0]!.providerStateRef!.stateId
+    const statePath = join(filePath, '..', 'current-thread-provider-state', `${stateId}.json`)
+    await writeFile(statePath, '{}')
+
+    const pending = await coordinator.prepare(
+      newRequest({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        turnUserMessage: { id: 'user-2', content: 'Continue' },
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Native answer' },
+          { role: 'user', content: 'Continue' },
+        ],
+      }),
+    )
+
+    await expect(
+      coordinator.materializeProviderMessages(pending.pendingRecord, responsesHistoryTarget),
+    ).resolves.toEqual([
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Native answer' },
+      { role: 'user', content: 'Continue' },
+    ])
+    await expect(store.read()).resolves.toMatchObject({
+      turns: [{ providerStateRef: null }, { providerStateRef: null }],
+    })
+    await expect(stat(statePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('materializes ordered text+image and image-only history from the durable record', async () => {
     const readCanonical = vi.fn(async (ref: typeof imageRef) =>
       Uint8Array.from([Number(ref.imageId.slice(-1))]),
@@ -623,7 +778,9 @@ describe('CurrentThreadSessionCoordinator', () => {
       updatedAt: '2026-08-09T00:01:00.000Z',
     })
 
-    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+    await expect(
+      coordinator.materializeProviderMessages(record, chatHistoryTarget),
+    ).resolves.toEqual([
       {
         role: 'user',
         content: [
@@ -685,7 +842,9 @@ describe('CurrentThreadSessionCoordinator', () => {
       updatedAt: '2026-08-10T00:00:00.000Z',
     })
 
-    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+    await expect(
+      coordinator.materializeProviderMessages(record, chatHistoryTarget),
+    ).resolves.toEqual([
       {
         role: 'user',
         content: [
@@ -741,7 +900,9 @@ describe('CurrentThreadSessionCoordinator', () => {
       updatedAt: '2026-08-10T00:00:00.000Z',
     })
 
-    await expect(coordinator.materializeProviderMessages(record)).resolves.toEqual([
+    await expect(
+      coordinator.materializeProviderMessages(record, chatHistoryTarget),
+    ).resolves.toEqual([
       {
         role: 'user',
         content: `Inspect this\n\n${buildDocumentTextEnvelope('notes.txt', 'hello document')}`,
@@ -785,6 +946,7 @@ describe('CurrentThreadSessionCoordinator', () => {
           createdAt: '2026-08-09T00:00:00.000Z',
           updatedAt: '2026-08-09T00:00:00.000Z',
         }),
+        chatHistoryTarget,
       ),
     ).rejects.toMatchObject({
       code: 'invalid_request',
@@ -929,7 +1091,9 @@ describe('CurrentThreadSessionCoordinator', () => {
       version: 5,
       turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
     })
-    await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
+    await expect(
+      coordinator.materializeProviderMessages(retried.pendingRecord, chatHistoryTarget),
+    ).resolves.toEqual([
       {
         role: 'user',
         content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
@@ -1031,5 +1195,74 @@ describe('CurrentThreadSessionCoordinator', () => {
     ).rejects.toMatchObject({
       code: 'invalid_request',
     } satisfies Partial<CurrentThreadSessionError>)
+  })
+
+  it('rolls back committed provider state when the atomic terminal record write fails', async () => {
+    const order: string[] = []
+    const providerStateRef = {
+      protocol: 'openai-responses' as const,
+      stateId: '00000000-0000-4000-8000-000000000099',
+      executionIdentity: executionIdentityA,
+      byteLength: 100,
+      sha256: 'c'.repeat(64),
+    }
+    const pending = recordFixture({
+      version: 5,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: 'Hello',
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          targetBinding: {
+            selection: newRequest().targetSelection,
+            attribution: firstAttribution,
+          },
+          createdAt: '2026-08-11T00:00:00.000Z',
+          updatedAt: '2026-08-11T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+    })
+    const store = {
+      prepareProviderState: vi.fn(async () => {
+        order.push('state:prepare')
+        return providerStateRef
+      }),
+      commitProviderState: vi.fn(async () => {
+        order.push('state:commit')
+      }),
+      read: vi.fn(async () => {
+        order.push('record:read')
+        return pending
+      }),
+      write: vi.fn(async () => {
+        order.push('record:write')
+        throw new Error('record rename failed')
+      }),
+      rollbackProviderState: vi.fn(async () => {
+        order.push('state:rollback')
+      }),
+    } as unknown as CurrentThreadStore
+    const coordinator = new CurrentThreadSessionCoordinator({ store })
+
+    await expect(
+      coordinator.complete('request-1', 'assistant-1', 'Native answer', {
+        state: responsesState,
+        executionIdentity: executionIdentityA,
+      }),
+    ).rejects.toMatchObject({ code: 'store_error' })
+    expect(order).toEqual([
+      'state:prepare',
+      'state:commit',
+      'record:read',
+      'record:write',
+      'state:rollback',
+    ])
   })
 })

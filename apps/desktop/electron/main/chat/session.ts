@@ -658,6 +658,7 @@ export class ChatSessionManager {
             message: 'Nyx could not save the current thread.',
             retryable: false,
           })
+          this.discardRuntimeChatStateForSender(session.sender)
           this.activeSession = undefined
         }
         return
@@ -670,15 +671,14 @@ export class ChatSessionManager {
 
     session.boundTargetAttribution = target.targetAttribution
 
-    if (
-      session.currentThreadSession &&
-      session.preparedCurrentThread?.pendingRecord.turns.some(
-        (turn) => turn.imageRefs.length > 0 || turn.documentRefs.length > 0,
-      )
-    ) {
+    if (session.currentThreadSession && session.preparedCurrentThread) {
       try {
         session.providerMessages = await session.currentThreadSession.materializeProviderMessages(
           session.preparedCurrentThread.pendingRecord,
+          {
+            protocolConfig: target.protocolConfig,
+            executionIdentity: target.executionIdentity,
+          },
         )
       } catch (error) {
         if (
@@ -698,6 +698,7 @@ export class ChatSessionManager {
             : toNonRetryableRuntimeChatError(error)
 
         if (await this.persistFailure(session, chatError)) {
+          this.discardRuntimeChatStateForSender(session.sender)
           this.emitSessionError(session, chatError)
         }
         this.activeSession = undefined
@@ -722,6 +723,7 @@ export class ChatSessionManager {
     }
 
     if (await this.persistCancelled(session)) {
+      this.discardRuntimeChatStateForSender(session.sender)
       this.emitDone(session, 'cancelled')
     }
     this.activeSession = undefined
@@ -760,6 +762,7 @@ export class ChatSessionManager {
       return
     }
 
+    this.discardRuntimeChatStateForSender(session.sender)
     this.emitSessionError(session, chatError)
     this.activeSession = undefined
   }
@@ -858,13 +861,16 @@ export class ChatSessionManager {
       this.emitStart(session)
 
       if (session.abortController.signal.aborted) {
-        await runtimeChatStateClient.cancel({
-          turnRequestId: session.requestId,
-          assistantMessageId: session.assistantMessageId,
-          finalContent: session.finalContent,
-        })
-
         if (await this.persistCancelled(session)) {
+          try {
+            await runtimeChatStateClient.cancel({
+              turnRequestId: session.requestId,
+              assistantMessageId: session.assistantMessageId,
+              finalContent: session.finalContent,
+            })
+          } catch {
+            this.discardRuntimeChatStateClient(runtimeChatStateClient)
+          }
           this.emitDone(session, 'cancelled')
         }
         this.activeSession = undefined
@@ -1055,17 +1061,32 @@ export class ChatSessionManager {
         },
       })
 
+      if ('providerState' in result && !target.executionIdentity) {
+        throw new Error('A Responses target requires a durable execution identity.')
+      }
+
       session.finalContent = result.finalContent
 
       if (this.activeSession === session) {
-        await session.runtimeChatStateClient?.complete({
-          turnRequestId: session.requestId,
-          assistantMessageId: session.assistantMessageId,
-          finalContent: session.finalContent,
-        })
+        const continuation =
+          'providerState' in result && target.executionIdentity
+            ? { state: result.providerState, executionIdentity: target.executionIdentity }
+            : undefined
 
-        if (this.activeSession === session && (await this.persistCompleted(session))) {
-          this.emitDone(session, 'completed')
+        if (await this.persistCompleted(session, continuation)) {
+          try {
+            await session.runtimeChatStateClient?.complete({
+              turnRequestId: session.requestId,
+              assistantMessageId: session.assistantMessageId,
+              finalContent: session.finalContent,
+            })
+          } catch {
+            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+          }
+
+          if (this.activeSession === session) {
+            this.emitDone(session, 'completed')
+          }
         }
       }
     } catch (error) {
@@ -1084,45 +1105,31 @@ export class ChatSessionManager {
       }
 
       if (isAbortError(error)) {
-        try {
-          await session.runtimeChatStateClient?.cancel({
-            turnRequestId: session.requestId,
-            assistantMessageId: session.assistantMessageId,
-            finalContent: session.finalContent,
-          })
-        } catch (runtimeError) {
-          this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          const chatError = toNonRetryableRuntimeChatError(runtimeError)
-
-          if (await this.persistFailure(session, chatError)) {
-            this.emitSessionError(session, chatError)
-          }
-          return
-        }
-
         if (await this.persistCancelled(session)) {
+          try {
+            await session.runtimeChatStateClient?.cancel({
+              turnRequestId: session.requestId,
+              assistantMessageId: session.assistantMessageId,
+              finalContent: session.finalContent,
+            })
+          } catch {
+            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+          }
           this.emitDone(session, 'cancelled')
         }
       } else {
         const chatError = toChatError(error)
 
-        try {
-          await session.runtimeChatStateClient?.fail({
-            turnRequestId: session.requestId,
-            assistantMessageId: session.assistantMessageId,
-            message: chatError.message,
-          })
-        } catch (runtimeError) {
-          this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          const runtimeChatError = toNonRetryableRuntimeChatError(runtimeError)
-
-          if (await this.persistFailure(session, runtimeChatError)) {
-            this.emitSessionError(session, runtimeChatError)
-          }
-          return
-        }
-
         if (await this.persistFailure(session, chatError)) {
+          try {
+            await session.runtimeChatStateClient?.fail({
+              turnRequestId: session.requestId,
+              assistantMessageId: session.assistantMessageId,
+              message: chatError.message,
+            })
+          } catch {
+            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
+          }
           this.emitSessionError(session, chatError)
         }
       }
@@ -1133,12 +1140,16 @@ export class ChatSessionManager {
     }
   }
 
-  private persistCompleted(session: ActiveChatSession) {
+  private persistCompleted(
+    session: ActiveChatSession,
+    continuation?: Parameters<CurrentThreadSessionCoordinator['complete']>[3],
+  ) {
     return this.persistTerminal(session, () =>
       session.currentThreadSession!.complete(
         session.requestId,
         session.assistantMessageId,
         session.finalContent,
+        continuation,
       ),
     )
   }
@@ -1154,7 +1165,7 @@ export class ChatSessionManager {
   }
 
   private async persistFailure(session: ActiveChatSession, error: NyxChatErrorEvent['error']) {
-    const persisted = await this.persistTerminal(session, () =>
+    return this.persistTerminal(session, () =>
       session.currentThreadSession!.fail(
         session.requestId,
         session.assistantMessageId,
@@ -1162,12 +1173,6 @@ export class ChatSessionManager {
         error,
       ),
     )
-
-    if (persisted && session.currentThreadSession && session.preparedCurrentThread) {
-      this.discardRuntimeChatStateForSender(session.sender)
-    }
-
-    return persisted
   }
 
   private async persistTerminal(session: ActiveChatSession, persist: () => Promise<unknown>) {

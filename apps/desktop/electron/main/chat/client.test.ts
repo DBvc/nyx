@@ -320,6 +320,21 @@ describe('buildOpenAiCompatibleChatRequest', () => {
     expect(request.options.body).not.toContain('00000000-')
     expect(request.options.body).not.toContain('/private/')
   })
+
+  it('rejects native Responses items on the Chat Completions path', () => {
+    expect(() =>
+      buildOpenAiCompatibleChatRequest(
+        resolvedTarget,
+        requestWithMessages([{ role: 'user', content: 'Hello' }]),
+        [
+          {
+            kind: 'responses-output-item',
+            item: { type: 'reasoning', encrypted_content: 'encrypted' },
+          },
+        ],
+      ),
+    ).toThrow('Chat Completions cannot receive Responses continuation items.')
+  })
 })
 
 describe('OpenAI Responses request mapping', () => {
@@ -371,6 +386,37 @@ describe('OpenAI Responses request mapping', () => {
         },
       ],
     })
+  })
+
+  it('preserves native output items in their exact history position', () => {
+    const reasoning = {
+      id: 'reasoning-1',
+      type: 'reasoning',
+      encrypted_content: 'encrypted-state',
+      summary: [],
+      content: [],
+    }
+    const message = {
+      id: 'message-1',
+      type: 'message',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text: 'Native answer' }],
+    }
+
+    expect(
+      buildOpenAiResponsesInput([
+        { role: 'user', content: 'First question' },
+        { kind: 'responses-output-item', item: reasoning },
+        { kind: 'responses-output-item', item: message },
+        { role: 'user', content: 'Continue' },
+      ]),
+    ).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'First question' }] },
+      reasoning,
+      message,
+      { role: 'user', content: [{ type: 'input_text', text: 'Continue' }] },
+    ])
   })
 
   it('sends an explicit reasoning context without inference or fallback', () => {

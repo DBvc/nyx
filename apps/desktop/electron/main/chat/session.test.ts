@@ -12,10 +12,12 @@ import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
   CurrentThreadSessionCoordinator,
   CurrentThreadSessionError,
+  type CurrentThreadProviderMessage,
   type PreparedCurrentThreadTurn,
 } from '../current-thread/session-coordinator'
 import { CurrentThreadStore } from '../current-thread/store'
 import { CurrentThreadDocumentFiles } from '../current-thread/document-files'
+import { parseCurrentThreadRecord } from '../current-thread/schemas'
 import {
   RuntimeChatStateClientError,
   type RuntimeChatStateClient,
@@ -603,6 +605,7 @@ describe('ChatSessionManager reset', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
       reset: vi.fn(async () => {
         order.push('durable:reset')
       }),
@@ -811,6 +814,7 @@ describe('ChatSessionManager provider resolver', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
       fail: vi.fn(async () => undefined),
       complete: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
@@ -1585,6 +1589,10 @@ describe('ChatSessionManager durable current thread ordering', () => {
       bindResolvedTarget: vi.fn(async () => {
         order.push('durable:bind')
       }),
+      materializeProviderMessages: vi.fn(async () => {
+        order.push('main:materialize')
+        return prepared.providerMessages
+      }),
       complete: vi.fn(async () => {
         order.push('durable:complete')
       }),
@@ -1603,11 +1611,16 @@ describe('ChatSessionManager durable current thread ordering', () => {
         targetAttribution,
       }
     })
-    streamChatCompletion.mockImplementation(async (options: { request: NyxChatRequest }) => {
-      expect(options).not.toHaveProperty('providerMessages')
-      order.push(`provider:${options.request.messages[0]?.content}`)
-      return { finalContent: 'Done' }
-    })
+    streamChatCompletion.mockImplementation(
+      async (options: {
+        request: NyxChatRequest
+        providerMessages: ReadonlyArray<CurrentThreadProviderMessage>
+      }) => {
+        expect(options.providerMessages).toEqual(prepared.providerMessages)
+        order.push(`provider:${prepared.providerMessages[0]?.content}`)
+        return { finalContent: 'Done' }
+      },
+    )
     const sender = mockSender(order)
     const manager = new ChatSessionManager({
       env: runtimeChatStateDisabledEnv,
@@ -1626,6 +1639,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
       'event:chat:accepted',
       'main:resolve',
       'durable:bind',
+      'main:materialize',
       'event:chat:start',
       'provider:Durable hello',
       'durable:complete',
@@ -1638,6 +1652,158 @@ describe('ChatSessionManager durable current thread ordering', () => {
       assistantMessageId: 'assistant-1',
       turnIntent: 'new_user_message',
     })
+  })
+
+  it('commits Responses continuation before runtime completion and preserves durable success', async () => {
+    const order: string[] = []
+    const prepared = preparedTurn()
+    const selection = {
+      kind: 'connection' as const,
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    }
+    prepared.pendingRecord.turns[0]!.targetBinding.selection = selection
+    const providerState = {
+      version: 1 as const,
+      protocol: 'openai-responses' as const,
+      effectiveReasoningContext: null,
+      outputItems: [
+        {
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{ type: 'output_text', text: 'Done' }],
+        },
+      ],
+    }
+    const runtimeClient = fakeRuntimeChatStateClient(order)
+    vi.mocked(runtimeClient.complete).mockImplementationOnce(async () => {
+      order.push('runtime:complete')
+      throw new RuntimeChatStateClientError('Runtime complete failed')
+    })
+    const coordinator = {
+      prepare: vi.fn(async () => prepared),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => prepared.providerMessages),
+      complete: vi.fn(async () => {
+        order.push('durable:complete')
+      }),
+    } as unknown as CurrentThreadSessionCoordinator
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done', providerState })
+    const sender = mockSender(order)
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+      resolveChatTarget: () => ({
+        providerId: 'provider-1',
+        baseUrl: 'https://example.com/v1/',
+        token: 'token',
+        modelId: 'model-1',
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+        executionIdentity: 'a'.repeat(64),
+        targetAttribution: {
+          kind: 'connection',
+          providerId: 'provider-1',
+          providerDisplayName: 'Provider One',
+          modelId: 'model-1',
+          modelDisplayName: 'Model One',
+        },
+      }),
+    })
+
+    manager.start(sender, { ...validRequest(), targetSelection: selection })
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
+    expect(coordinator.complete).toHaveBeenCalledWith('request-1', 'assistant-1', 'Done', {
+      state: providerState,
+      executionIdentity: 'a'.repeat(64),
+    })
+    expect(order.indexOf('durable:complete')).toBeLessThan(order.indexOf('runtime:complete'))
+    expect(order.indexOf('runtime:complete')).toBeLessThan(order.indexOf('event:chat:done'))
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('makes zero provider calls when next-turn runtime rehydration fails', async () => {
+    const prepared = preparedTurn()
+    const firstTurn = {
+      ...prepared.pendingRecord.turns[0]!,
+      assistantContent: 'Earlier answer',
+      assistantStatus: 'completed' as const,
+      targetBinding: {
+        selection: targetSelection,
+        attribution: targetAttribution,
+      },
+    }
+    prepared.replayRecord = parseCurrentThreadRecord({
+      ...prepared.pendingRecord,
+      turns: [firstTurn],
+    })
+    prepared.pendingRecord = parseCurrentThreadRecord({
+      ...prepared.pendingRecord,
+      turns: [
+        firstTurn,
+        {
+          ...prepared.pendingRecord.turns[0]!,
+          attemptRequestId: 'request-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          userContent: 'Continue',
+          assistantContent: '',
+          assistantStatus: 'pending',
+          error: null,
+          providerStateRef: null,
+          targetBinding: { selection: targetSelection, attribution: null },
+        },
+      ],
+    })
+    prepared.providerMessages = [
+      { role: 'user', content: 'Durable hello' },
+      { role: 'assistant', content: 'Earlier answer' },
+      { role: 'user', content: 'Continue' },
+    ]
+    const runtimeClient = fakeRuntimeChatStateClient()
+    vi.mocked(runtimeClient.submitUserMessage).mockRejectedValueOnce(
+      new RuntimeChatStateClientError('Runtime rehydration failed'),
+    )
+    const coordinator = {
+      prepare: vi.fn(async () => prepared),
+      bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => prepared.providerMessages),
+      fail: vi.fn(async () => undefined),
+    } as unknown as CurrentThreadSessionCoordinator
+    const sender = mockSender()
+    const manager = new ChatSessionManager({
+      env: {},
+      createRuntimeChatStateClient: () => runtimeClient,
+      resolveCurrentThreadSession: () => coordinator,
+    })
+
+    manager.start(
+      sender,
+      requestWithIds({
+        requestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        content: 'Continue',
+      }),
+    )
+
+    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+    expect(runtimeClient.submitUserMessage).toHaveBeenCalledWith({
+      turnRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      content: 'Durable hello',
+    })
+    expect(coordinator.fail).toHaveBeenCalledWith(
+      'request-2',
+      'assistant-2',
+      '',
+      expect.objectContaining({ message: 'Runtime rehydration failed', retryable: false }),
+    )
+    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 
   it('persists content rejection before emitting the safe image error', async () => {
@@ -2242,6 +2408,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
     streamChatCompletion.mockImplementationOnce(
@@ -2322,7 +2489,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     expect(coordinator.reset).toHaveBeenCalledTimes(1)
   })
 
-  it('persists a runtime terminal failure before emitting the renderer error', async () => {
+  it('keeps the durable provider failure when runtime failure projection also fails', async () => {
     const order: string[] = []
     const runtimeClient = fakeRuntimeChatStateClient(order)
     vi.mocked(runtimeClient.fail).mockImplementationOnce(async () => {
@@ -2332,6 +2499,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
       fail: vi.fn(async () => {
         order.push('durable:fail')
       }),
@@ -2349,15 +2517,15 @@ describe('ChatSessionManager durable current thread ordering', () => {
     await waitForAssertion(() => {
       expect(sentChatEvents(sender).at(-1)).toMatchObject({
         type: 'chat:error',
-        error: { message: 'Runtime fail failed', retryable: false },
+        error: { message: 'Provider failed', retryable: true },
       })
     })
-    expect(order.indexOf('runtime:fail')).toBeLessThan(order.indexOf('durable:fail'))
-    expect(order.indexOf('durable:fail')).toBeLessThan(order.indexOf('event:chat:error'))
+    expect(order.indexOf('durable:fail')).toBeLessThan(order.indexOf('runtime:fail'))
+    expect(order.indexOf('runtime:fail')).toBeLessThan(order.indexOf('event:chat:error'))
     expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 
-  it('persists a failed terminal record when runtime cancel rejects', async () => {
+  it('keeps the durable cancellation when runtime cancellation rejects', async () => {
     const runtimeClient = fakeRuntimeChatStateClient()
     vi.mocked(runtimeClient.cancel).mockRejectedValueOnce(
       new RuntimeChatStateClientError('Runtime cancel failed'),
@@ -2365,6 +2533,8 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
+      cancel: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator
     streamChatCompletion.mockImplementationOnce(
@@ -2386,11 +2556,12 @@ describe('ChatSessionManager durable current thread ordering', () => {
 
     await waitForAssertion(() => {
       expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:error',
-        error: { message: 'Runtime cancel failed', retryable: false },
+        type: 'chat:done',
+        status: 'cancelled',
       })
     })
-    expect(coordinator.fail).toHaveBeenCalledTimes(1)
+    expect(coordinator.cancel).toHaveBeenCalledTimes(1)
+    expect(coordinator.fail).not.toHaveBeenCalled()
     expect(runtimeClient.close).toHaveBeenCalledTimes(1)
   })
 
@@ -2399,6 +2570,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     const coordinator = {
       prepare: vi.fn(async () => preparedTurn()),
       bindResolvedTarget: vi.fn(async () => undefined),
+      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
       complete: vi.fn(async () => undefined),
       fail: vi.fn(async () => undefined),
     } as unknown as CurrentThreadSessionCoordinator

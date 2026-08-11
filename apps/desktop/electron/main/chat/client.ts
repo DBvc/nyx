@@ -29,6 +29,12 @@ interface StreamChatCompletionOptions {
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
 }
 
+function isResponsesOutputItem(
+  message: CurrentThreadProviderMessage,
+): message is Extract<CurrentThreadProviderMessage, { kind: 'responses-output-item' }> {
+  return 'kind' in message && message.kind === 'responses-output-item'
+}
+
 export function buildChatCompletionsUrl(baseUrl: string) {
   const url = new URL(baseUrl)
 
@@ -50,10 +56,17 @@ export function buildProviderMessages(
   request: NyxChatRequest,
   messages: ReadonlyArray<CurrentThreadProviderMessage> = request.messages,
 ) {
-  const alreadyHasSystemMessage = messages.some((message) => message.role === 'system')
+  if (messages.some(isResponsesOutputItem)) {
+    throw new Error('Chat Completions cannot receive Responses continuation items.')
+  }
+
+  const chatMessages = messages as ReadonlyArray<
+    Exclude<CurrentThreadProviderMessage, { kind: 'responses-output-item' }>
+  >
+  const alreadyHasSystemMessage = chatMessages.some((message) => message.role === 'system')
 
   if (alreadyHasSystemMessage) {
-    return messages
+    return chatMessages
   }
 
   return [
@@ -61,7 +74,7 @@ export function buildProviderMessages(
       role: 'system' as const,
       content: request.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     },
-    ...messages,
+    ...chatMessages,
   ]
 }
 
@@ -108,6 +121,10 @@ export function buildOpenAiResponsesInput(
   providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
 ): JsonValue[] {
   return providerMessages.flatMap((message): JsonValue[] => {
+    if (isResponsesOutputItem(message)) {
+      return [message.item]
+    }
+
     if (message.role === 'system') {
       return []
     }
@@ -138,7 +155,12 @@ export function buildOpenAiResponsesInstructions(
   request: NyxChatRequest,
   providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
 ) {
-  const systemMessage = providerMessages.find((message) => message.role === 'system')
+  const systemMessage = providerMessages.find(
+    (
+      message,
+    ): message is Exclude<CurrentThreadProviderMessage, { kind: 'responses-output-item' }> =>
+      !isResponsesOutputItem(message) && message.role === 'system',
+  )
 
   return (
     (typeof systemMessage?.content === 'string' ? systemMessage.content : null) ??
@@ -529,7 +551,9 @@ export async function streamChatCompletion({
 }: StreamChatCompletionOptions) {
   const imageBearing = providerMessages.some(
     (message) =>
-      Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
+      !isResponsesOutputItem(message) &&
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === 'image_url'),
   )
   const attachmentBearing = imageBearing || documentBearing
 
