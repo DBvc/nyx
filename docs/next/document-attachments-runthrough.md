@@ -8,20 +8,24 @@ first candidate left G1 incomplete. The user approved option A: defer DOCX and
 continue only strict text plus text-bearing PDF. The reduced v2.5 amendment passed
 `RC-DOC-V25-PLAN-01`. The reduced OS-temp G1 gate then passed
 `RC-DOC-G1-REDUCED-EVIDENCE-01`. D1 completed at `42e4ade` and passed
-`RC-DOC-D1-CODE-03`; only D2 is now executable. D3 remains blocked, and DOCX
-remains deferred.
+`RC-DOC-D1-CODE-03`. D2 completed at `bde0021`. The D3 real-target and
+packaged-product matrix passed. Final review found one bounded same-length
+sidecar-integrity gap; `RC-DOC-D3-F001-R1` repaired it and scoped
+`RC-DOC-D3-FINAL-CODE-01` passed. The local baseline is complete. DOCX and
+native PDF remain deferred and no document-attachments slice is executable.
 
 ## Bound Artifacts
 
 | Artifact                                                   | Identity                                                                         | Status                                   |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
-| Repository baseline                                        | `42e4adebe1644c68b7ed04c072293457ad33841b`                                       | reviewed D1 implementation commit        |
+| Repository baseline                                        | `bde0021892d589ade81655decd688694df2b3595`                                       | D2 implementation commit                 |
 | [technical plan](./document-attachments-technical-plan.md) | v2.5, SHA-256 `38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c` | `RC-DOC-V25-PLAN-01` PASS                |
-| [active task slices](./agent-workbench-task-slices.md)     | `document-attachments/D2`                                                        | only executable local slice              |
+| [active task slices](./agent-workbench-task-slices.md)     | `document-attachments/D3`                                                        | local baseline complete                  |
 | v2.5 five-document plan artifact                           | SHA-256 `185964a27ded914f4d71c92da3ded94fe6ca6383a9ddf0b5beb24b628b05b70b`       | `RC-DOC-V25-PLAN-01`, independent accept |
 | G1 OS-temp artifact                                        | `document-g1-stop-v1.1`                                                          | `RC-DOC-G1-EVIDENCE-01`                  |
 | Reduced G1 OS-temp artifact                                | `document-g1-reduced-v1.2`                                                       | `RC-DOC-G1-REDUCED-EVIDENCE-01` PASS     |
 | D1 reviewed artifact                                       | SHA-256 `f83e2b87b2ea1225bd6c290ec69c7c0eeae20962f7c2e99c85a674ea5b4aa348`       | `RC-DOC-D1-CODE-03` PASS                 |
+| D3 OS-temp acceptance summary v1.1                         | SHA-256 `2cb67e1dc0018ebae63bb4fa1b1d2758e240997a6eb076f6eb711daac2a5a12b`       | semantic, lifecycle, repair PASS         |
 
 The earlier inline Chat Completions `file_data` result remains
 `PASS_VALID_STOP` under `RC-DOC-G0-EVIDENCE-02`. It rejects only that tested
@@ -247,5 +251,98 @@ This result proves only the reviewed local strict-text and text-bearing-PDF
 candidate in the recorded environment. It does not prove scanned-PDF, OCR,
 page-image, DOCX, native Provider PDF, or packaged product behavior. The
 unchanged first-slice limits are now frozen; raising one still requires a new
-user decision. D1 is complete. D2 must repeat the real packaged Worker and
-resource gate before product behavior is enabled.
+user decision.
+
+## D2 Result
+
+D2 landed at `bde0021`. It adds one Composer document draft, bounded
+feature-local extraction, main-owned source/text sidecars, local text
+materialization for existing Chat Completions targets, restart/Retry hydration,
+safe attachment failures, and compact document cards. It supports strict UTF-8
+TXT, Markdown, CSV, and text-bearing PDF only.
+
+The final automated run passed 467 desktop tests with 17 skipped, 9 runtime
+chat-state tests, both TypeScript checkers, lint, format-check, build, and
+`git diff --check`. The clean `bde0021` rebuild produced the same `app.asar` as
+the counted semantic acceptance run.
+
+| Build artifact                      | SHA-256                                                            |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| semantic-run `app.asar`             | `de48dcf82b8cdc3adf6b216fd0dbd98abc542150e76625009c907f3ee88a0a4e` |
+| semantic-run Electron main          | `4910024b690c4a41bdd2928343aa717a38fa5cc767345706b5b97e7ec0ae59a7` |
+| final repaired `app.asar`           | `551006e1bcd35ad8151f31904b21cdee94dcbe5a12d68fe68aed2fbbfac72437` |
+| final repaired Electron main        | `2ff16da5be9aebfb112be8dfc1c09afc8fe7ef68a2445a9ad863a8996c398401` |
+| unchanged preload                   | `7c306517dfc38780ad0b8eed62711507e41395b76cda3324f8bca7a85d901a2f` |
+| unchanged document extractor Worker | `52a4d181bd2a9ee407a460d948c446d6aac1d7bf6fa56ce1a65593e7cb9e4f86` |
+| unchanged PDF.js Worker             | `1a7607f28cfbc63f0e4e0a41927c89f991e353e4f3fb4565ecfd621ac5975089` |
+
+The packaged product excluded PDF.js's unused optional Node canvas packages.
+The D2 package gate also passed malformed-PDF no-fetch rejection and both
+deterministic Stop races: pre-commit Stop retained the draft without a Provider
+request; post-commit Stop cleared the accepted draft and persisted a cancelled
+turn without a Provider request.
+
+## D3 Acceptance Evidence
+
+The counted run used only synthetic non-private fixtures in OS temp. Their
+SHA-256 values were:
+
+| Fixture        | SHA-256                                                            |
+| -------------- | ------------------------------------------------------------------ |
+| strict TXT     | `a6a2099a3b43e94e82d4eecd361d6e9353d6726c8d97e49af614a15037229b4e` |
+| CSV            | `49e8e582adb43a1ab12fcae91193f992f3ddad9418f1976baa9893fff42ac09b` |
+| two-page PDF   | `815d32fe958ac820d7ca171ffaf1bdec1812c3da5c61f3b9356a4b2229b9fdd3` |
+| four-color PNG | `9d580819bed1c8e7d744e20278936336f09bcb10d5046b849828755617aa2917` |
+
+Every configured current target ran the same document-only TXT, later-turn,
+CSV, and two-page PDF semantic checks in both dev and the counted `app.asar`:
+
+| Configured target            | Dev TXT/later/CSV/PDF     | Packaged TXT/later/CSV/PDF |
+| ---------------------------- | ------------------------- | -------------------------- |
+| deepseek / deepseek-v4-flash | pass / pass / pass / pass | pass / pass / pass / pass  |
+| 测试 / k3-256k               | pass / pass / pass / pass | pass / pass / pass / pass  |
+
+The packaged lifecycle checks also passed:
+
+- a mixed image/document turn on `k3-256k` returned both the document token and
+  the four image colors;
+- restart restored both attachment cards, and a no-attachment follow-up reused
+  the prior document text;
+- a copied-profile target forced to an unreachable local endpoint failed, then
+  switching to `deepseek-v4-flash` and pressing Retry reused the durable
+  document and passed semantically;
+- New thread removed the record and both image/document sidecars and returned
+  the Composer to an empty ready state;
+- malformed PDF remained local and disabled Send without a Provider request;
+- existing text/image regression tests and the real mixed turn passed.
+
+The run recorded target labels, pass/fail results, fixture/build identities,
+and safe model replies only. It did not record credentials, full endpoints,
+raw requests, Base64, private documents, or binary evidence. These results prove
+only local extracted-text behavior for the two named configured targets. They
+do not prove DOCX, scanned PDF, OCR, Provider-native files, other targets,
+audio, or video.
+
+### Final review and integrity repair
+
+Full independent review `RC-DOC-D3-FINAL-CODE-01` found one blocking S2: the
+durable document record stored source/text hashes, but snapshot availability
+and Retry accepted a same-length changed source. Revision contract
+`RC-DOC-D3-F001-R1` changed only the main-owned document verifier and its two
+near-source tests. Snapshot availability, Retry, and Provider materialization
+now share one bounded read that verifies both sidecars' length, SHA-256, source
+format, and UTF-8 text.
+
+The repair diff SHA-256 is
+`63d41902bceedbe7d8c756e95af1f47b56a8cc6448d232679ec3e635c77f8220`.
+Scoped `RC-DOC-D3-FINAL-CODE-01` re-review passed with no direct regression,
+scope expansion, or owner drift. Focused tests passed 27/27, and the full
+automated matrix remained 467 desktop tests plus 9 runtime chat-state tests.
+The final repaired `app.asar` then loaded a copied profile whose raw source had
+been changed without changing its length; hydration marked the document
+unavailable and made no Provider request.
+
+The real-target semantic matrix was not repeated after this repair. Its
+Renderer extraction, Provider envelope, target selection, and Workers were
+unchanged; the independent scoped review and final packaged corruption gate
+cover the only modified main-side verification path.

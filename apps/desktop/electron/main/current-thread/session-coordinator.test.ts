@@ -253,11 +253,15 @@ describe('CurrentThreadSessionCoordinator', () => {
       retryable: true,
     })
 
-    await writeFile(
-      join(documentDirectory, `${documentRef.documentId}.text`),
-      new TextEncoder().encode('jello document'),
-    )
+    const sourcePath = join(documentDirectory, `${documentRef.documentId}.source`)
+    const textPath = join(documentDirectory, `${documentRef.documentId}.text`)
+    await writeFile(sourcePath, new TextEncoder().encode('jello document'))
     await expect(coordinator.prepare({ ...retry, requestId: 'request-3' })).rejects.toMatchObject({
+      code: 'invalid_request',
+    })
+    await writeFile(sourcePath, newDocument.sourceBytes)
+    await writeFile(textPath, new TextEncoder().encode('jello document'))
+    await expect(coordinator.prepare({ ...retry, requestId: 'request-4' })).rejects.toMatchObject({
       code: 'invalid_request',
     })
   })

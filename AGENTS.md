@@ -263,10 +263,12 @@ v2.5 amendment passed independent review. It passed
 `RC-DOC-G1-REDUCED-EVIDENCE-01`. `document-attachments/D1` completed at
 `42e4ade` and passed `RC-DOC-D1-CODE-03`; it added only the fail-closed v4
 durability foundation and did not enable product document input.
-`document-attachments/D2` is now the only executable slice. DOCX is deferred.
-`document-attachments/D3` remains blocked; native PDF `N0/N1` is outside the
-local workstream and remains non-executable. This status does not reopen any
-stopped Context Composer E slice.
+`document-attachments/D2` completed at `bde0021`. The D3 real-target and
+packaged-product acceptance matrix passed. `RC-DOC-D3-F001-R1` repaired the
+sole final-review finding, and scoped `RC-DOC-D3-FINAL-CODE-01` passed. The
+local baseline is complete; no document-attachments slice is executable. DOCX
+is deferred, and native PDF `N0/N1` remains non-executable. This status does not
+reopen any stopped Context Composer E slice.
 
 ## Workspace Boundary
 

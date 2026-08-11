@@ -302,9 +302,11 @@ Explicit `document-attachments` workstream status:
 - `document-attachments/D1` completed at `42e4ade` and passed
   `RC-DOC-D1-CODE-03`; it remains fail-closed and does not enable product
   document input
-- only `document-attachments/D2` is executable;
-  `document-attachments/D3` remains blocked; native PDF `N0/N1` remains
-  non-executable
+- `document-attachments/D2` completed at `bde0021`; the D3 real-target and
+  packaged-product matrix passed; `RC-DOC-D3-F001-R1` repaired the sole
+  final-review finding, scoped `RC-DOC-D3-FINAL-CODE-01` passed, and the local
+  baseline is complete; no document-attachments slice is executable; native
+  PDF `N0/N1` remains non-executable
 - this status does not reopen E4R, E4M, or E5
 
 ## Contract Rules

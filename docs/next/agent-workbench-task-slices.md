@@ -123,9 +123,11 @@ Use relative documentation links. Do not add local absolute paths.
   bound at the hash above and passed `RC-DOC-V25-PLAN-01`; only the reduced
   OS-temp G1 gate was executable. It passed
   `RC-DOC-G1-REDUCED-EVIDENCE-01`. `document-attachments/D1` completed at
-  `42e4ade` and passed `RC-DOC-D1-CODE-03`; only
-  `document-attachments/D2` is now executable. `document-attachments/D3`
-  remains blocked, and native PDF `N0/N1` remains outside this local workstream.
+  `42e4ade` and passed `RC-DOC-D1-CODE-03`. `document-attachments/D2` landed
+  at `bde0021`; the D3 real-target and packaged-product matrix passed. The sole
+  final-review finding was repaired under `RC-DOC-D3-F001-R1`, and scoped
+  `RC-DOC-D3-FINAL-CODE-01` passed. The local baseline is complete. Native PDF
+  `N0/N1` remains outside this local workstream and is non-executable.
   This status does not reopen any stopped E slice.
 
 ## A0: Scope Gate Docs
@@ -2784,9 +2786,11 @@ defer DOCX and continue strict text plus text-bearing PDF. The reduced v2.5 G1
 amendment passed `RC-DOC-V25-PLAN-01`, so only the reduced OS-temp G1 gate is
 executable. It then passed `RC-DOC-G1-REDUCED-EVIDENCE-01`; only
 `document-attachments/D1` became executable. D1 completed at `42e4ade` and
-passed `RC-DOC-D1-CODE-03`; only `document-attachments/D2` is now executable.
-`document-attachments/D3` remains blocked. Native PDF `N0/N1` is not part of
-this executable local workstream.
+passed `RC-DOC-D1-CODE-03`. D2 completed at `bde0021`; the D3 acceptance
+matrix passed. `RC-DOC-D3-F001-R1` repaired the sole final-review finding, and
+scoped `RC-DOC-D3-FINAL-CODE-01` passed. The local baseline is complete; no
+document-attachments slice is executable. Native PDF `N0/N1` remains deferred
+and non-executable.
 
 The amended plan is
 [document-attachments-technical-plan.md](./document-attachments-technical-plan.md)
@@ -2964,7 +2968,8 @@ a deployable attachment feature.
 
 ### document-attachments/D2: Local vertical slice
 
-Status: the only executable document-attachments slice after reviewed D1 PASS.
+Status: complete at `bde0021`; D3 acceptance evidence is recorded in
+[document-attachments-runthrough.md](./document-attachments-runthrough.md).
 
 In addition to the D1 files needed to remove the guard and materialize verified
 document text, allowed tracked files are exactly:
@@ -3006,7 +3011,8 @@ abstraction, or file outside these lists is a Stop.
 
 ### document-attachments/D3: Product acceptance and status
 
-Status: blocked until independently reviewed D2 PASS.
+Status: complete. The acceptance matrix passed; `RC-DOC-D3-F001-R1` repaired
+the sole final-review finding, and scoped `RC-DOC-D3-FINAL-CODE-01` passed.
 
 D3 may change the five S0 documentation files. Product/test fixes are allowed
 only by returning to the owning D1 or D2 file list; D3 may add no new product

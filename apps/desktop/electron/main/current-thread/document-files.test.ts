@@ -96,15 +96,20 @@ describe('CurrentThreadDocumentFiles', () => {
     )
 
     await writeFile(sourcePath, new TextEncoder().encode('jello document'))
-    await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).resolves.toBeUndefined()
+    await expect(documents.availableDocumentIds(record)).resolves.toEqual(new Set())
+    await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).rejects.toMatchObject({
+      code: 'unavailable',
+    })
+    await writeFile(sourcePath, source)
 
     await writeFile(sourcePath, new TextEncoder().encode('jello document!'))
     await expect(documents.assertAvailable(record.turns[0]!.documentRefs)).rejects.toMatchObject({
       code: 'unavailable',
     })
-    await writeFile(sourcePath, new TextEncoder().encode('jello document'))
+    await writeFile(sourcePath, source)
 
     await writeFile(textPath, new TextEncoder().encode('jello document'))
+    await expect(documents.availableDocumentIds(record)).resolves.toEqual(new Set())
     await expect(
       documents.readExtractedText(record.turns[0]!.documentRefs[0]!),
     ).rejects.toMatchObject({ code: 'unavailable' })
@@ -114,7 +119,7 @@ describe('CurrentThreadDocumentFiles', () => {
 
     await writeFile(join(directoryPath, 'orphan.source'), source)
     await documents.reconcile(record)
-    await expect(readFile(sourcePath)).resolves.toEqual(Buffer.from('jello document'))
+    await expect(readFile(sourcePath)).resolves.toEqual(Buffer.from(source))
     await expect(stat(join(directoryPath, 'orphan.source'))).rejects.toMatchObject({
       code: 'ENOENT',
     })

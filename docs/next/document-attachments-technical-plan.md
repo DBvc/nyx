@@ -4,7 +4,9 @@ Status: v2.5 user-approved scope reduction after
 `RC-DOC-G1-EVIDENCE-01`. The first local slice supports strict text and
 text-bearing PDF only. DOCX is deferred rather than replaced with another
 parser candidate. D1 completed at `42e4ade` and passed
-`RC-DOC-D1-CODE-03`; D2 is the only executable product slice.
+`RC-DOC-D1-CODE-03`; D2 completed at `bde0021`. The D3 acceptance matrix and
+final repaired-code review passed. The local baseline is complete; no later
+slice is executable.
 
 ## Conclusion
 
@@ -425,6 +427,13 @@ must not be described as support for that target. CSV is recorded separately.
 After independent code review, update the active status documents. Claims
 remain limited to tested targets and formats.
 
+The counted D3 matrix passed on both configured targets in dev and the packaged
+product for TXT, CSV, text-bearing PDF, and later-turn recall. Mixed
+image/document, restart, target-switch Retry, Stop, New thread cleanup,
+malformed-PDF no-fetch, and existing text/image behavior also passed. The
+detailed evidence and exact artifact identities are recorded in
+[document-attachments-runthrough.md](./document-attachments-runthrough.md).
+
 ### N0/N1 — One native PDF protocol, when evidence exists
 
 N0 first proves one configured target semantically accepts the exact native PDF
@@ -528,4 +537,7 @@ Strict review should try to disprove:
   remove Mammoth/fflate and every DOCX acceptance requirement, and resume only
   the strict-text/PDF G1 remainder before D1.
 - D1 landed at `42e4ade` and passed `RC-DOC-D1-CODE-03`. It added only the
-  fail-closed v4 durability foundation; D2 is now the only executable slice.
+  fail-closed v4 durability foundation.
+- D2 landed at `bde0021`. The D3 real-target and packaged-product acceptance
+  matrix passed. `RC-DOC-D3-F001-R1` repaired the sole final-review finding,
+  and scoped `RC-DOC-D3-FINAL-CODE-01` passed. The local baseline is complete.

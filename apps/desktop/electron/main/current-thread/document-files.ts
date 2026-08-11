@@ -193,11 +193,11 @@ export class CurrentThreadDocumentFiles {
     const available = new Set<string>()
 
     for (const ref of documentRefs(record)) {
-      if (
-        (await this.isStoredFileAvailable(this.paths(ref.documentId).source, ref.byteLength)) &&
-        (await this.isStoredFileAvailable(this.paths(ref.documentId).text, ref.extractedByteLength))
-      ) {
+      try {
+        await this.readExtractedText(ref)
         available.add(ref.documentId)
+      } catch {
+        // Snapshot availability is best effort; corrupt sidecars stay unavailable.
       }
     }
 
@@ -206,34 +206,28 @@ export class CurrentThreadDocumentFiles {
 
   async assertAvailable(refs: ReadonlyArray<CurrentThreadDocumentRefV4>) {
     for (const ref of refs) {
-      const paths = this.paths(ref.documentId)
-
-      try {
-        if (!(await this.isStoredFileAvailable(paths.source, ref.byteLength))) {
-          throw new Error('Document source sidecar mismatch.')
-        }
-
-        await this.readExtractedText(ref)
-      } catch {
-        throw new CurrentThreadDocumentFilesError(
-          'unavailable',
-          'A current-thread document is unavailable.',
-        )
-      }
+      await this.readExtractedText(ref)
     }
   }
 
   async readExtractedText(ref: CurrentThreadDocumentRefV4) {
     try {
-      const text = await this.fileAdapter.readBytes(
-        this.paths(ref.documentId).text,
-        nyxChatDocumentLimits.extractedBytesPerDocument,
-      )
+      const paths = this.paths(ref.documentId)
+      const [source, text] = await Promise.all([
+        this.fileAdapter.readBytes(paths.source, nyxChatDocumentLimits.sourceBytesPerDocument),
+        this.fileAdapter.readBytes(paths.text, nyxChatDocumentLimits.extractedBytesPerDocument),
+      ])
 
-      if (text.byteLength !== ref.extractedByteLength || sha256(text) !== ref.extractedTextSha256) {
+      if (
+        source.byteLength !== ref.byteLength ||
+        sha256(source) !== ref.sourceSha256 ||
+        text.byteLength !== ref.extractedByteLength ||
+        sha256(text) !== ref.extractedTextSha256
+      ) {
         throw new Error('Document sidecar mismatch.')
       }
 
+      this.validateSource(ref, source)
       return decodeText(text)
     } catch {
       throw new CurrentThreadDocumentFilesError(
@@ -332,15 +326,6 @@ export class CurrentThreadDocumentFiles {
         return false
       }
       throw new CurrentThreadDocumentFilesError('io_error', 'Could not inspect document storage.')
-    }
-  }
-
-  private async isStoredFileAvailable(filePath: string, exactBytes: number) {
-    try {
-      const fileStat = await this.fileAdapter.lstat(filePath)
-      return fileStat.isFile() && !fileStat.isSymbolicLink() && fileStat.size === exactBytes
-    } catch {
-      return false
     }
   }
 
