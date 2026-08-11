@@ -132,10 +132,9 @@ Use relative documentation links. Do not add local absolute paths.
 - The explicitly requested `responses-protocol` workstream is active. Its
   implementation source is
   [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
-  Only `responses-protocol/S0` is executable until its docs-only scope lock is
-  verified and committed. `responses-protocol/G0` is then the sole executable
-  slice; the atomic C1+P1 cutover and later work remain blocked until the
-  real-relay gate passes.
+  S0, G0, the atomic C1+P1 cutover, and D1 are complete. D1 landed at
+  `23077e5`; `responses-protocol/I1` is the sole executable slice and A1 remains
+  blocked on I1.
 
 ## A0: Scope Gate Docs
 
@@ -2063,20 +2062,29 @@ git diff --check
 
 ### responses-protocol/D1: Current-thread v5 continuation durability
 
+Status: complete at `23077e5`.
+
 Type: Electron-main current-thread persistence only.
 
 Allowed files:
 
 ```text
 apps/desktop/electron/main/current-thread/*
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/chat/session.test.ts
 ```
+
+The two chat files are limited to deleting compile-time current-thread v1-v4
+guards made impossible by the strict v5 type. They may not add Responses replay
+or settlement behavior in D1.
 
 Required: one strict current-thread v5 schema with v1-v4 schemas/upgrades
 deleted; completed-only provider-state refs; bounded sidecar prepare, verify,
 commit, rollback, orphan-reconcile, and reset; controlled same-identity ref
 repair after corruption; provider-state-free snapshot and runtime replay.
 
-Do not edit chat integration, Renderer/shared snapshot shapes, or OCaml.
+Do not add chat integration behavior or edit Renderer/shared snapshot shapes or
+OCaml.
 Validation is the C1 matrix plus all current-thread tests.
 
 ### responses-protocol/I1: History replay and durable-first integration

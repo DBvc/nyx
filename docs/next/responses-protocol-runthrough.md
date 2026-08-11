@@ -1,7 +1,7 @@
 # Responses Protocol Runthrough
 
-Status: `responses-protocol/S0`, G0, and the atomic C1+P1 cutover passed. D1 is
-the sole executable slice; I1 and A1 remain blocked.
+Status: `responses-protocol/S0`, G0, the atomic C1+P1 cutover, and D1 passed.
+I1 is the sole executable slice; A1 remains blocked.
 
 The active contract is
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
@@ -102,9 +102,27 @@ Validation passed: desktop TypeScript and compatibility typecheck, lint, format
 check, production build, `git diff --check`, and the full desktop suite with
 498 passing tests and 17 intentional skips across 41 files.
 
-| Slice                      | Status        | Evidence   |
-| -------------------------- | ------------- | ---------- |
-| `responses-protocol/C1+P1` | completed     | `b3dd897`  |
-| `responses-protocol/D1`    | executable    | C1+P1 PASS |
-| `responses-protocol/I1`    | blocked on D1 | none       |
-| `responses-protocol/A1`    | blocked on I1 | none       |
+### D1 Current-Thread v5 Continuation Durability
+
+Status: PASS at `23077e5` on 2026-08-11.
+
+- Current-thread persistence now accepts only strict v5 records; v1-v4 schemas,
+  parsers, upgrades, and runtime guards were deleted.
+- Completed Responses turns may reference a bounded main-only continuation
+  sidecar with prepare, verify, commit, rollback, reconcile, reset, and
+  same-execution-identity repair operations.
+- Renderer snapshots and OCaml replay remain provider-state-free.
+- Removing the obsolete current-thread version guards required an atomic
+  compile-only cleanup in `chat/session.ts` and its test. This added no
+  Responses history replay or settlement behavior; that remains I1.
+
+Validation passed: desktop TypeScript and compatibility typecheck, lint, format
+check, production build, `git diff --check`, 496 desktop tests with 17
+intentional skips, and the runtime-backed chat-state integration check.
+
+| Slice                      | Status        | Evidence  |
+| -------------------------- | ------------- | --------- |
+| `responses-protocol/C1+P1` | completed     | `b3dd897` |
+| `responses-protocol/D1`    | completed     | `23077e5` |
+| `responses-protocol/I1`    | executable    | D1 PASS   |
+| `responses-protocol/A1`    | blocked on I1 | none      |
