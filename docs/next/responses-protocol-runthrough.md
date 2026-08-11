@@ -1,8 +1,7 @@
 # Responses Protocol Runthrough
 
-Status: `responses-protocol/S0`, G0, the atomic C1+P1 cutover, D1, and I1
-passed. A1 is executable; its automated and packaged-product checks passed,
-while the real-provider matrix awaits manual credential entry in the new UI.
+Status: PASS. `responses-protocol/S0`, G0, the atomic C1+P1 cutover, D1, I1,
+and A1 passed on 2026-08-11. The workstream is complete.
 
 The active contract is
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
@@ -121,12 +120,12 @@ Validation passed: desktop TypeScript and compatibility typecheck, lint, format
 check, production build, `git diff --check`, 496 desktop tests with 17
 intentional skips, and the runtime-backed chat-state integration check.
 
-| Slice                      | Status      | Evidence  |
-| -------------------------- | ----------- | --------- |
-| `responses-protocol/C1+P1` | completed   | `b3dd897` |
-| `responses-protocol/D1`    | completed   | `23077e5` |
-| `responses-protocol/I1`    | completed   | `0b8a542` |
-| `responses-protocol/A1`    | in progress | I1 PASS   |
+| Slice                      | Status    | Evidence                                         |
+| -------------------------- | --------- | ------------------------------------------------ |
+| `responses-protocol/C1+P1` | completed | `b3dd897`                                        |
+| `responses-protocol/D1`    | completed | `23077e5`                                        |
+| `responses-protocol/I1`    | completed | `0b8a542`                                        |
+| `responses-protocol/A1`    | completed | `89e012e` plus the redacted product matrix below |
 
 I1's original file list omitted the existing Responses `input` builder in
 `chat/client.ts`. The executable I1 scope includes that file and its test only
@@ -155,12 +154,41 @@ check, production build, 503 desktop tests with 17 intentional skips, runtime
 build/test/format/chat-state checks, both root runtime audit scripts, and
 `git diff --check`.
 
-### A1 Partial Acceptance
+### A1 Product Acceptance
 
-The macOS arm64 development package, DMG, and ZIP were built and verified. The
-packaged app loaded its Renderer from `app.asar`, its bundled OCaml runtime
-returned `pong`, and the fresh product window reported no page errors or
-console output. The real Chat/Responses acceptance matrix remains pending
-because the strict v2 development Connections store is intentionally empty and
-the API key must be entered manually through the new UI; no old encrypted
-credential was migrated or exposed through automation.
+Status: PASS on 2026-08-11.
+
+The first real Responses Connection Test exposed one owning-slice parser bug:
+the relay returned a completed assistant message without an item-level
+`status`. The terminal Response itself was `completed`, and the official
+Responses streaming example permits this output shape. C1+P1 validation was
+repaired at `89e012e` to accept an omitted item status while still rejecting
+every explicit status other than `completed`, tool output, raw reasoning, and
+all previously sealed invalid shapes.
+
+Redacted real-provider results:
+
+| Case                      | Result                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Responses Connection Test | the configured Responses target passed both semantic requests and native continuation replay                                                                     |
+| Same-target continuation  | a clean product thread returned the first exact marker, then the first plus second marker                                                                        |
+| Complete restart          | the same thread and target restored; a third turn returned all three markers in order                                                                            |
+| A -> B -> A               | one Chat Completions turn was stopped, then the original Responses target completed successfully after switching back                                            |
+| Stop                      | the active Chat Completions turn settled visibly as `Response stopped`                                                                                           |
+| Retry                     | an intentionally unreachable saved endpoint produced a retryable network failure; after restoring the original endpoint, Retry returned the exact success marker |
+| Image                     | a synthetic four-corner PNG was accepted and the Responses target identified all four colors                                                                     |
+| Document                  | a synthetic strict-text attachment was accepted and its exact marker was recovered on the following Responses turn                                               |
+| New thread                | reset removed the prior durable thread and selected the configured default target; later target selection remained explicit                                      |
+| Chat Completions          | a separate configured Chat Completions target returned its exact success marker                                                                                  |
+
+No API key, Authorization header, raw Provider payload, encrypted reasoning,
+personal content, or local user-data path was recorded. The temporary invalid
+endpoint was restored and byte-checked before acceptance closed.
+
+After the repair, `mise run desktop:check` passed with 486 tests and 17
+intentional skips across 42 files, both TypeScript checkers, lint, the
+runtime-backed chat-state integration check, and the production build. The
+macOS arm64 development app, DMG, and ZIP were rebuilt; package verification
+passed eight checks, mounted the DMG, verified `app.asar`, and received `pong`
+from the bundled OCaml runtime. The packaged app then loaded the restored
+current thread from `app.asar` successfully.

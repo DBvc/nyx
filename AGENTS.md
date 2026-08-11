@@ -199,9 +199,9 @@ This workstream intentionally adds no v1/v4 readers, migrations, fallbacks, or
 compatibility aliases. It still does not authorize tools, structured output,
 raw reasoning display, a general adapter/capability registry, new chat/thread
 IPC, multi-thread history, renderer/OCaml provider state, or unrelated model
-tuning. Only `responses-protocol/S0` is executable until its G0 real-relay gate
-passes; later slices must follow the order and stop conditions in the task
-slices document.
+tuning. S0, G0, C1+P1, D1, I1, and A1 are complete; the sole A1 parser defect
+was repaired at `89e012e`, and the real-provider plus packaged-product matrix
+passed. No `responses-protocol` slice is executable.
 
 The implemented D1-D4 slices of the explicit fourth
 `composer-target-selection` workstream added only:

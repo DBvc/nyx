@@ -129,12 +129,13 @@ Use relative documentation links. Do not add local absolute paths.
   `RC-DOC-D3-FINAL-CODE-01` passed. The local baseline is complete. Native PDF
   `N0/N1` remains outside this local workstream and is non-executable.
   This status does not reopen any stopped E slice.
-- The explicitly requested `responses-protocol` workstream is active. Its
+- The explicitly requested `responses-protocol` workstream is complete. Its
   implementation source is
   [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
-  S0, G0, the atomic C1+P1 cutover, D1, and I1 are complete. I1 landed at
-  `0b8a542`; `responses-protocol/A1` is executable and its real-provider matrix
-  awaits manual credential entry through the strict v2 UI.
+  S0, G0, the atomic C1+P1 cutover, D1, I1, and A1 are complete. I1 landed at
+  `0b8a542`; A1 repaired one terminal-message compatibility defect at
+  `89e012e`, then passed its real-provider and packaged-product matrix. No
+  `responses-protocol` slice is executable.
 
 ## A0: Scope Gate Docs
 
@@ -2137,8 +2138,8 @@ git diff --check
 
 ### responses-protocol/A1: Product acceptance and status sync
 
-Status: in progress; automated and packaged-product checks passed, real-provider
-acceptance awaits manual credential entry.
+Status: completed on 2026-08-11 after the real-provider and packaged-product
+matrix passed. The sole owning-slice parser defect was repaired at `89e012e`.
 
 Type: verification and truthful documentation only.
 
