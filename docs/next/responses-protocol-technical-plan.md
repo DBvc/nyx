@@ -77,6 +77,20 @@ out of scope. Unknown top-level item types fail closed. Nested JSON remains
 provider-compatible but is bounded by validated type, depth, collection,
 string, and total-byte limits established by the G0 evidence gate.
 
+G0 freezes these fail-closed limits for one continuation sidecar:
+
+```text
+serialized state bytes: 8,388,608
+top-level output items: 64
+JSON nesting depth: 16
+entries in one nested array: 4,096
+keys in one object: 256
+UTF-8 bytes in one string: 6,291,456
+```
+
+Validate the same limits before the prepare write and after every read. The
+total-byte limit includes the versioned wrapper, not only `outputItems`.
+
 Provider state never crosses shared chat contracts, preload, renderer, OCaml,
 or logs. Renderer snapshots remain unchanged and redacted.
 
@@ -109,15 +123,18 @@ Every Responses request uses:
   "model": "<resolved model>",
   "store": false,
   "stream": true,
+  "include": ["reasoning.encrypted_content"],
   "instructions": "<system prompt>",
   "input": []
 }
 ```
 
+`include` is required so stateless reasoning output remains replayable.
 `reasoningContext=auto` omits `reasoning.context`; the other values send their
-explicit value. Nyx does not use `previous_response_id`, remote conversations,
-automatic protocol fallback, duplicate requests, tools, or unapproved
-provider-specific parameters.
+explicit value. An explicit context is valid only when the terminal Response
+reports the same effective context. Nyx does not use `previous_response_id`,
+remote conversations, automatic protocol fallback, duplicate requests, tools,
+or unapproved provider-specific parameters.
 
 History is built from the durable turns in order:
 
