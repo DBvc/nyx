@@ -151,6 +151,13 @@ export interface NyxConnectionProviderLookupInput {
   providerId: string
 }
 
+export interface NyxConnectionCredentialActionSuccess {
+  providerId: string
+}
+
+export type NyxConnectionCredentialActionResult =
+  NyxConnectionsResult<NyxConnectionCredentialActionSuccess>
+
 export interface NyxConnectionTestInput {
   providerId: string
   modelId?: string

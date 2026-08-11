@@ -2,6 +2,7 @@ import type { NyxProviderStatus } from '../../../shared/provider/types'
 import type {
   NyxConnectionDeleteProviderInput,
   NyxConnectionDeleteProviderResult,
+  NyxConnectionCredentialActionResult,
   NyxConnectionGetProviderResult,
   NyxConnectionListProvidersResult,
   NyxConnectionProviderDetail,
@@ -47,6 +48,10 @@ export interface ConnectionsServiceDependencies {
     | 'setDefaultTarget'
   >
   secretStore: Pick<SecretStore, 'deleteSecret' | 'hasSecret' | 'readSecret' | 'writeSecret'>
+  credentialActions: {
+    reveal(value: string): void | Promise<void>
+    copy(value: string): void | Promise<void>
+  }
   providerClient?: ProviderConnectionClient
   providerStatusReader?: () => NyxProviderStatus
   now?: () => string
@@ -60,6 +65,12 @@ export interface ConnectionsController {
   overview(): Promise<NyxConnectionsOverviewResult>
   listProviders(): Promise<NyxConnectionListProvidersResult>
   getProvider(input: NyxConnectionProviderLookupInput): Promise<NyxConnectionGetProviderResult>
+  revealProviderCredential(
+    input: NyxConnectionProviderLookupInput,
+  ): Promise<NyxConnectionCredentialActionResult>
+  copyProviderCredential(
+    input: NyxConnectionProviderLookupInput,
+  ): Promise<NyxConnectionCredentialActionResult>
   saveProvider(input: NyxConnectionSaveProviderInput): Promise<NyxConnectionSaveProviderResult>
   deleteProvider(
     input: NyxConnectionDeleteProviderInput,
@@ -162,6 +173,7 @@ function normalizeCredentialInput(credential: NyxConnectionSaveProviderInput['cr
 export class ConnectionsService implements ConnectionsController {
   private readonly connectionStore: ConnectionsServiceDependencies['connectionStore']
   private readonly secretStore: ConnectionsServiceDependencies['secretStore']
+  private readonly credentialActions: ConnectionsServiceDependencies['credentialActions']
   private readonly providerClient: ProviderConnectionClient
   private readonly providerStatusReader: () => NyxProviderStatus
   private readonly now: () => string
@@ -169,12 +181,14 @@ export class ConnectionsService implements ConnectionsController {
   constructor({
     connectionStore,
     secretStore,
+    credentialActions,
     providerClient = createProviderConnectionClient(),
     providerStatusReader = readProviderStatus,
     now = () => new Date().toISOString(),
   }: ConnectionsServiceDependencies) {
     this.connectionStore = connectionStore
     this.secretStore = secretStore
+    this.credentialActions = credentialActions
     this.providerClient = providerClient
     this.providerStatusReader = providerStatusReader
     this.now = now
@@ -203,6 +217,14 @@ export class ConnectionsService implements ConnectionsController {
 
       return this.toProviderDetail(provider)
     })
+  }
+
+  async revealProviderCredential(input: NyxConnectionProviderLookupInput) {
+    return this.runCredentialAction(input, (value) => this.credentialActions.reveal(value))
+  }
+
+  async copyProviderCredential(input: NyxConnectionProviderLookupInput) {
+    return this.runCredentialAction(input, (value) => this.credentialActions.copy(value))
   }
 
   async saveProvider(input: NyxConnectionSaveProviderInput) {
@@ -429,6 +451,24 @@ export class ConnectionsService implements ConnectionsController {
 
     return apiKey
   }
+
+  private async runCredentialAction(
+    input: NyxConnectionProviderLookupInput,
+    action: (value: string) => void | Promise<void>,
+  ): Promise<NyxConnectionCredentialActionResult> {
+    return safeResult(async () => {
+      const providerId = trimRequired(input.providerId, 'providerId')
+      const provider = await this.connectionStore.getProvider(providerId)
+
+      if (!provider) {
+        throw new ConnectionStoreError('not_found', 'Provider was not found.')
+      }
+
+      await action(await this.readRequiredSecret(providerId))
+
+      return { providerId }
+    })
+  }
 }
 
 export function createConnectionsService(dependencies: ConnectionsServiceDependencies) {
@@ -454,6 +494,12 @@ export function createLazyConnectionsService({
     },
     getProvider: (input) => {
       return getService().getProvider(input)
+    },
+    revealProviderCredential: (input) => {
+      return getService().revealProviderCredential(input)
+    },
+    copyProviderCredential: (input) => {
+      return getService().copyProviderCredential(input)
     },
     saveProvider: (input) => {
       return getService().saveProvider(input)

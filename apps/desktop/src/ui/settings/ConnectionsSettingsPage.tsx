@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Copy, Eye, EyeOff } from 'lucide-react'
 
 import type {
   NyxConnectionModelInput,
@@ -178,6 +179,8 @@ export function ConnectionsSettingsPage({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isRefreshingModels, setIsRefreshingModels] = useState(false)
+  const [isApiKeyVisible, setIsApiKeyVisible] = useState(false)
+  const [isCredentialActionPending, setIsCredentialActionPending] = useState(false)
 
   const overview = loadState.kind === 'ready' ? loadState.overview : null
   const selectedSummary = overview?.providers.find((provider) => provider.id === selectedProviderId)
@@ -200,6 +203,7 @@ export function ConnectionsSettingsPage({
       }
 
       setIsLoadingDetail(true)
+      setIsApiKeyVisible(false)
 
       try {
         const result = await connections.getProvider({ providerId })
@@ -259,6 +263,7 @@ export function ConnectionsSettingsPage({
         } else {
           setSelectedProviderId(null)
           setForm(createEmptyForm())
+          setIsApiKeyVisible(false)
         }
       } catch (error) {
         setLoadState({ kind: 'failed', message: rendererErrorMessage(error) })
@@ -273,6 +278,60 @@ export function ConnectionsSettingsPage({
 
   function updateForm(patch: Partial<ProviderForm>) {
     setForm((current) => ({ ...current, ...patch }))
+  }
+
+  async function handleRevealCredential() {
+    if (form.apiKey) {
+      setIsApiKeyVisible((current) => !current)
+      return
+    }
+
+    const connections = window.nyx?.connections
+
+    if (!connections || !form.providerId) {
+      return
+    }
+
+    setIsCredentialActionPending(true)
+    setNotice(null)
+
+    try {
+      const result = await connections.revealProviderCredential({ providerId: form.providerId })
+
+      if (!result.ok) {
+        setNotice({ kind: 'error', message: result.error.message })
+      }
+    } catch (error) {
+      setNotice({ kind: 'error', message: rendererErrorMessage(error) })
+    } finally {
+      setIsCredentialActionPending(false)
+    }
+  }
+
+  async function handleCopyCredential() {
+    const connections = window.nyx?.connections
+
+    if (!connections || !form.providerId || form.apiKey) {
+      return
+    }
+
+    setIsCredentialActionPending(true)
+    setNotice(null)
+
+    try {
+      const result = await connections.copyProviderCredential({ providerId: form.providerId })
+
+      if (!result.ok) {
+        setNotice({ kind: 'error', message: result.error.message })
+        return
+      }
+
+      setNotice({ kind: 'success', message: 'API key copied.' })
+    } catch (error) {
+      setNotice({ kind: 'error', message: rendererErrorMessage(error) })
+    } finally {
+      setIsCredentialActionPending(false)
+    }
   }
 
   function updateModel(index: number, patch: Partial<ProviderModelForm>) {
@@ -402,6 +461,7 @@ export function ConnectionsSettingsPage({
       })
     } finally {
       setIsSaving(false)
+      setIsApiKeyVisible(false)
       setForm((current) => ({ ...current, apiKey: '' }))
     }
   }
@@ -538,9 +598,11 @@ export function ConnectionsSettingsPage({
               <h2 className='text-[12px] font-semibold text-nyx-ink'>Providers</h2>
               <button
                 className='h-7 rounded-lg border border-nyx-line-strong bg-nyx-panel px-2 text-[12px] text-nyx-ink hover:bg-nyx-solid'
+                disabled={isCredentialActionPending}
                 onClick={() => {
                   setSelectedProviderId(null)
                   setForm(createEmptyForm())
+                  setIsApiKeyVisible(false)
                   setNotice(null)
                 }}
                 type='button'
@@ -587,6 +649,7 @@ export function ConnectionsSettingsPage({
                       className={`w-full rounded-lg px-3 py-2 text-left ${
                         isSelected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
                       }`}
+                      disabled={isCredentialActionPending}
                       key={provider.id}
                       onClick={() => {
                         setNotice(null)
@@ -675,20 +738,60 @@ export function ConnectionsSettingsPage({
 
                 <label className='space-y-1.5 md:col-span-2'>
                   <span className='text-[12px] font-medium text-nyx-ink'>API key</span>
-                  <input
-                    autoComplete='off'
-                    className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 text-[13px] text-nyx-ink focus:border-nyx-accent'
-                    onChange={(event) => {
-                      updateForm({ apiKey: event.target.value })
-                    }}
-                    placeholder={
-                      form.providerId
-                        ? 'Leave blank to keep the saved key'
-                        : 'Paste a key to save it encrypted locally'
-                    }
-                    type='password'
-                    value={form.apiKey}
-                  />
+                  <div className='relative'>
+                    <input
+                      autoComplete='off'
+                      className='h-9 w-full rounded-lg border border-nyx-line-strong bg-nyx-canvas px-3 pr-20 text-[13px] text-nyx-ink focus:border-nyx-accent'
+                      onChange={(event) => {
+                        updateForm({ apiKey: event.target.value })
+                        if (!event.target.value) {
+                          setIsApiKeyVisible(false)
+                        }
+                      }}
+                      placeholder={
+                        selectedSummary?.credentialStatus === 'stored'
+                          ? '••••••••••••'
+                          : 'Paste a key to save it encrypted locally'
+                      }
+                      type={isApiKeyVisible ? 'text' : 'password'}
+                      value={form.apiKey}
+                    />
+                    <button
+                      aria-label={isApiKeyVisible ? 'Hide API key' : 'Show API key'}
+                      className='absolute right-9 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink disabled:opacity-40'
+                      disabled={
+                        isCredentialActionPending ||
+                        (!form.apiKey && selectedSummary?.credentialStatus !== 'stored')
+                      }
+                      onClick={() => {
+                        void handleRevealCredential()
+                      }}
+                      title={isApiKeyVisible ? 'Hide API key' : 'Show API key'}
+                      type='button'
+                    >
+                      {isApiKeyVisible ? (
+                        <EyeOff aria-hidden size={15} />
+                      ) : (
+                        <Eye aria-hidden size={15} />
+                      )}
+                    </button>
+                    <button
+                      aria-label='Copy API key'
+                      className='absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink disabled:opacity-40'
+                      disabled={
+                        isCredentialActionPending ||
+                        Boolean(form.apiKey) ||
+                        selectedSummary?.credentialStatus !== 'stored'
+                      }
+                      onClick={() => {
+                        void handleCopyCredential()
+                      }}
+                      title='Copy API key'
+                      type='button'
+                    >
+                      <Copy aria-hidden size={15} />
+                    </button>
+                  </div>
                 </label>
               </fieldset>
 

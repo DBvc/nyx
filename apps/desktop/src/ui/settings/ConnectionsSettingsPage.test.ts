@@ -1,6 +1,10 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import componentSource from './ConnectionsSettingsPage.tsx?raw'
 
 import {
+  ConnectionsSettingsPage,
   defaultModelIdFromForm,
   modelFormsFromProfiles,
   normalizeModels,
@@ -29,6 +33,28 @@ function form(overrides: Partial<ProviderForm> = {}): ProviderForm {
 }
 
 describe('ConnectionsSettingsPage form helpers', () => {
+  it('renders explicit API key reveal and copy controls', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionsSettingsPage, {
+        onBackToChat: () => undefined,
+        onConnectionsChanged: () => undefined,
+      }),
+    )
+
+    expect(markup).toContain('aria-label="Show API key"')
+    expect(markup).toContain('aria-label="Copy API key"')
+  })
+
+  it('locks provider switching while a stored-credential action is pending', () => {
+    expect(componentSource.match(/disabled=\{isCredentialActionPending\}/g)).toHaveLength(2)
+  })
+
+  it('hides the API key when an empty overview resets the provider form', () => {
+    expect(componentSource).toMatch(
+      /else \{\s*setSelectedProviderId\(null\)\s*setForm\(createEmptyForm\(\)\)\s*setIsApiKeyVisible\(false\)/,
+    )
+  })
+
   it('normalizes model inputs without writing undefined optional fields', () => {
     expect(normalizeModels(form().models)).toEqual([
       {

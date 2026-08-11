@@ -1,4 +1,4 @@
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
 import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../../shared/connections/ipc'
 import type {
@@ -16,6 +16,12 @@ export interface RegisterConnectionsIpcHandlersOptions {
   connections: ConnectionsController
 }
 
+function requireMainFrame(event: IpcMainInvokeEvent) {
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Credential actions are only available from the main app frame.')
+  }
+}
+
 export function registerConnectionsIpcHandlers({
   ipcMain,
   connections,
@@ -23,6 +29,8 @@ export function registerConnectionsIpcHandlers({
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.overview)
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.listProviders)
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.getProvider)
+  ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.revealProviderCredential)
+  ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.copyProviderCredential)
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.saveProvider)
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.deleteProvider)
   ipcMain.removeHandler(NYX_CONNECTIONS_IPC_CHANNELS.setDefaultTarget)
@@ -34,6 +42,20 @@ export function registerConnectionsIpcHandlers({
   ipcMain.handle(
     NYX_CONNECTIONS_IPC_CHANNELS.getProvider,
     (_event, input: NyxConnectionProviderLookupInput) => connections.getProvider(input),
+  )
+  ipcMain.handle(
+    NYX_CONNECTIONS_IPC_CHANNELS.revealProviderCredential,
+    (event, input: NyxConnectionProviderLookupInput) => {
+      requireMainFrame(event)
+      return connections.revealProviderCredential(input)
+    },
+  )
+  ipcMain.handle(
+    NYX_CONNECTIONS_IPC_CHANNELS.copyProviderCredential,
+    (event, input: NyxConnectionProviderLookupInput) => {
+      requireMainFrame(event)
+      return connections.copyProviderCredential(input)
+    },
   )
   ipcMain.handle(
     NYX_CONNECTIONS_IPC_CHANNELS.saveProvider,

@@ -10,6 +10,7 @@ import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../shared/connections/ipc'
 import type {
   NyxConnectionDeleteProviderInput,
   NyxConnectionDeleteProviderResult,
+  NyxConnectionCredentialActionResult,
   NyxConnectionGetProviderResult,
   NyxConnectionListProvidersResult,
   NyxConnectionProviderLookupInput,
@@ -75,6 +76,16 @@ const api: NyxDesktopApi = {
         NYX_CONNECTIONS_IPC_CHANNELS.getProvider,
         input,
       ) as Promise<NyxConnectionGetProviderResult>,
+    revealProviderCredential: (input: NyxConnectionProviderLookupInput) =>
+      ipcRenderer.invoke(
+        NYX_CONNECTIONS_IPC_CHANNELS.revealProviderCredential,
+        input,
+      ) as Promise<NyxConnectionCredentialActionResult>,
+    copyProviderCredential: (input: NyxConnectionProviderLookupInput) =>
+      ipcRenderer.invoke(
+        NYX_CONNECTIONS_IPC_CHANNELS.copyProviderCredential,
+        input,
+      ) as Promise<NyxConnectionCredentialActionResult>,
     saveProvider: (input: NyxConnectionSaveProviderInput) =>
       ipcRenderer.invoke(
         NYX_CONNECTIONS_IPC_CHANNELS.saveProvider,

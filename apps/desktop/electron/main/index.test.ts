@@ -1,11 +1,14 @@
-import type { WebContents } from 'electron'
+import type { Session, WebContents, WebFrameMain } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../shared/connections/ipc'
 import type { NyxConnectionsOverviewResult } from '../../shared/connections/types'
 
-type RegisteredIpcHandler = (event: { sender: WebContents }, request?: unknown) => unknown
+type RegisteredIpcHandler = (
+  event: { sender: WebContents; senderFrame?: WebFrameMain | null },
+  request?: unknown,
+) => unknown
 
 const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, RegisteredIpcHandler>()
@@ -19,6 +22,12 @@ const electronMock = vi.hoisted(() => {
       quit: vi.fn(),
     },
     BrowserWindow: vi.fn(),
+    clipboard: {
+      writeText: vi.fn(),
+    },
+    dialog: {
+      showMessageBox: vi.fn(async () => ({ response: 1 })),
+    },
     ipcMain: {
       removeHandler: vi.fn((channel: string) => {
         handlers.delete(channel)
@@ -44,6 +53,8 @@ const electronMock = vi.hoisted(() => {
         protocol: {
           handle: vi.fn(),
         },
+        setPermissionCheckHandler: vi.fn(),
+        setPermissionRequestHandler: vi.fn(),
       },
     },
     safeStorage: {
@@ -57,6 +68,8 @@ const electronMock = vi.hoisted(() => {
 vi.mock('electron', () => ({
   app: electronMock.app,
   BrowserWindow: electronMock.BrowserWindow,
+  clipboard: electronMock.clipboard,
+  dialog: electronMock.dialog,
   ipcMain: electronMock.ipcMain,
   nativeTheme: electronMock.nativeTheme,
   nativeImage: electronMock.nativeImage,
@@ -66,7 +79,12 @@ vi.mock('electron', () => ({
   session: electronMock.session,
 }))
 
-import { registerIpcHandlers, resolveDevServerUrl, resolveMainWindowChromeOptions } from './index'
+import {
+  configureRendererPermissions,
+  registerIpcHandlers,
+  resolveDevServerUrl,
+  resolveMainWindowChromeOptions,
+} from './index'
 
 const appGetPathCallCountAfterImport = electronMock.app.getPath.mock.calls.length
 const safeStorageAvailabilityCallCountAfterImport =
@@ -111,6 +129,42 @@ describe('resolveMainWindowChromeOptions', () => {
     })
     expect(resolveMainWindowChromeOptions('win32')).toEqual({})
     expect(resolveMainWindowChromeOptions('linux')).toEqual({})
+  })
+})
+
+describe('configureRendererPermissions', () => {
+  it('denies clipboard reads without changing other permission defaults', () => {
+    configureRendererPermissions(electronMock.session.defaultSession)
+
+    type PermissionCheckHandler = NonNullable<Parameters<Session['setPermissionCheckHandler']>[0]>
+    type PermissionRequestHandler = NonNullable<
+      Parameters<Session['setPermissionRequestHandler']>[0]
+    >
+    const checkHandler = electronMock.session.defaultSession.setPermissionCheckHandler.mock
+      .calls[0]?.[0] as PermissionCheckHandler
+    const requestHandler = electronMock.session.defaultSession.setPermissionRequestHandler.mock
+      .calls[0]?.[0] as PermissionRequestHandler
+    const requestCallback = vi.fn()
+
+    expect(
+      checkHandler(null, 'clipboard-read', '', {} as Parameters<PermissionCheckHandler>[3]),
+    ).toBe(false)
+    expect(
+      checkHandler(null, 'notifications', '', {} as Parameters<PermissionCheckHandler>[3]),
+    ).toBe(true)
+    requestHandler(
+      {} as WebContents,
+      'clipboard-read',
+      requestCallback,
+      {} as Parameters<PermissionRequestHandler>[3],
+    )
+    requestHandler(
+      {} as WebContents,
+      'notifications',
+      requestCallback,
+      {} as Parameters<PermissionRequestHandler>[3],
+    )
+    expect(requestCallback.mock.calls).toEqual([[false], [true]])
   })
 })
 
@@ -186,6 +240,8 @@ describe('registerIpcHandlers', () => {
       overview: vi.fn(() => overviewPromise),
       listProviders: vi.fn(),
       getProvider: vi.fn(),
+      revealProviderCredential: vi.fn(),
+      copyProviderCredential: vi.fn(),
       saveProvider: vi.fn(),
       deleteProvider: vi.fn(),
       setDefaultTarget: vi.fn(),
@@ -210,6 +266,38 @@ describe('registerIpcHandlers', () => {
     expect(result).toBe(overviewPromise)
   })
 
+  it('allows credential actions only from the sender main frame', () => {
+    const mainFrame = {} as WebFrameMain
+    const sender = { mainFrame } as WebContents
+    const revealResult = Promise.resolve({
+      ok: true,
+      value: { providerId: 'provider-1' },
+    } as const)
+    const connections = {
+      overview: vi.fn(),
+      listProviders: vi.fn(),
+      getProvider: vi.fn(),
+      revealProviderCredential: vi.fn(() => revealResult),
+      copyProviderCredential: vi.fn(),
+      saveProvider: vi.fn(),
+      deleteProvider: vi.fn(),
+      setDefaultTarget: vi.fn(),
+      testProvider: vi.fn(),
+      refreshModels: vi.fn(),
+    }
+
+    registerIpcHandlers({ connections })
+
+    const handler = registeredHandler(NYX_CONNECTIONS_IPC_CHANNELS.revealProviderCredential)
+    const input = { providerId: 'provider-1' }
+
+    expect(handler({ sender, senderFrame: mainFrame }, input)).toBe(revealResult)
+    expect(() => handler({ sender, senderFrame: {} as WebFrameMain }, input)).toThrow(
+      'Credential actions are only available from the main app frame.',
+    )
+    expect(connections.revealProviderCredential).toHaveBeenCalledTimes(1)
+  })
+
   it('does not touch connection storage while registering injected IPC handlers', () => {
     const chatSessionManager = {
       start: vi.fn(),
@@ -220,6 +308,8 @@ describe('registerIpcHandlers', () => {
       overview: vi.fn(),
       listProviders: vi.fn(),
       getProvider: vi.fn(),
+      revealProviderCredential: vi.fn(),
+      copyProviderCredential: vi.fn(),
       saveProvider: vi.fn(),
       deleteProvider: vi.fn(),
       setDefaultTarget: vi.fn(),

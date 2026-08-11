@@ -4,6 +4,7 @@ import type { NyxCurrentThreadResetResult, NyxCurrentThreadSnapshotResult } from
 import type {
   NyxConnectionDeleteProviderInput,
   NyxConnectionDeleteProviderResult,
+  NyxConnectionCredentialActionResult,
   NyxConnectionGetProviderResult,
   NyxConnectionListProvidersResult,
   NyxConnectionProviderLookupInput,
@@ -35,6 +36,12 @@ export interface NyxDesktopConnectionsApi {
   getOverview(): Promise<NyxConnectionsOverviewResult>
   listProviders(): Promise<NyxConnectionListProvidersResult>
   getProvider(input: NyxConnectionProviderLookupInput): Promise<NyxConnectionGetProviderResult>
+  revealProviderCredential(
+    input: NyxConnectionProviderLookupInput,
+  ): Promise<NyxConnectionCredentialActionResult>
+  copyProviderCredential(
+    input: NyxConnectionProviderLookupInput,
+  ): Promise<NyxConnectionCredentialActionResult>
   saveProvider(input: NyxConnectionSaveProviderInput): Promise<NyxConnectionSaveProviderResult>
   deleteProvider(
     input: NyxConnectionDeleteProviderInput,

@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
+  dialog,
   ipcMain,
   nativeImage,
   nativeTheme,
@@ -8,6 +10,7 @@ import {
   protocol,
   safeStorage,
   session as electronSession,
+  type Session,
 } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -60,6 +63,15 @@ export function resolveMainWindowChromeOptions(platform: NodeJS.Platform) {
   }
 }
 
+export function configureRendererPermissions(
+  session: Pick<Session, 'setPermissionCheckHandler' | 'setPermissionRequestHandler'>,
+) {
+  session.setPermissionCheckHandler((_webContents, permission) => permission !== 'clipboard-read')
+  session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission !== 'clipboard-read')
+  })
+}
+
 function createMainRuntimeChatStateClient() {
   return createRuntimeChatStateClient({
     path: {
@@ -96,6 +108,27 @@ function createMainConnectionsService() {
           filePath: paths.secretsFilePath,
           crypto: createSafeStorageSecretCrypto(safeStorage),
         }),
+        credentialActions: {
+          reveal: async (value: string) => {
+            const result = await dialog.showMessageBox({
+              type: 'info',
+              title: 'Stored API key',
+              message: value,
+              detail: 'This key is stored encrypted locally.',
+              buttons: ['Copy', 'Done'],
+              defaultId: 1,
+              cancelId: 1,
+              noLink: true,
+            })
+
+            if (result.response === 0) {
+              clipboard.writeText(value)
+            }
+          },
+          copy: (value: string) => {
+            clipboard.writeText(value)
+          },
+        },
       }
     },
   })
@@ -262,6 +295,7 @@ function configureAutoUpdate() {
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark'
+  configureRendererPermissions(electronSession.defaultSession)
   registerNyxImageProtocol({
     protocol: electronSession.defaultSession.protocol,
     net,

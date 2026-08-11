@@ -161,9 +161,14 @@ function createServiceHarness(initialState: ConnectionStoreState) {
     testConnection: vi.fn(async () => ({ latencyMs: 42 })),
     refreshModels: vi.fn(async () => ({ modelIds: ['model-2'] })),
   }
+  const credentialActions: ConnectionsServiceDependencies['credentialActions'] = {
+    reveal: vi.fn(),
+    copy: vi.fn(),
+  }
   const service = new ConnectionsService({
     connectionStore,
     secretStore,
+    credentialActions,
     providerClient,
     providerStatusReader: () => ({
       configured: false,
@@ -176,6 +181,7 @@ function createServiceHarness(initialState: ConnectionStoreState) {
 
   return {
     connectionStore,
+    credentialActions,
     providerClient,
     secretStore,
     service,
@@ -257,6 +263,44 @@ describe('ConnectionsService', () => {
     expect(JSON.stringify(result)).not.toContain('api_key=hidden')
   })
 
+  it('reveals and copies stored credentials only through main-owned actions', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [providerRecord()],
+      defaultTarget: null,
+    })
+    harness.secrets.set('provider-1', 'sk-super-secret')
+
+    const revealResult = await harness.service.revealProviderCredential({
+      providerId: 'provider-1',
+    })
+    const copyResult = await harness.service.copyProviderCredential({
+      providerId: 'provider-1',
+    })
+
+    expect(harness.credentialActions.reveal).toHaveBeenCalledWith('sk-super-secret')
+    expect(harness.credentialActions.copy).toHaveBeenCalledWith('sk-super-secret')
+    expect(revealResult).toEqual({ ok: true, value: { providerId: 'provider-1' } })
+    expect(copyResult).toEqual({ ok: true, value: { providerId: 'provider-1' } })
+    expect(JSON.stringify([revealResult, copyResult])).not.toContain('sk-super-secret')
+  })
+
+  it('does not run credential actions when the saved key is missing', async () => {
+    const harness = createServiceHarness({
+      version: 1,
+      providers: [providerRecord()],
+      defaultTarget: null,
+    })
+
+    await expect(
+      harness.service.revealProviderCredential({ providerId: 'provider-1' }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'config_missing' },
+    })
+    expect(harness.credentialActions.reveal).not.toHaveBeenCalled()
+  })
+
   it('falls back to env source in overview without exposing env secrets', async () => {
     const harness = createServiceHarness({
       version: 1,
@@ -266,6 +310,7 @@ describe('ConnectionsService', () => {
     const service = new ConnectionsService({
       connectionStore: harness.connectionStore,
       secretStore: harness.secretStore,
+      credentialActions: harness.credentialActions,
       providerStatusReader: () => ({
         configured: true,
         model: 'env-model',
@@ -348,6 +393,7 @@ describe('ConnectionsService', () => {
     const service = new ConnectionsService({
       connectionStore: harness.connectionStore,
       secretStore: harness.secretStore,
+      credentialActions: harness.credentialActions,
       providerStatusReader: () => ({
         configured: true,
         model: 'env-model',
