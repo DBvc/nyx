@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import type { NyxChatDocumentRef, NyxChatNewDocument } from '../../../shared/chat/types'
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
-import type { CurrentThreadDocumentRefV4, CurrentThreadRecord } from './schemas'
+import type { CurrentThreadDocumentRef, CurrentThreadRecord } from './schemas'
 
 export type CurrentThreadDocumentFilesErrorCode = 'invalid_request' | 'io_error' | 'unavailable'
 
@@ -40,7 +40,7 @@ function sha256(bytes: Uint8Array) {
 }
 
 function documentRefs(record: CurrentThreadRecord | null) {
-  return record?.version === 4 ? record.turns.flatMap((turn) => turn.documentRefs) : []
+  return record?.turns.flatMap((turn) => turn.documentRefs) ?? []
 }
 
 function decodeText(bytes: Uint8Array) {
@@ -204,13 +204,13 @@ export class CurrentThreadDocumentFiles {
     return available
   }
 
-  async assertAvailable(refs: ReadonlyArray<CurrentThreadDocumentRefV4>) {
+  async assertAvailable(refs: ReadonlyArray<CurrentThreadDocumentRef>) {
     for (const ref of refs) {
       await this.readExtractedText(ref)
     }
   }
 
-  async readExtractedText(ref: CurrentThreadDocumentRefV4) {
+  async readExtractedText(ref: CurrentThreadDocumentRef) {
     try {
       const paths = this.paths(ref.documentId)
       const [source, text] = await Promise.all([
@@ -258,7 +258,7 @@ export class CurrentThreadDocumentFiles {
   private validatePair(
     ref: NyxChatDocumentRef,
     document: NyxChatNewDocument,
-  ): CurrentThreadDocumentRefV4 {
+  ): CurrentThreadDocumentRef {
     if (
       !isNyxChatDocumentName(ref.name, ref.mediaType) ||
       ref.byteLength !== document.sourceBytes.byteLength ||

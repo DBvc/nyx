@@ -8,20 +8,10 @@ import type {
 } from '../../../shared/chat/types'
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import {
-  createSafeThreadErrorRecordV2,
-  createSafeThreadErrorRecordV3,
-  createSafeThreadErrorRecordV4,
-  parseCurrentThreadRecordV4,
-  parseCurrentThreadRecordV3,
-  parseCurrentThreadRecordV2,
-  parseMutableCurrentThreadRecord,
-  upgradeCurrentThreadRecordForImageMutation,
-  upgradeCurrentThreadRecordForDocumentMutation,
-  upgradeCurrentThreadRecordForMutation,
+  createSafeThreadErrorRecord,
+  parseCurrentThreadRecord,
   type CurrentThreadRecord,
-  type MutableCurrentThreadRecord,
-  type MutableTurnRecord,
-  type CurrentThreadDocumentRefV4,
+  type CurrentThreadDocumentRef,
 } from './schemas'
 import type { CurrentThreadStore } from './store'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
@@ -38,7 +28,7 @@ export class CurrentThreadSessionError extends Error {
 }
 
 export interface PreparedCurrentThreadTurn {
-  pendingRecord: MutableCurrentThreadRecord
+  pendingRecord: CurrentThreadRecord
   replayRecord: CurrentThreadRecord | null
   providerMessages: NyxChatInputMessage[]
 }
@@ -104,15 +94,15 @@ function imageRefsEqual(
 }
 
 function recordTurnImageRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 3 || record.version === 4 ? record.turns[index]!.imageRefs : []
+  return record.turns[index]!.imageRefs
 }
 
 function recordTurnDocumentRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 4 ? record.turns[index]!.documentRefs : []
+  return record.turns[index]!.documentRefs
 }
 
 function documentRefsEqual(
-  left: ReadonlyArray<CurrentThreadDocumentRefV4>,
+  left: ReadonlyArray<CurrentThreadDocumentRef>,
   right: ReadonlyArray<NyxChatDocumentRef>,
 ) {
   return (
@@ -182,7 +172,7 @@ export class CurrentThreadSessionCoordinator {
         const requestDocumentRefs = request.turnUserMessage.documentRefs ?? []
         const newDocuments = request.newDocuments ?? []
         let preparedImageIds: string[] = []
-        let preparedDocumentRefs: CurrentThreadDocumentRefV4[] = []
+        let preparedDocumentRefs: CurrentThreadDocumentRef[] = []
 
         if (
           requestImageRefs.length !== newImages.length ||
@@ -246,7 +236,7 @@ export class CurrentThreadSessionCoordinator {
           throw error
         }
 
-        let pendingRecord: MutableCurrentThreadRecord
+        let pendingRecord: CurrentThreadRecord
 
         try {
           throwIfAborted(signal)
@@ -329,12 +319,11 @@ export class CurrentThreadSessionCoordinator {
       throwIfAborted(signal)
 
       const now = this.now()
-      const upgradedRecord = upgradeCurrentThreadRecordForMutation(currentRecord)
       const pendingRecord = await this.store.write(
-        parseMutableCurrentThreadRecord({
-          ...upgradedRecord,
-          turns: upgradedRecord.turns.map((turn, index) =>
-            index === upgradedRecord.turns.length - 1
+        parseCurrentThreadRecord({
+          ...currentRecord,
+          turns: currentRecord.turns.map((turn, index) =>
+            index === currentRecord.turns.length - 1
               ? {
                   ...turn,
                   attemptRequestId: request.requestId,
@@ -345,6 +334,7 @@ export class CurrentThreadSessionCoordinator {
                     selection: request.targetSelection,
                     attribution: null,
                   },
+                  providerStateRef: null,
                   updatedAt: now,
                 }
               : turn,
@@ -390,8 +380,8 @@ export class CurrentThreadSessionCoordinator {
 
     try {
       for (const turn of record.turns) {
-        const refs = 'imageRefs' in turn ? turn.imageRefs : []
-        const documentRefs = 'documentRefs' in turn ? turn.documentRefs : []
+        const refs = turn.imageRefs
+        const documentRefs = turn.documentRefs
 
         if (refs.length === 0) {
           const content = [turn.userContent]
@@ -494,11 +484,10 @@ export class CurrentThreadSessionCoordinator {
   ) {
     try {
       const record = await this.store.read()
-      const upgradedRecord = record ? upgradeCurrentThreadRecordForMutation(record) : null
-      const currentTurn = upgradedRecord?.turns.at(-1)
+      const currentTurn = record?.turns.at(-1)
 
       if (
-        !upgradedRecord ||
+        !record ||
         !currentTurn ||
         currentTurn.assistantStatus !== 'pending' ||
         currentTurn.attemptRequestId !== requestId ||
@@ -516,10 +505,10 @@ export class CurrentThreadSessionCoordinator {
       const currentBinding = currentTurn.targetBinding
 
       return await this.store.write(
-        parseMutableCurrentThreadRecord({
-          ...upgradedRecord,
-          turns: upgradedRecord.turns.map((turn, index) =>
-            index === upgradedRecord.turns.length - 1
+        parseCurrentThreadRecord({
+          ...record,
+          turns: record.turns.map((turn, index) =>
+            index === record.turns.length - 1
               ? {
                   ...turn,
                   targetBinding: {
@@ -578,7 +567,7 @@ export class CurrentThreadSessionCoordinator {
   private appendPendingTurn(
     record: CurrentThreadRecord,
     request: NyxChatRequest,
-    documentRefs: ReadonlyArray<CurrentThreadDocumentRefV4>,
+    documentRefs: ReadonlyArray<CurrentThreadDocumentRef>,
   ) {
     const now = this.now()
     const imageRefs = request.turnUserMessage.imageRefs ?? []
@@ -594,50 +583,21 @@ export class CurrentThreadSessionCoordinator {
         selection: request.targetSelection,
         attribution: null,
       },
+      providerStateRef: null,
       createdAt: now,
       updatedAt: now,
     } as const
 
-    if (record.version === 4 || documentRefs.length > 0) {
-      const upgradedRecord = upgradeCurrentThreadRecordForDocumentMutation(record)
-
-      return parseCurrentThreadRecordV4({
-        ...upgradedRecord,
-        turns: [...upgradedRecord.turns, { ...turn, imageRefs, documentRefs }],
-        updatedAt: now,
-      })
-    }
-
-    if (record.version === 3 || imageRefs.length > 0) {
-      const upgradedRecord = upgradeCurrentThreadRecordForImageMutation(record)
-
-      if (upgradedRecord.version !== 3) {
-        throw new CurrentThreadSessionError('invalid_request', 'Current thread version is invalid.')
-      }
-
-      return parseCurrentThreadRecordV3({
-        ...upgradedRecord,
-        turns: [...upgradedRecord.turns, { ...turn, imageRefs }],
-        updatedAt: now,
-      })
-    }
-
-    const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
-
-    if (upgradedRecord.version !== 2) {
-      throw new CurrentThreadSessionError('invalid_request', 'Current thread version is invalid.')
-    }
-
-    return parseCurrentThreadRecordV2({
-      ...upgradedRecord,
-      turns: [...upgradedRecord.turns, turn],
+    return parseCurrentThreadRecord({
+      ...record,
+      turns: [...record.turns, { ...turn, imageRefs, documentRefs }],
       updatedAt: now,
     })
   }
 
   private createPendingThread(
     request: NyxChatRequest,
-    documentRefs: ReadonlyArray<CurrentThreadDocumentRefV4>,
+    documentRefs: ReadonlyArray<CurrentThreadDocumentRef>,
   ) {
     const input = {
       attemptRequestId: request.requestId,
@@ -646,23 +606,11 @@ export class CurrentThreadSessionCoordinator {
       userContent: request.turnUserMessage.content,
       targetSelection: request.targetSelection,
     }
-    const [firstImageRef, ...remainingImageRefs] = request.turnUserMessage.imageRefs ?? []
-
-    if (documentRefs.length > 0) {
-      const [firstDocumentRef, ...remainingDocumentRefs] = documentRefs
-      return this.store.create({
-        ...input,
-        ...(firstImageRef ? { imageRefs: [firstImageRef, ...remainingImageRefs] } : {}),
-        documentRefs: [firstDocumentRef!, ...remainingDocumentRefs],
-      })
-    }
-
-    return firstImageRef
-      ? this.store.create({
-          ...input,
-          imageRefs: [firstImageRef, ...remainingImageRefs],
-        })
-      : this.store.create(input)
+    return this.store.create({
+      ...input,
+      imageRefs: request.turnUserMessage.imageRefs ?? [],
+      documentRefs,
+    })
   }
 
   private assertRequestMessages(
@@ -686,11 +634,10 @@ export class CurrentThreadSessionCoordinator {
   ) {
     try {
       const record = await this.store.read()
-      const upgradedRecord = record ? upgradeCurrentThreadRecordForMutation(record) : null
-      const currentTurn = upgradedRecord?.turns.at(-1)
+      const currentTurn = record?.turns.at(-1)
 
       if (
-        !upgradedRecord ||
+        !record ||
         !currentTurn ||
         currentTurn.assistantStatus !== 'pending' ||
         currentTurn.attemptRequestId !== requestId ||
@@ -703,44 +650,37 @@ export class CurrentThreadSessionCoordinator {
       }
 
       const now = this.now()
-      let safeError: MutableTurnRecord['error'] = null
+      let safeError: ReturnType<typeof createSafeThreadErrorRecord> | null = null
 
       if (assistantStatus === 'failed' && error) {
-        if (upgradedRecord.version === 4) {
-          safeError = createSafeThreadErrorRecordV4({
-            code: error.code,
-            retryable: error.retryable,
-          })
-        } else if (upgradedRecord.version === 3) {
-          safeError = createSafeThreadErrorRecordV3({
-            code: error.code,
-            retryable: error.retryable,
-          })
-        } else {
-          if (error.code === 'content_rejected') {
-            throw new CurrentThreadSessionError(
-              'invalid_request',
-              'Only an image-bearing turn may persist content rejection.',
-            )
-          }
-
-          safeError = createSafeThreadErrorRecordV2({
-            code: error.code,
-            retryable: error.retryable,
-          })
+        if (
+          error.code === 'content_rejected' &&
+          currentTurn.imageRefs.length === 0 &&
+          currentTurn.documentRefs.length === 0
+        ) {
+          throw new CurrentThreadSessionError(
+            'invalid_request',
+            'Only an attachment-bearing turn may persist content rejection.',
+          )
         }
+
+        safeError = createSafeThreadErrorRecord({
+          code: error.code,
+          retryable: error.retryable,
+        })
       }
 
       return await this.store.write(
-        parseMutableCurrentThreadRecord({
-          ...upgradedRecord,
-          turns: upgradedRecord.turns.map((turn, index) =>
-            index === upgradedRecord.turns.length - 1
+        parseCurrentThreadRecord({
+          ...record,
+          turns: record.turns.map((turn, index) =>
+            index === record.turns.length - 1
               ? {
                   ...turn,
                   assistantContent,
                   assistantStatus,
                   error: safeError,
+                  providerStateRef: null,
                   updatedAt: now,
                 }
               : turn,
@@ -762,14 +702,8 @@ export class CurrentThreadSessionCoordinator {
     images: ReadonlyArray<NonNullable<NyxChatRequest['newImages']>[number]>,
     documents: ReadonlyArray<NonNullable<NyxChatRequest['newDocuments']>[number]>,
   ) {
-    const hasStoredImages = Boolean(
-      record &&
-      (record.version === 3 || record.version === 4) &&
-      record.turns.some((turn) => turn.imageRefs.length > 0),
-    )
-    const hasStoredDocuments = Boolean(
-      record?.version === 4 && record.turns.some((turn) => turn.documentRefs.length > 0),
-    )
+    const hasStoredImages = Boolean(record?.turns.some((turn) => turn.imageRefs.length > 0))
+    const hasStoredDocuments = Boolean(record?.turns.some((turn) => turn.documentRefs.length > 0))
 
     if ((hasStoredImages || images.length > 0) && !this.images) {
       throw new CurrentThreadSessionError('invalid_request', 'Image storage is unavailable.')

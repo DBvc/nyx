@@ -6,46 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
 import {
-  createSafeThreadErrorRecordV1,
-  createSafeThreadErrorRecordV2,
-  createSafeThreadErrorRecordV3,
-  parseCurrentThreadRecordV4,
-  parseCurrentThreadRecordV1,
-  parseCurrentThreadRecordV2,
-  parseCurrentThreadRecordV3,
-  upgradeCurrentThreadRecordForImageMutation,
-  upgradeCurrentThreadRecordForMutation,
-  upgradeCurrentThreadRecordForDocumentMutation,
-  type CurrentThreadRecordV1,
-  type CurrentThreadRecordV2,
-  type CurrentThreadRecordV3,
-  type CurrentThreadRecordV4,
+  createSafeThreadErrorRecord,
+  parseCurrentThreadRecord,
+  type CurrentThreadRecord,
+  type ProviderStateRef,
 } from './schemas'
-import { CurrentThreadStore, CurrentThreadStoreError, type CreateCurrentThreadInput } from './store'
+import { CurrentThreadStore } from './store'
 
 const tempDirs: string[] = []
-
-async function createTempFilePath() {
-  const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-'))
-  tempDirs.push(dir)
-  return join(dir, 'threads', 'current-thread.json')
-}
-
-function createStore(
-  filePath: string,
-  options: {
-    now?: () => string
-    fileAdapter?: CurrentThreadFileAdapter
-  } = {},
-) {
-  return new CurrentThreadStore({
-    filePath,
-    generateId: () => 'thread-1',
-    now: options.now ?? (() => '2026-07-11T00:00:00.000Z'),
-    ...(options.fileAdapter ? { fileAdapter: options.fileAdapter } : {}),
-  })
-}
-
+const timestamp = '2026-08-11T00:00:00.000Z'
 const targetSelection = {
   kind: 'connection',
   providerId: 'provider-1',
@@ -74,9 +43,32 @@ const documentRef = {
   extractedTextSha256: 'b'.repeat(64),
 } as const
 
-function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
-  return parseCurrentThreadRecordV2({
-    version: 2,
+async function createTempFilePath() {
+  const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-'))
+  tempDirs.push(dir)
+  return join(dir, 'threads', 'current-thread.json')
+}
+
+async function writeRaw(filePath: string, contents: string) {
+  await createCurrentThreadFileAdapter().ensureParentDirectory(filePath)
+  await writeFile(filePath, contents, 'utf8')
+}
+
+function createStore(
+  filePath: string,
+  options: { now?: () => string; fileAdapter?: CurrentThreadFileAdapter } = {},
+) {
+  return new CurrentThreadStore({
+    filePath,
+    generateId: () => 'thread-1',
+    now: options.now ?? (() => timestamp),
+    ...(options.fileAdapter ? { fileAdapter: options.fileAdapter } : {}),
+  })
+}
+
+function pendingRecord(): CurrentThreadRecord {
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -84,150 +76,67 @@ function pendingRecord(overrides: Partial<CurrentThreadRecordV2> = {}) {
         userMessageId: 'user-1',
         assistantMessageId: 'assistant-1',
         userContent: 'Hello',
+        imageRefs: [],
+        documentRefs: [],
         assistantContent: '',
         assistantStatus: 'pending',
         error: null,
-        targetBinding: {
-          selection: targetSelection,
-          attribution: null,
-        },
-        createdAt: '2026-07-10T00:00:00.000Z',
-        updatedAt: '2026-07-10T00:00:00.000Z',
+        targetBinding: { selection: targetSelection, attribution: null },
+        providerStateRef: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
       },
     ],
-    createdAt: '2026-07-10T00:00:00.000Z',
-    updatedAt: '2026-07-10T00:00:00.000Z',
-    ...overrides,
+    createdAt: timestamp,
+    updatedAt: timestamp,
   })
 }
 
-function pendingRecordV1(overrides: Partial<CurrentThreadRecordV1> = {}) {
-  return parseCurrentThreadRecordV1({
-    version: 1,
-    threadId: 'thread-1',
-    turns: [
-      {
-        attemptRequestId: 'request-1',
-        userMessageId: 'user-1',
-        assistantMessageId: 'assistant-1',
-        userContent: 'Hello',
-        assistantContent: '',
-        assistantStatus: 'pending',
-        error: null,
-        createdAt: '2026-07-10T00:00:00.000Z',
-        updatedAt: '2026-07-10T00:00:00.000Z',
-      },
-    ],
-    createdAt: '2026-07-10T00:00:00.000Z',
-    updatedAt: '2026-07-10T00:00:00.000Z',
-    ...overrides,
-  })
-}
-
-function pendingRecordV3(overrides: Partial<CurrentThreadRecordV3> = {}) {
-  return parseCurrentThreadRecordV3({
-    version: 3,
-    threadId: 'thread-1',
-    turns: [
-      {
-        attemptRequestId: 'request-1',
-        userMessageId: 'user-1',
-        assistantMessageId: 'assistant-1',
-        userContent: '',
-        imageRefs: [imageRef],
-        assistantContent: '',
-        assistantStatus: 'pending',
-        error: null,
-        targetBinding: {
-          selection: targetSelection,
-          attribution: null,
-        },
-        createdAt: '2026-07-10T00:00:00.000Z',
-        updatedAt: '2026-07-10T00:00:00.000Z',
-      },
-    ],
-    createdAt: '2026-07-10T00:00:00.000Z',
-    updatedAt: '2026-07-10T00:00:00.000Z',
-    ...overrides,
-  })
-}
-
-function pendingRecordV4(overrides: Partial<CurrentThreadRecordV4> = {}) {
-  return parseCurrentThreadRecordV4({
-    version: 4,
-    threadId: 'thread-1',
-    turns: [
-      {
-        ...pendingRecordV3().turns[0]!,
-        imageRefs: [imageRef],
-        documentRefs: [documentRef],
-      },
-    ],
-    createdAt: '2026-07-10T00:00:00.000Z',
-    updatedAt: '2026-07-10T00:00:00.000Z',
-    ...overrides,
-  })
-}
-
-function completedRecord(requestId: string, content: string) {
-  const record = bindRecord(pendingRecord())
-
-  return completeRecord(record, requestId, content)
-}
-
-function bindRecord(record: CurrentThreadRecordV2) {
-  const latestTurnIndex = record.turns.length - 1
-
-  return parseCurrentThreadRecordV2({
+function bindRecord(record: CurrentThreadRecord) {
+  return parseCurrentThreadRecord({
     ...record,
     turns: record.turns.map((turn, index) =>
-      index === latestTurnIndex
+      index === record.turns.length - 1
         ? {
             ...turn,
-            targetBinding: {
-              selection: targetSelection,
-              attribution: targetAttribution,
-            },
-            updatedAt: record.updatedAt,
+            targetBinding: { selection: targetSelection, attribution: targetAttribution },
           }
         : turn,
     ),
-    updatedAt: record.updatedAt,
   })
 }
 
-function completeRecord(record: CurrentThreadRecordV2, requestId: string, content: string) {
-  return parseCurrentThreadRecordV2({
+function completeRecord(
+  record: CurrentThreadRecord,
+  content = 'Done',
+  providerStateRef: ProviderStateRef | null = null,
+) {
+  return parseCurrentThreadRecord({
     ...record,
-    turns: [
-      {
-        ...record.turns[0]!,
-        attemptRequestId: requestId,
-        assistantContent: content,
-        assistantStatus: 'completed',
-        updatedAt: '2026-07-11T00:00:00.000Z',
-      },
-    ],
-    updatedAt: '2026-07-11T00:00:00.000Z',
+    turns: record.turns.map((turn, index) =>
+      index === record.turns.length - 1
+        ? {
+            ...turn,
+            assistantContent: content,
+            assistantStatus: 'completed',
+            providerStateRef,
+          }
+        : turn,
+    ),
   })
 }
 
-function completedRecordV1(requestId: string, content: string) {
-  const record = pendingRecordV1()
-
-  return parseCurrentThreadRecordV1({
-    ...record,
-    turns: [
-      {
-        ...record.turns[0]!,
-        attemptRequestId: requestId,
-        assistantContent: content,
-        assistantStatus: 'completed',
-        updatedAt: '2026-07-11T00:00:00.000Z',
-      },
-    ],
-    updatedAt: '2026-07-11T00:00:00.000Z',
-  })
+function providerStateRef(
+  stateId = '00000000-0000-4000-8000-000000000020',
+  executionIdentity = 'c'.repeat(64),
+): ProviderStateRef {
+  return {
+    protocol: 'openai-responses',
+    stateId,
+    executionIdentity,
+    byteLength: 128,
+    sha256: 'd'.repeat(64),
+  }
 }
 
 afterEach(async () => {
@@ -235,145 +144,11 @@ afterEach(async () => {
 })
 
 describe('CurrentThreadStore', () => {
-  it('treats a missing file as no current thread without creating it', async () => {
+  it('treats a missing file as empty and creates one strict v5 record', async () => {
     const filePath = await createTempFilePath()
     const store = createStore(filePath)
 
     await expect(store.read()).resolves.toBeNull()
-    await expect(stat(filePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it('creates a main-owned thread id and keeps message ids stable across retry attempts', async () => {
-    const filePath = await createTempFilePath()
-    const store = createStore(filePath)
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const bound = bindRecord(created)
-    await store.write(bound)
-    const failed = parseCurrentThreadRecordV2({
-      ...bound,
-      turns: [
-        {
-          ...bound.turns[0]!,
-          assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV2({
-            code: 'network_error',
-            retryable: true,
-          }),
-        },
-      ],
-    })
-
-    await store.write(failed)
-    await store.write({
-      ...failed,
-      turns: [
-        {
-          ...failed.turns[0]!,
-          attemptRequestId: 'request-2',
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          targetBinding: {
-            selection: targetSelection,
-            attribution: null,
-          },
-        },
-      ],
-    })
-
-    await expect(store.read()).resolves.toMatchObject({
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-2',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-        },
-      ],
-    })
-  })
-
-  it('normalizes a persisted pending turn to a durable interrupted failure on first load', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, `${JSON.stringify(pendingRecordV1())}\n`, 'utf8')
-    const store = createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' })
-
-    await expect(store.read()).resolves.toMatchObject({
-      version: 2,
-      updatedAt: '2026-07-11T01:00:00.000Z',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          assistantContent: '',
-          assistantStatus: 'failed',
-          error: {
-            code: 'unknown',
-            message: 'The previous response was interrupted before it finished.',
-            retryable: true,
-          },
-          targetBinding: null,
-          updatedAt: '2026-07-11T01:00:00.000Z',
-        },
-      ],
-    })
-
-    expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({
-      version: 2,
-      turns: [{ assistantStatus: 'failed', targetBinding: null }],
-    })
-  })
-
-  it('recovers a pending version-3 turn without losing image identity', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, `${JSON.stringify(pendingRecordV3())}\n`, 'utf8')
-
-    await expect(
-      createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' }).read(),
-    ).resolves.toMatchObject({
-      version: 3,
-      turns: [
-        {
-          imageRefs: [imageRef],
-          assistantStatus: 'failed',
-          error: { code: 'unknown', retryable: true },
-        },
-      ],
-    })
-  })
-
-  it('recovers a pending version-4 turn without changing attachment identity', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, `${JSON.stringify(pendingRecordV4())}\n`, 'utf8')
-
-    await expect(
-      createStore(filePath, { now: () => '2026-07-11T01:00:00.000Z' }).read(),
-    ).resolves.toMatchObject({
-      version: 4,
-      turns: [
-        {
-          imageRefs: [imageRef],
-          documentRefs: [documentRef],
-          assistantStatus: 'failed',
-          error: { code: 'unknown', retryable: true },
-        },
-      ],
-    })
-  })
-
-  it('creates version 4 only with a real document and never downgrades it', async () => {
-    const store = createStore(await createTempFilePath())
     const created = await store.create({
       attemptRequestId: 'request-1',
       userMessageId: 'user-1',
@@ -385,596 +160,167 @@ describe('CurrentThreadStore', () => {
     })
 
     expect(created).toMatchObject({
-      version: 4,
-      turns: [{ imageRefs: [imageRef], documentRefs: [documentRef] }],
-    })
-
-    await expect(
-      store.write(
-        parseCurrentThreadRecordV4({
-          ...created,
-          turns: [
-            {
-              ...created.turns[0]!,
-              documentRefs: [{ ...documentRef, name: 'changed.txt' }],
-            },
-          ],
-        }),
-      ),
-    ).rejects.toMatchObject({ code: 'identity_mismatch' })
-
-    await expect(
-      store.write(
-        parseCurrentThreadRecordV3({
-          ...created,
-          version: 3,
-          turns: created.turns.map(({ documentRefs: _documents, ...turn }) => turn),
-        }),
-      ),
-    ).rejects.toBeInstanceOf(CurrentThreadStoreError)
-    await expect(store.read()).resolves.toMatchObject({ version: 4 })
-  })
-
-  it('upgrades every historical version shape to v4 without losing attachment arrays', () => {
-    const records = [pendingRecordV1(), pendingRecord(), pendingRecordV3()]
-
-    expect(records.map((record) => upgradeCurrentThreadRecordForDocumentMutation(record))).toEqual(
-      records.map((record) =>
-        expect.objectContaining({
-          version: 4,
-          turns: [
-            expect.objectContaining({
-              imageRefs: record.version === 3 ? [imageRef] : [],
-              documentRefs: [],
-            }),
-          ],
-        }),
-      ),
-    )
-  })
-
-  it('upgrades v3 on a document append while preserving images and neutralizing its safe error', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    const failedV3 = parseCurrentThreadRecordV3({
-      ...pendingRecordV3(),
+      version: 5,
+      threadId: 'thread-1',
       turns: [
         {
-          ...pendingRecordV3().turns[0]!,
-          assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV3({ code: 'content_rejected', retryable: true }),
+          imageRefs: [imageRef],
+          documentRefs: [documentRef],
+          assistantStatus: 'pending',
+          providerStateRef: null,
         },
       ],
     })
-    const contents = `${JSON.stringify(failedV3, null, 2)}\n`
+    expect((await stat(filePath)).mode & 0o777).toBe(0o600)
+  })
+
+  it('recovers one persisted pending v5 turn without changing durable identity', async () => {
+    const filePath = await createTempFilePath()
+    const adapter = createCurrentThreadFileAdapter()
+    const pending = pendingRecord()
     await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, contents, 'utf8')
-    const store = createStore(filePath)
+    await writeRaw(filePath, JSON.stringify(pending))
 
-    await expect(store.read()).resolves.toEqual(failedV3)
-    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
+    const recovered = await createStore(filePath, {
+      now: () => '2026-08-11T01:00:00.000Z',
+    }).read()
 
-    const upgraded = upgradeCurrentThreadRecordForDocumentMutation(failedV3)
-    const appended = parseCurrentThreadRecordV4({
-      ...upgraded,
+    expect(recovered).toMatchObject({
+      version: 5,
+      threadId: pending.threadId,
       turns: [
-        ...upgraded.turns,
+        {
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          assistantStatus: 'failed',
+          providerStateRef: null,
+          error: {
+            code: 'unknown',
+            message: 'The previous response was interrupted before it finished.',
+            retryable: true,
+          },
+        },
+      ],
+    })
+  })
+
+  it('allows append, bind, settlement, and Retry while keeping prior terminal turns immutable', async () => {
+    const store = createStore(await createTempFilePath())
+    const created = await store.create({
+      attemptRequestId: 'request-1',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+      userContent: 'Hello',
+      targetSelection,
+    })
+    const bound = await store.write(bindRecord(created))
+    const completed = await store.write(completeRecord(bound))
+    const appended = parseCurrentThreadRecord({
+      ...completed,
+      turns: [
+        ...completed.turns,
         {
           attemptRequestId: 'request-2',
           userMessageId: 'user-2',
           assistantMessageId: 'assistant-2',
-          userContent: '',
+          userContent: 'Continue',
           imageRefs: [],
-          documentRefs: [documentRef],
+          documentRefs: [],
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
           targetBinding: { selection: targetSelection, attribution: null },
-          createdAt: '2026-07-11T01:00:00.000Z',
-          updatedAt: '2026-07-11T01:00:00.000Z',
+          providerStateRef: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
         },
       ],
-      updatedAt: '2026-07-11T01:00:00.000Z',
+    })
+    await store.write(appended)
+    const secondBound = await store.write(bindRecord(appended))
+    const failed = parseCurrentThreadRecord({
+      ...secondBound,
+      turns: secondBound.turns.map((turn, index) =>
+        index === 1
+          ? {
+              ...turn,
+              assistantStatus: 'failed',
+              error: createSafeThreadErrorRecord({ code: 'network_error', retryable: true }),
+            }
+          : turn,
+      ),
+    })
+    await store.write(failed)
+    const retried = parseCurrentThreadRecord({
+      ...failed,
+      turns: failed.turns.map((turn, index) =>
+        index === 1
+          ? {
+              ...turn,
+              attemptRequestId: 'request-3',
+              assistantContent: '',
+              assistantStatus: 'pending',
+              error: null,
+              targetBinding: { selection: { kind: 'env_fallback' }, attribution: null },
+              providerStateRef: null,
+            }
+          : turn,
+      ),
     })
 
-    await expect(store.write(appended)).resolves.toMatchObject({
-      version: 4,
-      turns: [
-        {
-          imageRefs: [imageRef],
-          documentRefs: [],
-          error: {
-            code: 'content_rejected',
-            message: 'The selected target rejected this attachment request.',
-            retryable: true,
-          },
-        },
-        { documentRefs: [documentRef] },
-      ],
-    })
+    await expect(store.write(retried)).resolves.toEqual(retried)
+    expect((await store.read())!.turns[0]).toEqual(completed.turns[0])
   })
 
-  it('reads a stable version-1 record without rewriting it', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    const record = completedRecordV1('request-1', 'Done')
-    const contents = `${JSON.stringify(record, null, 2)}\n`
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, contents, 'utf8')
-
-    await expect(createStore(filePath).read()).resolves.toEqual(record)
-    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
-  })
-
-  it('reads stable version-2 and version-3 records without rewriting them', async () => {
-    const records = [
-      completedRecord('request-1', 'Done'),
-      parseCurrentThreadRecordV3({
-        ...pendingRecordV3(),
-        turns: [
-          {
-            ...pendingRecordV3().turns[0]!,
-            assistantContent: 'Done',
-            assistantStatus: 'completed',
-          },
-        ],
-      }),
-    ]
-
-    for (const record of records) {
-      const filePath = await createTempFilePath()
-      const adapter = createCurrentThreadFileAdapter()
-      const contents = `${JSON.stringify(record, null, 2)}\n`
-      await adapter.ensureParentDirectory(filePath)
-      await writeFile(filePath, contents, 'utf8')
-
-      await expect(createStore(filePath).read()).resolves.toEqual(record)
-      await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
-    }
-  })
-
-  it('keeps version-3 image refs immutable across later mutations', async () => {
+  it('rejects identity replacement and mutation of terminal history', async () => {
     const store = createStore(await createTempFilePath())
     const created = await store.create({
       attemptRequestId: 'request-1',
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
-      userContent: '',
-      imageRefs: [imageRef],
+      userContent: 'Hello',
       targetSelection,
     })
-    const bound = parseCurrentThreadRecordV3({
-      ...created,
-      turns: [
-        {
-          ...created.turns[0]!,
-          targetBinding: {
-            selection: targetSelection,
-            attribution: targetAttribution,
-          },
-        },
-      ],
-    })
-    await store.write(bound)
+    const bound = await store.write(bindRecord(created))
+    const completed = await store.write(completeRecord(bound))
 
+    await expect(
+      store.write(parseCurrentThreadRecord({ ...completed, threadId: 'replacement' })),
+    ).rejects.toMatchObject({ code: 'identity_mismatch' })
     await expect(
       store.write(
-        parseCurrentThreadRecordV3({
-          ...bound,
-          turns: [
-            {
-              ...bound.turns[0]!,
-              imageRefs: [{ ...imageRef, width: 320 }],
-            },
-          ],
+        parseCurrentThreadRecord({
+          ...completed,
+          turns: [{ ...completed.turns[0]!, assistantContent: 'Rewritten' }],
         }),
       ),
-    ).rejects.toMatchObject({ code: 'identity_mismatch' })
+    ).rejects.toMatchObject({ code: 'invalid_transition' })
   })
 
-  it('requires a real image mutation to enter version 3 and rejects downgrade', async () => {
-    const emptyStore = createStore(await createTempFilePath())
-    const emptyImageInput = {
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      imageRefs: [],
-      targetSelection,
-    } as unknown as CreateCurrentThreadInput
+  it.each([1, 2, 3, 4, 6, 99])(
+    'rejects old or unknown current-thread version %s',
+    async (version) => {
+      const filePath = await createTempFilePath()
+      const oldJson = JSON.stringify({ ...pendingRecord(), version })
+      await writeRaw(filePath, oldJson)
+      const store = createStore(filePath)
 
-    await expect(emptyStore.create(emptyImageInput)).rejects.toMatchObject({
-      code: 'invalid_transition',
-    })
-    await expect(emptyStore.read()).resolves.toBeNull()
+      await expect(store.read()).rejects.toMatchObject({ code: 'schema_invalid' })
+      await expect(readFile(filePath, 'utf8')).resolves.toBe(oldJson)
+    },
+  )
 
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const bound = bindRecord(created)
-    await store.write(bound)
-    const completed = completeRecord(bound, 'request-1', 'Done')
-    await store.write(completed)
-    const upgraded = upgradeCurrentThreadRecordForImageMutation(completed)
-    const appendedTurn = {
-      attemptRequestId: 'request-2',
-      userMessageId: 'user-2',
-      assistantMessageId: 'assistant-2',
-      userContent: 'Next',
-      assistantContent: '',
-      assistantStatus: 'pending',
-      error: null,
-      targetBinding: { selection: targetSelection, attribution: null },
-      createdAt: '2026-07-11T01:00:00.000Z',
-      updatedAt: '2026-07-11T01:00:00.000Z',
-    } as const
-    const textOnlyUpgrade = parseCurrentThreadRecordV3({
-      ...upgraded,
-      turns: [...upgraded.turns, { ...appendedTurn, imageRefs: [] }],
-      updatedAt: appendedTurn.updatedAt,
-    })
+  it('fails closed on malformed and schema-invalid JSON without overwriting it', async () => {
+    for (const raw of ['{not-json', JSON.stringify({ ...pendingRecord(), turns: [] })]) {
+      const filePath = await createTempFilePath()
+      await writeRaw(filePath, raw)
+      const store = createStore(filePath)
 
-    await expect(store.write(textOnlyUpgrade)).rejects.toMatchObject({
-      code: 'invalid_transition',
-    })
-
-    const imageUpgrade = parseCurrentThreadRecordV3({
-      ...upgraded,
-      turns: [...upgraded.turns, { ...appendedTurn, imageRefs: [imageRef] }],
-      updatedAt: appendedTurn.updatedAt,
-    })
-    await store.write(imageUpgrade)
-
-    const downgraded = parseCurrentThreadRecordV2({
-      ...imageUpgrade,
-      version: 2,
-      turns: imageUpgrade.turns.map(({ imageRefs: _imageRefs, ...turn }) => turn),
-    })
-    await expect(store.write(downgraded)).rejects.toMatchObject({
-      code: 'identity_mismatch',
-    })
-  })
-
-  it('rejects a pure version-1 to version-2 rewrite without a real mutation', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    const record = completedRecordV1('request-1', 'Done')
-    const contents = `${JSON.stringify(record, null, 2)}\n`
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, contents, 'utf8')
-    const store = createStore(filePath)
-    const loaded = await store.read()
-
-    await expect(store.write(upgradeCurrentThreadRecordForMutation(loaded!))).rejects.toMatchObject(
-      { code: 'invalid_transition' },
-    )
-    await expect(readFile(filePath, 'utf8')).resolves.toBe(contents)
-  })
-
-  it('does not reinterpret a pending turn created by the live store as interrupted', async () => {
-    const store = createStore(await createTempFilePath())
-
-    await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-
-    await expect(store.read()).resolves.toMatchObject({
-      turns: [{ assistantStatus: 'pending', error: null }],
-    })
-  })
-
-  it('allows only unchanged cancellation before target attribution is bound', async () => {
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const cancelled = parseCurrentThreadRecordV2({
-      ...created,
-      turns: [{ ...created.turns[0]!, assistantStatus: 'cancelled' }],
-    })
-    const cancelledWithContent = parseCurrentThreadRecordV2({
-      ...cancelled,
-      turns: [{ ...cancelled.turns[0]!, assistantContent: 'Unexpected content' }],
-    })
-    const failed = parseCurrentThreadRecordV2({
-      ...created,
-      turns: [
-        {
-          ...created.turns[0]!,
-          assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV2({ code: 'network_error', retryable: true }),
-        },
-      ],
-    })
-
-    for (const terminalRecord of [
-      completeRecord(created, 'request-1', 'Done'),
-      cancelledWithContent,
-      failed,
-    ]) {
-      await expect(store.write(terminalRecord)).rejects.toMatchObject({
-        code: 'invalid_transition',
-      } satisfies Partial<CurrentThreadStoreError>)
+      await expect(store.read()).rejects.toMatchObject({
+        code: raw.startsWith('{not') ? 'malformed_json' : 'schema_invalid',
+      })
+      await expect(readFile(filePath, 'utf8')).resolves.toBe(raw)
     }
-
-    await expect(store.write(cancelled)).resolves.toEqual(cancelled)
-    await expect(store.read()).resolves.toEqual(cancelled)
-  })
-
-  it('settles only retryable target-resolution failure before attribution is bound', async () => {
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const nonRetryable = parseCurrentThreadRecordV2({
-      ...created,
-      turns: [
-        {
-          ...created.turns[0]!,
-          assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV2({
-            code: 'target_unavailable',
-            retryable: false,
-          }),
-        },
-      ],
-    })
-    const resolutionFailed = parseCurrentThreadRecordV2({
-      ...nonRetryable,
-      turns: [
-        {
-          ...nonRetryable.turns[0]!,
-          error: createSafeThreadErrorRecordV2({
-            code: 'target_unavailable',
-            retryable: true,
-          }),
-        },
-      ],
-    })
-    const resolutionFailedWithContent = parseCurrentThreadRecordV2({
-      ...resolutionFailed,
-      turns: [{ ...resolutionFailed.turns[0]!, assistantContent: 'Unexpected content' }],
-    })
-
-    await expect(store.write(nonRetryable)).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(store.write(resolutionFailedWithContent)).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(store.write(resolutionFailed)).resolves.toEqual(resolutionFailed)
-  })
-
-  it('rejects replacement of an existing thread or message identity', async () => {
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-
-    await expect(store.write({ ...created, threadId: 'replacement-thread' })).rejects.toMatchObject(
-      {
-        code: 'identity_mismatch',
-      } satisfies Partial<CurrentThreadStoreError>,
-    )
-    await expect(
-      store.write({
-        ...created,
-        turns: [{ ...created.turns[0]!, assistantMessageId: 'replacement-assistant' }],
-      }),
-    ).rejects.toMatchObject({
-      code: 'identity_mismatch',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(store.read()).resolves.toEqual(created)
-  })
-
-  it('requires create to establish the initial main-owned thread identity', async () => {
-    const filePath = await createTempFilePath()
-    const store = createStore(filePath)
-
-    await expect(store.write(pendingRecord())).rejects.toMatchObject({
-      code: 'thread_missing',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(stat(filePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it('rejects mutation of terminal history and retry without a new request id', async () => {
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const bound = bindRecord(created)
-    await store.write(bound)
-    const completed = completeRecord(bound, 'request-1', 'Done')
-    await store.write(completed)
-
-    await expect(
-      store.write(completeRecord(completed, 'request-1', 'Rewritten')),
-    ).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(
-      store.write({ ...completed, updatedAt: '2099-01-01T00:00:00.000Z' }),
-    ).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-
-    await store.reset()
-    const retriedStore = createStore(await createTempFilePath())
-    const retryCreated = await retriedStore.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-    const retryBound = bindRecord(retryCreated)
-    await retriedStore.write(retryBound)
-    const failed = parseCurrentThreadRecordV2({
-      ...retryBound,
-      turns: [
-        {
-          ...retryBound.turns[0]!,
-          assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV2({ code: 'unknown', retryable: true }),
-        },
-      ],
-    })
-    await retriedStore.write(failed)
-
-    await expect(
-      retriedStore.write({
-        ...failed,
-        turns: [
-          {
-            ...failed.turns[0]!,
-            assistantStatus: 'pending',
-            assistantContent: '',
-            error: null,
-          },
-        ],
-      }),
-    ).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-  })
-
-  it('keeps earlier terminal turns immutable after another turn is appended', async () => {
-    const store = createStore(await createTempFilePath())
-    const created = await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'First',
-      targetSelection,
-    })
-    const firstBound = bindRecord(created)
-    await store.write(firstBound)
-    const firstCompleted = completeRecord(firstBound, 'request-1', 'First answer')
-    await store.write(firstCompleted)
-    const secondPending = parseCurrentThreadRecordV2({
-      ...firstCompleted,
-      turns: [
-        ...firstCompleted.turns,
-        {
-          attemptRequestId: 'request-2',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          userContent: 'Second',
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          targetBinding: {
-            selection: targetSelection,
-            attribution: null,
-          },
-          createdAt: '2026-07-11T01:00:00.000Z',
-          updatedAt: '2026-07-11T01:00:00.000Z',
-        },
-      ],
-      updatedAt: '2026-07-11T01:00:00.000Z',
-    })
-    await store.write(secondPending)
-    const secondBound = bindRecord(secondPending)
-    await store.write(secondBound)
-    const secondCompleted = parseCurrentThreadRecordV2({
-      ...secondBound,
-      turns: [
-        secondBound.turns[0]!,
-        {
-          ...secondBound.turns[1]!,
-          assistantContent: 'Second answer',
-          assistantStatus: 'completed',
-          updatedAt: '2026-07-11T02:00:00.000Z',
-        },
-      ],
-      updatedAt: '2026-07-11T02:00:00.000Z',
-    })
-    await store.write(secondCompleted)
-
-    await expect(
-      store.write({
-        ...secondCompleted,
-        turns: [
-          { ...secondCompleted.turns[0]!, assistantContent: 'Rewritten first answer' },
-          secondCompleted.turns[1]!,
-        ],
-      }),
-    ).rejects.toMatchObject({
-      code: 'invalid_transition',
-    } satisfies Partial<CurrentThreadStoreError>)
-  })
-
-  it('fails closed on malformed JSON without overwriting it', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, '{not-json', 'utf8')
-    const store = createStore(filePath)
-
-    await expect(store.read()).rejects.toMatchObject({
-      code: 'malformed_json',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(store.write(completedRecord('request-1', 'Done'))).rejects.toMatchObject({
-      code: 'malformed_json',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(readFile(filePath, 'utf8')).resolves.toBe('{not-json')
-  })
-
-  it('fails closed on schema-invalid JSON without overwriting it', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    const invalidJson = JSON.stringify({ version: 1, threadId: 'thread-1', turns: [] })
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, invalidJson, 'utf8')
-    const store = createStore(filePath)
-
-    await expect(store.read()).rejects.toMatchObject({
-      code: 'schema_invalid',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(store.write(completedRecord('request-1', 'Done'))).rejects.toMatchObject({
-      code: 'schema_invalid',
-    } satisfies Partial<CurrentThreadStoreError>)
-    await expect(readFile(filePath, 'utf8')).resolves.toBe(invalidJson)
-  })
-
-  it('leaves an unknown future record untouched until explicit reset', async () => {
-    const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    const unknownRecord = `${JSON.stringify({ version: 99, future: true })}\n`
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, unknownRecord, 'utf8')
-    const store = createStore(filePath)
-
-    await expect(store.read()).rejects.toMatchObject({ code: 'schema_invalid' })
-    await expect(readFile(filePath, 'utf8')).resolves.toBe(unknownRecord)
-
-    await store.reset()
-    await expect(stat(filePath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('serializes concurrent writes in call order', async () => {
@@ -988,7 +334,6 @@ describe('CurrentThreadStore', () => {
         activeWrites += 1
         maximumActiveWrites = Math.max(maximumActiveWrites, activeWrites)
         await new Promise((resolve) => setTimeout(resolve, 5))
-
         try {
           await baseAdapter.writeText(...arguments_)
         } finally {
@@ -997,9 +342,8 @@ describe('CurrentThreadStore', () => {
       },
     }
     const store = createStore(filePath, { fileAdapter: adapter })
-
     const created = await store.create({
-      attemptRequestId: 'request-0',
+      attemptRequestId: 'request-1',
       userMessageId: 'user-1',
       assistantMessageId: 'assistant-1',
       userContent: 'Hello',
@@ -1007,86 +351,56 @@ describe('CurrentThreadStore', () => {
     })
     const bound = bindRecord(created)
     await store.write(bound)
-    const failed = parseCurrentThreadRecordV2({
+    const failed = parseCurrentThreadRecord({
       ...bound,
       turns: [
         {
           ...bound.turns[0]!,
           assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV2({ code: 'network_error', retryable: true }),
+          error: createSafeThreadErrorRecord({ code: 'network_error', retryable: true }),
         },
       ],
     })
-    const retried = parseCurrentThreadRecordV2({
+    const retried = parseCurrentThreadRecord({
       ...failed,
       turns: [
         {
           ...failed.turns[0]!,
-          attemptRequestId: 'request-1',
-          assistantStatus: 'pending',
+          attemptRequestId: 'request-2',
           assistantContent: '',
+          assistantStatus: 'pending',
           error: null,
-          targetBinding: {
-            selection: targetSelection,
-            attribution: null,
-          },
+          targetBinding: { selection: targetSelection, attribution: null },
+          providerStateRef: null,
         },
       ],
     })
-    await Promise.all([store.write(failed), store.write(retried)])
 
+    await Promise.all([store.write(failed), store.write(retried)])
     expect(maximumActiveWrites).toBe(1)
     await expect(store.read()).resolves.toMatchObject({
-      turns: [{ attemptRequestId: 'request-1', assistantStatus: 'pending' }],
+      turns: [{ attemptRequestId: 'request-2', assistantStatus: 'pending' }],
     })
   })
 
-  it('writes through a same-directory temp file with mode 0600 before rename', async () => {
-    const filePath = await createTempFilePath()
-    const baseAdapter = createCurrentThreadFileAdapter()
-    const writes: Array<{ filePath: string; mode: number }> = []
-    const renames: Array<{ sourcePath: string; destinationPath: string }> = []
-    const adapter: CurrentThreadFileAdapter = {
-      ...baseAdapter,
-      createTempPath: (destinationPath) => `${destinationPath}.fixed.tmp`,
-      writeText: async (targetPath, contents, mode) => {
-        writes.push({ filePath: targetPath, mode })
-        await baseAdapter.writeText(targetPath, contents, mode)
-      },
-      rename: async (sourcePath, destinationPath) => {
-        renames.push({ sourcePath, destinationPath })
-        await baseAdapter.rename(sourcePath, destinationPath)
-      },
-    }
-    const store = createStore(filePath, { fileAdapter: adapter })
-
-    await store.create({
-      attemptRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      userContent: 'Hello',
-      targetSelection,
-    })
-
-    expect(writes).toEqual([{ filePath: `${filePath}.fixed.tmp`, mode: 0o600 }])
-    expect(renames).toEqual([{ sourcePath: `${filePath}.fixed.tmp`, destinationPath: filePath }])
-    expect((await stat(filePath)).mode & 0o777).toBe(0o600)
-  })
-
-  it('preserves the previous record and recovers the queue when atomic rename fails', async () => {
+  it('writes through one same-directory 0600 temp and preserves the record on rename failure', async () => {
     const filePath = await createTempFilePath()
     const tempPath = `${filePath}.fixed.tmp`
     const baseAdapter = createCurrentThreadFileAdapter()
     let failNextRename = false
+    const writes: Array<{ path: string; mode: number }> = []
     const adapter: CurrentThreadFileAdapter = {
       ...baseAdapter,
       createTempPath: () => tempPath,
+      writeText: async (path, contents, mode) => {
+        writes.push({ path, mode })
+        await baseAdapter.writeText(path, contents, mode)
+      },
       rename: async (...arguments_) => {
         if (failNextRename) {
           failNextRename = false
           throw new Error('injected rename failure')
         }
-
         await baseAdapter.rename(...arguments_)
       },
     }
@@ -1100,294 +414,130 @@ describe('CurrentThreadStore', () => {
     })
     const bound = bindRecord(created)
     await store.write(bound)
-    const completed = completeRecord(bound, 'request-1', 'Done')
+    const completed = completeRecord(bound)
 
     failNextRename = true
-    await expect(store.write(completed)).rejects.toMatchObject({
-      code: 'io_error',
-    } satisfies Partial<CurrentThreadStoreError>)
+    await expect(store.write(completed)).rejects.toMatchObject({ code: 'io_error' })
     expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({
       turns: [{ assistantStatus: 'pending' }],
     })
     await expect(stat(tempPath)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(store.read()).resolves.toEqual(bound)
-
-    await store.write(completed)
-    await expect(store.read()).resolves.toEqual(completed)
+    expect(writes.every((write) => write.mode === 0o600)).toBe(true)
   })
 
-  it('allows explicit reset to remove a malformed file', async () => {
+  it('clears every same-identity provider ref without changing visible content', async () => {
     const filePath = await createTempFilePath()
-    const adapter = createCurrentThreadFileAdapter()
-    await adapter.ensureParentDirectory(filePath)
-    await writeFile(filePath, '{not-json', 'utf8')
+    const identityA = 'a'.repeat(64)
+    const identityB = 'b'.repeat(64)
+    const first = completeRecord(
+      bindRecord(pendingRecord()),
+      'Answer 1',
+      providerStateRef('00000000-0000-4000-8000-000000000020', identityA),
+    )
+    const record = parseCurrentThreadRecord({
+      ...first,
+      turns: [
+        first.turns[0]!,
+        {
+          ...first.turns[0]!,
+          attemptRequestId: 'request-2',
+          userMessageId: 'user-2',
+          assistantMessageId: 'assistant-2',
+          userContent: 'Question 2',
+          assistantContent: 'Answer 2',
+          providerStateRef: providerStateRef('00000000-0000-4000-8000-000000000021', identityA),
+        },
+        {
+          ...first.turns[0]!,
+          attemptRequestId: 'request-3',
+          userMessageId: 'user-3',
+          assistantMessageId: 'assistant-3',
+          userContent: 'Question 3',
+          assistantContent: 'Answer 3',
+          providerStateRef: providerStateRef('00000000-0000-4000-8000-000000000022', identityB),
+        },
+      ],
+    })
+    await writeRaw(filePath, JSON.stringify(record))
+    const store = createStore(filePath)
+
+    await expect(store.repairProviderStateRefs(identityA)).resolves.toMatchObject({
+      clearedCount: 2,
+      record: {
+        turns: [
+          { assistantContent: 'Answer 1', providerStateRef: null },
+          { assistantContent: 'Answer 2', providerStateRef: null },
+          { assistantContent: 'Answer 3', providerStateRef: { executionIdentity: identityB } },
+        ],
+      },
+    })
+  })
+
+  it('allows explicit reset to remove an unreadable record', async () => {
+    const filePath = await createTempFilePath()
+    await writeRaw(filePath, '{not-json')
     const store = createStore(filePath)
 
     await expect(store.read()).rejects.toMatchObject({ code: 'malformed_json' })
     await store.reset()
-
     await expect(store.read()).resolves.toBeNull()
-    await expect(stat(filePath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
 
-describe('CurrentThreadRecordV1 schema', () => {
-  it('projects errors to fixed safe messages and rejects unsafe persisted content', () => {
-    const record = completedRecordV1('request-1', '')
-    const rawError = {
-      code: 'unknown' as const,
-      message: 'Authorization: Bearer secret',
-      retryable: true,
-      details: 'raw exception',
-    }
+describe('CurrentThreadRecord v5 schema', () => {
+  it('accepts provider state only on a completed resolved connection turn', () => {
+    const ref = providerStateRef()
+    expect(
+      completeRecord(bindRecord(pendingRecord()), 'Done', ref).turns[0]!.providerStateRef,
+    ).toEqual(ref)
 
-    expect(createSafeThreadErrorRecordV1(rawError)).toEqual({
-      code: 'unknown',
-      message: 'The response failed unexpectedly.',
-      retryable: true,
-    })
-
-    expect(() =>
-      parseCurrentThreadRecordV1({
-        ...record,
-        Authorization: 'Bearer secret',
-      }),
-    ).toThrow()
-    expect(() =>
-      parseCurrentThreadRecordV1({
-        ...record,
-        turns: [
-          {
-            ...record.turns[0]!,
-            assistantStatus: 'failed',
-            error: {
-              code: 'unknown',
-              message: rawError.message,
-              retryable: true,
-            },
-          },
-        ],
-      }),
-    ).toThrow()
-  })
-
-  it('rejects duplicate message identities', () => {
-    const first = completedRecordV1('request-1', 'First').turns[0]!
-
-    expect(() =>
-      parseCurrentThreadRecordV1({
-        ...completedRecordV1('request-1', 'First'),
-        turns: [
-          first,
-          {
-            ...first,
-            attemptRequestId: 'request-2',
-          },
-        ],
-      }),
-    ).toThrow()
-  })
-
-  it('rejects a pending turn before the final position', () => {
-    const first = pendingRecordV1().turns[0]!
-
-    expect(() =>
-      parseCurrentThreadRecordV1({
-        ...pendingRecordV1(),
-        turns: [
-          first,
-          {
-            ...first,
-            attemptRequestId: 'request-2',
-            userMessageId: 'user-2',
-            assistantMessageId: 'assistant-2',
-            assistantStatus: 'completed',
-          },
-        ],
-      }),
-    ).toThrow()
-  })
-})
-
-describe('CurrentThreadRecordV2 schema', () => {
-  it('keeps selection and resolved attribution identity aligned', () => {
-    const record = pendingRecord()
-
-    expect(() =>
-      parseCurrentThreadRecordV2({
-        ...record,
-        turns: [
-          {
-            ...record.turns[0]!,
-            targetBinding: {
-              selection: targetSelection,
-              attribution: {
-                kind: 'connection',
-                providerId: 'other-provider',
-                providerDisplayName: 'Other Provider',
-                modelId: 'other-model',
-                modelDisplayName: 'Other Model',
-              },
-            },
-          },
-        ],
-      }),
-    ).toThrow()
-  })
-
-  it('persists target_unavailable with one fixed safe message', () => {
-    expect(createSafeThreadErrorRecordV2({ code: 'target_unavailable', retryable: true })).toEqual({
-      code: 'target_unavailable',
-      message: 'The selected chat target is unavailable.',
-      retryable: true,
-    })
-  })
-})
-
-describe('CurrentThreadRecordV3 schema', () => {
-  it('adds one fixed content rejection without widening version 2', () => {
-    const contentRejected = createSafeThreadErrorRecordV3({
-      code: 'content_rejected',
-      retryable: true,
-    })
-
-    expect(contentRejected).toEqual({
-      code: 'content_rejected',
-      message: 'The selected target rejected this image request.',
-      retryable: true,
-    })
-    expect(() =>
-      parseCurrentThreadRecordV2({
-        ...pendingRecord(),
-        turns: [
-          {
-            ...pendingRecord().turns[0]!,
-            assistantStatus: 'failed',
-            error: contentRejected,
-          },
-        ],
-      }),
-    ).toThrow()
-    expect(() =>
-      parseCurrentThreadRecordV3({
-        ...pendingRecordV3(),
-        turns: [
-          {
-            ...pendingRecordV3().turns[0]!,
-            assistantStatus: 'failed',
-            error: { ...contentRejected, message: 'Raw provider body' },
-          },
-        ],
-      }),
-    ).toThrow()
-  })
-
-  it('upgrades existing turns with empty refs and accepts image-only content', () => {
-    const version1 = upgradeCurrentThreadRecordForImageMutation(
-      completedRecordV1('request-1', 'Done'),
-    )
-    const upgraded = upgradeCurrentThreadRecordForImageMutation(
-      completedRecord('request-1', 'Done'),
-    )
-
-    expect(version1).toMatchObject({ version: 3, turns: [{ imageRefs: [] }] })
-    expect(upgraded).toMatchObject({ version: 3, turns: [{ imageRefs: [] }] })
-    const imageOnly = parseCurrentThreadRecordV3({
-      ...upgraded,
-      turns: [
-        upgraded.turns[0]!,
-        {
-          attemptRequestId: 'request-2',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          userContent: '',
-          imageRefs: [imageRef],
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          targetBinding: { selection: targetSelection, attribution: null },
-          createdAt: '2026-07-11T01:00:00.000Z',
-          updatedAt: '2026-07-11T01:00:00.000Z',
+    for (const invalid of [
+      { ...pendingRecord().turns[0]!, providerStateRef: ref },
+      {
+        ...completeRecord(bindRecord(pendingRecord())).turns[0]!,
+        assistantStatus: 'cancelled',
+        providerStateRef: ref,
+      },
+      {
+        ...completeRecord(bindRecord(pendingRecord())).turns[0]!,
+        targetBinding: {
+          selection: { kind: 'env_fallback' },
+          attribution: { kind: 'env_fallback', modelId: 'env-model' },
         },
-      ],
-      updatedAt: '2026-07-11T01:00:00.000Z',
-    })
-
-    expect(imageOnly).toMatchObject({
-      version: 3,
-      turns: [{ imageRefs: [] }, { userContent: '', imageRefs: [imageRef] }],
-    })
+        providerStateRef: ref,
+      },
+    ]) {
+      expect(() => parseCurrentThreadRecord({ ...pendingRecord(), turns: [invalid] })).toThrow()
+    }
   })
 
-  it('rejects empty turns, duplicate image ids, and unknown image metadata', () => {
-    const record = pendingRecordV3()
-
+  it('rejects unsafe errors, empty turns, duplicate ids, and unknown fields', () => {
+    const base = pendingRecord()
     expect(() =>
-      parseCurrentThreadRecordV3({
-        ...record,
-        turns: [{ ...record.turns[0]!, userContent: '', imageRefs: [] }],
-      }),
-    ).toThrow()
-    expect(() =>
-      parseCurrentThreadRecordV3({
-        ...record,
-        turns: [{ ...record.turns[0]!, imageRefs: [imageRef, imageRef] }],
-      }),
-    ).toThrow()
-    expect(() =>
-      parseCurrentThreadRecordV3({
-        ...record,
+      parseCurrentThreadRecord({
+        ...base,
         turns: [
           {
-            ...record.turns[0]!,
-            imageRefs: [{ ...imageRef, localPath: '/private/image.png' }],
+            ...base.turns[0]!,
+            assistantStatus: 'failed',
+            error: { code: 'unknown', message: 'Authorization: Bearer secret', retryable: true },
           },
         ],
       }),
     ).toThrow()
-  })
-})
-
-describe('CurrentThreadRecordV4 schema', () => {
-  it('rejects duplicate identities and an over-budget extracted-text history', () => {
-    const base = pendingRecordV4()
-    const turn = base.turns[0]!
-
     expect(() =>
-      parseCurrentThreadRecordV4({
+      parseCurrentThreadRecord({
         ...base,
-        turns: [
-          turn,
-          {
-            ...turn,
-            attemptRequestId: 'request-2',
-            userMessageId: 'user-2',
-            assistantMessageId: 'assistant-2',
-            assistantStatus: 'completed',
-          },
-        ],
+        turns: [{ ...base.turns[0]!, userContent: '', imageRefs: [], documentRefs: [] }],
       }),
     ).toThrow()
-
     expect(() =>
-      parseCurrentThreadRecordV4({
+      parseCurrentThreadRecord({
         ...base,
-        turns: [0, 1, 2].map((index) => ({
-          ...turn,
-          attemptRequestId: `request-${index}`,
-          userMessageId: `user-${index}`,
-          assistantMessageId: `assistant-${index}`,
-          imageRefs: [],
-          documentRefs: [
-            {
-              ...documentRef,
-              documentId: `00000000-0000-4000-8000-${(20 + index).toString().padStart(12, '0')}`,
-              extractedByteLength: 100 * 1024,
-            },
-          ],
-          assistantStatus: 'completed',
-        })),
+        turns: [base.turns[0]!, { ...base.turns[0]!, assistantStatus: 'completed' }],
       }),
     ).toThrow()
+    expect(() => parseCurrentThreadRecord({ ...base, future: true })).toThrow()
   })
 })

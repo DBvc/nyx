@@ -13,11 +13,7 @@ import {
 } from './session-coordinator'
 import { CurrentThreadImageFilesError, type CurrentThreadImageFiles } from './image-files'
 import { CurrentThreadDocumentFiles } from './document-files'
-import {
-  parseCurrentThreadRecordV1,
-  parseCurrentThreadRecordV3,
-  parseCurrentThreadRecordV4,
-} from './schemas'
+import { parseCurrentThreadRecord } from './schemas'
 import { toCurrentThreadSnapshot } from './snapshot'
 import { CurrentThreadStore } from './store'
 
@@ -132,6 +128,24 @@ function newRequest(overrides: Partial<NyxChatRequest> = {}): NyxChatRequest {
   }
 }
 
+function recordFixture(value: {
+  version: 5
+  threadId: string
+  turns: Array<Record<string, unknown>>
+  createdAt: string
+  updatedAt: string
+}) {
+  return parseCurrentThreadRecord({
+    ...value,
+    turns: value.turns.map((turn) => ({
+      imageRefs: [],
+      documentRefs: [],
+      providerStateRef: null,
+      ...turn,
+    })),
+  })
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -152,7 +166,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(prepared.providerMessages).toEqual([{ role: 'user', content: 'Hello' }])
     expect(prepared.replayRecord).toBeNull()
     expect(prepared.pendingRecord).toMatchObject({
-      version: 2,
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -198,7 +212,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     expect(rollbackImages).toHaveBeenCalledWith([imageRef.imageId])
   })
 
-  it('commits document sidecars before v4, reuses refs on Retry, and detects corruption', async () => {
+  it('commits document sidecars before v5, reuses refs on Retry, and detects corruption', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'nyx-current-thread-document-session-'))
     tempDirs.push(dir)
     const store = new CurrentThreadStore({
@@ -217,7 +231,7 @@ describe('CurrentThreadSessionCoordinator', () => {
 
     const prepared = await coordinator.prepare(request)
     expect(prepared.pendingRecord).toMatchObject({
-      version: 4,
+      version: 5,
       turns: [{ imageRefs: [], documentRefs: [expect.objectContaining(documentRef)] }],
     })
     await expect(
@@ -238,7 +252,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     }
     const retried = await coordinator.prepare(retry)
     expect(retried).toMatchObject({
-      pendingRecord: { version: 4, turns: [{ attemptRequestId: 'request-2' }] },
+      pendingRecord: { version: 5, turns: [{ attemptRequestId: 'request-2' }] },
     })
     await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
       {
@@ -305,8 +319,8 @@ describe('CurrentThreadSessionCoordinator', () => {
     const pdfSource = new Uint8Array(8 * 1024 * 1024)
     pdfSource.set(new TextEncoder().encode('%PDF-'))
     const pdfText = new TextEncoder().encode('x')
-    const historicalRecord = parseCurrentThreadRecordV3({
-      version: 3,
+    const historicalRecord = recordFixture({
+      version: 5,
       threadId: 'thread-1',
       turns: [imageRef, imageRef2, imageRef3, imageRef4].map((ref, index) => ({
         attemptRequestId: `historical-request-${index}`,
@@ -556,7 +570,7 @@ describe('CurrentThreadSessionCoordinator', () => {
       { role: 'user', content: 'Continue' },
     ])
     expect(prepared.replayRecord?.turns).toHaveLength(1)
-    expect(prepared.pendingRecord.version).toBe(2)
+    expect(prepared.pendingRecord.version).toBe(5)
     expect(prepared.pendingRecord.turns).toHaveLength(2)
   })
 
@@ -568,8 +582,8 @@ describe('CurrentThreadSessionCoordinator', () => {
       store: {} as CurrentThreadStore,
       images: { readCanonical } as unknown as CurrentThreadImageFiles,
     })
-    const record = parseCurrentThreadRecordV3({
-      version: 3,
+    const record = recordFixture({
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -639,8 +653,8 @@ describe('CurrentThreadSessionCoordinator', () => {
       images: { readCanonical } as unknown as CurrentThreadImageFiles,
       documents: { readExtractedText } as unknown as CurrentThreadDocumentFiles,
     })
-    const record = parseCurrentThreadRecordV4({
-      version: 4,
+    const record = recordFixture({
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -695,8 +709,8 @@ describe('CurrentThreadSessionCoordinator', () => {
       store: {} as CurrentThreadStore,
       documents: { readExtractedText } as unknown as CurrentThreadDocumentFiles,
     })
-    const record = parseCurrentThreadRecordV4({
-      version: 4,
+    const record = recordFixture({
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -747,8 +761,8 @@ describe('CurrentThreadSessionCoordinator', () => {
 
     await expect(
       coordinator.materializeProviderMessages(
-        parseCurrentThreadRecordV3({
-          version: 3,
+        recordFixture({
+          version: 5,
           threadId: 'thread-1',
           turns: [
             {
@@ -778,60 +792,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     })
   })
 
-  it('upgrades version 1 only while appending a real selected turn', async () => {
-    const { coordinator, filePath } = await createCoordinator()
-    const version1 = parseCurrentThreadRecordV1({
-      version: 1,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: 'Hello',
-          assistantContent: 'Done',
-          assistantStatus: 'completed',
-          error: null,
-          createdAt: '2026-07-10T00:00:00.000Z',
-          updatedAt: '2026-07-10T00:01:00.000Z',
-        },
-      ],
-      createdAt: '2026-07-10T00:00:00.000Z',
-      updatedAt: '2026-07-10T00:01:00.000Z',
-    })
-    await writeFile(filePath, `${JSON.stringify(version1)}\n`, 'utf8')
-
-    const prepared = await coordinator.prepare(
-      newRequest({
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        turnUserMessage: { id: 'user-2', content: 'Continue' },
-        messages: [
-          { role: 'user', content: 'Hello' },
-          { role: 'assistant', content: 'Done' },
-          { role: 'user', content: 'Continue' },
-        ],
-      }),
-    )
-
-    expect(prepared.replayRecord?.version).toBe(1)
-    expect(prepared.pendingRecord).toMatchObject({
-      version: 2,
-      turns: [
-        { targetBinding: null },
-        {
-          attemptRequestId: 'request-2',
-          targetBinding: {
-            selection: newRequest().targetSelection,
-            attribution: null,
-          },
-        },
-      ],
-    })
-  })
-
-  it('upgrades on the first image turn and keeps empty image-only history in later requests', async () => {
+  it('keeps image-only history and explicit empty attachment arrays in later requests', async () => {
     const { coordinator } = await createCoordinator()
     await coordinator.prepare(newRequest())
     await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
@@ -853,7 +814,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     )
 
     expect(imageTurn.pendingRecord).toMatchObject({
-      version: 3,
+      version: 5,
       turns: [{ imageRefs: [] }, { userContent: '', imageRefs: [imageRef] }],
     })
 
@@ -877,7 +838,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     )
 
     expect(textTurn.pendingRecord).toMatchObject({
-      version: 3,
+      version: 5,
       turns: [{ imageRefs: [] }, { imageRefs: [imageRef] }, { imageRefs: [] }],
     })
   })
@@ -920,12 +881,12 @@ describe('CurrentThreadSessionCoordinator', () => {
 
     expect(retried.providerMessages).toEqual([{ role: 'user', content: '' }])
     expect(retried.pendingRecord).toMatchObject({
-      version: 3,
+      version: 5,
       turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
     })
   })
 
-  it('persists v3 content rejection and reuses the same image on target-switch Retry', async () => {
+  it('persists safe attachment rejection and reuses the same image on target-switch Retry', async () => {
     const { coordinator, store } = await createCoordinator()
     const request = newRequest({
       turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
@@ -943,13 +904,13 @@ describe('CurrentThreadSessionCoordinator', () => {
     })
 
     await expect(store.read()).resolves.toMatchObject({
-      version: 3,
+      version: 5,
       turns: [
         {
           imageRefs: [imageRef],
           error: {
             code: 'content_rejected',
-            message: 'The selected target rejected this image request.',
+            message: 'The selected target rejected this attachment request.',
             retryable: true,
           },
         },
@@ -965,7 +926,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     })
 
     expect(retried.pendingRecord).toMatchObject({
-      version: 3,
+      version: 5,
       turns: [{ attemptRequestId: 'request-2', imageRefs: [imageRef] }],
     })
     await expect(coordinator.materializeProviderMessages(retried.pendingRecord)).resolves.toEqual([
@@ -976,7 +937,7 @@ describe('CurrentThreadSessionCoordinator', () => {
     ])
   })
 
-  it('rejects content rejection settlement for a text-only v2 turn', async () => {
+  it('rejects content rejection settlement for a text-only v5 turn', async () => {
     const { coordinator, store } = await createCoordinator()
     await coordinator.prepare(newRequest())
     await coordinator.bindResolvedTarget('request-1', 'assistant-1', firstAttribution)
@@ -989,7 +950,7 @@ describe('CurrentThreadSessionCoordinator', () => {
       }),
     ).rejects.toMatchObject({ code: 'invalid_request' })
     await expect(store.read()).resolves.toMatchObject({
-      version: 2,
+      version: 5,
       turns: [{ assistantStatus: 'pending', error: null }],
     })
   })

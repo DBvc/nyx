@@ -1,22 +1,18 @@
 import { randomUUID } from 'node:crypto'
+import { dirname, join } from 'node:path'
 
 import type { NyxChatImageRef, NyxChatTargetSelection } from '../../../shared/chat/types'
+import type { ResponsesContinuationStateV1 } from '../chat/provider-stream'
 import { createCurrentThreadFileAdapter, type CurrentThreadFileAdapter } from './file-adapter'
 import {
-  createInterruptedThreadErrorRecordV2,
+  createInterruptedThreadErrorRecord,
   parseCurrentThreadRecord,
-  parseMutableCurrentThreadRecord,
-  upgradeCurrentThreadRecordForDocumentMutation,
-  upgradeCurrentThreadRecordForImageMutation,
-  upgradeCurrentThreadRecordForMutation,
+  type CurrentThreadDocumentRef,
   type CurrentThreadRecord,
-  type CurrentThreadRecordV2,
-  type CurrentThreadRecordV3,
-  type CurrentThreadRecordV4,
-  type CurrentThreadDocumentRefV4,
-  type MutableCurrentThreadRecord,
-  type MutableTurnRecord,
+  type ProviderStateRef,
+  type TurnRecord,
 } from './schemas'
+import { CurrentThreadProviderStateFiles } from './provider-state-files'
 
 export type CurrentThreadStoreErrorCode =
   | 'io_error'
@@ -42,22 +38,18 @@ export interface CurrentThreadStoreOptions {
   now?: () => string
   generateId?: () => string
   fileAdapter?: CurrentThreadFileAdapter
+  providerStates?: CurrentThreadProviderStateFiles
 }
 
-interface CreateCurrentThreadInputBase {
+export interface CreateCurrentThreadInput {
   attemptRequestId: string
   userMessageId: string
   assistantMessageId: string
   userContent: string
   targetSelection: NyxChatTargetSelection
+  imageRefs?: ReadonlyArray<NyxChatImageRef>
+  documentRefs?: ReadonlyArray<CurrentThreadDocumentRef>
 }
-
-type NonEmptyImageRefs = readonly [NyxChatImageRef, ...NyxChatImageRef[]]
-type NonEmptyDocumentRefs = readonly [CurrentThreadDocumentRefV4, ...CurrentThreadDocumentRefV4[]]
-
-export type CreateCurrentThreadInput = CreateCurrentThreadInputBase &
-  ({ imageRefs?: undefined } | { imageRefs: NonEmptyImageRefs }) &
-  ({ documentRefs?: undefined } | { documentRefs: NonEmptyDocumentRefs })
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
@@ -90,21 +82,19 @@ function recoverInterruptedTurn(record: CurrentThreadRecord, now: string) {
     return null
   }
 
-  const upgradedRecord = upgradeCurrentThreadRecordForMutation(record)
-  const pendingTurn = upgradedRecord.turns[pendingIndex]!
-  const recoveredTurn = {
-    ...pendingTurn,
-    assistantStatus: 'failed',
-    error: createInterruptedThreadErrorRecordV2(),
-    updatedAt: now,
-  } satisfies MutableTurnRecord
-  const turns = upgradedRecord.turns.map((turn, index) =>
-    index === pendingIndex ? recoveredTurn : turn,
-  )
-
-  return parseMutableCurrentThreadRecord({
-    ...upgradedRecord,
-    turns,
+  return parseCurrentThreadRecord({
+    ...record,
+    turns: record.turns.map((turn, index) =>
+      index === pendingIndex
+        ? {
+            ...turn,
+            assistantStatus: 'failed',
+            error: createInterruptedThreadErrorRecord(),
+            providerStateRef: null,
+            updatedAt: now,
+          }
+        : turn,
+    ),
     updatedAt: now,
   })
 }
@@ -113,18 +103,7 @@ function recordsEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-function recordImageRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 3 || record.version === 4 ? (record.turns[index]?.imageRefs ?? []) : []
-}
-
-function recordDocumentRefs(record: CurrentThreadRecord, index: number) {
-  return record.version === 4 ? (record.turns[index]?.documentRefs ?? []) : []
-}
-
-function assertStableIdentity(
-  currentRecord: CurrentThreadRecord,
-  nextRecord: MutableCurrentThreadRecord,
-) {
+function assertStableIdentity(currentRecord: CurrentThreadRecord, nextRecord: CurrentThreadRecord) {
   const identityChanged =
     currentRecord.threadId !== nextRecord.threadId ||
     currentRecord.createdAt !== nextRecord.createdAt ||
@@ -137,11 +116,8 @@ function assertStableIdentity(
         currentTurn.userMessageId !== nextTurn.userMessageId ||
         currentTurn.assistantMessageId !== nextTurn.assistantMessageId ||
         currentTurn.userContent !== nextTurn.userContent ||
-        !recordsEqual(recordImageRefs(currentRecord, index), recordImageRefs(nextRecord, index)) ||
-        !recordsEqual(
-          recordDocumentRefs(currentRecord, index),
-          recordDocumentRefs(nextRecord, index),
-        ) ||
+        !recordsEqual(currentTurn.imageRefs, nextTurn.imageRefs) ||
+        !recordsEqual(currentTurn.documentRefs, nextTurn.documentRefs) ||
         currentTurn.createdAt !== nextTurn.createdAt
       )
     })
@@ -154,16 +130,12 @@ function assertStableIdentity(
   }
 }
 
-function isResolvedTargetBindingTransition(
-  currentTurn: MutableTurnRecord,
-  nextTurn: MutableTurnRecord,
-) {
+function isResolvedTargetBindingTransition(currentTurn: TurnRecord, nextTurn: TurnRecord) {
   if (
     currentTurn.assistantStatus !== 'pending' ||
     nextTurn.assistantStatus !== 'pending' ||
-    !currentTurn.targetBinding ||
     currentTurn.targetBinding.attribution ||
-    !nextTurn.targetBinding?.attribution
+    !nextTurn.targetBinding.attribution
   ) {
     return false
   }
@@ -178,12 +150,11 @@ function isResolvedTargetBindingTransition(
   })
 }
 
-function isValidPendingSettlement(currentTurn: MutableTurnRecord, nextTurn: MutableTurnRecord) {
+function isValidPendingSettlement(currentTurn: TurnRecord, nextTurn: TurnRecord) {
   if (
     currentTurn.assistantStatus !== 'pending' ||
     nextTurn.attemptRequestId !== currentTurn.attemptRequestId ||
     nextTurn.assistantStatus === 'pending' ||
-    !currentTurn.targetBinding ||
     !recordsEqual(currentTurn.targetBinding, nextTurn.targetBinding)
   ) {
     return false
@@ -195,6 +166,7 @@ function isValidPendingSettlement(currentTurn: MutableTurnRecord, nextTurn: Muta
 
   return (
     nextTurn.assistantContent === currentTurn.assistantContent &&
+    nextTurn.providerStateRef === null &&
     ((nextTurn.assistantStatus === 'cancelled' && nextTurn.error === null) ||
       (nextTurn.assistantStatus === 'failed' &&
         nextTurn.error?.code === 'target_unavailable' &&
@@ -204,58 +176,15 @@ function isValidPendingSettlement(currentTurn: MutableTurnRecord, nextTurn: Muta
 
 function assertValidTransition(
   currentRecord: CurrentThreadRecord,
-  nextRecord: MutableCurrentThreadRecord,
+  nextRecord: CurrentThreadRecord,
 ) {
   assertStableIdentity(currentRecord, nextRecord)
 
-  if (currentRecord.version === 4 && nextRecord.version !== 4) {
-    throw new CurrentThreadStoreError(
-      'invalid_transition',
-      'Current thread version 4 records cannot be downgraded.',
-    )
-  }
-
-  if (currentRecord.version === 3 && nextRecord.version < 3) {
-    throw new CurrentThreadStoreError(
-      'invalid_transition',
-      'Current thread version 3 records cannot be downgraded.',
-    )
-  }
-
-  if (
-    currentRecord.version !== 3 &&
-    nextRecord.version === 3 &&
-    nextRecord.turns.length !== currentRecord.turns.length + 1
-  ) {
-    throw new CurrentThreadStoreError(
-      'invalid_transition',
-      'Current thread version 3 begins only with an appended image turn.',
-    )
-  }
-
-  if (
-    currentRecord.version !== 4 &&
-    nextRecord.version === 4 &&
-    nextRecord.turns.length !== currentRecord.turns.length + 1
-  ) {
-    throw new CurrentThreadStoreError(
-      'invalid_transition',
-      'Current thread version 4 begins only with an appended document turn.',
-    )
-  }
-
-  const upgradedCurrent =
-    nextRecord.version === 4
-      ? upgradeCurrentThreadRecordForDocumentMutation(currentRecord)
-      : nextRecord.version === 3
-        ? upgradeCurrentThreadRecordForImageMutation(currentRecord)
-        : upgradeCurrentThreadRecordForMutation(currentRecord)
-
-  if (currentRecord.version === nextRecord.version && recordsEqual(currentRecord, nextRecord)) {
+  if (recordsEqual(currentRecord, nextRecord)) {
     return
   }
 
-  const currentTurns = upgradedCurrent.turns
+  const currentTurns = currentRecord.turns
   const nextTurns = nextRecord.turns
 
   if (nextTurns.length === currentTurns.length + 1) {
@@ -263,19 +192,11 @@ function assertValidTransition(
       recordsEqual(turn, nextTurns[index]),
     )
     const appendedTurn = nextTurns.at(-1)
-    const appendedImageRefs = recordImageRefs(nextRecord, nextTurns.length - 1)
-    const appendedDocumentRefs = recordDocumentRefs(nextRecord, nextTurns.length - 1)
 
     if (
       previousTurnsUnchanged &&
       appendedTurn?.assistantStatus === 'pending' &&
-      appendedTurn.targetBinding !== null &&
-      appendedTurn.targetBinding.attribution === null &&
-      (currentRecord.version === 3 ||
-        currentRecord.version === 4 ||
-        nextRecord.version !== 3 ||
-        appendedImageRefs.length > 0) &&
-      (currentRecord.version === 4 || nextRecord.version !== 4 || appendedDocumentRefs.length > 0)
+      appendedTurn.targetBinding.attribution === null
     ) {
       return
     }
@@ -285,17 +206,20 @@ function assertValidTransition(
       .every((turn, index) => recordsEqual(turn, nextTurns[index]))
     const currentTurn = currentTurns.at(-1)!
     const nextTurn = nextTurns.at(-1)!
-    const settlesPending = isValidPendingSettlement(currentTurn, nextTurn)
-    const bindsResolvedTarget = isResolvedTargetBindingTransition(currentTurn, nextTurn)
     const retriesFailed =
       currentTurn.assistantStatus === 'failed' &&
       Boolean(currentTurn.error?.retryable) &&
       nextTurn.assistantStatus === 'pending' &&
       nextTurn.attemptRequestId !== currentTurn.attemptRequestId &&
-      nextTurn.targetBinding !== null &&
-      nextTurn.targetBinding.attribution === null
+      nextTurn.targetBinding.attribution === null &&
+      nextTurn.providerStateRef === null
 
-    if (previousTurnsUnchanged && (settlesPending || bindsResolvedTarget || retriesFailed)) {
+    if (
+      previousTurnsUnchanged &&
+      (isValidPendingSettlement(currentTurn, nextTurn) ||
+        isResolvedTargetBindingTransition(currentTurn, nextTurn) ||
+        retriesFailed)
+    ) {
       return
     }
   }
@@ -311,6 +235,7 @@ export class CurrentThreadStore {
   private readonly now: () => string
   private readonly generateId: () => string
   private readonly fileAdapter: CurrentThreadFileAdapter
+  private readonly providerStates: CurrentThreadProviderStateFiles
   private operationQueue: Promise<void> = Promise.resolve()
   private loaded = false
   private currentRecord: CurrentThreadRecord | null = null
@@ -320,11 +245,18 @@ export class CurrentThreadStore {
     now = () => new Date().toISOString(),
     generateId = randomUUID,
     fileAdapter = createCurrentThreadFileAdapter(),
+    providerStates,
   }: CurrentThreadStoreOptions) {
     this.filePath = filePath
     this.now = now
     this.generateId = generateId
     this.fileAdapter = fileAdapter
+    this.providerStates =
+      providerStates ??
+      new CurrentThreadProviderStateFiles({
+        directoryPath: join(dirname(filePath), 'current-thread-provider-state'),
+        fileAdapter,
+      })
   }
 
   read() {
@@ -334,22 +266,6 @@ export class CurrentThreadStore {
     })
   }
 
-  create(
-    input: CreateCurrentThreadInputBase & { imageRefs?: undefined; documentRefs?: undefined },
-  ): Promise<CurrentThreadRecordV2>
-  create(
-    input: CreateCurrentThreadInputBase & {
-      imageRefs: NonEmptyImageRefs
-      documentRefs?: undefined
-    },
-  ): Promise<CurrentThreadRecordV3>
-  create(
-    input: CreateCurrentThreadInputBase & {
-      imageRefs?: NonEmptyImageRefs
-      documentRefs: NonEmptyDocumentRefs
-    },
-  ): Promise<CurrentThreadRecordV4>
-  create(input: CreateCurrentThreadInput): Promise<MutableCurrentThreadRecord>
   create(input: CreateCurrentThreadInput) {
     return this.enqueue(async () => {
       await this.ensureLoaded()
@@ -362,32 +278,15 @@ export class CurrentThreadStore {
       }
 
       const now = this.now()
-      const { targetSelection, imageRefs, documentRefs, ...turnInput } = input
-
-      if (imageRefs && imageRefs.length === 0) {
-        throw new CurrentThreadStoreError(
-          'invalid_transition',
-          'Current thread version 3 requires at least one image reference at creation.',
-        )
-      }
-
-      if (documentRefs && documentRefs.length === 0) {
-        throw new CurrentThreadStoreError(
-          'invalid_transition',
-          'Current thread version 4 requires at least one document reference at creation.',
-        )
-      }
-
-      const version = documentRefs ? 4 : imageRefs ? 3 : 2
-
-      const record = parseMutableCurrentThreadRecord({
-        version,
+      const { targetSelection, imageRefs = [], documentRefs = [], ...turnInput } = input
+      const record = parseCurrentThreadRecord({
+        version: 5,
         threadId: this.generateId(),
         turns: [
           {
             ...turnInput,
-            ...(imageRefs ? { imageRefs } : {}),
-            ...(documentRefs ? { documentRefs, imageRefs: imageRefs ?? [] } : {}),
+            imageRefs,
+            documentRefs,
             assistantContent: '',
             assistantStatus: 'pending',
             error: null,
@@ -395,6 +294,7 @@ export class CurrentThreadStore {
               selection: targetSelection,
               attribution: null,
             },
+            providerStateRef: null,
             createdAt: now,
             updatedAt: now,
           },
@@ -402,24 +302,18 @@ export class CurrentThreadStore {
         createdAt: now,
         updatedAt: now,
       })
-      const returnRecord = parseMutableCurrentThreadRecord(record)
 
       await this.writeAtomic(record)
       this.currentRecord = record
 
-      return returnRecord
+      return cloneRecord(record)
     })
   }
 
-  write(record: CurrentThreadRecordV2): Promise<CurrentThreadRecordV2>
-  write(record: CurrentThreadRecordV3): Promise<CurrentThreadRecordV3>
-  write(record: CurrentThreadRecordV4): Promise<CurrentThreadRecordV4>
-  write(record: MutableCurrentThreadRecord): Promise<MutableCurrentThreadRecord>
-  write(record: MutableCurrentThreadRecord) {
+  write(record: CurrentThreadRecord) {
     return this.enqueue(async () => {
       await this.ensureLoaded()
-
-      const parsedRecord = parseMutableCurrentThreadRecord(record)
+      const parsedRecord = parseCurrentThreadRecord(record)
 
       if (!this.currentRecord) {
         throw new CurrentThreadStoreError(
@@ -429,12 +323,61 @@ export class CurrentThreadStore {
       }
 
       assertValidTransition(this.currentRecord, parsedRecord)
-      const returnRecord = parseMutableCurrentThreadRecord(parsedRecord)
-
       await this.writeAtomic(parsedRecord)
       this.currentRecord = parsedRecord
 
-      return returnRecord
+      return cloneRecord(parsedRecord)
+    })
+  }
+
+  prepareProviderState(state: ResponsesContinuationStateV1, executionIdentity: string) {
+    return this.providerStates.prepare(state, executionIdentity)
+  }
+
+  commitProviderState(ref: ProviderStateRef) {
+    return this.providerStates.commit(ref)
+  }
+
+  rollbackProviderState(ref: ProviderStateRef) {
+    return this.providerStates.rollback(ref)
+  }
+
+  readProviderState(ref: ProviderStateRef) {
+    return this.providerStates.read(ref)
+  }
+
+  repairProviderStateRefs(executionIdentity: string) {
+    return this.enqueue(async () => {
+      await this.ensureLoaded()
+
+      if (!this.currentRecord) {
+        return { record: null, clearedCount: 0 }
+      }
+
+      const clearedCount = this.currentRecord.turns.filter(
+        (turn) => turn.providerStateRef?.executionIdentity === executionIdentity,
+      ).length
+
+      if (clearedCount === 0) {
+        return { record: cloneRecord(this.currentRecord), clearedCount }
+      }
+
+      const now = this.now()
+      const repaired = parseCurrentThreadRecord({
+        ...this.currentRecord,
+        turns: this.currentRecord.turns.map((turn) =>
+          turn.providerStateRef?.executionIdentity === executionIdentity
+            ? { ...turn, providerStateRef: null, updatedAt: now }
+            : turn,
+        ),
+        updatedAt: now,
+      })
+
+      await this.writeAtomic(repaired)
+      this.currentRecord = repaired
+      await this.providerStates.reconcile(repaired)
+
+      return { record: cloneRecord(repaired), clearedCount }
     })
   }
 
@@ -450,6 +393,12 @@ export class CurrentThreadStore {
 
       this.currentRecord = null
       this.loaded = true
+
+      try {
+        await this.providerStates.reset()
+      } catch {
+        // The record is already reset; leftover provider state is unreachable.
+      }
     })
   }
 
@@ -475,6 +424,7 @@ export class CurrentThreadStore {
       if (isNodeError(error) && error.code === 'ENOENT') {
         this.currentRecord = null
         this.loaded = true
+        await this.providerStates.reconcile(null)
         return
       }
 
@@ -490,6 +440,7 @@ export class CurrentThreadStore {
 
     this.currentRecord = recoveredRecord ?? storedRecord
     this.loaded = true
+    await this.providerStates.reconcile(this.currentRecord)
   }
 
   private async writeAtomic(record: CurrentThreadRecord) {

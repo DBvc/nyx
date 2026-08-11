@@ -7,7 +7,7 @@ import {
   registerNyxImageProtocol,
   registerNyxImageScheme,
 } from './image-protocol'
-import type { CurrentThreadRecord } from './schemas'
+import { parseCurrentThreadRecord, type CurrentThreadRecord } from './schemas'
 
 const imageId = '00000000-0000-4000-8000-000000000001'
 
@@ -49,7 +49,32 @@ describe('nyx-image protocol', () => {
         handler = routeHandler
       }),
     }
-    const record = { version: 3 } as CurrentThreadRecord
+    const record = parseCurrentThreadRecord({
+      version: 5,
+      threadId: 'thread-1',
+      turns: [
+        {
+          attemptRequestId: 'request-1',
+          userMessageId: 'user-1',
+          assistantMessageId: 'assistant-1',
+          userContent: '',
+          imageRefs: [{ imageId, mediaType: 'image/png', width: 2, height: 1 }],
+          documentRefs: [],
+          assistantContent: 'Done',
+          assistantStatus: 'completed',
+          error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'model' },
+          },
+          providerStateRef: null,
+          createdAt: '2026-08-11T00:00:00.000Z',
+          updatedAt: '2026-08-11T00:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-11T00:00:00.000Z',
+      updatedAt: '2026-08-11T00:00:00.000Z',
+    })
     const recordReader = {
       read: vi.fn<() => Promise<CurrentThreadRecord | null>>(async () => record),
     }

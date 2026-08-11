@@ -42,10 +42,7 @@ export function toCurrentThreadSnapshot(
   let runStatus: NyxCurrentThreadSnapshot['runStatus'] = 'completed'
 
   for (const [index, turn] of record.turns.entries()) {
-    const targetBinding = record.version === 1 ? null : record.turns[index]!.targetBinding
-    const imageRefs =
-      record.version === 3 || record.version === 4 ? record.turns[index]!.imageRefs : []
-    const documentRefs = record.version === 4 ? record.turns[index]!.documentRefs : []
+    const { targetBinding, imageRefs, documentRefs } = turn
 
     if (turn.assistantStatus === 'pending') {
       throw new Error('Pending current thread records must be recovered before snapshot mapping.')

@@ -240,7 +240,7 @@ function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadT
     providerMessages: [{ role: 'user', content: providerContent }],
     replayRecord: null,
     pendingRecord: {
-      version: 2,
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -248,10 +248,13 @@ function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadT
           userMessageId: 'user-1',
           assistantMessageId: 'assistant-1',
           userContent: providerContent,
+          imageRefs: [],
+          documentRefs: [],
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
           targetBinding: { selection: targetSelection, attribution: null },
+          providerStateRef: null,
           createdAt: '2026-07-11T00:00:00.000Z',
           updatedAt: '2026-07-11T00:00:00.000Z',
         },
@@ -267,7 +270,7 @@ function preparedImageTurn(): PreparedCurrentThreadTurn {
     providerMessages: [{ role: 'user', content: '' }],
     replayRecord: null,
     pendingRecord: {
-      version: 3,
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -276,10 +279,12 @@ function preparedImageTurn(): PreparedCurrentThreadTurn {
           assistantMessageId: 'assistant-1',
           userContent: '',
           imageRefs: [imageRef],
+          documentRefs: [],
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
           targetBinding: { selection: targetSelection, attribution: null },
+          providerStateRef: null,
           createdAt: '2026-08-09T00:00:00.000Z',
           updatedAt: '2026-08-09T00:00:00.000Z',
         },
@@ -1929,7 +1934,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
     expect(resolveChatTarget).not.toHaveBeenCalled()
   })
 
-  it('keeps real v4 sidecars when Stop wins immediately after a later commit', async () => {
+  it('keeps real v5 attachment sidecars when Stop wins immediately after a later commit', async () => {
     const directoryPath = await mkdtemp(join(tmpdir(), 'nyx-session-v4-stop-'))
     const documentDirectory = join(directoryPath, 'documents')
     const store = new CurrentThreadStore({
@@ -1989,7 +1994,7 @@ describe('ChatSessionManager durable current thread ordering', () => {
         'chat:done',
       ])
       await expect(store.read()).resolves.toMatchObject({
-        version: 4,
+        version: 5,
         turns: [
           { documentRefs: [expect.objectContaining(documentRef)] },
           { assistantStatus: 'cancelled', documentRefs: [] },

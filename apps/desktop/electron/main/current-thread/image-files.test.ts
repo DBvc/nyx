@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
 import { createCurrentThreadFileAdapter } from './file-adapter'
 import { CurrentThreadImageFiles } from './image-files'
-import { parseCurrentThreadRecordV3, parseCurrentThreadRecordV4 } from './schemas'
+import { parseCurrentThreadRecord } from './schemas'
 
 const png = Uint8Array.from(
   Buffer.from(
@@ -95,8 +95,8 @@ function refAt(index: number, width = 2, height = 1) {
 }
 
 function recordWithImage(ref = pngRef) {
-  return parseCurrentThreadRecordV3({
-    version: 3,
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -105,6 +105,7 @@ function recordWithImage(ref = pngRef) {
         assistantMessageId: 'assistant-1',
         userContent: '',
         imageRefs: [ref],
+        documentRefs: [],
         assistantContent: 'Done',
         assistantStatus: 'completed',
         error: null,
@@ -112,6 +113,7 @@ function recordWithImage(ref = pngRef) {
           selection: { kind: 'env_fallback' },
           attribution: { kind: 'env_fallback', modelId: 'model' },
         },
+        providerStateRef: null,
         createdAt: '2026-08-09T00:00:00.000Z',
         updatedAt: '2026-08-09T00:00:00.000Z',
       },
@@ -180,24 +182,6 @@ describe('CurrentThreadImageFiles', () => {
 
     await images.reset()
     await expect(stat(directoryPath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it('keeps version-4 image authorization intact', async () => {
-    const { images } = await createImages()
-    await images.writeNewImages({
-      record: null,
-      refs: [pngRef],
-      images: [{ imageId, canonicalBytes: png, previewBytes: png }],
-    })
-    const v3 = recordWithImage()
-    const v4 = parseCurrentThreadRecordV4({
-      ...v3,
-      version: 4,
-      turns: v3.turns.map((turn) => ({ ...turn, documentRefs: [] })),
-    })
-
-    await expect(images.readCanonical(v4.turns[0]!.imageRefs[0]!)).resolves.toEqual(png)
-    await expect(images.availableImageIds(v4)).resolves.toEqual(new Set([imageId]))
   })
 
   it('accepts only the sealed Chromium JPEG ICC and rejects a changed profile', async () => {
@@ -313,7 +297,7 @@ describe('CurrentThreadImageFiles', () => {
       }),
     ).rejects.toMatchObject({ code: 'invalid_request' })
 
-    const fullRecord = parseCurrentThreadRecordV3({
+    const fullRecord = parseCurrentThreadRecord({
       ...recordWithImage(),
       turns: Array.from({ length: 12 }, (_, index) => ({
         ...recordWithImage().turns[0]!,
@@ -422,7 +406,7 @@ describe('CurrentThreadImageFiles', () => {
     ).rejects.toMatchObject({ code: 'invalid_request' })
 
     const pixelRefs = Array.from({ length: 3 }, (_, index) => refAt(index + 30, 3840, 2160))
-    const pixelRecord = parseCurrentThreadRecordV3({
+    const pixelRecord = parseCurrentThreadRecord({
       ...recordWithImage(),
       turns: [{ ...recordWithImage().turns[0]!, imageRefs: pixelRefs }],
     })
@@ -435,7 +419,7 @@ describe('CurrentThreadImageFiles', () => {
     ).rejects.toMatchObject({ code: 'invalid_request' })
 
     const byteRefs = Array.from({ length: 4 }, (_, index) => refAt(index + 50))
-    const byteRecord = parseCurrentThreadRecordV3({
+    const byteRecord = parseCurrentThreadRecord({
       ...recordWithImage(),
       turns: [{ ...recordWithImage().turns[0]!, imageRefs: byteRefs }],
     })

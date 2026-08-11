@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createCurrentThreadFileAdapter } from './file-adapter'
 import { CurrentThreadDocumentFiles } from './document-files'
-import { parseCurrentThreadRecordV4 } from './schemas'
+import { parseCurrentThreadRecord } from './schemas'
 
 const tempDirs: string[] = []
 const source = new TextEncoder().encode('hello document')
@@ -35,8 +35,8 @@ function newDocument(bytes = source) {
 function recordWithDocument(
   ref: Awaited<ReturnType<CurrentThreadDocumentFiles['writeNewDocuments']>>[number],
 ) {
-  return parseCurrentThreadRecordV4({
-    version: 4,
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -53,6 +53,7 @@ function recordWithDocument(
           selection: { kind: 'env_fallback' },
           attribution: { kind: 'env_fallback', modelId: 'model' },
         },
+        providerStateRef: null,
         createdAt: '2026-08-10T00:00:00.000Z',
         updatedAt: '2026-08-10T00:00:00.000Z',
       },

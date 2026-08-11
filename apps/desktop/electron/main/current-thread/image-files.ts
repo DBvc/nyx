@@ -63,9 +63,7 @@ function sha256(bytes: Uint8Array) {
 }
 
 function imageRefs(record: CurrentThreadRecord | null) {
-  return record && (record.version === 3 || record.version === 4)
-    ? record.turns.flatMap((turn) => turn.imageRefs)
-    : []
+  return record?.turns.flatMap((turn) => turn.imageRefs) ?? []
 }
 
 function assertDecodedSize(

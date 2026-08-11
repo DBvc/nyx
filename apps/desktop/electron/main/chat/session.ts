@@ -644,7 +644,7 @@ export class ChatSessionManager {
       return
     }
 
-    if (session.currentThreadSession && session.preparedCurrentThread) {
+    if (session.currentThreadSession) {
       try {
         await session.currentThreadSession.bindResolvedTarget(
           session.requestId,
@@ -672,8 +672,9 @@ export class ChatSessionManager {
 
     if (
       session.currentThreadSession &&
-      (session.preparedCurrentThread?.pendingRecord.version === 3 ||
-        session.preparedCurrentThread?.pendingRecord.version === 4)
+      session.preparedCurrentThread?.pendingRecord.turns.some(
+        (turn) => turn.imageRefs.length > 0 || turn.documentRefs.length > 0,
+      )
     ) {
       try {
         session.providerMessages = await session.currentThreadSession.materializeProviderMessages(
@@ -1022,11 +1023,11 @@ export class ChatSessionManager {
         target,
         request,
         ...(session.providerMessages ? { providerMessages: session.providerMessages } : {}),
-        documentBearing:
-          session.preparedCurrentThread?.pendingRecord.version === 4 &&
-          session.preparedCurrentThread.pendingRecord.turns.some(
+        documentBearing: Boolean(
+          session.preparedCurrentThread?.pendingRecord.turns.some(
             (turn) => turn.documentRefs.length > 0,
           ),
+        ),
         signal: session.abortController.signal,
         onDelta: async (delta, snapshot) => {
           if (this.activeSession !== session) {

@@ -1,14 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { RuntimeChatStateClient } from '../runtime/chat-state-client'
-import {
-  createSafeThreadErrorRecordV1,
-  parseCurrentThreadRecordV1,
-  parseCurrentThreadRecordV2,
-  parseCurrentThreadRecordV3,
-  parseCurrentThreadRecordV4,
-  upgradeCurrentThreadRecordForMutation,
-} from './schemas'
+import { createSafeThreadErrorRecord, parseCurrentThreadRecord } from './schemas'
 import { replayCurrentThread } from './runtime-replay'
 
 function client(order: string[]) {
@@ -31,19 +24,29 @@ function client(order: string[]) {
   } satisfies RuntimeChatStateClient
 }
 
+const timestamp = '2026-08-11T00:00:00.000Z'
+const envBinding = {
+  selection: { kind: 'env_fallback' as const },
+  attribution: { kind: 'env_fallback' as const, modelId: 'env-model' },
+}
+
 describe('replayCurrentThread', () => {
-  it('replays completed, cancelled, and failed turns through existing runtime actions', async () => {
+  it('replays terminal turns while ignoring target, attachment, and provider-state metadata', async () => {
     const order: string[] = []
     const runtime = client(order)
     const baseTurn = {
       userContent: 'Question',
+      imageRefs: [],
+      documentRefs: [],
       assistantContent: 'Answer',
       error: null,
-      createdAt: '2026-07-11T00:00:00.000Z',
-      updatedAt: '2026-07-11T00:00:00.000Z',
+      targetBinding: envBinding,
+      providerStateRef: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     }
-    const record = parseCurrentThreadRecordV1({
-      version: 1,
+    const record = parseCurrentThreadRecord({
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -52,6 +55,23 @@ describe('replayCurrentThread', () => {
           userMessageId: 'user-1',
           assistantMessageId: 'assistant-1',
           assistantStatus: 'completed',
+          targetBinding: {
+            selection: { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' },
+            attribution: {
+              kind: 'connection',
+              providerId: 'provider-1',
+              providerDisplayName: 'Provider One',
+              modelId: 'model-1',
+              modelDisplayName: 'Model One',
+            },
+          },
+          providerStateRef: {
+            protocol: 'openai-responses',
+            stateId: '00000000-0000-4000-8000-000000000020',
+            executionIdentity: 'a'.repeat(64),
+            byteLength: 128,
+            sha256: 'b'.repeat(64),
+          },
         },
         {
           ...baseTurn,
@@ -66,11 +86,11 @@ describe('replayCurrentThread', () => {
           userMessageId: 'user-3',
           assistantMessageId: 'assistant-3',
           assistantStatus: 'failed',
-          error: createSafeThreadErrorRecordV1({ code: 'unknown', retryable: true }),
+          error: createSafeThreadErrorRecord({ code: 'unknown', retryable: true }),
         },
       ],
-      createdAt: '2026-07-11T00:00:00.000Z',
-      updatedAt: '2026-07-11T00:00:00.000Z',
+      createdAt: timestamp,
+      updatedAt: timestamp,
     })
 
     await replayCurrentThread(runtime, record)
@@ -91,52 +111,11 @@ describe('replayCurrentThread', () => {
     ])
   })
 
-  it('ignores version-2 target metadata and replays only message-level fields', async () => {
+  it('projects attachment-only turns as empty Runtime text', async () => {
     const order: string[] = []
     const runtime = client(order)
-    const v1 = parseCurrentThreadRecordV1({
-      version: 1,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: 'Question',
-          assistantContent: 'Answer',
-          assistantStatus: 'completed',
-          error: null,
-          createdAt: '2026-07-11T00:00:00.000Z',
-          updatedAt: '2026-07-11T00:00:00.000Z',
-        },
-      ],
-      createdAt: '2026-07-11T00:00:00.000Z',
-      updatedAt: '2026-07-11T00:00:00.000Z',
-    })
-    const upgraded = upgradeCurrentThreadRecordForMutation(v1)
-    const record = parseCurrentThreadRecordV2({
-      ...upgraded,
-      turns: [
-        {
-          ...upgraded.turns[0]!,
-          targetBinding: {
-            selection: { kind: 'env_fallback' },
-            attribution: { kind: 'env_fallback', modelId: 'env-model' },
-          },
-        },
-      ],
-    })
-
-    await replayCurrentThread(runtime, record)
-
-    expect(order).toEqual(['submit', 'start', 'append', 'complete'])
-  })
-
-  it('projects an image-only version-3 turn as empty Runtime text', async () => {
-    const order: string[] = []
-    const runtime = client(order)
-    const record = parseCurrentThreadRecordV3({
-      version: 3,
+    const record = parseCurrentThreadRecord({
+      version: 5,
       threadId: 'thread-1',
       turns: [
         {
@@ -152,73 +131,23 @@ describe('replayCurrentThread', () => {
               height: 1,
             },
           ],
+          documentRefs: [],
           assistantContent: 'Answer',
           assistantStatus: 'completed',
           error: null,
-          targetBinding: {
-            selection: { kind: 'env_fallback' },
-            attribution: { kind: 'env_fallback', modelId: 'model' },
-          },
-          createdAt: '2026-08-09T00:00:00.000Z',
-          updatedAt: '2026-08-09T00:00:00.000Z',
+          targetBinding: envBinding,
+          providerStateRef: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
         },
       ],
-      createdAt: '2026-08-09T00:00:00.000Z',
-      updatedAt: '2026-08-09T00:00:00.000Z',
-    })
-
-    await replayCurrentThread(runtime, record)
-
-    expect(runtime.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      content: '',
-    })
-    expect(order).toEqual(['submit', 'start', 'append', 'complete'])
-  })
-
-  it('projects a document-only version-4 turn as empty Runtime text', async () => {
-    const order: string[] = []
-    const runtime = client(order)
-    const record = parseCurrentThreadRecordV4({
-      version: 4,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: '',
-          imageRefs: [],
-          documentRefs: [
-            {
-              documentId: '00000000-0000-4000-8000-000000000010',
-              name: 'notes.txt',
-              mediaType: 'text/plain',
-              byteLength: 5,
-              extractedByteLength: 5,
-              sourceSha256: 'a'.repeat(64),
-              extractedTextSha256: 'b'.repeat(64),
-            },
-          ],
-          assistantContent: 'Answer',
-          assistantStatus: 'completed',
-          error: null,
-          targetBinding: {
-            selection: { kind: 'env_fallback' },
-            attribution: { kind: 'env_fallback', modelId: 'model' },
-          },
-          createdAt: '2026-08-10T00:00:00.000Z',
-          updatedAt: '2026-08-10T00:00:00.000Z',
-        },
-      ],
-      createdAt: '2026-08-10T00:00:00.000Z',
-      updatedAt: '2026-08-10T00:00:00.000Z',
+      createdAt: timestamp,
+      updatedAt: timestamp,
     })
 
     await replayCurrentThread(runtime, record)
 
     expect(runtime.submitUserMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '' }))
+    expect(order).toEqual(['submit', 'start', 'append', 'complete'])
   })
 })

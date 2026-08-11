@@ -1,13 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  createSafeThreadErrorRecordV1,
-  parseCurrentThreadRecordV1,
-  parseCurrentThreadRecordV2,
-  parseCurrentThreadRecordV3,
-  parseCurrentThreadRecordV4,
-  upgradeCurrentThreadRecordForMutation,
-} from './schemas'
+import { createSafeThreadErrorRecord, parseCurrentThreadRecord } from './schemas'
 import { CurrentThreadSnapshotService, toCurrentThreadSnapshot } from './snapshot'
 import type { CurrentThreadImageFiles } from './image-files'
 import type { CurrentThreadDocumentFiles } from './document-files'
@@ -15,8 +8,8 @@ import type { CurrentThreadDocumentFiles } from './document-files'
 const noAvailableImageIds = new Set<string>()
 
 function completedThenFailedRecord() {
-  return parseCurrentThreadRecordV1({
-    version: 1,
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -24,9 +17,28 @@ function completedThenFailedRecord() {
         userMessageId: 'user-1',
         assistantMessageId: 'assistant-1',
         userContent: 'First question',
+        imageRefs: [],
+        documentRefs: [],
         assistantContent: 'First answer',
         assistantStatus: 'completed',
         error: null,
+        targetBinding: {
+          selection: { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' },
+          attribution: {
+            kind: 'connection',
+            providerId: 'provider-1',
+            providerDisplayName: 'Provider One',
+            modelId: 'model-1',
+            modelDisplayName: 'Model One',
+          },
+        },
+        providerStateRef: {
+          protocol: 'openai-responses',
+          stateId: '00000000-0000-4000-8000-000000000020',
+          executionIdentity: 'c'.repeat(64),
+          byteLength: 128,
+          sha256: 'd'.repeat(64),
+        },
         createdAt: '2026-07-11T00:00:00.000Z',
         updatedAt: '2026-07-11T00:01:00.000Z',
       },
@@ -35,9 +47,16 @@ function completedThenFailedRecord() {
         userMessageId: 'user-2',
         assistantMessageId: 'assistant-2',
         userContent: 'Second question',
+        imageRefs: [],
+        documentRefs: [],
         assistantContent: 'Unpersisted provider details are not here.',
         assistantStatus: 'failed',
-        error: createSafeThreadErrorRecordV1({ code: 'network_error', retryable: true }),
+        error: createSafeThreadErrorRecord({ code: 'network_error', retryable: true }),
+        targetBinding: {
+          selection: { kind: 'env_fallback' },
+          attribution: { kind: 'env_fallback', modelId: 'env-model' },
+        },
+        providerStateRef: null,
         createdAt: '2026-07-11T00:02:00.000Z',
         updatedAt: '2026-07-11T00:03:00.000Z',
       },
@@ -64,8 +83,8 @@ const documentRef = {
 } as const
 
 function failedDocumentOnlyRecord() {
-  return parseCurrentThreadRecordV4({
-    version: 4,
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -86,6 +105,7 @@ function failedDocumentOnlyRecord() {
           selection: { kind: 'env_fallback' },
           attribution: { kind: 'env_fallback', modelId: 'env-model' },
         },
+        providerStateRef: null,
         createdAt: '2026-08-10T00:00:00.000Z',
         updatedAt: '2026-08-10T00:01:00.000Z',
       },
@@ -96,8 +116,8 @@ function failedDocumentOnlyRecord() {
 }
 
 function failedImageOnlyRecord() {
-  return parseCurrentThreadRecordV3({
-    version: 3,
+  return parseCurrentThreadRecord({
+    version: 5,
     threadId: 'thread-1',
     turns: [
       {
@@ -106,6 +126,7 @@ function failedImageOnlyRecord() {
         assistantMessageId: 'assistant-1',
         userContent: '',
         imageRefs: [imageRef],
+        documentRefs: [],
         assistantContent: '',
         assistantStatus: 'failed',
         error: {
@@ -117,6 +138,7 @@ function failedImageOnlyRecord() {
           selection: { kind: 'env_fallback' },
           attribution: { kind: 'env_fallback', modelId: 'env-model' },
         },
+        providerStateRef: null,
         createdAt: '2026-07-11T00:00:00.000Z',
         updatedAt: '2026-07-11T00:01:00.000Z',
       },
@@ -143,6 +165,13 @@ describe('toCurrentThreadSnapshot', () => {
         role: 'assistant',
         content: 'First answer',
         status: 'completed',
+        targetAttribution: {
+          kind: 'connection',
+          providerId: 'provider-1',
+          providerDisplayName: 'Provider One',
+          modelId: 'model-1',
+          modelDisplayName: 'Model One',
+        },
       },
       {
         id: 'user-2',
@@ -161,17 +190,19 @@ describe('toCurrentThreadSnapshot', () => {
           retryable: true,
         },
         canRetry: true,
+        targetAttribution: { kind: 'env_fallback', modelId: 'env-model' },
       },
     ])
     expect(snapshot.runStatus).toBe('failed')
-    expect(snapshot.selectedTarget).toBeNull()
+    expect(snapshot.selectedTarget).toEqual({ kind: 'env_fallback' })
     expect(snapshot).not.toHaveProperty('threadId')
     expect(snapshot).not.toHaveProperty('version')
     expect(snapshot).not.toHaveProperty('updatedAt')
+    expect(JSON.stringify(snapshot)).not.toMatch(/providerState|000000000020|cccc|dddd/u)
   })
 
-  it('derives the latest selection and safe assistant attribution from version 2 bindings', () => {
-    const upgraded = upgradeCurrentThreadRecordForMutation(completedThenFailedRecord())
+  it('derives the latest selection and safe assistant attribution from v5 bindings', () => {
+    const current = completedThenFailedRecord()
     const connectionAttribution = {
       kind: 'connection',
       providerId: 'provider-1',
@@ -179,18 +210,18 @@ describe('toCurrentThreadSnapshot', () => {
       modelId: 'model-1',
       modelDisplayName: 'Model One',
     } as const
-    const record = parseCurrentThreadRecordV2({
-      ...upgraded,
+    const record = parseCurrentThreadRecord({
+      ...current,
       turns: [
         {
-          ...upgraded.turns[0]!,
+          ...current.turns[0]!,
           targetBinding: {
             selection: { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' },
             attribution: connectionAttribution,
           },
         },
         {
-          ...upgraded.turns[1]!,
+          ...current.turns[1]!,
           targetBinding: {
             selection: { kind: 'env_fallback' },
             attribution: { kind: 'env_fallback', modelId: 'env-model' },
@@ -232,7 +263,7 @@ describe('toCurrentThreadSnapshot', () => {
     })
   })
 
-  it('projects v3 image availability without dropping image-only compatibility history', () => {
+  it('projects image availability without dropping image-only compatibility history', () => {
     const availableSnapshot = toCurrentThreadSnapshot(
       failedImageOnlyRecord(),
       new Set([imageRef.imageId]),
@@ -259,7 +290,7 @@ describe('toCurrentThreadSnapshot', () => {
 
   it('does not expose Retry on a historical failure after a later turn completes', () => {
     const record = completedThenFailedRecord()
-    const laterCompletedRecord = parseCurrentThreadRecordV1({
+    const laterCompletedRecord = parseCurrentThreadRecord({
       ...record,
       turns: [
         ...record.turns,
@@ -268,9 +299,16 @@ describe('toCurrentThreadSnapshot', () => {
           userMessageId: 'user-3',
           assistantMessageId: 'assistant-3',
           userContent: 'Third question',
+          imageRefs: [],
+          documentRefs: [],
           assistantContent: 'Third answer',
           assistantStatus: 'completed',
           error: null,
+          targetBinding: {
+            selection: { kind: 'env_fallback' },
+            attribution: { kind: 'env_fallback', modelId: 'env-model' },
+          },
+          providerStateRef: null,
           createdAt: '2026-07-11T00:04:00.000Z',
           updatedAt: '2026-07-11T00:05:00.000Z',
         },
@@ -291,7 +329,7 @@ describe('toCurrentThreadSnapshot', () => {
 
   it('rejects pending records that were not recovered by the store', () => {
     const record = completedThenFailedRecord()
-    const pendingRecord = parseCurrentThreadRecordV1({
+    const pendingRecord = parseCurrentThreadRecord({
       ...record,
       turns: [
         record.turns[0]!,
@@ -300,6 +338,7 @@ describe('toCurrentThreadSnapshot', () => {
           assistantContent: '',
           assistantStatus: 'pending',
           error: null,
+          providerStateRef: null,
         },
       ],
     })
