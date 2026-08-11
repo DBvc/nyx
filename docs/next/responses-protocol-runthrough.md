@@ -1,7 +1,7 @@
 # Responses Protocol Runthrough
 
-Status: `responses-protocol/S0` and G0 passed. The atomic C1+P1 cutover is the
-sole executable checkpoint; D1 and later remain blocked.
+Status: `responses-protocol/S0`, G0, and the atomic C1+P1 cutover passed. D1 is
+the sole executable slice; I1 and A1 remain blocked.
 
 The active contract is
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
@@ -77,9 +77,34 @@ text, encrypted reasoning payload, or local user-data path is recorded here.
 
 ## Product Slices
 
-| Slice                      | Status        | Evidence |
-| -------------------------- | ------------- | -------- |
-| `responses-protocol/C1+P1` | executable    | G0 PASS  |
-| `responses-protocol/D1`    | blocked on P1 | none     |
-| `responses-protocol/I1`    | blocked on D1 | none     |
-| `responses-protocol/A1`    | blocked on I1 | none     |
+### C1+P1 Atomic Configuration And Wire Cutover
+
+Status: PASS at `b3dd897` on 2026-08-11.
+
+- Connections and encrypted secrets now accept only strict v2 records. Every
+  model stores an explicit protocol configuration; provider defaults affect
+  only new models unless the user explicitly applies them to all rows.
+- Every credential write rotates a main-only revision. Resolved persisted
+  targets bind a secret-free SHA-256 execution identity to provider, normalized
+  endpoint, model, exact protocol configuration, and credential revision.
+- The concrete wire switch preserves Chat Completions and adds exact stateless
+  Responses request mapping, bounded full-output validation, fail-closed
+  terminal settlement, and a two-request semantic Connection Test.
+- Provider continuation output, execution identity, credential revision,
+  endpoint, and secret remain absent from shared chat, preload, Renderer, and
+  OCaml contracts.
+- The three old Connections and secret records were byte-verified in a manual
+  development backup and their v1 source files were deleted before product
+  exercise. No legacy reader or migration exists. The G0 OS-temp harness and
+  its transient continuation state were deleted after this commit passed.
+
+Validation passed: desktop TypeScript and compatibility typecheck, lint, format
+check, production build, `git diff --check`, and the full desktop suite with
+498 passing tests and 17 intentional skips across 41 files.
+
+| Slice                      | Status        | Evidence   |
+| -------------------------- | ------------- | ---------- |
+| `responses-protocol/C1+P1` | completed     | `b3dd897`  |
+| `responses-protocol/D1`    | executable    | C1+P1 PASS |
+| `responses-protocol/I1`    | blocked on D1 | none       |
+| `responses-protocol/A1`    | blocked on I1 | none       |
