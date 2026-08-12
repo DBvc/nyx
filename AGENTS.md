@@ -26,6 +26,8 @@ broaden unrelated tasks.
 - `docs/next/multi-thread-library-technical-plan.md`: reviewed architecture,
   migration, lifecycle, UI, and validation plan for the named
   `multi-thread-library` workstream only.
+- `docs/next/multi-thread-library-runthrough.md`: durable feasibility evidence
+  for that workstream; it does not grant implementation scope.
 
 ## Source of Truth
 
@@ -184,10 +186,12 @@ single-current-thread prohibitions only inside its active named slice. Its
 reviewed source is `docs/next/multi-thread-library-technical-plan.md`, bound by
 `docs/next/agent-workbench-task-slices.md`. It authorizes, in dependency order:
 
-- one Electron-main-owned local Thread Library with SQLite metadata/content and
-  Thread-owned sidecars, only after the packaged/Main-stall gate passes;
-- real Thread creation, switching, Pinned/Recent, Rename, Archive, Trash,
-  Restore, bounded Search, and gated Permanent delete;
+- one Electron-main-authorized local Thread Library with SQLite metadata/content
+  executed only by one application Node Worker and Thread-owned sidecars, only
+  after the whole-DB Worker gate passes, with an Electron-native single-instance
+  lock acquired before any data owner starts;
+- real Thread creation, switching, Pinned/Recent, Rename, Archive, Unarchive,
+  Trash, Restore, bounded Search, and gated Permanent delete;
 - one typed `window.nyx.threads` library bridge while retaining and
   thread-scoping `window.nyx.chat` for execution;
 - a persisted safe target selection id for each materialized Thread Draft,
@@ -196,11 +200,26 @@ reviewed source is `docs/next/multi-thread-library-technical-plan.md`, bound by
 - at most one active Run per Thread and bounded cross-Thread concurrency while
   Renderer and OCaml remain rebuildable projections.
 
-`multi-thread-library/S0` is documentation only. G1/G2 may begin only after its
-reviewed documentation diff is present in current HEAD. Product implementation
-remains blocked by the exact dependencies and slice inventories in the task
-slices; Permanent delete additionally requires both same-process image
-revocation and legacy-root cleanup to pass.
+`multi-thread-library/S0` is complete. G1/G2 both reached independently reviewed
+`VALID_STOP`: synchronous Main SQLite crossed its frame line, and the tested
+image-cache candidates could not preserve both immediate revocation and memory
+lines. The v5.3 landing candidate self-completes when its recorded exact-byte
+reviews pass and those bytes enter HEAD; no follow-up status edit is required.
+After that, only G1W/G2R OS-temp gates may run.
+Product implementation remains blocked by G1W and each exact slice inventory.
+The reversible Thread Library through A1 does not depend on Permanent delete;
+old-root cleanup M1 follows A1, and P1 additionally requires G2R and M1. Before
+then purge schema/IPC/UI must not exist. A Thread Library open/validation failure
+must preserve every database/sidecar/root and offer Retry only, never Start
+fresh/reset. App quit must first save or explicitly discard the current Draft,
+then exact-retry or explicitly confirm loss of every process-wide
+`settlement_failed` complete result before the shutdown fence stops Runs and
+closes the Worker; a new settlement failure during drain blocks exit again. An identifiable
+Thread whose canonical content cannot be rebuilt stays visible and Retry-only
+while other Threads remain usable; image/document failures stay resource-local
+and a corrupt Responses ref uses exact controlled repair first. An
+outcome-unknown Worker mutation must be canonically reread before any prepared
+sidecar is rolled back.
 
 The completed third `provider-compatibility-core` workstream added only:
 

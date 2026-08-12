@@ -59,6 +59,10 @@ This subproject owns:
   Inside an active `multi-thread-library` product slice, Electron main instead
   owns the local Thread Library and Renderer still receives only safe typed
   projections plus its current dirty Draft overlay.
+- Inside a qualified `multi-thread-library` product slice, acquire Electron's
+  native single-instance lock before importer, Worker, sidecar, image
+  authorization, or legacy-root initialization. A secondary process must touch
+  none of them.
 - Do not import from `runtime/ocaml`.
 - Do not use the OCaml runtime outside explicit Electron-main runtime boundary code.
 - The runtime-backed chat state path is default-on inside Electron main; `NYX_RUNTIME_CHAT_STATE=0` is only a diagnostic disable.
@@ -208,15 +212,20 @@ Still not allowed in that second workstream:
 
 Explicit `multi-thread-library` workstream status:
 
-- S0 is documentation only and binds the reviewed v4 plan; it changes no
-  desktop behavior.
-- After S0 passes and is present in current HEAD, G1/G2 are OS-temp gates only;
-  they may not wire product code.
-- After G1 passes, later qualified slices may replace the one current-thread
-  store with an Electron-main-owned SQLite Thread Library and Thread-owned
-  sidecars; add `window.nyx.threads`; retain and thread-scope
-  `window.nyx.chat`; and support New/switch/Pinned/Recent/Rename/Archive/Trash/
-  Restore/Search plus the separately gated Permanent delete.
+- S0 is complete. G1/G2 both reached independently reviewed `VALID_STOP`; no
+  product behavior was changed.
+- The v5.3 landing candidate self-completes when its recorded exact-byte reviews
+  pass and those bytes enter HEAD; no follow-up status edit is required. After
+  that, G1W/G2R are OS-temp gates only and may not wire product code.
+- After G1W passes, later qualified slices may replace the one current-thread
+  store with a Main-authorized SQLite Thread Library whose single
+  `DatabaseSync` connection runs only in one application Node Worker, plus
+  Thread-owned sidecars; add `window.nyx.threads`; retain and thread-scope
+  `window.nyx.chat`; and support New/switch/Pinned/Recent/Rename/Archive/
+  Unarchive/Trash/Restore/Search.
+- Main may never fall back to synchronous SQLite. Do not add raw-SQL RPC,
+  Worker-per-Thread, a Worker pool, `utilityProcess`, ORM, repository interface,
+  a second database connection, or automatic mutation replay.
 - A materialized Thread Draft may persist only its safe target selection id.
   Resolved targets, base URLs, raw configs, protocols, and credentials stay in
   Electron main, and the Composer selection never mutates the global default.
@@ -225,11 +234,27 @@ Explicit `multi-thread-library` workstream status:
   not become a second durable history owner or cache all Thread details.
 - Each Thread may have at most one active Run; cross-Thread concurrency is
   bounded and Electron-main-owned. Renderer/window destruction does not cancel
-  a Run; app quit uses the reviewed shutdown fence. OCaml remains a rebuildable
-  text projection with no new Thread protocol.
+  a Run; app quit first saves/confirms the current Draft, then exact-retries or
+  explicitly confirms loss of every process-wide `settlement_failed` complete
+  result. A new result-save failure during drain blocks Worker close/exit again.
+  Only then may shutdown fence complete. OCaml remains a rebuildable text
+  projection with no new Thread protocol.
+- A Thread Library Worker/open/schema/pragma/quick-check/permission failure is
+  fail-closed: preserve DB, journals, sidecars, staging and the legacy root;
+  expose Retry only and never New thread, Start fresh, reset, Provider start,
+  Thread detail/Search, or image authorization.
+- A safely identifiable Thread whose canonical content cannot be rebuilt
+  remains visible, stable and Retry-only. Image/document failures retain the
+  existing per-resource unavailable behavior; corrupt Responses refs use exact
+  controlled repair before whole-Thread failure. A Worker mutation with unknown
+  commit outcome must be reread by exact identity; never delete a prepared
+  Responses sidecar merely because the reply was lost.
 - Product code is allowed only after the exact slice dependencies and
   allowed-file inventory in `../../docs/next/agent-workbench-task-slices.md`
   pass independent review.
+- Reversible A1 is independent of Permanent delete; legacy-root cleanup M1 runs
+  only after A1. Purge schema/IPC/UI and even a disabled Permanent delete
+  affordance remain absent until G2R, M1, and P1's own scope lock pass.
 
 Completed third `provider-compatibility-core` workstream additions:
 

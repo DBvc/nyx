@@ -145,17 +145,17 @@ Use relative documentation links. Do not add local absolute paths.
 - The explicitly requested `multi-thread-library` workstream is active as of
   2026-08-12. Its implementation source is
   [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
-  v4 at SHA-256
-  `614503b31dad6a0b1ef6a9ae8090b7f679ee73836b71954b2a0451ecb5ce943e`.
-  Product review `NYX-MTL-V4-PRODUCT-20260812-03` and strict technical review
-  `NYX-MTL-V4-LINUS-20260812-03` accepted the product/technical plan; design
-  review `NYX-MTL-V4-DESIGN-20260812-03` accepted it with one non-blocking U1
-  discard-navigation advisory. The exact S0-bound bytes and governance lock use
-  reviews `NYX-MTL-S0-PRODUCT-20260812-03`,
-  `NYX-MTL-S0-DESIGN-20260812-03`, and `NYX-MTL-S0-SCOPE-20260812-03`.
-  `multi-thread-library/S0` is complete. G1 and G2 are the only executable
-  slices, and both must keep the tracked worktree clean. No product
-  implementation slice is executable yet.
+  v5.3 at SHA-256
+  `5e7f4c9feeb4858f84b8e0ce555dd0ba6523ac5443d1f126fadc1bfe37e1f2a7`. S0
+  remains complete. G1 and G2 both reached
+  independently reviewed `VALID_STOP`; their durable summary is in
+  [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+  The v5.3 landing candidate self-completes when its recorded exact-byte reviews
+  pass and those bytes enter HEAD; no follow-up status edit is required. Only
+  then may G1W/G2R run. Earlier full reviews found navigation, search, process ownership,
+  shutdown, corruption recovery, title, ordering and durability-contract gaps;
+  none of those reviews authorized a gate. No product implementation slice is
+  executable yet.
 
 ## A0: Scope Gate Docs
 
@@ -3300,92 +3300,101 @@ git diff --check
 
 ## MTL Workstream: Multi-Thread Library
 
-Status: S0 complete after independent review. G1 and G2 are executable OS-temp
-gates by explicit user decision on 2026-08-12. The reviewed source is
-[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
-v4 at SHA-256
-`614503b31dad6a0b1ef6a9ae8090b7f679ee73836b71954b2a0451ecb5ce943e`.
-No product code is authorized until its exact dependencies and qualified
-docs-only scope-lock pass.
+Status: S0 is complete. G1 and G2 both reached independently reviewed
+`VALID_STOP`. The v5.3 landing candidate is the only executable tracked-file
+step; no product code is authorized. It self-completes when its recorded exact
+bytes pass product, design, and strict technical review and enter HEAD; no
+follow-up status edit is required. G1W and G2R then become the only executable
+OS-temp gates.
 
-Inside this section, unqualified S0, G1, G2, D1, D2, C1, E1, U1, L1, Q1, M1,
-P1, and A1 refer only to the Multi-Thread Library slices. They do not reopen
-same-named slices in another workstream.
+The reviewed source candidate is
+[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
+v5.3 at SHA-256
+`5e7f4c9feeb4858f84b8e0ce555dd0ba6523ac5443d1f126fadc1bfe37e1f2a7`.
+Durable gate evidence is in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+
+Inside this section, unqualified S0, G1, G2, G1W, G2R, D1, D2, C1, E1, U1,
+L1, Q1, A1, M1, and P1 refer only to this workstream.
 
 The only allowed dependency order is:
 
 ```text
-multi-thread-library/S0
-├─ multi-thread-library/G1
-└─ multi-thread-library/G2
+S0
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 → E1 → U1 → L1 → Q1 → A1 → M1
+└─ G2 [VALID_STOP] → v5.3 → G2R
 
-G1 → D1 → D2 → C1 → E1 → U1 → L1 → Q1 → M1
-G2 + M1 → P1
-P1 + Q1 → A1
+G2R + M1 → P1
 ```
 
-No later slice may begin before every dependency has passed its evidence and
-independent-review gate. A stopped gate does not authorize its fallback; it
-returns to planning or user direction exactly as the reviewed plan specifies.
-
-Every arrow into a tracked product slice is shorthand for:
-
-```text
-all slice dependencies PASS
-  → multi-thread-library/<slice>-scope-lock
-  → product slice
-```
-
-The qualified `<slice>-scope-lock` is a control step, not a product slice. Once
-all dependencies of D1, D2, C1, E1, U1, L1, Q1, M1, P1, or A1 pass, that
-control step automatically becomes the only executable tracked-file step. It
-may modify exactly `docs/next/agent-workbench-task-slices.md`, and only to add
-the target slice's exact allowed-file inventory, checks, review binding, and
-status. It may not change product behavior or another workstream. The target
-slice becomes executable only after that single-file diff passes independent
-scope review and is present in current HEAD. G1/G2 do not use this control step
-because they must leave the tracked worktree clean.
+No later slice may begin before every dependency passes its evidence and
+independent-review gate. Every arrow into a tracked product slice also requires
+`multi-thread-library/<slice>-scope-lock`: a one-file update to this document
+that freezes exact allowed files, checks, review binding, and status. The
+product slice begins only after that independent scope review is in HEAD.
+G1/G2/G1W/G2R must leave the tracked worktree clean.
 
 ### Locked scope and supersessions
 
-Only this named workstream may supersede the completed single-current-thread
-baseline as follows:
+Only this named workstream may:
 
-- replace the one durable v5 current-thread record with one Electron-main-owned
-  local Thread Library;
-- add real persistent Thread history, switching, Pinned/Recent, Rename,
-  Archive, Trash, Restore, bounded Search, and gated Permanent delete;
-- add one typed `window.nyx.threads` library bridge while retaining and
-  thread-scoping `window.nyx.chat` for execution;
-- use SQLite as canonical Thread metadata/content storage only after G1 passes,
-  with Thread-owned filesystem sidecars for canonical bytes;
-- persist only the safe target selection id for a materialized Thread Draft,
-  superseding the D workstream's Renderer-lifetime-only rule for that exact
-  field. Resolved targets, raw provider configuration, base URLs, protocols,
-  and credentials remain Electron-main-only, and Composer selection never
-  changes the Connections global default;
-- replace the global active execution with at most one Run per Thread and
-  bounded cross-Thread concurrency, without adding a durable Runs platform or
-  changing the OCaml protocol.
+- replace the one durable v5 current-thread record with one Main-authorized
+  Thread Library whose single SQLite connection runs only in one application
+  Node Worker and whose canonical bytes remain in Thread-owned sidecars;
+- add persistent history, switching, Pinned/Recent, Rename, Archive, Unarchive,
+  Trash, Restore and bounded Search;
+- add `window.nyx.threads`, retain and thread-scope `window.nyx.chat`, and
+  persist only a materialized Draft's safe target selection id;
+- replace global execution with at most one Run per Thread and bounded
+  cross-Thread concurrency without changing the OCaml protocol;
+- add Permanent delete only after G2R, complete reversible-library A1 and
+  post-acceptance legacy cleanup M1 pass. Through M1, no purge table, IPC, menu
+  item, or disabled affordance may exist.
 
-All ordinary work and every inactive slice remain on the current min-chat
-baseline. This workstream does not authorize Projects, Folders, Tags, full
-manual ordering, multi-window synchronization, cloud sync, auto-empty Trash,
-tools, MCP, agents, artifacts, a general Asset service, a DB ORM/repository
-layer, a queue/daemon, or a new OCaml Thread domain.
-
-The reviewed plan owns the complete product model, data ownership, transaction
-rules, event ordering, migration/rollback policy, UI/accessibility contract,
-slice definitions, and Stop conditions. If this task-slice section and that
-plan conflict, stop and amend both under review rather than choosing locally.
+Resolved targets, raw provider configuration, base URLs, protocols and
+credentials stay Main-only. Ordinary work remains on min-chat. Projects,
+Folders, Tags, full manual ordering, multi-window/cloud sync, auto-empty Trash,
+tools, MCP, agents, artifacts, a general Asset service, ORM/repository, Worker
+pool, queue/daemon and a new OCaml Thread domain remain out of scope.
 
 ### multi-thread-library/S0: Canonical scope lock
 
-Type: documentation only.
-
-Status: complete. The final exact-byte scope reviews are
+Status: complete. Exact-byte reviews:
 `NYX-MTL-S0-PRODUCT-20260812-03`, `NYX-MTL-S0-DESIGN-20260812-03`, and
 `NYX-MTL-S0-SCOPE-20260812-03`.
+
+### multi-thread-library/G1: SQLite on Electron Main
+
+Status: `VALID_STOP`. Evidence SHA-256
+`08344163b01574bf1327e33151d982d55871151dd382dca15a82868996d62f0a`.
+Production build observed one synchronous Draft commit at `19.623 ms`, above
+the fixed `16.667 ms` line. SQLite correctness passed; Main-event-loop
+`DatabaseSync` did not. Independent evidence review:
+`NYX-MTL-GATES-EVIDENCE-20260812-01`.
+
+### multi-thread-library/G2: Same-process image revocation
+
+Status: `VALID_STOP`. Evidence SHA-256
+`86143ad9ebf80ffb6957b354e509633432c5b7c8b71df87b27bb5f44dd5ec8ae`.
+`no-cache` and `session.clearCache()` failed warmed-resource revocation;
+`no-store` passed revocation/security but crossed fixed repeated-open memory
+plateau lines. Permanent delete remains absent. Independent evidence review:
+`NYX-MTL-GATES-EVIDENCE-20260812-01`.
+
+### multi-thread-library/V5.3: Stop-driven docs amendment
+
+Type: documentation only.
+
+Status: reviewed landing candidate; this is the only executable tracked-file
+step. It becomes complete without another edit when the following exact reviews
+pass and these same bytes enter HEAD.
+
+The required final full-review bindings are
+`NYX-MTL-V53-PRODUCT-FULL-20260812-07`,
+`NYX-MTL-V53-DESIGN-FULL-20260812-07`, and
+`NYX-MTL-V53-LINUS-FULL-20260812-07`. This amendment passes only when all three
+return PASS/accept for this exact six-file artifact and the reviewed bytes enter
+HEAD.
 
 Allowed tracked files are exactly:
 
@@ -3394,105 +3403,153 @@ AGENTS.md
 apps/desktop/AGENTS.md
 DESIGN.md
 docs/next/agent-workbench-task-slices.md
+docs/next/multi-thread-library-runthrough.md
 docs/next/multi-thread-library-technical-plan.md
 ```
 
-Required:
+Required: preserve the two valid Stops; move all SQLite execution to one
+feature-local Node Worker behind an Electron-native single-instance lock; give
+materialize a Main-generated stable Thread id and unknown-commit recovery; add
+Draft then process-wide unsaved-result app-quit barriers before the shutdown
+fence and a non-destructive Library unavailable Retry-only state plus a stable
+Thread-scoped unavailable row; preserve
+outcome-unknown Responses sidecars until exact canonical reconciliation; add
+native close/full-image focus, settlement-failed lifecycle, latest-Search
+announcements/failure/truncation, 50-row collection paging with one common
+out-of-loaded selection rule, unavailable focus, collision-free generic title,
+bridge method ratchets, resource-level degradation and Pin/Unpin remount focus;
+make deep-page title hits retain Thread-heading focus, allow a deleted generic
+ordinal to be reused without renumbering survivors, use only legal document
+capacity in Search evidence, order Running intent before the Draft barrier, and
+list exact affected Thread identities in every unsaved-result quit barrier;
+freeze one Main-authoritative 1–48-code-point manual Rename validator with
+explicit errors and no silent truncation;
+add G1W/G2R without product wiring; define
+Unarchive/Restore and remove undefined transient Undo; bind image-bearing
+Thread/mode/Search teardown and distinct-image memory checks to U1/L1/Q1/A1;
+add fixed Sidebar regions, Back to threads, Search cancel/open state, bounded
+Search coalescing and performance lines, deterministic pre-send titles,
+Available/Archived-only Rename, stable lifecycle ordering, safe
+running/navigation dialogs, Main-acked Draft Search and one-command Worker
+consistency; make C1 the atomic
+import/activation cutover, A1 the full reversible-library acceptance and M1 the
+only post-acceptance legacy cleanup; remove unsupported power-loss claims; keep
+P1 absent until G2R+M1;
+record exact plan hash and independent product/design/strict review ids. No
+code, test, dependency, schema, IPC, persisted data or runtime behavior may
+change.
 
-- bind the exact reviewed v4 plan, review ids, dependency order, ownership
-  boundaries, product semantics, and global Stop conditions;
-- make the supersessions above explicit in root and desktop instructions while
-  preserving min-chat as the ordinary-task default;
-- record the real two-pane Thread Library IA in `DESIGN.md` without adding a
-  third workspace region or fake data;
-- preserve existing Provider, Responses, image, document, target-selection,
-  security, capacity, and runtime behavior except where the reviewed plan
-  explicitly changes durable Thread ownership;
-- change no product code, test, dependency, persisted data, IPC, schema, or
-  runtime behavior.
+V5.3 self-completes only after format-check, `git diff --check`, exact
+allowed-file and plan-hash checks, all three independent reviews, and the same
+bytes entering HEAD. No completion-status patch follows. G1W and G2R are then
+the only executable slices.
 
-S0 passes only after `mise run format-check`, `git diff --check`, an allowed-file
-inventory check, exact plan-hash verification, and independent scope review.
-After that reviewed docs diff is present in current HEAD, G1 and G2 become the
-only executable slices.
+### multi-thread-library/G1W: Whole-DB Node Worker gate
 
-### multi-thread-library/G1: Packaged SQLite and Main-stall gate
+Type: OS-temp production-shape feasibility only.
 
-Type: OS-temp production-shape feasibility evidence only.
+Status: executable only after the V5.3 self-ratchet condition is true. Then
+execute the exact v5.3 matrix with one Worker, one `DatabaseSync` connection and
+one static Main build entry. No
+tracked file, product schema/IPC, raw-SQL RPC, Main fallback, pool,
+`utilityProcess`, ORM/repository or dependency change is allowed. It must prove
+dev/build/`app.asar`/packaged loading, G1 correctness/crash fixtures, bounded
+Main reply/clone/publication latency, FIFO snapshot ordering, CAS conflicts,
+stable-id materialize recovery without automatic replay, other unknown-commit
+reconciliation including terminal providerStateRef retention after reply loss,
+generation invalidation and window/app lifecycle. The same
+profile must also launch two packaged processes and prove the secondary touches
+no DB, Worker, staging, sidecar, image authorization, or legacy root while the
+primary retains one event domain.
 
-Status: executable. S0 is complete in current HEAD. G1 must keep the tracked
-worktree clean and may not wire product code.
+Failure leaves D1 blocked and returns to planning.
 
-Run the exact G1 matrix and Stop lines in the reviewed plan from a `mktemp -d`
-harness. The tracked worktree must remain clean: do not add a schema, dependency,
-Worker, IPC, product wiring, test fixture, or generated output. Prove real
-Electron dev/build/`app.asar`/packaged `node:sqlite`, strict/FK/transaction/
-reopen behavior, selected journal mode, permissions, crash cases, and bounded
-Main latency while Renderer heartbeat, streaming, and Stop stay observable.
+### multi-thread-library/G2R: Renderer resource-cache repair gate
 
-Failure stops before D1. Do not prebuild a DB Worker; a failed Main-stall gate
-requires a separately reviewed whole-DB Worker amendment.
+Type: OS-temp production-shape feasibility only.
 
-### multi-thread-library/G2: Same-process image revocation gate
+Status: executable only after the V5.3 self-ratchet condition is true. Then test
+only the ordered native candidates in v5.3: first
+`no-store + webFrame.clearCache()` after image-bearing
+detail teardown; only if it fails, immutable cache plus Renderer and session
+cache barriers. Preserve all raw structured results. No tracked change,
+token/version URL, extra image service/renderer, JS bytes/path, support
+reduction or relaxed memory/security line is allowed.
 
-Type: OS-temp production-shape feasibility evidence only.
-
-Status: executable. S0 is complete in current HEAD. G2 may run in parallel with
-G1, must keep the tracked worktree clean, and may not wire product code.
-
-Run the exact G2 matrix from a `mktemp -d` harness while keeping the tracked
-worktree clean. Prove that purge authorization revocation invalidates warmed
-preview/full identities in the same process without exposing paths or
-JS-readable bytes, weakening current image security, shrinking supported input,
-or crossing the existing memory line.
-
-Failure keeps Permanent delete unavailable; it does not block the reversible
-Thread Library through M1.
+Failure leaves P1 absent but does not block D1 through M1.
 
 ### Product implementation slices
 
-`multi-thread-library/D1` through `A1` are blocked until their dependencies and
-qualified docs-only scope-lock pass. Their allowed behavior and forbidden
-behavior are exactly the matching sections of the reviewed v4 plan. Each exact
-inventory may narrow the reviewed plan but may not broaden it.
+D1 through M1 are blocked on G1W and their qualified scope locks. P1 is
+separately blocked on G2R+M1 and its scope lock. Exact responsibilities are the
+matching v5.3 sections:
 
-The slice responsibilities remain:
-
-- D1: narrow SQLite domain and explicit read-only v5 importer foundation; no
-  Renderer or product wiring;
-- D2: Thread-owned resources, unified Draft CAS, Draft-to-Turn transaction, and
-  exact terminal settlement/retry;
-- C1: typed Thread Library API plus thread-scoped existing chat execution,
-  subscribe-buffer-snapshot ordering, and removal of Renderer-owned provider
+- D1: native single-instance startup, one DB Worker/client, stable-id
+  materialize recovery, 50-row keyset paging, strict SQLite domain, read-only v5
+  importer with resource-level degradation and non-destructive Main-only
+  Library/Thread unavailable states; no Renderer wiring and no purge schema;
+- D2: Thread-owned resources, unified Draft CAS, Draft-to-Turn transaction and
+  exact three-outcome terminal settlement/sidecar reconciliation/retry;
+- C1: atomic v5 import/activation, Thread Library API including redacted
+  unavailable/Retry projection and only the C1 bridge methods, thread-scoped
+  chat, Worker FIFO snapshot barrier and removal of Renderer-owned provider
   messages;
-- E1: per-Thread Runtime/Provider execution, exact cancellation, Stop-action
-  ordering, concurrency evidence, and shutdown fencing;
-- U1: core New/list/select/Draft/Pinned/Recent UI, attention, save barrier, and
-  keyboard/accessibility behavior;
-- L1: reversible Rename/Pin/Archive/Trash/Restore lifecycle only;
-- Q1: bounded literal Search over canonical Available/Archived content, without
-  FTS unless measured failure produces a reviewed amendment;
-- M1: cutover acceptance, explicit v5 import, and separately confirmed legacy
-  root cleanup/rollback ratchet;
-- P1: Trash-only Permanent delete, executable only after G2 and M1 both pass;
-- A1: complete regression, real-provider, packaged, migration, concurrency,
-  lifecycle, search, purge, keyboard, and VoiceOver acceptance.
+- E1: per-Thread execution, exact cancellation, Stop-action ordering,
+  concurrency evidence and Draft/process-wide-result save-before-fence
+  shutdown, including stable affected-Thread identities, partial/new-failure
+  dialog updates and settlement failure during drain;
+- U1: New/list/select/Draft/Pinned/Recent UI, deterministic pre-send titles,
+  fixed then-present Sidebar regions, Library/Thread unavailable surfaces,
+  collection paging/failure/end and common deep-selection restore, stable
+  collision-resolved image-time fallback whose deleted ordinal may be reused
+  without renumbering survivors, unavailable focus/announcements
+  without interrupting Connections, attention, safe save/discard and
+  native-close/full-image focus barrier, image-detail teardown/distinct-image
+  memory gate and keyboard/accessibility;
+- L1: reversible Rename/Pin/Archive/Unarchive/Trash/Restore only, with no
+  transient Undo state and no Trash Rename, plus fixed lifecycle entries/Back
+  to threads, Pin/Unpin loaded-row or cross-page Load-more focus,
+  settlement-failed gating, stable collection order and safe running-action
+  dialogs that decide Running intent before any Draft save/discard, plus the
+  shared manual-title validation/focus contract;
+- Q1: one-command Worker literal Search over Main-acked Draft and committed
+  Available/Archived content, with fixed Search/results region, explicit
+  cancel/open/error/Retry/truncation state, latest-epoch VoiceOver feedback,
+  Q1-only bridge method, one-in-flight/one-latest-pending backpressure and fixed
+  performance lines over legal document-capacity fixtures, with deep title
+  matches retaining Thread-heading focus; no FTS unless a measured failure
+  produces a reviewed amendment;
+- A1: full reversible-library, dual-process, unavailable-state, complete
+  Draft/result quit barriers,
+  resource degradation/Responses repair, unknown-commit sidecar,
+  settlement-failed, bridge ratchets, fixed focus/Search/paging/Sidebar/title
+  and packaged distinct-image navigation acceptance,
+  including the Running-before-Draft lifecycle order and exact result-loss
+  identity list and all manual-title input boundaries,
+  plus removal of old current-thread code while the old data root remains
+  byte-identical, with transient Undo and Permanent delete/Purge schema/IPC/UI
+  proven absent;
+- M1: only after A1, separately confirmed legacy-root cleanup and authorization
+  scan, with no product behavior change;
+- P1: optional final Trash-only Permanent delete, its purge schema/bridge/UI and
+  complete packaged regression.
 
 ### Global Stop conditions
 
-Stop the active slice and return to review or user direction if it requires:
-
-- product code before S0 or a dependency gate passes;
-- packaged SQLite behavior or Main latency outside G1's fixed Stop lines;
-- weakening image security/memory guarantees to make same-process deletion
-  appear successful;
-- two durable business sources of truth, dual-read/write, silent migration
-  fallback, or provider side effects before the pending Turn commits;
-- hiding, cancelling, or settling a Run by ambiguous Thread identity;
-- deleting or navigating away from an unacknowledged Draft without the reviewed
-  save barrier and explicit loss confirmation;
-- exposing Trash/Purge content through detail, Search, image, or Provider paths;
-- a physical-disk forensics promise, automatic Trash expiry, or deletion of
-  external/system backups;
-- a new runtime protocol, durable Run/Step platform, queue, Agent abstraction,
-  project model, or file outside the active slice's reviewed inventory.
+Stop if an active slice requires product code before its gate/scope lock;
+Main `DatabaseSync`; raw-SQL RPC, Worker pool or automatic mutation replay;
+weaker image security/support/memory guarantees; two durable truths,
+dual-read/write or silent migration fallback; Provider effects before pending
+Turn commit; missing single-instance ownership; shutdown fencing before Draft
+save/confirmation or exact handling of every unsaved complete result;
+destructive Library/Thread recovery; rollback of an
+outcome-unknown sidecar; ambiguous Run identity; unacknowledged Draft loss;
+whole-Thread failure for a degradable resource; ambiguous deep-page selection,
+title-hit focus stolen by pagination, silent Search truncation, an illegal
+capacity fixture, duplicate simultaneous generic fallback titles, survivor
+renumbering, Draft save/discard before the Running decision, an unidentified
+result-loss confirmation, unbounded/blank/silently truncated manual titles, or
+another
+unbounded/inaccessible collection/Search state; premature bridge methods; Trash/Purge content
+leakage; a forensics claim; automatic Trash expiry; a new runtime protocol/Run
+platform/queue/project model; or a file outside the active inventory.
