@@ -39,6 +39,13 @@ owns its durable record. Renderer messages are a safe in-memory projection,
 not a hidden history collection. Do not add Recent, thread switching, archive,
 search, or per-message history controls.
 
+The explicitly requested `multi-thread-library` workstream is the precise
+exception. Inside its active qualified UI slice, Nyx becomes a real local
+Thread Library while keeping the same quiet two-pane shell: the sidebar owns
+orientation and collection navigation, and the main pane remains the selected
+Thread. This workstream must not turn the product into a dashboard or add a
+permanent third region.
+
 ## 2. Visual Theme and Atmosphere
 
 Nyx should feel like a restrained desktop tool for people who spend a lot of time in AI chat.
@@ -135,6 +142,12 @@ The allowed default structure is: sidebar plus main chat pane. No more than
 that. The explicit first agent-workbench workstream may add a Settings route for
 Connections, but it must not turn the main surface into a dashboard.
 
+The Multi-Thread Library uses this same structure. Archived, Trash, and Search
+replace the sidebar collection rather than opening another page-level pane.
+The main pane must show a Thread from the active sidebar mode or that mode's
+empty state; it must never leave an editable Thread from another collection on
+screen.
+
 ## 6. Component Styling
 
 ### App Shell
@@ -151,6 +164,44 @@ Connections, but it must not turn the main surface into a dashboard.
 - may show the current thread item only when it reflects real durable state
 - should not pretend there is a full history system if one does not exist
 - should feel like a standard chat sidebar, not a dashboard
+
+Inside the active `multi-thread-library` UI slices, the Sidebar may show only
+real main-owned data in this order:
+
+```text
+Nyx
+New thread
+Search
+Pinned
+Recent
+Archived
+Trash
+Connections / Local user
+```
+
+- Pinned contains manually ordered Available Threads; those rows do not repeat
+  in Recent.
+- Recent uses stable user-activity order. Background completion must not move a
+  row.
+- A normal row shows its title and only one highest-priority status: failure or
+  Interrupted, Running, Unseen completion, then Draft. Search results may add a
+  short match snippet.
+- Available, Archived, Trash, and Search are explicit sidebar modes. Row
+  removal falls to the next row, then the previous row. Only an empty Available
+  mode may show the untouched New-thread placeholder; Archived/Trash show their
+  own empty state, and Search returns focus to its input.
+- Archived Threads are readable. Sending restores the Thread to Available,
+  changes the sidebar mode, and keeps that Thread selected. Trash is read-only
+  and offers Restore or separately gated Delete permanently.
+- Running Archive/Trash asks the user to Keep running or Stop and move. It must
+  not silently hide or cancel work.
+- When collapsed, the Sidebar toggle still exposes a quiet attention indicator
+  and accessible count. A completion becomes seen only when the focused,
+  foreground window actually shows its terminal/bottom anchor.
+- Each Thread collection has one roving Tab stop. New, Search, Archived/Trash,
+  and Connections remain normal Tab stops. Arrow/Home/End move row focus;
+  Enter opens; Shift+F10 opens the row menu; F2 renames. Pin ordering always has
+  Move up/down/top/bottom alternatives to drag.
 
 ### Main Header
 
@@ -189,6 +240,11 @@ Connections, but it must not turn the main surface into a dashboard.
 - clear retry affordance
 - current-thread load/reset failure must remain blocked and safe
 - malformed local data may offer only explicit New thread/Start fresh recovery
+- a failed Draft save keeps the current Thread, text, attachments, mode, and
+  focus in place and offers Retry; navigation never discards an unacknowledged
+  Draft silently
+- failed terminal settlement uses `Retry saving`, distinct from Provider Retry;
+  failed permanent deletion exposes only generic deletion status and Retry
 - avoid high-alarm visual treatment
 
 ### Empty State
@@ -196,6 +252,8 @@ Connections, but it must not turn the main surface into a dashboard.
 - quiet and centered in the main pane
 - invite the first prompt
 - no illustration-heavy onboarding
+- Thread Library empty states are mode-specific; Archived, Trash, and Search
+  must not expose an Available Composer
 
 ## 7. Depth, Borders, and Motion
 
@@ -261,6 +319,9 @@ When editing Nyx UI:
   agent-workbench slice
 - treat Electron main as the durable current-thread owner and renderer state as
   a rebuildable projection
+- inside a named `multi-thread-library` slice, treat Electron main as the
+  durable Thread Library owner and keep Renderer to summaries, the selected
+  Thread projection, and one current dirty Draft overlay
 - use a lightweight sidebar plus main chat pane layout
 - keep the app ordinary and dependable, not flashy
 - use the full window, not a centered child shell

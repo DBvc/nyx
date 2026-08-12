@@ -12,6 +12,12 @@ allowed only when the user explicitly asks to execute the corresponding gated
 agent-workbench workstream or a named slice from
 `../../docs/next/agent-workbench-task-slices.md`.
 
+The explicitly requested `multi-thread-library` workstream follows the same
+gate. Its reviewed source is
+`../../docs/next/multi-thread-library-technical-plan.md`; it may supersede the
+single-current-thread, history, Thread IPC, SQLite, and unsent-safe-target
+persistence prohibitions only inside its currently executable qualified slice.
+
 ## Ownership
 
 This subproject owns:
@@ -50,6 +56,9 @@ This subproject owns:
 - Main process owns OS side effects.
 - Electron main owns any persisted current-thread record and file IO. Renderer
   may receive only a safe typed snapshot and remains an in-memory projection.
+  Inside an active `multi-thread-library` product slice, Electron main instead
+  owns the local Thread Library and Renderer still receives only safe typed
+  projections plus its current dirty Draft overlay.
 - Do not import from `runtime/ocaml`.
 - Do not use the OCaml runtime outside explicit Electron-main runtime boundary code.
 - The runtime-backed chat state path is default-on inside Electron main; `NYX_RUNTIME_CHAT_STATE=0` is only a diagnostic disable.
@@ -59,6 +68,10 @@ This subproject owns:
   `../../docs/next/agent-workbench-task-slices.md`. Do not treat that workstream
   as blanket permission for tools, agents, artifacts, history, browser
   automation, terminal execution, or broader runtime integration.
+- The active qualified `multi-thread-library` slice is the sole exception for
+  real Thread history. It still does not authorize tools, agents, Projects,
+  Folders, Tags, cloud sync, a third workspace region, or broader runtime
+  integration.
 - Current-thread durability slices may replay only the existing runtime chat
   reducer protocol. They must not add a Thread reducer, new runtime protocol
   messages, runtime startup during snapshot load, or renderer/runtime contact.
@@ -146,6 +159,10 @@ Not allowed in this phase:
 - multimodal behavior outside an explicit active Context Composer or
   document-attachments slice
 
+This is the ordinary-task default. The named `multi-thread-library` workstream
+may add only the real Thread Library behavior owned by its active qualified
+slice and reviewed dependency chain.
+
 Explicit first agent-workbench workstream additions:
 
 - Connections settings for OpenAI-compatible provider profiles
@@ -188,6 +205,31 @@ Still not allowed in that second workstream:
 - OCaml Thread domain, new runtime protocol actions, or provider calls in OCaml
 - tools, MCP, activity, approvals, artifacts, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
+
+Explicit `multi-thread-library` workstream status:
+
+- S0 is documentation only and binds the reviewed v4 plan; it changes no
+  desktop behavior.
+- After S0 passes and is present in current HEAD, G1/G2 are OS-temp gates only;
+  they may not wire product code.
+- After G1 passes, later qualified slices may replace the one current-thread
+  store with an Electron-main-owned SQLite Thread Library and Thread-owned
+  sidecars; add `window.nyx.threads`; retain and thread-scope
+  `window.nyx.chat`; and support New/switch/Pinned/Recent/Rename/Archive/Trash/
+  Restore/Search plus the separately gated Permanent delete.
+- A materialized Thread Draft may persist only its safe target selection id.
+  Resolved targets, base URLs, raw configs, protocols, and credentials stay in
+  Electron main, and the Composer selection never mutates the global default.
+- Renderer owns only lightweight summaries, the selected Thread projection,
+  one current dirty Draft overlay, and local selection/reading state. It must
+  not become a second durable history owner or cache all Thread details.
+- Each Thread may have at most one active Run; cross-Thread concurrency is
+  bounded and Electron-main-owned. Renderer/window destruction does not cancel
+  a Run; app quit uses the reviewed shutdown fence. OCaml remains a rebuildable
+  text projection with no new Thread protocol.
+- Product code is allowed only after the exact slice dependencies and
+  allowed-file inventory in `../../docs/next/agent-workbench-task-slices.md`
+  pass independent review.
 
 Completed third `provider-compatibility-core` workstream additions:
 

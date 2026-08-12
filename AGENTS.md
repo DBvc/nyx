@@ -21,8 +21,11 @@ broaden unrelated tasks.
 - `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
   thread-first Agent Workbench foundation, current-thread durability, and
   provider compatibility core tasks, plus the bounded Composer target-selection,
-  Context Composer experiment, document-attachments, and Responses protocol
-  workstreams.
+  Context Composer experiment, document-attachments, Responses protocol, and
+  Multi-Thread Library workstreams.
+- `docs/next/multi-thread-library-technical-plan.md`: reviewed architecture,
+  migration, lifecycle, UI, and validation plan for the named
+  `multi-thread-library` workstream only.
 
 ## Source of Truth
 
@@ -37,12 +40,14 @@ For ordinary work, when product scope conflicts appear, follow this order:
 For explicit agent-workbench workstream tasks only, follow this order:
 
 1. `docs/next/agent-workbench-task-slices.md`
-2. `docs/next/responses-protocol-technical-plan.md` for the named
+2. `docs/next/multi-thread-library-technical-plan.md` for the named
+   `multi-thread-library` workstream only
+3. `docs/next/responses-protocol-technical-plan.md` for the named
    `responses-protocol` workstream only
-3. `docs/next/agent-workbench-direction.md`
-4. `docs/next/provider-adapter-direction.md`
-5. `docs/next/provider-connections-implementation.md`
-6. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
+4. `docs/next/agent-workbench-direction.md`
+5. `docs/next/provider-adapter-direction.md`
+6. `docs/next/provider-connections-implementation.md`
+7. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
    existing behavior must be preserved
 
 The agent-workbench task slices in this repository supersede earlier external
@@ -79,6 +84,13 @@ Still out of scope:
 - artifacts
 - cloud sync
 - multimodal features
+
+Those exclusions remain the ordinary-task default. The explicitly requested
+`multi-thread-library` workstream is the sole exception for real persistent
+Thread history, switching, a typed Thread Library IPC, and SQLite, and only
+inside its currently executable qualified slice. It does not authorize a
+general workbench, Projects, Folders, Tags, tools, agents, cloud sync, or a new
+OCaml Thread domain.
 
 Multimodal behavior remains out of scope for ordinary work. Context Composer
 E0 stopped on main-thread encoding; E0B then stopped because Chromium's native
@@ -166,6 +178,29 @@ This second workstream is not persistent thread history. Still out of scope:
 - OCaml thread runtime domain or new runtime protocol messages
 - activity, approvals, artifacts, tools, MCP, terminal, or browser automation
 - SQLite, JSONL, conversation encryption, or multi-window synchronization
+
+The explicitly requested `multi-thread-library` workstream supersedes those
+single-current-thread prohibitions only inside its active named slice. Its
+reviewed source is `docs/next/multi-thread-library-technical-plan.md`, bound by
+`docs/next/agent-workbench-task-slices.md`. It authorizes, in dependency order:
+
+- one Electron-main-owned local Thread Library with SQLite metadata/content and
+  Thread-owned sidecars, only after the packaged/Main-stall gate passes;
+- real Thread creation, switching, Pinned/Recent, Rename, Archive, Trash,
+  Restore, bounded Search, and gated Permanent delete;
+- one typed `window.nyx.threads` library bridge while retaining and
+  thread-scoping `window.nyx.chat` for execution;
+- a persisted safe target selection id for each materialized Thread Draft,
+  without persisting credentials/resolved targets or changing the global
+  Connections default;
+- at most one active Run per Thread and bounded cross-Thread concurrency while
+  Renderer and OCaml remain rebuildable projections.
+
+`multi-thread-library/S0` is documentation only. G1/G2 may begin only after its
+reviewed documentation diff is present in current HEAD. Product implementation
+remains blocked by the exact dependencies and slice inventories in the task
+slices; Permanent delete additionally requires both same-process image
+revocation and legacy-root cleanup to pass.
 
 The completed third `provider-compatibility-core` workstream added only:
 
@@ -338,7 +373,9 @@ Before naming, renaming, or planning runtime-boundary work, check the naming bou
 - Do not move provider tokens into OCaml.
 - Do not add Rust, Swift, Tauri, mobile, or server projects in this phase.
 - Do not treat current-thread durability as permission to add multi-thread
-  history, thread switching, or a parallel Thread reducer.
+  history, thread switching, or a parallel Thread reducer. Only the active
+  qualified `multi-thread-library` slice may supersede the first two
+  prohibitions; it still may not add an OCaml Thread reducer or protocol.
 - Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
 - Prefer `git mv` for file moves.
 - Use relative documentation links. Do not write local absolute paths such as `/Users/...`.
