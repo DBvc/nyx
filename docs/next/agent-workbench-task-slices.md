@@ -152,11 +152,12 @@ Use relative documentation links. Do not add local absolute paths.
   [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
   Reviewed v5.3 entered HEAD at `5a1aeae`. G1W then passed under the corrected
   release-shape contract in `2196ea6`; G2R reached independently reviewed
-  `VALID_STOP`, so Permanent delete remains absent. The revised docs-only D1
-  scope lock below is the only executable tracked-file step. D1 code may begin
-  only after scoped closure review `NYX-MTL-D1-SCOPE-20260812-03` accepts its
-  exact bytes and those same bytes enter HEAD; D2 and every later product slice
-  remain blocked.
+  `VALID_STOP`, so Permanent delete remains absent. The revised D1 scope lock
+  completed at `0e3b2ef` after scoped closure review
+  `NYX-MTL-D1-SCOPE-20260812-03`. The docs-only D1-R recovery-contract
+  correction below is now the only executable tracked-file step; D1 code is
+  paused until that correction passes independent review and enters HEAD. D2
+  and every later product slice remain blocked.
 
 ## A0: Scope Gate Docs
 
@@ -3306,9 +3307,10 @@ Status: S0 is complete. G1 and G2 both reached independently reviewed
 and entered HEAD at `5a1aeae`, so its self-ratchet is complete. G2R then reached
 independently reviewed `VALID_STOP`; Permanent delete remains absent. G1W's
 release-shape contract correction entered HEAD at `2196ea6`, and corrected
-evidence then passed independent review. The docs-only D1 scope lock below is
-the only executable tracked-file step; no D1 product code is authorized until
-that exact scope lock passes independent review and enters HEAD.
+evidence then passed independent review. The docs-only D1 scope lock completed
+at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`. D1-R below is now the
+only executable tracked-file step; D1 code is paused until its exact recovery
+contract passes independent review and enters HEAD.
 
 The reviewed source candidate is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3596,15 +3598,77 @@ matching v5.3 sections:
 - P1: optional final Trash-only Permanent delete, its purge schema/bridge/UI and
   complete packaged regression.
 
+### multi-thread-library/D1-R: SQLite crash-recovery contract correction
+
+Type: documentation-only correction to the D1 open/validation contract.
+
+Status: landing candidate and the only executable tracked-file step. D1 product
+code is paused. It may resume only when independent strict review
+`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02` accepts these exact bytes and the
+same bytes enter HEAD. D2 and every later product slice stay blocked.
+
+This subsection narrowly supersedes v5.3 and D1-scope-lock wording that requires
+the original database and DELETE journal to remain byte-identical after every
+open or physical-validation failure. SQLite must recover a hot rollback journal
+before it can expose one authoritative, transactionally consistent view; that
+native recovery can write restored pages and remove the journal before schema,
+foreign-key and `quick_check` validation can finish. A read-only connection
+cannot perform that recovery, and `immutable=1` ignores the journal rather than
+validating the authoritative state. Treating either as canonical would weaken
+crash recovery.
+
+D1 therefore keeps at most one live Worker and one live `DatabaseSync`
+connection. Each Worker generation constructs its sole connection once and
+opens the canonical path once; a replacement generation may start only after
+the old generation has confirmed exit and its connection no longer exists. The
+connection lets SQLite perform native DELETE-journal recovery before accepting
+any semantic command. Native recovery of a pre-existing hot journal is the only
+allowed pre-validation physical mutation to a pre-existing canonical database.
+After recovery, D1 must validate the exact schema fingerprint, required pragmas,
+`PRAGMA foreign_key_check` with zero rows and `PRAGMA quick_check = 'ok'` before
+accepting commands.
+
+If the canonical path is absent, the sole connection may exclusively create the
+database and initialize the reviewed schema. If that first initialization or
+validation fails, D1 removes only the database and journal created by that
+attempt; it never removes or replaces a file that predated the call.
+
+If open, recovery or any later validation fails, D1 enters Library unavailable
+and closes the connection. It leaves the files exactly as SQLite left them and
+must not create or substitute an empty database, copy/rename/restore a backup,
+re-import v5, repair rows, retry a mutation, or introduce a recovery manager,
+second connection, second Worker or second durable truth. Clean invalid inputs
+with no hot journal must remain byte-identical. For a hot or corrupt journal,
+the test must not promise byte identity after SQLite's recovery attempt; it must
+instead prove fail-closed behavior, no replacement/re-import, and no accepted
+command against an unvalidated database.
+
+D1 tests must add: a real spilled uncommitted DELETE-journal SIGKILL fixture
+that reopens to the pre-transaction state; a corrupt hot-journal fixture that
+becomes Library unavailable without an empty replacement; and an FK-disabled
+orphan fixture rejected by `foreign_key_check`, byte-identical because it has no
+hot journal. Existing clean header, permission, schema, pragma and quick-check
+failure preservation remains required. Product source must contain only one
+`new DatabaseSync` construction site and no immutable validation path.
+
+Allowed tracked files are exactly:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+This correction changes no product behavior, schema, operation, file inventory,
+IPC, dependency, UI or later-slice boundary. It does not relax old-root or
+sidecar byte identity, and it does not authorize destructive recovery.
+
 ### multi-thread-library/D1-scope-lock: SQLite domain and importer foundation
 
 Type: documentation-only control step.
 
-Status: revised landing candidate and the only executable tracked-file step.
-It becomes complete without another edit when independent review
-`NYX-MTL-D1-SCOPE-20260812-03` accepts these exact bytes and the same bytes enter
-HEAD. Only then may D1 product code begin. D2 and every later product slice stay
-blocked.
+Status: complete at `0e3b2ef` after independent review
+`NYX-MTL-D1-SCOPE-20260812-03`. Its open/validation byte-preservation wording is
+narrowly superseded by D1-R above; D1 code remains paused until D1-R completes.
+D2 and every later product slice stay blocked.
 
 Dependencies are satisfied only by G1W evidence
 `5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`,
