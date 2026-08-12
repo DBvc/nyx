@@ -3301,11 +3301,14 @@ git diff --check
 ## MTL Workstream: Multi-Thread Library
 
 Status: S0 is complete. G1 and G2 both reached independently reviewed
-`VALID_STOP`. The v5.3 landing candidate is the only executable tracked-file
-step; no product code is authorized. It self-completes when its recorded exact
-bytes pass product, design, and strict technical review and enter HEAD; no
-follow-up status edit is required. G1W and G2R then become the only executable
-OS-temp gates.
+`VALID_STOP`. The v5.3 landing candidate passed its recorded exact-byte reviews
+and entered HEAD at `5a1aeae`, so its self-ratchet is complete. G2R then reached
+independently reviewed `VALID_STOP`; Permanent delete remains absent. G1W's
+product-relevant matrix passed, but its evidence review found that v5.3 had
+incorrectly treated a standalone raw-Electron launch of a packaged `app.asar`
+as a fourth release shape. The docs-only G1W archive-contract correction below
+is the only executable tracked-file step; no product code is authorized until
+it and the corrected G1W evidence pass their independent reviews.
 
 The reviewed source candidate is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3385,9 +3388,9 @@ plateau lines. Permanent delete remains absent. Independent evidence review:
 
 Type: documentation only.
 
-Status: reviewed landing candidate; this is the only executable tracked-file
-step. It becomes complete without another edit when the following exact reviews
-pass and these same bytes enter HEAD.
+Status: complete at `5a1aeae` through its no-follow-up self-ratchet. The
+following exact reviews passed for the same six-file bytes before they entered
+HEAD.
 
 The required final full-review bindings are
 `NYX-MTL-V53-PRODUCT-FULL-20260812-07`,
@@ -3439,21 +3442,24 @@ record exact plan hash and independent product/design/strict review ids. No
 code, test, dependency, schema, IPC, persisted data or runtime behavior may
 change.
 
-V5.3 self-completes only after format-check, `git diff --check`, exact
-allowed-file and plan-hash checks, all three independent reviews, and the same
-bytes entering HEAD. No completion-status patch follows. G1W and G2R are then
-the only executable slices.
+V5.3 required format-check, `git diff --check`, exact allowed-file and plan-hash
+checks, all three independent reviews, and the same bytes entering HEAD. Those
+conditions were satisfied at `5a1aeae`; this subsection now records the
+historical ratchet and does not authorize another V5.3 edit.
 
 ### multi-thread-library/G1W: Whole-DB Node Worker gate
 
 Type: OS-temp production-shape feasibility only.
 
-Status: executable only after the V5.3 self-ratchet condition is true. Then
-execute the exact v5.3 matrix with one Worker, one `DatabaseSync` connection and
-one static Main build entry. No
+Status: executed after the V5.3 self-ratchet. The product-relevant matrix
+passed, but G1W remains unpassed until its evidence is independently accepted
+under G1W-A's corrected final-archive contract. The standalone raw-Electron
+`app.asar` wording in this historical paragraph is superseded by G1W-A. The
+gate otherwise used one Worker, one `DatabaseSync` connection and one static
+Main build entry. No
 tracked file, product schema/IPC, raw-SQL RPC, Main fallback, pool,
 `utilityProcess`, ORM/repository or dependency change is allowed. It must prove
-dev/build/`app.asar`/packaged loading, G1 correctness/crash fixtures, bounded
+dev/build/final-packaged-archive loading, G1 correctness/crash fixtures, bounded
 Main reply/clone/publication latency, FIFO snapshot ordering, CAS conflicts,
 stable-id materialize recovery without automatic replay, other unknown-commit
 reconciliation including terminal providerStateRef retention after reply loss,
@@ -3464,19 +3470,77 @@ primary retains one event domain.
 
 Failure leaves D1 blocked and returns to planning.
 
+### multi-thread-library/G1W-A: Release-shape archive evidence correction
+
+Type: documentation-only correction to the G1W evidence contract.
+
+Status: revised landing candidate and the only executable tracked-file step.
+It becomes complete without another edit when scoped closure review
+`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` accepts these exact bytes and the same
+bytes enter HEAD. G1W remains unpassed until its evidence is then accepted under
+this corrected contract. Review
+`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-01` required only the historical-status
+alignment now present in V5.3, G1W, and G2R.
+
+This subsection narrowly supersedes the standalone `app.asar` launch wording
+in v5.3 and the G1W subsection above. A raw Electron executable directly
+targeting an archive copied from a packaged application creates a hybrid state:
+`app.isPackaged` is false while `app.getAppPath()` points inside release
+artifacts. That state changes application identity and Renderer/resource
+lifecycle semantics, is not a Nyx release path, and duplicates the archive-load
+proof already exercised by the packaged application. Such a run is neither a
+required G1W sample nor decision-eligible PASS/Stop evidence. Existing failed
+attempts remain disclosed as invalid orchestration; they are not erased or
+reclassified.
+
+For G1W, final-archive validation instead requires one fresh-profile FULL run
+of the final packaged `.app` that records all of the following:
+
+- `app.isPackaged=true`;
+- `app.getAppPath()` equals that package's exact
+  `Contents/Resources/app.asar` path;
+- the exact SHA-256 of that frozen archive and an auditable archive inventory;
+- the static Worker URL resolves inside that exact archive;
+- the Main, Worker, preload, and Renderer bytes in the archive match the final
+  packaged candidate;
+- complete raw results for the frozen correctness, workload, latency,
+  heartbeat, FIFO/CAS, unknown-commit, sidecar, generation, window teardown,
+  clean-close, and no-skipped-check matrix.
+
+Development and production-build samples remain separately required. The same
+final packaged candidate must still pass the same-profile dual-process native
+single-instance matrix, and the real SIGKILL/restart fixtures remain required.
+No latency, memory, security, correctness, workload, lifecycle, or ownership
+line is removed or relaxed. This correction does not change the one-Worker
+architecture, authorize a Main SQLite fallback, or authorize D1 by itself.
+
+After this correction enters HEAD, G1W evidence may pass only when an
+independent strict review verifies the deterministic source manifest, exact
+final archive/result/raw hashes, every retained required sample, every invalid
+or superseded sample, and the clean tracked worktree. D1 remains blocked until
+that evidence review passes and D1's own one-file scope lock is independently
+reviewed and present in HEAD.
+
+Allowed tracked files are exactly:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+This correction may not change product code, tests, dependencies, schema, IPC,
+persisted data, runtime behavior, the v5.3 product model, G2R's result, or P1's
+absence.
+
 ### multi-thread-library/G2R: Renderer resource-cache repair gate
 
 Type: OS-temp production-shape feasibility only.
 
-Status: executable only after the V5.3 self-ratchet condition is true. Then test
-only the ordered native candidates in v5.3: first
-`no-store + webFrame.clearCache()` after image-bearing
-detail teardown; only if it fails, immutable cache plus Renderer and session
-cache barriers. Preserve all raw structured results. No tracked change,
-token/version URL, extra image service/renderer, JS bytes/path, support
-reduction or relaxed memory/security line is allowed.
-
-Failure leaves P1 absent but does not block D1 through M1.
+Status: independently reviewed `VALID_STOP`. Evidence SHA-256
+`099e87ce83f679fb887ae7054f2429f6cab52a8bc4936215119f29210e606e7e`;
+review `NYX-MTL-G2R-EVIDENCE-20260812-01`. Both ordered native candidates
+crossed the fixed repeated-close memory plateau line. P1 and Permanent delete
+remain absent; D1 through M1 remain unaffected. G2R is not executable again
+under this workstream.
 
 ### Product implementation slices
 
