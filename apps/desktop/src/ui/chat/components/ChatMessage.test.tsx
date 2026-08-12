@@ -143,6 +143,8 @@ describe('ChatMessage', () => {
     expect(markup).toContain('src="nyx-image://preview/00000000-0000-4000-8000-000000000001"')
     expect(markup).not.toContain('nyx-image://full/')
     expect(markup).toContain('aria-label="Open attached image 1"')
+    expect(markup).toContain('min-h-11 min-w-11')
+    expect(markup).toContain('max-h-[calc(18rem-2px)]')
     expect(markup).toContain('<dialog')
   })
 

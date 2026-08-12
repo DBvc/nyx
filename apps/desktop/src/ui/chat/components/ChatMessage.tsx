@@ -39,16 +39,22 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
           {message.images?.length ? (
             <div
-              className={`grid w-[min(70vw,24rem)] gap-1.5 ${
-                message.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-              }`}
+              className={
+                message.images.length === 1
+                  ? 'flex w-[min(70vw,18rem)] justify-end'
+                  : 'grid w-[min(70vw,18rem)] grid-cols-2 gap-1.5'
+              }
               aria-label='Attached images'
             >
               {message.images.map((image, index) =>
                 image.available ? (
                   <button
                     aria-label={`Open attached image ${index + 1}`}
-                    className='aspect-square min-w-0 overflow-hidden rounded-xl border border-nyx-line bg-nyx-solid'
+                    className={
+                      message.images?.length === 1
+                        ? 'flex min-h-11 min-w-11 max-w-full items-center justify-center overflow-hidden rounded-xl border border-nyx-line bg-nyx-solid'
+                        : 'aspect-square min-w-0 overflow-hidden rounded-xl border border-nyx-line bg-nyx-solid'
+                    }
                     key={image.imageId}
                     onClick={(event) => {
                       imageTriggerRef.current = event.currentTarget
@@ -58,14 +64,22 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                   >
                     <img
                       alt={`Attached image ${index + 1}`}
-                      className='h-full w-full object-cover'
+                      className={
+                        message.images?.length === 1
+                          ? 'block h-auto max-h-[calc(18rem-2px)] w-auto max-w-full object-contain'
+                          : 'h-full w-full object-cover'
+                      }
+                      height={image.height}
                       src={buildNyxChatImageUrl(image.imageId, 'preview')}
+                      width={image.width}
                     />
                   </button>
                 ) : (
                   <div
                     aria-label={`Attached image ${index + 1} is unavailable`}
-                    className='flex aspect-square items-center justify-center rounded-xl border border-dashed border-nyx-line-strong bg-nyx-solid px-3 text-center text-xs text-nyx-subtle'
+                    className={`flex items-center justify-center rounded-xl border border-dashed border-nyx-line-strong bg-nyx-solid px-3 text-center text-xs text-nyx-subtle ${
+                      message.images?.length === 1 ? 'h-24 w-full' : 'aspect-square'
+                    }`}
                     key={image.imageId}
                     role='img'
                   >

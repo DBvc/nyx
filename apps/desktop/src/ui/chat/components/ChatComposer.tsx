@@ -260,10 +260,10 @@ export function ChatComposer({
           ) : null}
 
           {draftImages.length > 0 ? (
-            <ol className='mb-3 grid grid-cols-4 gap-2' aria-label='Attached images'>
+            <ol className='mb-3 flex flex-wrap gap-2' aria-label='Attached images'>
               {draftImages.map((image, index) => (
                 <li
-                  className='group relative aspect-square min-w-0 overflow-hidden rounded-xl border border-nyx-line bg-nyx-solid'
+                  className='group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-nyx-line bg-nyx-solid'
                   key={image.id}
                 >
                   {image.status === 'ready' ? (
