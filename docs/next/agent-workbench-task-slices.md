@@ -150,12 +150,13 @@ Use relative documentation links. Do not add local absolute paths.
   remains complete. G1 and G2 both reached
   independently reviewed `VALID_STOP`; their durable summary is in
   [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
-  The v5.3 landing candidate self-completes when its recorded exact-byte reviews
-  pass and those bytes enter HEAD; no follow-up status edit is required. Only
-  then may G1W/G2R run. Earlier full reviews found navigation, search, process ownership,
-  shutdown, corruption recovery, title, ordering and durability-contract gaps;
-  none of those reviews authorized a gate. No product implementation slice is
-  executable yet.
+  Reviewed v5.3 entered HEAD at `5a1aeae`. G1W then passed under the corrected
+  release-shape contract in `2196ea6`; G2R reached independently reviewed
+  `VALID_STOP`, so Permanent delete remains absent. The revised docs-only D1
+  scope lock below is the only executable tracked-file step. D1 code may begin
+  only after scoped closure review `NYX-MTL-D1-SCOPE-20260812-03` accepts its
+  exact bytes and those same bytes enter HEAD; D2 and every later product slice
+  remain blocked.
 
 ## A0: Scope Gate Docs
 
@@ -3304,11 +3305,10 @@ Status: S0 is complete. G1 and G2 both reached independently reviewed
 `VALID_STOP`. The v5.3 landing candidate passed its recorded exact-byte reviews
 and entered HEAD at `5a1aeae`, so its self-ratchet is complete. G2R then reached
 independently reviewed `VALID_STOP`; Permanent delete remains absent. G1W's
-product-relevant matrix passed, but its evidence review found that v5.3 had
-incorrectly treated a standalone raw-Electron launch of a packaged `app.asar`
-as a fourth release shape. The docs-only G1W archive-contract correction below
-is the only executable tracked-file step; no product code is authorized until
-it and the corrected G1W evidence pass their independent reviews.
+release-shape contract correction entered HEAD at `2196ea6`, and corrected
+evidence then passed independent review. The docs-only D1 scope lock below is
+the only executable tracked-file step; no D1 product code is authorized until
+that exact scope lock passes independent review and enters HEAD.
 
 The reviewed source candidate is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3452,11 +3452,12 @@ historical ratchet and does not authorize another V5.3 edit.
 Type: OS-temp production-shape feasibility only.
 
 Status: executed after the V5.3 self-ratchet. The product-relevant matrix
-passed, but G1W remains unpassed until its evidence is independently accepted
-under G1W-A's corrected final-archive contract. The standalone raw-Electron
-`app.asar` wording in this historical paragraph is superseded by G1W-A. The
-gate otherwise used one Worker, one `DatabaseSync` connection and one static
-Main build entry. No
+and corrected release-shape evidence passed independent review
+`NYX-MTL-G1W-EVIDENCE-V3-20260812-03`; G1W is complete. Evidence SHA-256:
+`5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`.
+The standalone raw-Electron `app.asar` wording in this historical paragraph is
+superseded by G1W-A. The gate otherwise used one Worker, one `DatabaseSync`
+connection and one static Main build entry. No
 tracked file, product schema/IPC, raw-SQL RPC, Main fallback, pool,
 `utilityProcess`, ORM/repository or dependency change is allowed. It must prove
 dev/build/final-packaged-archive loading, G1 correctness/crash fixtures, bounded
@@ -3474,13 +3475,10 @@ Failure leaves D1 blocked and returns to planning.
 
 Type: documentation-only correction to the G1W evidence contract.
 
-Status: revised landing candidate and the only executable tracked-file step.
-It becomes complete without another edit when scoped closure review
-`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` accepts these exact bytes and the same
-bytes enter HEAD. G1W remains unpassed until its evidence is then accepted under
-this corrected contract. Review
-`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-01` required only the historical-status
-alignment now present in V5.3, G1W, and G2R.
+Status: complete at `2196ea6`. Scoped review
+`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` accepted the exact bytes before they
+entered HEAD. Review `NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-01` required only
+the historical-status alignment present in that accepted revision.
 
 This subsection narrowly supersedes the standalone `app.asar` launch wording
 in v5.3 and the G1W subsection above. A raw Electron executable directly
@@ -3597,6 +3595,134 @@ matching v5.3 sections:
   scan, with no product behavior change;
 - P1: optional final Trash-only Permanent delete, its purge schema/bridge/UI and
   complete packaged regression.
+
+### multi-thread-library/D1-scope-lock: SQLite domain and importer foundation
+
+Type: documentation-only control step.
+
+Status: revised landing candidate and the only executable tracked-file step.
+It becomes complete without another edit when independent review
+`NYX-MTL-D1-SCOPE-20260812-03` accepts these exact bytes and the same bytes enter
+HEAD. Only then may D1 product code begin. D2 and every later product slice stay
+blocked.
+
+Dependencies are satisfied only by G1W evidence
+`5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`,
+independent review `NYX-MTL-G1W-EVIDENCE-V3-20260812-03`, and G1W-A contract
+review `NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` in HEAD `2196ea6`.
+
+D1 may change exactly these tracked files:
+
+```text
+apps/desktop/electron.vite.config.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+apps/desktop/electron/main/thread-library/protocol.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/worker.ts
+apps/desktop/electron/main/thread-library/worker.test.ts
+apps/desktop/electron/main/thread-library/v5-importer.ts
+apps/desktop/electron/main/thread-library/v5-importer.test.ts
+```
+
+Responsibilities are fixed as follows:
+
+- `index.ts` acquires Electron's native single-instance lock before privileged
+  scheme registration or any data owner can initialize. A rejected secondary
+  exits without touching current-thread, Thread Library, staging, sidecar,
+  image-authorization, Connections, Runtime, IPC or window state. The primary's
+  `second-instance` handler only restores/shows/focuses its existing window.
+- `electron.vite.config.ts` adds one fixed Main build entry named
+  `thread-library-worker`; it does not add a dependency or a dynamic Worker
+  loader.
+- `protocol.ts` is the implementation-local typed semantic Worker contract.
+  Its D1 operations are limited to open/close, stable-id materialize, exact
+  Thread read, 50-row keyset list page and one-record v5 import. It is not a
+  shared/preload contract and exposes no raw SQL.
+- `client.ts` owns one Worker generation and one pending-request map. It
+  validates replies, invalidates a failed generation, waits for old Worker exit
+  before one replacement, classifies mutation outcomes as
+  `definitely_not_committed | committed | outcome_unknown`, and performs only
+  exact canonical reread reconciliation. It never auto-replays a mutation and
+  has no second queue, pool or Main SQLite fallback.
+- `worker.ts` is the only non-test product source allowed to import
+  `node:sqlite` or construct `DatabaseSync`. It owns the sole connection,
+  prepared statements and complete transactions; uses bound parameters,
+  STRICT tables, foreign keys, DELETE journal, defensive/trusted-schema and
+  secure-delete settings; enforces 0700/0600; and runs required physical,
+  schema, pragma and `quick_check` validation before accepting commands.
+- `v5-importer.ts` strict-parses the old v5 record directly with the existing
+  parser and reads the old root without mutating it. It must not call
+  `CurrentThreadStore.read()`, because that read repairs pending state. The
+  importer converts abandoned pending to Interrupted, preserves safe target and
+  Responses identity, validates resources through the existing Main-owned
+  image/document/provider-state validators and degrades only bad resources. It
+  sends the Worker only semantic SQLite row values plus validated extracted
+  document text under existing resource limits; raw image, document-source and
+  Responses continuation bytes never cross. D1 adds no v5 file, Turn or message
+  text cap; needing one is a Stop/replan rather than rejection of an otherwise
+  valid v5 record. The importer neither copies sidecars nor activates a new
+  library.
+- The three new test files and existing `index.test.ts` are the only D1 test
+  surfaces. Fixtures are generated inside those tests; D1 adds no fixture tree,
+  test-only IPC, production fault flag, helper framework or generic filesystem
+  abstraction.
+
+The D1 schema includes only the v5.3 `threads`, one-row-per-Thread `drafts`,
+`turns`, `images`, `documents`, and `provider_state_refs` domain needed by this
+foundation. It enforces location/trash-origin/Pin/title/revision invariants,
+one pending final Turn per Thread, Draft tombstones and stable identities. It
+does not create FTS, `purge_jobs`, durable Runs, a global catalog, generic event
+log, migration journal or later-slice columns without a D1 invariant.
+
+D1 builds and tests this foundation but does not construct a Thread Library
+client from normal app startup, open or create a user's real library, write the
+old root, register Thread IPC, change `window.nyx`, cut chat over, or change any
+Renderer/Provider/Runtime behavior. C1 remains the sole import-and-activation
+cutover; D2 remains the owner of new thread-owned sidecar staging, unified Draft
+CAS, Draft-to-Turn and terminal settlement.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/main/index.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/worker.test.ts electron/main/thread-library/v5-importer.test.ts
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
+The tests must cover single-instance owner ordering and focus-only handoff;
+STATIC Worker output; STRICT/FK/DELETE/0700/0600/rollback/reopen/quick-check;
+137 ordered rows with 50-row pages, end and invalid/stale cursors; stable-id
+materialize rollback, commit-before-reply-loss reread and same-id explicit
+Retry; malformed/unknown/timeout/crash/late-generation replies, CAS conflict
+and no automatic replay; safe Library versus Thread unavailable classification;
+and v5 text/image/document/Responses/pending, corrupt-resource, corrupt-ref,
+repeat and disk-full cases with the entire old root hash unchanged.
+
+OS-temp acceptance must also load the exact static Worker from the final D1
+packaged `.app`, bind the frozen archive hash/inventory as in G1W-A, and launch
+two fresh-profile packaged processes to prove the rejected secondary touches no
+protected root while the primary receives one focus event and retains one event
+domain. No raw-Electron packaged-archive hybrid is required.
+
+The implementation stops and returns to this scope lock if any required change
+falls outside the ten-file inventory; a real published upgrade population is
+found; canonical Thread identity/location cannot be distinguished from a
+whole-library failure; old-root bytes change; or correctness requires
+dual-read/write, a second durable truth, raw-SQL RPC, another connection/Worker,
+automatic mutation replay, Main `DatabaseSync`, an ORM/repository, D2/C1/Q1/P1
+behavior, or a product-only test hook.
+
+Before implementation can be marked complete, exact allowed-file and forbidden
+surface scans, all checks above, the packaged acceptance, and independent code
+review `NYX-MTL-D1-CODE-20260812-01` must pass for the same implementation bytes
+that enter HEAD. D1 completion does not authorize D2 without D2's own reviewed
+scope lock.
 
 ### Global Stop conditions
 
