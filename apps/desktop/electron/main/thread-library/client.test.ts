@@ -77,6 +77,26 @@ const materializeInput: ThreadLibraryOperationInput['materialize'] = {
   fallbackLocalSecond: null,
   createdAt: timestamp,
 }
+const saveDraftInput: ThreadLibraryOperationInput['saveDraft'] = {
+  threadId,
+  expectedDraftRevision: 0,
+  draft: {
+    text: 'Draft text',
+    targetSelection: materializeInput.targetSelection,
+    images: [],
+    documents: [],
+  },
+  savedAt: '2026-08-12T00:00:01.000Z',
+}
+const settleInput: ThreadLibraryOperationInput['settleTurn'] = {
+  threadId,
+  requestId: 'request-1',
+  assistantStatus: 'completed',
+  assistantContent: 'Done',
+  error: null,
+  providerStateRef: null,
+  settledAt: '2026-08-12T00:00:02.000Z',
+}
 
 function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = materializeInput) {
   return {
@@ -109,6 +129,58 @@ function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = 
     documents: [],
     providerStateRefs: [],
   } as const
+}
+
+function savedDraftDetail() {
+  const detail = materializedDetail()
+  return {
+    ...detail,
+    summary: { ...detail.summary, updatedAt: saveDraftInput.savedAt },
+    draft: {
+      ...detail.draft,
+      draftRevision: 1,
+      text: saveDraftInput.draft.text,
+      updatedAt: saveDraftInput.savedAt,
+    },
+  }
+}
+
+function terminalDetail(status: 'pending' | 'completed' = 'completed') {
+  const detail = materializedDetail()
+  return {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      lastUserActivityAt: '2026-08-12T00:00:01.000Z',
+      resultRevision: status === 'completed' ? 1 : 0,
+      updatedAt: status === 'completed' ? settleInput.settledAt : '2026-08-12T00:00:01.000Z',
+    },
+    draft: { ...detail.draft, draftRevision: 1, updatedAt: '2026-08-12T00:00:01.000Z' },
+    turns: [
+      {
+        threadId,
+        ordinal: 0,
+        attemptRequestId: settleInput.requestId,
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: 'Hello',
+        assistantContent: status === 'completed' ? settleInput.assistantContent : '',
+        assistantStatus: status,
+        error: null,
+        targetSelection: materializeInput.targetSelection,
+        targetAttribution: {
+          kind: 'connection' as const,
+          providerId: 'provider-1',
+          providerDisplayName: 'Provider One',
+          modelId: 'model-1',
+          modelDisplayName: 'Model One',
+        },
+        providerStateId: null,
+        createdAt: '2026-08-12T00:00:01.000Z',
+        updatedAt: status === 'completed' ? settleInput.settledAt : '2026-08-12T00:00:01.000Z',
+      },
+    ],
+  }
 }
 
 function importedRows(): ImportedV5Rows {
@@ -200,12 +272,13 @@ function succeed(instance: FakeWorker, request: ThreadLibraryRequest, value: unk
 function fail(
   instance: FakeWorker,
   request: ThreadLibraryRequest,
-  code: 'already_exists' | 'library_unavailable',
+  code: 'already_exists' | 'library_unavailable' | 'not_pending',
   outcome: 'definitely_not_committed' | 'outcome_unknown' = 'definitely_not_committed',
 ) {
   const messages = {
     already_exists: 'This thread already exists.',
     library_unavailable: 'The Thread Library is unavailable.',
+    not_pending: 'This turn is no longer pending.',
   } as const
   instance.emit('message', {
     id: request.id,
@@ -234,6 +307,83 @@ beforeEach(() => {
 })
 
 describe('ThreadLibraryClient', () => {
+  it('canonically confirms Draft and terminal writes after reply loss without replaying them', async () => {
+    const { client, instance: first } = await openClient()
+    const saving = client.saveDraft(saveDraftInput)
+    const saveRequest = await waitForPost(first, 1)
+    fail(first, saveRequest, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const replacementOpen = await waitForPost(replacement, 0)
+    succeed(replacement, replacementOpen, { schemaVersion: 1 })
+    const saveRead = await waitForPost(replacement, 1)
+    succeed(replacement, saveRead, savedDraftDetail())
+    await expect(saving).resolves.toMatchObject({
+      ok: true,
+      value: { status: 'committed', detail: { draft: { draftRevision: 1 } } },
+    })
+
+    const settling = client.settleTurn(settleInput)
+    const settleRequest = await waitForPost(replacement, 2)
+    fail(replacement, settleRequest, 'library_unavailable', 'outcome_unknown')
+    const secondReplacement = await waitForWorker(2)
+    const secondOpen = await waitForPost(secondReplacement, 0)
+    succeed(secondReplacement, secondOpen, { schemaVersion: 1 })
+    const settleRead = await waitForPost(secondReplacement, 1)
+    succeed(secondReplacement, settleRead, terminalDetail())
+    await expect(settling).resolves.toMatchObject({
+      ok: true,
+      value: { turns: [{ assistantStatus: 'completed', assistantContent: 'Done' }] },
+    })
+
+    expect(posts('saveDraft')).toHaveLength(1)
+    expect(posts('settleTurn')).toHaveLength(1)
+    expect(workerMock.maxActive).toBe(1)
+  })
+
+  it('keeps recoverPending unknown until the caller explicitly retries the same input', async () => {
+    const recoveredAt = '2026-08-12T00:00:03.000Z'
+    const { client, instance } = await openClient()
+    const recovering = client.recoverPending({ recoveredAt })
+    const request = await waitForPost(instance, 1)
+    fail(instance, request, 'library_unavailable', 'outcome_unknown')
+    await expect(recovering).resolves.toMatchObject({
+      ok: false,
+      outcome: 'outcome_unknown',
+    })
+    await vi.waitFor(() => expect(instance.exited).toBe(true))
+    expect(posts('recoverPending')).toHaveLength(1)
+    expect(workerMock.instances).toHaveLength(1)
+
+    const reopening = client.open()
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    await reopening
+    const retrying = client.recoverPending({ recoveredAt })
+    const retry = await waitForPost(replacement, 1)
+    expect(retry.input).toEqual({ recoveredAt })
+    succeed(replacement, retry, { recovered: 0 })
+    await expect(retrying).resolves.toMatchObject({ ok: true, value: { recovered: 0 } })
+    expect(posts('recoverPending')).toHaveLength(2)
+  })
+
+  it('rereads the canonical terminal when another terminal already won', async () => {
+    const { client, instance } = await openClient()
+    const settling = client.settleTurn(settleInput)
+    const request = await waitForPost(instance, 1)
+    fail(instance, request, 'not_pending')
+    const read = await waitForPost(instance, 2)
+    expect(read.operation).toBe('readThread')
+    succeed(instance, read, terminalDetail())
+    await expect(settling).resolves.toMatchObject({
+      ok: true,
+      value: { turns: [{ assistantStatus: 'completed' }] },
+    })
+    expect(posts('settleTurn')).toHaveLength(1)
+    expect(workerMock.instances).toHaveLength(1)
+  })
+
   it('uses one fixed Worker entry, validates normal replies, and closes cleanly', async () => {
     const { client, instance } = await openClient()
     expect(String(instance.specifier)).toMatch(/thread-library-worker\.js$/)

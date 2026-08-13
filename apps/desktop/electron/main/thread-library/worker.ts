@@ -16,6 +16,7 @@ import { isMainThread, parentPort } from 'node:worker_threads'
 
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
+import { interruptedThreadErrorMessage } from '../current-thread/schemas'
 import {
   importedV5RowsSchema,
   parseThreadLibraryListRow,
@@ -35,7 +36,7 @@ import {
 
 const schemaVersion = 1
 const sqliteHeader = Buffer.from('SQLite format 3\0')
-const expectedSchemaFingerprint = 'a0824fc5e3d1b3eace6540f42e997517d2cbf1b7869da9094a181e7e4056c746'
+const expectedSchemaFingerprint = 'b738af3b33da1c928f8ba909fe7c9a9d140f8841fc601544f7a9f5075bfa091b'
 
 const schemaSql = `
   CREATE TABLE threads (
@@ -181,7 +182,7 @@ const schemaSql = `
     FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE,
     FOREIGN KEY(thread_id, turn_ordinal) REFERENCES turns(thread_id, ordinal) ON DELETE CASCADE,
     CHECK((owner = 'draft' AND turn_ordinal IS NULL) OR (owner = 'turn' AND turn_ordinal IS NOT NULL)),
-    CHECK((available = 1 AND extracted_text IS NOT NULL) OR (available = 0 AND extracted_text IS NULL))
+    CHECK(available = 0 OR extracted_text IS NOT NULL)
   ) STRICT;
 
   CREATE UNIQUE INDEX documents_draft_position
@@ -407,13 +408,49 @@ function queryThread(database: DatabaseSync, threadId: string): ThreadLibraryThr
     return null
   }
 
+  const draftImages = database
+    .prepare("SELECT * FROM images WHERE thread_id = ? AND owner = 'draft' ORDER BY position")
+    .all(threadId)
+    .map((row) => ({
+      imageId: row.id,
+      threadId,
+      owner: 'draft' as const,
+      turnOrdinal: null,
+      position: row.position,
+      mediaType: row.media_type,
+      width: row.width,
+      height: row.height,
+      available: row.available === 1,
+    }))
+  const draftDocuments = database
+    .prepare("SELECT * FROM documents WHERE thread_id = ? AND owner = 'draft' ORDER BY position")
+    .all(threadId)
+    .map((row) => ({
+      documentId: row.id,
+      threadId,
+      owner: 'draft' as const,
+      turnOrdinal: null,
+      position: row.position,
+      name: row.name,
+      mediaType: row.media_type,
+      byteLength: row.byte_length,
+      extractedByteLength: row.extracted_byte_length,
+      sourceSha256: row.source_sha256,
+      extractedTextSha256: row.extracted_text_sha256,
+      available: row.available === 1,
+      extractedText: row.extracted_text,
+    }))
+
   try {
     return parseThreadLibraryThreadDetail({
       summary: rows.thread,
       draft: rows.draft,
       turns: rows.turns,
-      images: rows.images,
-      documents: rows.documents,
+      images: [...rows.images.map((row) => ({ ...row, owner: 'turn' as const })), ...draftImages],
+      documents: [
+        ...rows.documents.map((row) => ({ ...row, owner: 'turn' as const })),
+        ...draftDocuments,
+      ],
       providerStateRefs: rows.providerStateRefs,
     })
   } catch (error) {
@@ -752,7 +789,9 @@ function readImportedRows(database: DatabaseSync, threadId: string): ImportedV5R
       }),
     }))
   const images = database
-    .prepare('SELECT * FROM images WHERE thread_id = ? ORDER BY turn_ordinal, position')
+    .prepare(
+      "SELECT * FROM images WHERE thread_id = ? AND owner = 'turn' ORDER BY turn_ordinal, position",
+    )
     .all(threadId)
     .map((row) => ({
       imageId: row.id,
@@ -765,7 +804,9 @@ function readImportedRows(database: DatabaseSync, threadId: string): ImportedV5R
       available: row.available === 1,
     }))
   const documents = database
-    .prepare('SELECT * FROM documents WHERE thread_id = ? ORDER BY turn_ordinal, position')
+    .prepare(
+      "SELECT * FROM documents WHERE thread_id = ? AND owner = 'turn' ORDER BY turn_ordinal, position",
+    )
     .all(threadId)
     .map((row) => ({
       documentId: row.id,
@@ -912,6 +953,545 @@ function importRows(database: DatabaseSync, input: unknown) {
       )
     }
     return { threadId: rows.thread.id, imported: true }
+  })
+}
+
+function draftConflict(canonicalDraftRevision: number) {
+  return { status: 'conflict' as const, canonicalDraftRevision }
+}
+
+function draftRows(database: DatabaseSync, threadId: string) {
+  return {
+    images: database
+      .prepare("SELECT * FROM images WHERE thread_id = ? AND owner = 'draft' ORDER BY position")
+      .all(threadId),
+    documents: database
+      .prepare("SELECT * FROM documents WHERE thread_id = ? AND owner = 'draft' ORDER BY position")
+      .all(threadId),
+  }
+}
+
+function assertDocumentText(
+  row: ThreadLibraryOperationInput['saveDraft']['draft']['documents'][number],
+) {
+  if (row.extractedText === null) {
+    return
+  }
+  const bytes = Buffer.from(row.extractedText, 'utf8')
+  if (
+    bytes.length !== row.extractedByteLength ||
+    createHash('sha256').update(bytes).digest('hex') !== row.extractedTextSha256
+  ) {
+    throw new DatabaseOperationError('invalid_request')
+  }
+}
+
+function assertDraftCapacity(
+  database: DatabaseSync,
+  threadId: string,
+  draft: ThreadLibraryOperationInput['saveDraft']['draft'],
+) {
+  const turnImages = database
+    .prepare("SELECT width, height FROM images WHERE thread_id = ? AND owner = 'turn'")
+    .all(threadId)
+  const turnDocuments = database
+    .prepare(
+      "SELECT byte_length, extracted_byte_length FROM documents WHERE thread_id = ? AND owner = 'turn'",
+    )
+    .all(threadId)
+  if (
+    draft.images.length > nyxChatImageLimits.imagesPerTurn ||
+    turnImages.length + draft.images.length > nyxChatImageLimits.currentThreadImages ||
+    turnImages.reduce((total, row) => total + Number(row.width) * Number(row.height), 0) +
+      draft.images.reduce((total, row) => total + row.width * row.height, 0) >
+      nyxChatImageLimits.currentThreadFullPixels ||
+    draft.documents.length > nyxChatDocumentLimits.documentsPerTurn ||
+    turnDocuments.length + draft.documents.length > nyxChatDocumentLimits.currentThreadDocuments ||
+    turnDocuments.reduce((total, row) => total + Number(row.byte_length), 0) +
+      draft.documents.reduce((total, row) => total + row.byteLength, 0) >
+      nyxChatDocumentLimits.currentThreadAttachmentBytes ||
+    turnDocuments.reduce((total, row) => total + Number(row.extracted_byte_length), 0) +
+      draft.documents.reduce((total, row) => total + row.extractedByteLength, 0) >
+      nyxChatDocumentLimits.currentThreadExtractedBytes
+  ) {
+    throw new DatabaseOperationError('invalid_request')
+  }
+  draft.documents.forEach(assertDocumentText)
+}
+
+function assertStableDraftResources(
+  database: DatabaseSync,
+  threadId: string,
+  draft: ThreadLibraryOperationInput['saveDraft']['draft'],
+) {
+  for (const row of draft.images) {
+    const image = database.prepare('SELECT * FROM images WHERE id = ?').get(row.imageId)
+    const document = database
+      .prepare('SELECT 1 AS present FROM documents WHERE id = ?')
+      .get(row.imageId)
+    const provider = database
+      .prepare('SELECT 1 AS present FROM provider_state_refs WHERE state_id = ?')
+      .get(row.imageId)
+    if (
+      document ||
+      provider ||
+      (image &&
+        (image.thread_id !== threadId ||
+          image.owner !== 'draft' ||
+          image.turn_ordinal !== null ||
+          image.media_type !== row.mediaType ||
+          image.width !== row.width ||
+          image.height !== row.height ||
+          image.available !== Number(row.available)))
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+  }
+  for (const row of draft.documents) {
+    const document = database.prepare('SELECT * FROM documents WHERE id = ?').get(row.documentId)
+    const image = database
+      .prepare('SELECT 1 AS present FROM images WHERE id = ?')
+      .get(row.documentId)
+    const provider = database
+      .prepare('SELECT 1 AS present FROM provider_state_refs WHERE state_id = ?')
+      .get(row.documentId)
+    if (
+      image ||
+      provider ||
+      (document &&
+        (document.thread_id !== threadId ||
+          document.owner !== 'draft' ||
+          document.turn_ordinal !== null ||
+          document.name !== row.name ||
+          document.media_type !== row.mediaType ||
+          document.byte_length !== row.byteLength ||
+          document.extracted_byte_length !== row.extractedByteLength ||
+          document.source_sha256 !== row.sourceSha256 ||
+          document.extracted_text_sha256 !== row.extractedTextSha256 ||
+          document.available !== Number(row.available) ||
+          document.extracted_text !== row.extractedText))
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+  }
+}
+
+function saveDraft(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['saveDraft'],
+): { mutated: boolean; value: ThreadLibraryOperationValue['saveDraft'] } {
+  return runTransaction(database, () => {
+    const thread = database.prepare('SELECT * FROM threads WHERE id = ?').get(input.threadId)
+    const current = database.prepare('SELECT * FROM drafts WHERE thread_id = ?').get(input.threadId)
+    if (!thread || !current) {
+      throw new DatabaseOperationError('not_found')
+    }
+    if (!['available', 'archived'].includes(String(thread.location))) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (current.draft_revision !== input.expectedDraftRevision) {
+      return { mutated: false, value: draftConflict(Number(current.draft_revision)) }
+    }
+
+    assertDraftCapacity(database, input.threadId, input.draft)
+    assertStableDraftResources(database, input.threadId, input.draft)
+    const previous = draftRows(database, input.threadId)
+    const attachmentChanged =
+      !isDeepStrictEqual(
+        previous.images.map((row) => [row.id, row.position]),
+        input.draft.images.map((row) => [row.imageId, row.position]),
+      ) ||
+      !isDeepStrictEqual(
+        previous.documents.map((row) => [row.id, row.position]),
+        input.draft.documents.map((row) => [row.documentId, row.position]),
+      )
+    const nonEmptyTextChanged = current.text !== input.draft.text && input.draft.text.length > 0
+
+    database
+      .prepare("DELETE FROM images WHERE thread_id = ? AND owner = 'draft'")
+      .run(input.threadId)
+    database
+      .prepare("DELETE FROM documents WHERE thread_id = ? AND owner = 'draft'")
+      .run(input.threadId)
+    const image = database.prepare('INSERT INTO images VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    for (const row of input.draft.images) {
+      image.run(
+        row.imageId,
+        input.threadId,
+        'draft',
+        null,
+        row.position,
+        row.mediaType,
+        row.width,
+        row.height,
+        Number(row.available),
+      )
+    }
+    const document = database.prepare(
+      'INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    for (const row of input.draft.documents) {
+      document.run(
+        row.documentId,
+        input.threadId,
+        'draft',
+        null,
+        row.position,
+        row.name,
+        row.mediaType,
+        row.byteLength,
+        row.extractedByteLength,
+        row.sourceSha256,
+        row.extractedTextSha256,
+        Number(row.available),
+        row.extractedText,
+      )
+    }
+    database
+      .prepare(
+        `UPDATE drafts SET draft_revision = draft_revision + 1, text = ?,
+         target_selection_json = ?, updated_at = ? WHERE thread_id = ?`,
+      )
+      .run(input.draft.text, json(input.draft.targetSelection), input.savedAt, input.threadId)
+    database
+      .prepare(
+        `UPDATE threads SET last_user_activity_at = CASE WHEN ? THEN ? ELSE last_user_activity_at END,
+         updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        Number(nonEmptyTextChanged || attachmentChanged),
+        input.savedAt,
+        input.savedAt,
+        input.threadId,
+      )
+    return {
+      mutated: true,
+      value: { status: 'committed' as const, detail: queryThread(database, input.threadId)! },
+    }
+  })
+}
+
+function startTurn(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['startTurn'],
+): { mutated: boolean; value: ThreadLibraryOperationValue['startTurn'] } {
+  return runTransaction(database, () => {
+    const thread = database.prepare('SELECT * FROM threads WHERE id = ?').get(input.threadId)
+    const draft = database.prepare('SELECT * FROM drafts WHERE thread_id = ?').get(input.threadId)
+    if (!thread || !draft) {
+      throw new DatabaseOperationError('not_found')
+    }
+    if (!['available', 'archived'].includes(String(thread.location))) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (draft.draft_revision !== input.expectedDraftRevision) {
+      return { mutated: false, value: draftConflict(Number(draft.draft_revision)) }
+    }
+    if (
+      database
+        .prepare(
+          "SELECT 1 AS present FROM turns WHERE thread_id = ? AND assistant_status = 'pending'",
+        )
+        .get(input.threadId)
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    const resources = draftRows(database, input.threadId)
+    if (
+      String(draft.text).length === 0 &&
+      resources.images.length === 0 &&
+      resources.documents.length === 0
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    const ordinal = Number(
+      database
+        .prepare('SELECT count(*) AS count FROM turns WHERE thread_id = ?')
+        .get(input.threadId)!.count,
+    )
+    database
+      .prepare('INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        input.threadId,
+        ordinal,
+        input.requestId,
+        input.userMessageId,
+        input.assistantMessageId,
+        String(draft.text),
+        '',
+        'pending',
+        null,
+        String(draft.target_selection_json),
+        null,
+        input.startedAt,
+        input.startedAt,
+      )
+    database
+      .prepare(
+        "UPDATE images SET owner = 'turn', turn_ordinal = ? WHERE thread_id = ? AND owner = 'draft'",
+      )
+      .run(ordinal, input.threadId)
+    database
+      .prepare(
+        "UPDATE documents SET owner = 'turn', turn_ordinal = ? WHERE thread_id = ? AND owner = 'draft'",
+      )
+      .run(ordinal, input.threadId)
+    database
+      .prepare(
+        `UPDATE drafts SET draft_revision = draft_revision + 1, text = '', updated_at = ?
+         WHERE thread_id = ?`,
+      )
+      .run(input.startedAt, input.threadId)
+    database
+      .prepare(
+        `UPDATE threads SET location = 'available',
+         thread_revision = thread_revision + CASE WHEN location = 'archived' THEN 1 ELSE 0 END,
+         last_user_activity_at = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(input.startedAt, input.startedAt, input.threadId)
+    return {
+      mutated: true,
+      value: { status: 'committed' as const, detail: queryThread(database, input.threadId)! },
+    }
+  })
+}
+
+function retryTurn(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['retryTurn'],
+): { mutated: boolean; value: ThreadLibraryOperationValue['retryTurn'] } {
+  return runTransaction(database, () => {
+    const thread = database.prepare('SELECT * FROM threads WHERE id = ?').get(input.threadId)
+    const draft = database.prepare('SELECT * FROM drafts WHERE thread_id = ?').get(input.threadId)
+    const turn = database
+      .prepare('SELECT * FROM turns WHERE thread_id = ? AND ordinal = ?')
+      .get(input.threadId, input.turnOrdinal)
+    const finalOrdinal = database
+      .prepare('SELECT max(ordinal) AS ordinal FROM turns WHERE thread_id = ?')
+      .get(input.threadId)?.ordinal
+    if (!thread || !draft || !turn) {
+      throw new DatabaseOperationError('not_found')
+    }
+    if (!['available', 'archived'].includes(String(thread.location))) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (draft.draft_revision !== input.expectedDraftRevision) {
+      return { mutated: false, value: draftConflict(Number(draft.draft_revision)) }
+    }
+    const error = turn.error_json === null ? null : parseJson(turn.error_json)
+    if (
+      turn.ordinal !== finalOrdinal ||
+      turn.attempt_request_id !== input.expectedAttemptRequestId ||
+      turn.assistant_status !== 'failed' ||
+      typeof error !== 'object' ||
+      error === null ||
+      !('retryable' in error) ||
+      error.retryable !== true
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    database
+      .prepare(
+        `UPDATE turns SET attempt_request_id = ?, assistant_content = '', assistant_status = 'pending',
+         error_json = NULL, target_selection_json = ?, target_attribution_json = NULL, updated_at = ?
+         WHERE thread_id = ? AND ordinal = ?`,
+      )
+      .run(
+        input.requestId,
+        String(draft.target_selection_json),
+        input.retriedAt,
+        input.threadId,
+        input.turnOrdinal,
+      )
+    database
+      .prepare(
+        `UPDATE threads SET location = 'available',
+         thread_revision = thread_revision + CASE WHEN location = 'archived' THEN 1 ELSE 0 END,
+         last_user_activity_at = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(input.retriedAt, input.retriedAt, input.threadId)
+    return {
+      mutated: true,
+      value: { status: 'committed' as const, detail: queryThread(database, input.threadId)! },
+    }
+  })
+}
+
+function bindTurnTarget(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['bindTurnTarget'],
+) {
+  return runTransaction(database, () => {
+    const turn = database
+      .prepare(
+        `SELECT * FROM turns WHERE thread_id = ? AND attempt_request_id = ?
+         AND assistant_status = 'pending' AND target_attribution_json IS NULL`,
+      )
+      .get(input.threadId, input.requestId)
+    if (!turn) {
+      throw new DatabaseOperationError('not_pending')
+    }
+    database
+      .prepare(
+        `UPDATE turns SET target_attribution_json = ?, updated_at = ?
+         WHERE thread_id = ? AND attempt_request_id = ? AND assistant_status = 'pending'
+         AND target_attribution_json IS NULL`,
+      )
+      .run(json(input.targetAttribution), input.boundAt, input.threadId, input.requestId)
+    return queryThread(database, input.threadId)!
+  })
+}
+
+function settleTurn(database: DatabaseSync, input: ThreadLibraryOperationInput['settleTurn']) {
+  return runTransaction(database, () => {
+    const turn = database
+      .prepare(
+        "SELECT * FROM turns WHERE thread_id = ? AND attempt_request_id = ? AND assistant_status = 'pending'",
+      )
+      .get(input.threadId, input.requestId)
+    if (!turn) {
+      throw new DatabaseOperationError('not_pending')
+    }
+    if (
+      input.error?.code === 'content_rejected' &&
+      !database
+        .prepare(
+          `SELECT 1 AS present FROM images WHERE thread_id = ? AND owner = 'turn' AND turn_ordinal = ?
+           UNION ALL SELECT 1 FROM documents WHERE thread_id = ? AND owner = 'turn' AND turn_ordinal = ? LIMIT 1`,
+        )
+        .get(input.threadId, Number(turn.ordinal), input.threadId, Number(turn.ordinal))
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    const updated = database
+      .prepare(
+        `UPDATE turns SET assistant_content = ?, assistant_status = ?, error_json = ?, updated_at = ?
+         WHERE thread_id = ? AND attempt_request_id = ? AND assistant_status = 'pending'`,
+      )
+      .run(
+        input.assistantContent,
+        input.assistantStatus,
+        input.error === null ? null : json(input.error),
+        input.settledAt,
+        input.threadId,
+        input.requestId,
+      )
+    if (updated.changes !== 1) {
+      throw new DatabaseOperationError('not_pending')
+    }
+    if (input.providerStateRef) {
+      database
+        .prepare('INSERT INTO provider_state_refs VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(
+          input.providerStateRef.stateId,
+          input.threadId,
+          Number(turn.ordinal),
+          input.providerStateRef.protocol,
+          input.providerStateRef.executionIdentity,
+          input.providerStateRef.byteLength,
+          input.providerStateRef.sha256,
+        )
+    }
+    database
+      .prepare(
+        `UPDATE threads SET result_revision = result_revision + 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(input.settledAt, input.threadId)
+    return queryThread(database, input.threadId)!
+  })
+}
+
+function recoverPending(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['recoverPending'],
+) {
+  return runTransaction(database, () => {
+    const rows = database
+      .prepare("SELECT thread_id, ordinal FROM turns WHERE assistant_status = 'pending'")
+      .all()
+    const error = json({
+      code: 'unknown',
+      message: interruptedThreadErrorMessage,
+      retryable: true,
+    })
+    for (const row of rows) {
+      database
+        .prepare(
+          `UPDATE turns SET assistant_status = 'failed', error_json = ?, updated_at = ?
+           WHERE thread_id = ? AND ordinal = ? AND assistant_status = 'pending'`,
+        )
+        .run(error, input.recoveredAt, String(row.thread_id), Number(row.ordinal))
+      database
+        .prepare(
+          `UPDATE threads SET result_revision = result_revision + 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(input.recoveredAt, String(row.thread_id))
+    }
+    return { recovered: rows.length }
+  })
+}
+
+function setResourceAvailability(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['setResourceAvailability'],
+) {
+  return runTransaction(database, () => {
+    for (const row of input.images) {
+      const result = database
+        .prepare('UPDATE images SET available = ? WHERE id = ? AND thread_id = ?')
+        .run(Number(row.available), row.id, input.threadId)
+      if (result.changes !== 1) {
+        throw new DatabaseOperationError('not_found')
+      }
+    }
+    for (const row of input.documents) {
+      const result = database
+        .prepare('UPDATE documents SET available = ? WHERE id = ? AND thread_id = ?')
+        .run(Number(row.available), row.id, input.threadId)
+      if (result.changes !== 1) {
+        throw new DatabaseOperationError('not_found')
+      }
+    }
+    database
+      .prepare('UPDATE threads SET updated_at = ? WHERE id = ?')
+      .run(input.checkedAt, input.threadId)
+    const detail = queryThread(database, input.threadId)
+    if (!detail) {
+      throw new DatabaseOperationError('not_found')
+    }
+    return detail
+  })
+}
+
+function repairProviderStateRef(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['repairProviderStateRef'],
+) {
+  return runTransaction(database, () => {
+    const row = database
+      .prepare(
+        `SELECT provider_state_refs.* FROM provider_state_refs
+         JOIN turns ON turns.thread_id = provider_state_refs.thread_id
+          AND turns.ordinal = provider_state_refs.turn_ordinal
+         WHERE provider_state_refs.thread_id = ? AND turns.attempt_request_id = ?`,
+      )
+      .get(input.threadId, input.requestId)
+    const ref = input.providerStateRef
+    if (
+      !row ||
+      row.state_id !== ref.stateId ||
+      row.protocol !== ref.protocol ||
+      row.execution_identity !== ref.executionIdentity ||
+      row.byte_length !== ref.byteLength ||
+      row.sha256 !== ref.sha256
+    ) {
+      throw new DatabaseOperationError('not_found')
+    }
+    database.prepare('DELETE FROM provider_state_refs WHERE state_id = ?').run(ref.stateId)
+    database
+      .prepare('UPDATE turns SET updated_at = ? WHERE thread_id = ? AND ordinal = ?')
+      .run(input.repairedAt, input.threadId, Number(row.turn_ordinal))
+    return queryThread(database, input.threadId)!
   })
 }
 
@@ -1066,6 +1646,54 @@ export class ThreadLibraryDatabase {
           this.mutationCursor += 1
         }
         return result
+      }
+      case 'saveDraft': {
+        const result = saveDraft(database, request.input)
+        if (result.mutated) {
+          this.mutationCursor += 1
+        }
+        return result.value
+      }
+      case 'startTurn': {
+        const result = startTurn(database, request.input)
+        if (result.mutated) {
+          this.mutationCursor += 1
+        }
+        return result.value
+      }
+      case 'retryTurn': {
+        const result = retryTurn(database, request.input)
+        if (result.mutated) {
+          this.mutationCursor += 1
+        }
+        return result.value
+      }
+      case 'bindTurnTarget': {
+        const detail = bindTurnTarget(database, request.input)
+        this.mutationCursor += 1
+        return detail
+      }
+      case 'settleTurn': {
+        const detail = settleTurn(database, request.input)
+        this.mutationCursor += 1
+        return detail
+      }
+      case 'recoverPending': {
+        const result = recoverPending(database, request.input)
+        if (result.recovered > 0) {
+          this.mutationCursor += 1
+        }
+        return result
+      }
+      case 'setResourceAvailability': {
+        const detail = setResourceAvailability(database, request.input)
+        this.mutationCursor += 1
+        return detail
+      }
+      case 'repairProviderStateRef': {
+        const detail = repairProviderStateRef(database, request.input)
+        this.mutationCursor += 1
+        return detail
       }
     }
   }

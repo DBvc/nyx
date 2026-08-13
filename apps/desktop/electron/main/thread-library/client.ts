@@ -10,6 +10,7 @@ import {
   type ThreadLibraryOperationInput,
   type ThreadLibraryReply,
   type ThreadLibraryRequest,
+  type ThreadLibrarySafeErrorCode,
   type ThreadLibraryThreadDetail,
 } from './protocol'
 
@@ -33,7 +34,7 @@ export class ThreadLibraryTransportError extends Error {
 
 function failure(
   id: string,
-  code: 'already_exists' | 'library_unavailable' | 'not_found',
+  code: ThreadLibrarySafeErrorCode,
   outcome: ThreadLibraryMutationOutcome,
 ) {
   return {
@@ -86,11 +87,102 @@ function matchesImportedRows(rows: ImportedV5Rows, detail: ThreadLibraryThreadDe
       thread: detail.summary,
       draft: detail.draft,
       turns: detail.turns,
-      images: detail.images,
-      documents: detail.documents,
+      images: detail.images.map(({ owner: _, ...row }) => row),
+      documents: detail.documents.map(({ owner: _, ...row }) => row),
       providerStateRefs: detail.providerStateRefs,
     },
     rows,
+  )
+}
+
+function draftMatches(
+  input: ThreadLibraryOperationInput['saveDraft'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  return (
+    detail.draft.draftRevision === input.expectedDraftRevision + 1 &&
+    detail.draft.text === input.draft.text &&
+    isDeepStrictEqual(detail.draft.targetSelection, input.draft.targetSelection) &&
+    detail.draft.updatedAt === input.savedAt &&
+    isDeepStrictEqual(
+      detail.images
+        .filter((row) => row.owner === 'draft')
+        .map(({ threadId: _, owner: __, turnOrdinal: ___, ...row }) => row),
+      input.draft.images,
+    ) &&
+    isDeepStrictEqual(
+      detail.documents
+        .filter((row) => row.owner === 'draft')
+        .map(({ threadId: _, owner: __, turnOrdinal: ___, ...row }) => row),
+      input.draft.documents,
+    )
+  )
+}
+
+function startMatches(
+  input: ThreadLibraryOperationInput['startTurn'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  const turn = detail.turns.find((row) => row.attemptRequestId === input.requestId)
+  return (
+    detail.summary.location === 'available' &&
+    detail.draft.draftRevision === input.expectedDraftRevision + 1 &&
+    detail.draft.text === '' &&
+    detail.draft.updatedAt === input.startedAt &&
+    !detail.images.some((row) => row.owner === 'draft') &&
+    !detail.documents.some((row) => row.owner === 'draft') &&
+    turn?.userMessageId === input.userMessageId &&
+    turn.assistantMessageId === input.assistantMessageId &&
+    turn.assistantStatus === 'pending' &&
+    turn.createdAt === input.startedAt
+  )
+}
+
+function retryMatches(
+  input: ThreadLibraryOperationInput['retryTurn'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  const turn = detail.turns[input.turnOrdinal]
+  return (
+    detail.summary.location === 'available' &&
+    detail.draft.draftRevision === input.expectedDraftRevision &&
+    turn?.attemptRequestId === input.requestId &&
+    turn.assistantStatus === 'pending' &&
+    turn.assistantContent === '' &&
+    turn.error === null &&
+    turn.updatedAt === input.retriedAt &&
+    isDeepStrictEqual(turn.targetSelection, detail.draft.targetSelection)
+  )
+}
+
+function terminalMatches(
+  input: ThreadLibraryOperationInput['settleTurn'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  const turn = detail.turns.find((row) => row.attemptRequestId === input.requestId)
+  if (
+    !turn ||
+    turn.assistantStatus !== input.assistantStatus ||
+    turn.assistantContent !== input.assistantContent ||
+    !isDeepStrictEqual(turn.error, input.error) ||
+    turn.updatedAt !== input.settledAt
+  ) {
+    return false
+  }
+  if (input.providerStateRef === null) {
+    return turn.providerStateId === null
+  }
+  return (
+    turn.providerStateId === input.providerStateRef.stateId &&
+    detail.providerStateRefs.some(
+      (row) =>
+        row.turnOrdinal === turn.ordinal &&
+        row.stateId === input.providerStateRef?.stateId &&
+        row.protocol === input.providerStateRef.protocol &&
+        row.executionIdentity === input.providerStateRef.executionIdentity &&
+        row.byteLength === input.providerStateRef.byteLength &&
+        row.sha256 === input.providerStateRef.sha256,
+    )
   )
 }
 
@@ -131,6 +223,200 @@ export class ThreadLibraryClient {
 
   listPage(input: ThreadLibraryOperationInput['listPage']) {
     return this.send('listPage', input)
+  }
+
+  saveDraft(input: ThreadLibraryOperationInput['saveDraft']) {
+    return this.mutateThread('saveDraft', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      if (draftMatches(input, canonical)) {
+        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+      }
+      return failure(
+        id,
+        canonical.draft.draftRevision === input.expectedDraftRevision
+          ? 'library_unavailable'
+          : 'stale_revision',
+        canonical.draft.draftRevision === input.expectedDraftRevision
+          ? 'definitely_not_committed'
+          : 'outcome_unknown',
+      )
+    })
+  }
+
+  startTurn(input: ThreadLibraryOperationInput['startTurn']) {
+    return this.mutateThread('startTurn', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      if (startMatches(input, canonical)) {
+        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+      }
+      return failure(
+        id,
+        canonical.draft.draftRevision === input.expectedDraftRevision
+          ? 'library_unavailable'
+          : 'stale_revision',
+        canonical.draft.draftRevision === input.expectedDraftRevision
+          ? 'definitely_not_committed'
+          : 'outcome_unknown',
+      )
+    })
+  }
+
+  retryTurn(input: ThreadLibraryOperationInput['retryTurn']) {
+    return this.mutateThread('retryTurn', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      if (retryMatches(input, canonical)) {
+        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+      }
+      const previous = canonical.turns[input.turnOrdinal]
+      if (
+        canonical.draft.draftRevision === input.expectedDraftRevision &&
+        previous?.attemptRequestId === input.expectedAttemptRequestId &&
+        previous.assistantStatus === 'failed'
+      ) {
+        return failure(id, 'library_unavailable', 'definitely_not_committed')
+      }
+      return failure(id, 'not_pending', 'outcome_unknown')
+    })
+  }
+
+  bindTurnTarget(input: ThreadLibraryOperationInput['bindTurnTarget']) {
+    return this.mutateThread(
+      'bindTurnTarget',
+      input,
+      (id, canonical) => {
+        if (canonical === undefined) {
+          return failure(id, 'library_unavailable', 'outcome_unknown')
+        }
+        if (canonical === null) {
+          return failure(id, 'not_found', 'definitely_not_committed')
+        }
+        const turn = canonical.turns.find((row) => row.attemptRequestId === input.requestId)
+        if (turn && isDeepStrictEqual(turn.targetAttribution, input.targetAttribution)) {
+          return { id, ok: true, value: canonical }
+        }
+        return failure(
+          id,
+          turn?.assistantStatus === 'pending' && turn.targetAttribution === null
+            ? 'library_unavailable'
+            : 'not_pending',
+          turn?.assistantStatus === 'pending' && turn.targetAttribution === null
+            ? 'definitely_not_committed'
+            : 'outcome_unknown',
+        )
+      },
+      ['not_pending'],
+    )
+  }
+
+  settleTurn(input: ThreadLibraryOperationInput['settleTurn']) {
+    return this.mutateThread(
+      'settleTurn',
+      input,
+      (id, canonical) => {
+        if (canonical === undefined) {
+          return failure(id, 'library_unavailable', 'outcome_unknown')
+        }
+        if (canonical === null) {
+          return failure(id, 'not_found', 'definitely_not_committed')
+        }
+        if (terminalMatches(input, canonical)) {
+          return { id, ok: true, value: canonical }
+        }
+        const turn = canonical.turns.find((row) => row.attemptRequestId === input.requestId)
+        return failure(
+          id,
+          turn?.assistantStatus === 'pending' ? 'library_unavailable' : 'not_pending',
+          'definitely_not_committed',
+        )
+      },
+      ['not_pending'],
+    )
+  }
+
+  setResourceAvailability(input: ThreadLibraryOperationInput['setResourceAvailability']) {
+    return this.mutateThread('setResourceAvailability', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      const images = new Map(canonical.images.map((row) => [row.imageId, row.available]))
+      const documents = new Map(canonical.documents.map((row) => [row.documentId, row.available]))
+      if (
+        input.images.every((row) => images.get(row.id) === row.available) &&
+        input.documents.every((row) => documents.get(row.id) === row.available)
+      ) {
+        return { id, ok: true, value: canonical }
+      }
+      return failure(id, 'library_unavailable', 'outcome_unknown')
+    })
+  }
+
+  repairProviderStateRef(input: ThreadLibraryOperationInput['repairProviderStateRef']) {
+    return this.mutateThread('repairProviderStateRef', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      const turn = canonical.turns.find((row) => row.attemptRequestId === input.requestId)
+      const ref = canonical.providerStateRefs.find(
+        (row) => row.stateId === input.providerStateRef.stateId,
+      )
+      if (turn && turn.providerStateId === null && ref === undefined) {
+        return { id, ok: true, value: canonical }
+      }
+      if (
+        turn?.providerStateId === input.providerStateRef.stateId &&
+        ref &&
+        ref.executionIdentity === input.providerStateRef.executionIdentity &&
+        ref.byteLength === input.providerStateRef.byteLength &&
+        ref.sha256 === input.providerStateRef.sha256
+      ) {
+        return failure(id, 'library_unavailable', 'definitely_not_committed')
+      }
+      return failure(id, 'not_found', 'definitely_not_committed')
+    })
+  }
+
+  async recoverPending(input: ThreadLibraryOperationInput['recoverPending']) {
+    const generation = this.generation
+    let requestId = ''
+    try {
+      const reply = await this.send('recoverPending', input, (id) => {
+        requestId = id
+      })
+      if (!reply.ok && reply.outcome === 'outcome_unknown') {
+        this.invalidateGeneration(generation, 'Thread recovery outcome is unknown.')
+      }
+      return reply
+    } catch (error) {
+      if (!(error instanceof ThreadLibraryTransportError)) {
+        throw error
+      }
+      return failure(
+        requestId || 'recoverPending',
+        'library_unavailable',
+        error.outcome,
+      ) as ThreadLibraryReply<'recoverPending'>
+    }
   }
 
   async importV5(rows: ImportedV5Rows) {
@@ -197,6 +483,51 @@ export class ThreadLibraryClient {
       }
       return this.reconcileMaterialize(requestId || 'materialize', input, failedGeneration)
     }
+  }
+
+  private async mutateThread<Operation extends ThreadLibraryOperation>(
+    operation: Operation,
+    input: ThreadLibraryOperationInput[Operation] & { threadId: string },
+    reconcile: (
+      requestId: string,
+      canonical: ThreadLibraryThreadDetail | null | undefined,
+    ) => ThreadLibraryReply<Operation>,
+    reconcileErrors: ReadonlyArray<ThreadLibrarySafeErrorCode> = [],
+  ): Promise<ThreadLibraryReply<Operation>> {
+    const failedGeneration = this.generation
+    let replaceGeneration: number | null = null
+    let requestId = ''
+    try {
+      const reply = await this.send(operation, input, (id) => {
+        requestId = id
+      })
+      if (reply.ok) {
+        return reply
+      }
+      if (reply.outcome === 'outcome_unknown') {
+        replaceGeneration = failedGeneration
+        this.invalidateGeneration(
+          failedGeneration,
+          `Thread Library ${operation} outcome is unknown.`,
+        )
+      } else if (!reconcileErrors.includes(reply.safeError.code)) {
+        return reply
+      }
+    } catch (error) {
+      if (!(error instanceof ThreadLibraryTransportError)) {
+        throw error
+      }
+      if (error.outcome === 'definitely_not_committed') {
+        return failure(
+          requestId || operation,
+          'library_unavailable',
+          'definitely_not_committed',
+        ) as ThreadLibraryReply<Operation>
+      }
+      replaceGeneration = failedGeneration
+    }
+    const canonical = await this.readCanonical(input.threadId, replaceGeneration)
+    return reconcile(requestId || operation, canonical)
   }
 
   private async reconcileMaterialize(

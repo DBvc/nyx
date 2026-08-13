@@ -8,6 +8,8 @@ import {
   providerStateRefSchema,
   safeThreadErrorRecordSchema,
 } from '../current-thread/schemas'
+import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
+import { nyxChatImageLimits } from '../../../shared/chat/image-file'
 
 const nonEmpty = z.string().min(1)
 const nonBlank = z.string().refine((value) => value.trim().length > 0)
@@ -15,6 +17,7 @@ const uuid = z.uuid()
 const timestamp = z.iso.datetime()
 const localSecond = z.iso.datetime({ local: true, precision: 0 })
 const location = z.enum(['available', 'archived', 'trash'])
+const position = z.number().int().nonnegative()
 
 function genericTitle(local: string, ordinal: number, kind: 'Image' | 'Untitled draft') {
   const base = `${kind} · ${local.replace('T', ' ')}`
@@ -78,7 +81,7 @@ const draftRowSchema = z
 const turnRowSchema = z
   .object({
     threadId: uuid,
-    ordinal: z.number().int().nonnegative(),
+    ordinal: position,
     attemptRequestId: nonEmpty,
     userMessageId: nonEmpty,
     assistantMessageId: nonEmpty,
@@ -124,33 +127,78 @@ const turnRowSchema = z
     }
   })
 
-const imageRowSchema = chatImageRefSchema.extend({
+const importedImageRowSchema = chatImageRefSchema.extend({
   threadId: uuid,
-  turnOrdinal: z.number().int().nonnegative(),
-  position: z.number().int().nonnegative(),
+  turnOrdinal: position,
+  position,
   available: z.boolean(),
 })
 
-const documentRowSchema = chatDocumentRefSchema.extend({
-  threadId: uuid,
-  turnOrdinal: z.number().int().nonnegative(),
-  position: z.number().int().nonnegative(),
-  available: z.boolean(),
-  extractedText: z.string().nullable(),
-})
+const importedDocumentRowSchema = chatDocumentRefSchema
+  .extend({
+    threadId: uuid,
+    turnOrdinal: position,
+    position,
+    available: z.boolean(),
+    extractedText: z.string().nullable(),
+  })
+  .superRefine((row, context) => {
+    if (row.available && row.extractedText === null) {
+      context.addIssue({ code: 'custom', message: 'Imported document availability is invalid.' })
+    }
+  })
+
+const ownedImageRowSchema = chatImageRefSchema
+  .extend({
+    threadId: uuid,
+    owner: z.enum(['draft', 'turn']),
+    turnOrdinal: position.nullable(),
+    position,
+    available: z.boolean(),
+  })
+  .superRefine((row, context) => {
+    if ((row.owner === 'draft') !== (row.turnOrdinal === null)) {
+      context.addIssue({ code: 'custom', message: 'Image ownership is invalid.' })
+    }
+  })
+
+const ownedDocumentRowSchema = chatDocumentRefSchema
+  .extend({
+    threadId: uuid,
+    owner: z.enum(['draft', 'turn']),
+    turnOrdinal: position.nullable(),
+    position,
+    available: z.boolean(),
+    extractedText: z.string().nullable(),
+  })
+  .superRefine((row, context) => {
+    if (
+      (row.owner === 'draft') !== (row.turnOrdinal === null) ||
+      (row.available && row.extractedText === null)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Document ownership or availability is invalid.',
+      })
+    }
+  })
 
 const providerStateRowSchema = providerStateRefSchema.extend({
   threadId: uuid,
-  turnOrdinal: z.number().int().nonnegative(),
+  turnOrdinal: position,
 })
+
+function duplicate<T>(values: ReadonlyArray<T>) {
+  return new Set(values).size !== values.length
+}
 
 export const importedV5RowsSchema = z
   .object({
     thread: threadRowSchema,
     draft: draftRowSchema,
     turns: z.array(turnRowSchema),
-    images: z.array(imageRowSchema),
-    documents: z.array(documentRowSchema),
+    images: z.array(importedImageRowSchema),
+    documents: z.array(importedDocumentRowSchema),
     providerStateRefs: z.array(providerStateRowSchema),
   })
   .strict()
@@ -170,6 +218,9 @@ export const importedV5RowsSchema = z
     )
     if (
       threadIds.some((id) => id !== rows.thread.id) ||
+      duplicate(rows.images.map((row) => row.imageId)) ||
+      duplicate(rows.documents.map((row) => row.documentId)) ||
+      duplicate(rows.providerStateRefs.map((row) => row.stateId)) ||
       rows.turns.some(
         (row, index) =>
           row.ordinal !== index ||
@@ -192,6 +243,56 @@ export const importedV5RowsSchema = z
 
 export type ImportedV5Rows = z.infer<typeof importedV5RowsSchema>
 
+const draftImageInputSchema = chatImageRefSchema.extend({ position, available: z.boolean() })
+const draftDocumentInputSchema = chatDocumentRefSchema
+  .extend({ position, available: z.boolean(), extractedText: z.string().nullable() })
+  .superRefine((row, context) => {
+    if (row.available && row.extractedText === null) {
+      context.addIssue({ code: 'custom', message: 'Available document text is required.' })
+    }
+  })
+
+const draftPayloadSchema = z
+  .object({
+    text: z.string(),
+    targetSelection: chatTargetSelectionSchema,
+    images: z.array(draftImageInputSchema).max(nyxChatImageLimits.imagesPerTurn),
+    documents: z.array(draftDocumentInputSchema).max(nyxChatDocumentLimits.documentsPerTurn),
+  })
+  .strict()
+  .superRefine((draft, context) => {
+    if (
+      duplicate(draft.images.map((row) => row.imageId)) ||
+      duplicate(draft.images.map((row) => row.position)) ||
+      duplicate(draft.documents.map((row) => row.documentId)) ||
+      duplicate(draft.documents.map((row) => row.position))
+    ) {
+      context.addIssue({ code: 'custom', message: 'Draft resources must be unique and ordered.' })
+    }
+  })
+
+const resourceAvailabilitySchema = z.object({ id: uuid, available: z.boolean() }).strict()
+
+const settleInputSchema = z
+  .object({
+    threadId: uuid,
+    requestId: nonEmpty,
+    assistantStatus: z.enum(['completed', 'cancelled', 'failed']),
+    assistantContent: z.string(),
+    error: safeThreadErrorRecordSchema.nullable(),
+    providerStateRef: providerStateRefSchema.nullable(),
+    settledAt: timestamp,
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      (input.assistantStatus === 'failed') !== (input.error !== null) ||
+      (input.providerStateRef !== null && input.assistantStatus !== 'completed')
+    ) {
+      context.addIssue({ code: 'custom', message: 'Terminal input is inconsistent.' })
+    }
+  })
+
 const operationInputSchemas = {
   open: z.object({ databasePath: nonEmpty.max(4096) }).strict(),
   close: z.object({}).strict(),
@@ -210,18 +311,81 @@ const operationInputSchemas = {
         input.title !== genericTitle(input.fallbackLocalSecond, 1, 'Image') &&
         input.title !== genericTitle(input.fallbackLocalSecond, 1, 'Untitled draft')
       ) {
-        context.addIssue({ code: 'custom', message: 'Fallback title does not match its identity.' })
+        context.addIssue({
+          code: 'custom',
+          message: 'Fallback title does not match its identity.',
+        })
       }
     }),
   readThread: z.object({ threadId: uuid }).strict(),
   listPage: z
-    .object({
-      location,
-      cursor: z.string().max(1024).nullable(),
-      limit: z.literal(50),
-    })
+    .object({ location, cursor: z.string().max(1024).nullable(), limit: z.literal(50) })
     .strict(),
   importV5: z.object({ rows: importedV5RowsSchema }).strict(),
+  saveDraft: z
+    .object({
+      threadId: uuid,
+      expectedDraftRevision: z.number().int().nonnegative(),
+      draft: draftPayloadSchema,
+      savedAt: timestamp,
+    })
+    .strict(),
+  startTurn: z
+    .object({
+      threadId: uuid,
+      requestId: nonEmpty,
+      expectedDraftRevision: z.number().int().nonnegative(),
+      userMessageId: nonEmpty,
+      assistantMessageId: nonEmpty,
+      startedAt: timestamp,
+    })
+    .strict(),
+  retryTurn: z
+    .object({
+      threadId: uuid,
+      turnOrdinal: position,
+      expectedAttemptRequestId: nonEmpty,
+      requestId: nonEmpty,
+      expectedDraftRevision: z.number().int().nonnegative(),
+      retriedAt: timestamp,
+    })
+    .strict(),
+  bindTurnTarget: z
+    .object({
+      threadId: uuid,
+      requestId: nonEmpty,
+      targetAttribution: chatTargetAttributionSchema,
+      boundAt: timestamp,
+    })
+    .strict(),
+  settleTurn: settleInputSchema,
+  recoverPending: z.object({ recoveredAt: timestamp }).strict(),
+  setResourceAvailability: z
+    .object({
+      threadId: uuid,
+      images: z.array(resourceAvailabilitySchema).max(nyxChatImageLimits.currentThreadImages),
+      documents: z
+        .array(resourceAvailabilitySchema)
+        .max(nyxChatDocumentLimits.currentThreadDocuments),
+      checkedAt: timestamp,
+    })
+    .strict()
+    .superRefine((input, context) => {
+      if (
+        duplicate(input.images.map((row) => row.id)) ||
+        duplicate(input.documents.map((row) => row.id))
+      ) {
+        context.addIssue({ code: 'custom', message: 'Resource availability ids are duplicated.' })
+      }
+    }),
+  repairProviderStateRef: z
+    .object({
+      threadId: uuid,
+      requestId: nonEmpty,
+      providerStateRef: providerStateRefSchema,
+      repairedAt: timestamp,
+    })
+    .strict(),
 } as const
 
 export type ThreadLibraryOperation = keyof typeof operationInputSchemas
@@ -249,6 +413,8 @@ export const threadLibrarySafeErrorMessages = {
   already_exists: 'This thread already exists.',
   not_found: 'This thread was not found.',
   stale_cursor: 'The thread list changed. Reload it and try again.',
+  stale_revision: 'This draft changed. Reload it and try again.',
+  not_pending: 'This turn is no longer pending.',
 } as const
 
 export type ThreadLibrarySafeErrorCode = keyof typeof threadLibrarySafeErrorMessages
@@ -270,13 +436,7 @@ const safeErrorSchema = z
     }
   })
 
-const threadIdentitySchema = z
-  .object({
-    id: uuid,
-    location,
-  })
-  .strict()
-
+const threadIdentitySchema = z.object({ id: uuid, location }).strict()
 const threadSummarySchema = z
   .object({
     id: uuid,
@@ -289,7 +449,6 @@ const threadSummarySchema = z
     threadRevision: z.number().int().positive(),
   })
   .strict()
-
 const threadListRowSchema = z.discriminatedUnion('availability', [
   threadSummarySchema.extend({ availability: z.literal('available') }),
   threadIdentitySchema.extend({ availability: z.literal('unavailable') }),
@@ -300,8 +459,8 @@ const threadDetailSchema = z
     summary: threadRowSchema,
     draft: draftRowSchema,
     turns: z.array(turnRowSchema),
-    images: z.array(imageRowSchema),
-    documents: z.array(documentRowSchema),
+    images: z.array(ownedImageRowSchema),
+    documents: z.array(ownedDocumentRowSchema),
     providerStateRefs: z.array(providerStateRowSchema),
   })
   .strict()
@@ -310,16 +469,34 @@ const threadDetailSchema = z
     const providerByOrdinal = new Map(
       detail.providerStateRefs.map((ref) => [ref.turnOrdinal, ref.stateId]),
     )
-    const imageOrdinals = new Set(detail.images.map((image) => image.turnOrdinal))
-    const documentOrdinals = new Set(detail.documents.map((document) => document.turnOrdinal))
+    const turnImageOrdinals = new Set(
+      detail.images.flatMap((image) => (image.owner === 'turn' ? [image.turnOrdinal!] : [])),
+    )
+    const turnDocumentOrdinals = new Set(
+      detail.documents.flatMap((document) =>
+        document.owner === 'turn' ? [document.turnOrdinal!] : [],
+      ),
+    )
+    const imagePositions = detail.images.map(
+      (row) => `${row.owner}:${row.turnOrdinal ?? ''}:${row.position}`,
+    )
+    const documentPositions = detail.documents.map(
+      (row) => `${row.owner}:${row.turnOrdinal ?? ''}:${row.position}`,
+    )
     if (
       detail.draft.threadId !== detail.summary.id ||
       detail.turns.some((turn) => turn.threadId !== detail.summary.id) ||
       detail.images.some((image) => image.threadId !== detail.summary.id) ||
       detail.documents.some((document) => document.threadId !== detail.summary.id) ||
       detail.providerStateRefs.some((ref) => ref.threadId !== detail.summary.id) ||
-      detail.images.some((image) => !ordinals.has(image.turnOrdinal)) ||
-      detail.documents.some((document) => !ordinals.has(document.turnOrdinal)) ||
+      duplicate(detail.images.map((row) => row.imageId)) ||
+      duplicate(detail.documents.map((row) => row.documentId)) ||
+      duplicate(imagePositions) ||
+      duplicate(documentPositions) ||
+      detail.images.some((image) => image.owner === 'turn' && !ordinals.has(image.turnOrdinal!)) ||
+      detail.documents.some(
+        (document) => document.owner === 'turn' && !ordinals.has(document.turnOrdinal!),
+      ) ||
       detail.providerStateRefs.some((ref) => !ordinals.has(ref.turnOrdinal)) ||
       detail.turns.some(
         (turn) => turn.providerStateId !== (providerByOrdinal.get(turn.ordinal) ?? null),
@@ -327,11 +504,11 @@ const threadDetailSchema = z
       detail.turns.some(
         (turn) =>
           (turn.userContent.length === 0 &&
-            !imageOrdinals.has(turn.ordinal) &&
-            !documentOrdinals.has(turn.ordinal)) ||
+            !turnImageOrdinals.has(turn.ordinal) &&
+            !turnDocumentOrdinals.has(turn.ordinal)) ||
           (turn.error?.code === 'content_rejected' &&
-            !imageOrdinals.has(turn.ordinal) &&
-            !documentOrdinals.has(turn.ordinal)),
+            !turnImageOrdinals.has(turn.ordinal) &&
+            !turnDocumentOrdinals.has(turn.ordinal)),
       ) ||
       detail.turns.some(
         (turn, index) =>
@@ -342,6 +519,16 @@ const threadDetailSchema = z
       context.addIssue({ code: 'custom', message: 'Thread content identity is inconsistent.' })
     }
   })
+
+const draftMutationValueSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('committed'), detail: threadDetailSchema }).strict(),
+  z
+    .object({
+      status: z.literal('conflict'),
+      canonicalDraftRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+])
 
 const operationValueSchemas = {
   open: z.object({ schemaVersion: z.literal(1) }).strict(),
@@ -356,6 +543,14 @@ const operationValueSchemas = {
     })
     .strict(),
   importV5: z.object({ threadId: uuid, imported: z.boolean() }).strict(),
+  saveDraft: draftMutationValueSchema,
+  startTurn: draftMutationValueSchema,
+  retryTurn: draftMutationValueSchema,
+  bindTurnTarget: threadDetailSchema,
+  settleTurn: threadDetailSchema,
+  recoverPending: z.object({ recovered: z.number().int().nonnegative() }).strict(),
+  setResourceAvailability: threadDetailSchema,
+  repairProviderStateRef: threadDetailSchema,
 } as const
 
 export type ThreadLibraryOperationValue = {
@@ -377,11 +572,7 @@ export function parseThreadLibraryThreadDetail(value: unknown): ThreadLibraryThr
 }
 
 export type ThreadLibraryReply<Operation extends ThreadLibraryOperation = ThreadLibraryOperation> =
-  | {
-      id: string
-      ok: true
-      value: ThreadLibraryOperationValue[Operation]
-    }
+  | { id: string; ok: true; value: ThreadLibraryOperationValue[Operation] }
   | {
       id: string
       ok: false

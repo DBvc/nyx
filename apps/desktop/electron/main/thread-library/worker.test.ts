@@ -20,7 +20,7 @@ const tempDirs: string[] = []
 const timestamp = '2026-08-12T00:00:00.000Z'
 const localSecond = '2026-08-12T08:00:00'
 const targetSelection = { kind: 'env_fallback' } as const
-const expectedSchemaFingerprint = 'a0824fc5e3d1b3eace6540f42e997517d2cbf1b7869da9094a181e7e4056c746'
+const expectedSchemaFingerprint = 'b738af3b33da1c928f8ba909fe7c9a9d140f8841fc601544f7a9f5075bfa091b'
 const connectionSelection = {
   kind: 'connection',
   providerId: 'provider-1',
@@ -49,6 +49,46 @@ function materializeInput(value: number): ThreadLibraryOperationInput['materiali
     targetSelection,
     fallbackLocalSecond: null,
     createdAt: at(value),
+  }
+}
+
+function draftInput(
+  threadId: string,
+  expectedDraftRevision = 0,
+): ThreadLibraryOperationInput['saveDraft'] {
+  const extractedText = 'notes'
+  return {
+    threadId,
+    expectedDraftRevision,
+    draft: {
+      text: 'Hello',
+      targetSelection,
+      images: [
+        {
+          imageId: uuid(40_001),
+          position: 0,
+          mediaType: 'image/png',
+          width: 2,
+          height: 1,
+          available: true,
+        },
+      ],
+      documents: [
+        {
+          documentId: uuid(40_002),
+          position: 0,
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          byteLength: 5,
+          extractedByteLength: 5,
+          sourceSha256: createHash('sha256').update(extractedText).digest('hex'),
+          extractedTextSha256: createHash('sha256').update(extractedText).digest('hex'),
+          available: true,
+          extractedText,
+        },
+      ],
+    },
+    savedAt: at(100),
   }
 }
 
@@ -221,6 +261,296 @@ afterEach(async () => {
 })
 
 describe('ThreadLibraryDatabase', () => {
+  it('saves one complete Draft CAS without moving activity for target-only or clear-only saves', async () => {
+    const { owner } = await createOwner()
+    const input = materializeInput(1)
+    execute(owner, 'materialize', input)
+
+    const saved = execute(owner, 'saveDraft', draftInput(input.threadId))
+    expect(saved).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { lastUserActivityAt: at(100) },
+        draft: { draftRevision: 1, text: 'Hello' },
+        images: [{ owner: 'draft', turnOrdinal: null, position: 0 }],
+        documents: [{ owner: 'draft', turnOrdinal: null, extractedText: 'notes' }],
+      },
+    })
+
+    const targetOnly = draftInput(input.threadId, 1)
+    targetOnly.draft.targetSelection = connectionSelection
+    targetOnly.savedAt = at(101)
+    expect(execute(owner, 'saveDraft', targetOnly)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { lastUserActivityAt: at(100) },
+        draft: { draftRevision: 2, targetSelection: connectionSelection },
+      },
+    })
+
+    const cleared = draftInput(input.threadId, 2)
+    cleared.draft = { ...cleared.draft, text: '', images: [], documents: [] }
+    cleared.savedAt = at(102)
+    expect(execute(owner, 'saveDraft', cleared)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { lastUserActivityAt: at(102) },
+        draft: { draftRevision: 3, text: '' },
+        images: [],
+        documents: [],
+      },
+    })
+    expect(execute(owner, 'saveDraft', { ...cleared, expectedDraftRevision: 2 })).toEqual({
+      status: 'conflict',
+      canonicalDraftRevision: 3,
+    })
+    owner.close()
+  })
+
+  it('moves Draft resources once, binds and settles one terminal, repairs refs, and recovers pending idempotently', async () => {
+    const { owner } = await createOwner()
+    const first = materializeInput(2)
+    execute(owner, 'materialize', first)
+    const firstDraft = draftInput(first.threadId)
+    firstDraft.draft.targetSelection = connectionSelection
+    execute(owner, 'saveDraft', firstDraft)
+
+    const startedAt = at(110)
+    const started = execute(owner, 'startTurn', {
+      threadId: first.threadId,
+      requestId: 'request-start',
+      expectedDraftRevision: 1,
+      userMessageId: 'user-start',
+      assistantMessageId: 'assistant-start',
+      startedAt,
+    })
+    expect(started).toMatchObject({
+      status: 'committed',
+      detail: {
+        draft: { draftRevision: 2, text: '' },
+        turns: [{ ordinal: 0, assistantStatus: 'pending', userContent: 'Hello' }],
+        images: [{ owner: 'turn', turnOrdinal: 0 }],
+        documents: [{ owner: 'turn', turnOrdinal: 0 }],
+      },
+    })
+    expect(
+      execute(owner, 'startTurn', {
+        threadId: first.threadId,
+        requestId: 'request-race',
+        expectedDraftRevision: 1,
+        userMessageId: 'user-race',
+        assistantMessageId: 'assistant-race',
+        startedAt,
+      }),
+    ).toEqual({ status: 'conflict', canonicalDraftRevision: 2 })
+
+    execute(owner, 'bindTurnTarget', {
+      threadId: first.threadId,
+      requestId: 'request-start',
+      targetAttribution: connectionAttribution,
+      boundAt: at(111),
+    })
+    const providerStateRef = {
+      protocol: 'openai-responses' as const,
+      stateId: uuid(40_003),
+      executionIdentity: 'c'.repeat(64),
+      byteLength: 16,
+      sha256: 'd'.repeat(64),
+    }
+    const settled = execute(owner, 'settleTurn', {
+      threadId: first.threadId,
+      requestId: 'request-start',
+      assistantStatus: 'completed',
+      assistantContent: 'Done',
+      error: null,
+      providerStateRef,
+      settledAt: at(112),
+    })
+    expect(settled).toMatchObject({
+      summary: {
+        resultRevision: 1,
+        seenResultRevision: 0,
+        lastUserActivityAt: startedAt,
+      },
+      turns: [{ assistantStatus: 'completed', providerStateId: providerStateRef.stateId }],
+    })
+    expect(() =>
+      execute(owner, 'settleTurn', {
+        threadId: first.threadId,
+        requestId: 'request-start',
+        assistantStatus: 'cancelled',
+        assistantContent: '',
+        error: null,
+        providerStateRef: null,
+        settledAt: at(113),
+      }),
+    ).toThrow('This turn is no longer pending.')
+    expect(() =>
+      execute(owner, 'settleTurn', {
+        threadId: first.threadId,
+        requestId: 'request-start',
+        assistantStatus: 'failed',
+        assistantContent: '',
+        error: { code: 'unknown', message: 'The response failed unexpectedly.', retryable: true },
+        providerStateRef: null,
+        settledAt: at(113),
+      }),
+    ).toThrow('This turn is no longer pending.')
+
+    expect(
+      execute(owner, 'repairProviderStateRef', {
+        threadId: first.threadId,
+        requestId: 'request-start',
+        providerStateRef,
+        repairedAt: at(114),
+      }),
+    ).toMatchObject({
+      turns: [{ assistantContent: 'Done', providerStateId: null }],
+      providerStateRefs: [],
+    })
+    expect(
+      execute(owner, 'setResourceAvailability', {
+        threadId: first.threadId,
+        images: [{ id: uuid(40_001), available: false }],
+        documents: [{ id: uuid(40_002), available: false }],
+        checkedAt: at(115),
+      }),
+    ).toMatchObject({
+      images: [{ available: false }],
+      documents: [{ available: false, extractedText: 'notes' }],
+    })
+
+    const second = materializeInput(3)
+    execute(owner, 'materialize', second)
+    const secondDraft = draftInput(second.threadId)
+    secondDraft.draft.images = []
+    secondDraft.draft.documents = []
+    execute(owner, 'saveDraft', secondDraft)
+    execute(owner, 'startTurn', {
+      threadId: second.threadId,
+      requestId: 'request-pending',
+      expectedDraftRevision: 1,
+      userMessageId: 'user-pending',
+      assistantMessageId: 'assistant-pending',
+      startedAt: at(116),
+    })
+    expect(execute(owner, 'recoverPending', { recoveredAt: at(117) })).toEqual({ recovered: 1 })
+    expect(execute(owner, 'recoverPending', { recoveredAt: at(117) })).toEqual({ recovered: 0 })
+    expect(execute(owner, 'readThread', { threadId: second.threadId })).toMatchObject({
+      summary: { resultRevision: 1, lastUserActivityAt: at(116) },
+      turns: [{ assistantStatus: 'failed', error: { retryable: true } }],
+    })
+
+    rawDatabase(owner)
+      .prepare("UPDATE threads SET location = 'archived' WHERE id = ?")
+      .run(second.threadId)
+    expect(
+      execute(owner, 'retryTurn', {
+        threadId: second.threadId,
+        turnOrdinal: 0,
+        expectedAttemptRequestId: 'request-pending',
+        requestId: 'request-retry',
+        expectedDraftRevision: 2,
+        retriedAt: at(118),
+      }),
+    ).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { location: 'available', threadRevision: 2 },
+        turns: [{ attemptRequestId: 'request-retry', assistantStatus: 'pending' }],
+      },
+    })
+
+    execute(owner, 'settleTurn', {
+      threadId: second.threadId,
+      requestId: 'request-retry',
+      assistantStatus: 'failed',
+      assistantContent: '',
+      error: { code: 'unknown', message: 'The response failed unexpectedly.', retryable: true },
+      providerStateRef: null,
+      settledAt: at(119),
+    })
+    rawDatabase(owner)
+      .prepare(
+        "UPDATE threads SET location = 'trash', trashed_from_location = 'available' WHERE id = ?",
+      )
+      .run(second.threadId)
+    expect(() =>
+      execute(owner, 'retryTurn', {
+        threadId: second.threadId,
+        turnOrdinal: 0,
+        expectedAttemptRequestId: 'request-retry',
+        requestId: 'request-trash-retry',
+        expectedDraftRevision: 2,
+        retriedAt: at(120),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
+    owner.close()
+  })
+
+  it('serializes autosave and Send races and restores Archived only after the winning ack', async () => {
+    const { databasePath, owner } = await createOwner()
+    const input = materializeInput(4)
+    execute(owner, 'materialize', input)
+    execute(owner, 'saveDraft', draftInput(input.threadId))
+    const staleSend = {
+      threadId: input.threadId,
+      requestId: 'request-stale',
+      expectedDraftRevision: 0,
+      userMessageId: 'user-stale',
+      assistantMessageId: 'assistant-stale',
+      startedAt: at(121),
+    }
+    expect(execute(owner, 'startTurn', staleSend)).toEqual({
+      status: 'conflict',
+      canonicalDraftRevision: 1,
+    })
+    expect(execute(owner, 'readThread', { threadId: input.threadId })).toMatchObject({
+      turns: [],
+      draft: { draftRevision: 1, text: 'Hello' },
+    })
+
+    rawDatabase(owner)
+      .prepare("UPDATE threads SET location = 'archived' WHERE id = ?")
+      .run(input.threadId)
+    const archivedSave = draftInput(input.threadId, 1)
+    archivedSave.draft.targetSelection = connectionSelection
+    archivedSave.savedAt = at(121)
+    expect(execute(owner, 'saveDraft', archivedSave)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { location: 'archived', threadRevision: 1 },
+        draft: { draftRevision: 2, targetSelection: connectionSelection },
+      },
+    })
+    const winningSend = { ...staleSend, requestId: 'request-winning', expectedDraftRevision: 2 }
+    expect(execute(owner, 'startTurn', winningSend)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: { location: 'available', threadRevision: 2 },
+        turns: [{ attemptRequestId: 'request-winning', assistantStatus: 'pending' }],
+      },
+    })
+    expect(execute(owner, 'startTurn', { ...winningSend, requestId: 'request-second' })).toEqual({
+      status: 'conflict',
+      canonicalDraftRevision: 3,
+    })
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'recoverPending', { recoveredAt: at(122) })).toEqual({
+      recovered: 1,
+    })
+    expect(execute(restarted, 'recoverPending', { recoveredAt: at(122) })).toEqual({
+      recovered: 0,
+    })
+    expect(execute(restarted, 'readThread', { threadId: input.threadId })).toMatchObject({
+      summary: { resultRevision: 1, lastUserActivityAt: at(121) },
+      turns: [{ assistantStatus: 'failed', error: { retryable: true } }],
+    })
+    restarted.close()
+  })
+
   it('creates and reopens one private strict DELETE-journal database with native constraints', async () => {
     const { databasePath, owner } = await createOwner()
     const database = rawDatabase(owner)
