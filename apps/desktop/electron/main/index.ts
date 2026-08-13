@@ -46,7 +46,32 @@ const rendererDistPath = join(moduleDir, '../renderer')
 const preloadPath = join(moduleDir, '../preload/index.cjs')
 const devServerUrl = resolveDevServerUrl(process.env)
 
-registerNyxImageScheme(protocol)
+function focusExistingMainWindow() {
+  const window = BrowserWindow.getAllWindows()[0]
+
+  if (!window) {
+    return
+  }
+
+  if (window.isMinimized()) {
+    window.restore()
+  }
+  window.show()
+  window.focus()
+}
+
+export function acquireSingleInstanceOwnership() {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+    return false
+  }
+
+  registerNyxImageScheme(protocol)
+  app.on('second-instance', focusExistingMainWindow)
+  return true
+}
+
+const ownsSingleInstance = acquireSingleInstanceOwnership()
 
 export function resolveDevServerUrl(env: NodeJS.ProcessEnv) {
   return env.ELECTRON_RENDERER_URL || env.VITE_DEV_SERVER_URL
@@ -193,25 +218,40 @@ function createMainCurrentThreadImageFilesResolver() {
   }
 }
 
-const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
-const resolveCurrentThreadImages = createMainCurrentThreadImageFilesResolver()
-const resolveCurrentThreadDocuments = createMainCurrentThreadDocumentFilesResolver()
-const resolveCurrentThreadSession = createMainCurrentThreadSessionResolver(
-  resolveCurrentThreadStore,
-  resolveCurrentThreadImages,
-  resolveCurrentThreadDocuments,
-)
-const chatSessionManager = new ChatSessionManager({
-  createRuntimeChatStateClient: createMainRuntimeChatStateClient,
-  resolveChatTarget: createMainChatTargetResolver(),
-  resolveCurrentThreadSession,
-})
-const connectionsService = createMainConnectionsService()
-const currentThreadSnapshotService = new CurrentThreadSnapshotService({
-  resolveReader: resolveCurrentThreadStore,
-  resolveImages: resolveCurrentThreadImages,
-  resolveDocuments: resolveCurrentThreadDocuments,
-})
+function createMainServices() {
+  const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
+  const resolveCurrentThreadImages = createMainCurrentThreadImageFilesResolver()
+  const resolveCurrentThreadDocuments = createMainCurrentThreadDocumentFilesResolver()
+  const resolveCurrentThreadSession = createMainCurrentThreadSessionResolver(
+    resolveCurrentThreadStore,
+    resolveCurrentThreadImages,
+    resolveCurrentThreadDocuments,
+  )
+
+  return {
+    chatSessionManager: new ChatSessionManager({
+      createRuntimeChatStateClient: createMainRuntimeChatStateClient,
+      resolveChatTarget: createMainChatTargetResolver(),
+      resolveCurrentThreadSession,
+    }),
+    connectionsService: createMainConnectionsService(),
+    currentThreadSnapshotService: new CurrentThreadSnapshotService({
+      resolveReader: resolveCurrentThreadStore,
+      resolveImages: resolveCurrentThreadImages,
+      resolveDocuments: resolveCurrentThreadDocuments,
+    }),
+    resolveCurrentThreadDocuments,
+    resolveCurrentThreadImages,
+    resolveCurrentThreadStore,
+  }
+}
+
+let mainServices: ReturnType<typeof createMainServices> | undefined
+
+function resolveMainServices() {
+  mainServices ??= createMainServices()
+  return mainServices
+}
 
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
 
@@ -222,12 +262,14 @@ export interface RegisterIpcHandlersOptions {
   providerStatusReader?: typeof readProviderStatus
 }
 
-export function registerIpcHandlers({
-  chatSessionManager: manager = chatSessionManager,
-  connections = connectionsService,
-  currentThreadSnapshot = currentThreadSnapshotService,
-  providerStatusReader = readProviderStatus,
-}: RegisterIpcHandlersOptions = {}) {
+export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}) {
+  const defaults = resolveMainServices()
+  const manager = options.chatSessionManager ?? defaults.chatSessionManager
+  const connections = options.connections ?? defaults.connectionsService
+  const currentThreadSnapshot =
+    options.currentThreadSnapshot ?? defaults.currentThreadSnapshotService
+  const providerStatusReader = options.providerStatusReader ?? readProviderStatus
+
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.reset)
@@ -293,37 +335,41 @@ function configureAutoUpdate() {
   })
 }
 
-app.whenReady().then(async () => {
-  nativeTheme.themeSource = 'dark'
-  configureRendererPermissions(electronSession.defaultSession)
-  registerNyxImageProtocol({
-    protocol: electronSession.defaultSession.protocol,
-    net,
-    recordReader: resolveCurrentThreadStore(),
-    images: resolveCurrentThreadImages(),
+if (ownsSingleInstance) {
+  app.whenReady().then(async () => {
+    const services = resolveMainServices()
+
+    nativeTheme.themeSource = 'dark'
+    configureRendererPermissions(electronSession.defaultSession)
+    registerNyxImageProtocol({
+      protocol: electronSession.defaultSession.protocol,
+      net,
+      recordReader: services.resolveCurrentThreadStore(),
+      images: services.resolveCurrentThreadImages(),
+    })
+
+    try {
+      const record = await services.resolveCurrentThreadStore().read()
+      await services.resolveCurrentThreadImages().reconcile(record)
+      await services.resolveCurrentThreadDocuments().reconcile(record)
+    } catch {
+      // Malformed or unknown records must not authorize cleanup.
+    }
+
+    registerIpcHandlers()
+    createMainWindow()
+    configureAutoUpdate()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow()
+      }
+    })
   })
 
-  try {
-    const record = await resolveCurrentThreadStore().read()
-    await resolveCurrentThreadImages().reconcile(record)
-    await resolveCurrentThreadDocuments().reconcile(record)
-  } catch {
-    // Malformed or unknown records must not authorize cleanup.
-  }
-
-  registerIpcHandlers()
-  createMainWindow()
-  configureAutoUpdate()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow()
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
     }
   })
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+}

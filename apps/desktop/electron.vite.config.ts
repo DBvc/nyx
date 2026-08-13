@@ -10,6 +10,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'electron/main/index.ts'),
+          'thread-library-worker': resolve(__dirname, 'electron/main/thread-library/worker.ts'),
         },
         external: ['electron', /^electron\/.+/],
       },

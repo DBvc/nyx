@@ -12,6 +12,9 @@ type RegisteredIpcHandler = (
 
 const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, RegisteredIpcHandler>()
+  const BrowserWindow = Object.assign(vi.fn(), {
+    getAllWindows: vi.fn<() => Array<Record<string, unknown>>>(() => []),
+  })
 
   return {
     handlers,
@@ -20,8 +23,9 @@ const electronMock = vi.hoisted(() => {
       whenReady: vi.fn(() => new Promise<void>(() => {})),
       on: vi.fn(),
       quit: vi.fn(),
+      requestSingleInstanceLock: vi.fn(() => true),
     },
-    BrowserWindow: vi.fn(),
+    BrowserWindow,
     clipboard: {
       writeText: vi.fn(),
     },
@@ -80,6 +84,7 @@ vi.mock('electron', () => ({
 }))
 
 import {
+  acquireSingleInstanceOwnership,
   configureRendererPermissions,
   registerIpcHandlers,
   resolveDevServerUrl,
@@ -91,6 +96,9 @@ const safeStorageAvailabilityCallCountAfterImport =
   electronMock.safeStorage.isEncryptionAvailable.mock.calls.length
 const registeredImageSchemesAfterImport =
   electronMock.protocol.registerSchemesAsPrivileged.mock.calls[0]?.[0]
+const secondInstanceHandlerAfterImport = electronMock.app.on.mock.calls.find(
+  ([event]) => event === 'second-instance',
+)?.[1] as (() => void) | undefined
 
 function registeredHandler(channel: string) {
   const handler = electronMock.handlers.get(channel)
@@ -170,12 +178,43 @@ describe('configureRendererPermissions', () => {
 
 describe('image protocol scheme registration', () => {
   it('registers only the standard and secure privileges before app ready', () => {
+    expect(electronMock.app.requestSingleInstanceLock.mock.invocationCallOrder[0]).toBeLessThan(
+      electronMock.protocol.registerSchemesAsPrivileged.mock.invocationCallOrder[0]!,
+    )
     expect(registeredImageSchemesAfterImport).toEqual([
       {
         scheme: 'nyx-image',
         privileges: { standard: true, secure: true },
       },
     ])
+  })
+})
+
+describe('single-instance ownership', () => {
+  it('exits a rejected secondary before registering privileged data access', () => {
+    vi.clearAllMocks()
+    electronMock.app.requestSingleInstanceLock.mockReturnValueOnce(false)
+
+    expect(acquireSingleInstanceOwnership()).toBe(false)
+    expect(electronMock.app.quit).toHaveBeenCalledTimes(1)
+    expect(electronMock.protocol.registerSchemesAsPrivileged).not.toHaveBeenCalled()
+    expect(electronMock.app.on).not.toHaveBeenCalled()
+  })
+
+  it('only restores, shows, and focuses the existing primary window', () => {
+    const window = {
+      focus: vi.fn(),
+      isMinimized: vi.fn(() => true),
+      restore: vi.fn(),
+      show: vi.fn(),
+    }
+    electronMock.BrowserWindow.getAllWindows.mockReturnValueOnce([window])
+
+    secondInstanceHandlerAfterImport?.()
+
+    expect(window.restore).toHaveBeenCalledTimes(1)
+    expect(window.show).toHaveBeenCalledTimes(1)
+    expect(window.focus).toHaveBeenCalledTimes(1)
   })
 })
 
