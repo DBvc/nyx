@@ -1,6 +1,6 @@
-# Nyx Multi-Thread Library 技术方案 v5.3
+# Nyx Multi-Thread Library 技术方案 v5.4
 
-状态：reviewed landing candidate；G1/G2 已 `VALID_STOP`。本文记录的 exact-byte reviews 全部通过且这些字节进入 HEAD 时，本状态自动成为 complete，不再用状态补丁改变已评审 artifact；随后只授权 G1W/G2R OS-temp gates，不授权产品实现。
+状态：C1 title-identity amendment candidate。v5.3、G1W、D1、D2 与 C1 scope lock 已进入 HEAD；C1 实现发现既有 SQLite CHECK 无法表示已冻结的 pre-send 标题状态，已按 Stop 规则暂停。第 3.4、5、7.1 与 10 节的 v5.4 窄修订通过 exact-byte reviews并进入 HEAD 后，C1 才可从同一 scope 继续。
 
 模式：architecture change + migration plan。
 长期产品决策：永久删除必须在当前 Nyx 进程内立即撤销访问；不能做到时，不开放永久删除。
@@ -48,7 +48,7 @@
 
 ### 新 workstream 的 canonical source of truth
 
-S0 已完成并进入 HEAD；G1/G2 的有效 Stop 与后续 full-review findings 触发本 v5.3 amendment，而不是绕过：
+S0 已完成并进入 HEAD；G1/G2 的有效 Stop 与后续 full-review findings 触发 v5.3 amendment；C1 实现反证再触发本 v5.4 title-identity amendment，而不是绕过：
 
 1. `docs/next/agent-workbench-task-slices.md`：增加唯一可执行的 `multi-thread-library` workstream 与切片状态；
 2. `AGENTS.md`、`apps/desktop/AGENTS.md`：只对该命名 workstream 精确 supersede persistent history、Thread IPC 与 SQLite 禁令；同时精确 supersede D workstream 的“未发送 target 只在 Renderer 内存”规则，允许 materialized Thread 持久化 safe target selection id，但继续禁止持久化 resolved target、Provider 配置、凭据或改变全局默认；
@@ -102,7 +102,7 @@ Trash
 Connections / Local user
 ```
 
-- 普通 Thread row 只显示标题和一个最高优先状态；消息摘要只在 Search result 中显示。
+- U1 collection browser 起，普通 Thread row 显示标题、一个低噪音 creation label 和一个最高优先状态；C1 的既有单行 adapter 不实现该 label 或多行碰撞逻辑。消息摘要只在 Search result 中显示。U1 标题单独省略，creation label 是不收缩、不省略的本地 `MM-DD HH:mm:ss`。若当前已渲染 rows 的实际基础 label 字符串相同（包括跨年、时区或 DST 形成的同一显示值），碰撞 rows 扩展到 `.SSS`；显示到毫秒仍相同则再追加从 4 个字符起、扩展到当前 rows 唯一所需长度的 Thread UUID 前缀。该 label 只由 safe `created_at + threadId` 派生，不是标题、排序或持久化真相；完整标题和同一可见 label 一起进入 accessible name。selection、菜单动作、重挂载回焦与播报始终按完整 `threadId`，因此长标题、手工重名与被截断的 generic suffix 仍可安全区分。分页导致 rendered collision set 变化时只更新 label/accessibility copy，不改变 selection、focus、title、排序或 persisted state。
 - 主状态优先级：需要处理的失败/Interrupted > Running > Unseen completion > Draft。
 - Selected 用行背景表达，不再增加 pill。
 - Archived/Trash 是次级入口；进入后替换 Sidebar collection，Main 只显示该 mode 内的选择或对应空状态。
@@ -138,8 +138,9 @@ Archived 按 `last_user_activity_at DESC, created_at DESC, id ASC`；Trash 按�
 
 - 全应用最多一个 untouched placeholder；不落库、不进列表。
 - 第一次非空文字、显式 Rename 或 Main 接受附件后 materialize；仅切换 target 不创建 Thread。Materialized Thread 的 safe target selection id 与 Draft 一起持久化，切换 Thread/重启后恢复；它不改变 Connections 全局默认。
-- Main 在首次 materialize 调用内先生成并保留稳定 `threadId`；Worker 用 `threadId + expected absent` 在一个 transaction 中创建 Thread/Draft。create ack 只把 placeholder 原地 rekey，再 flush 最新 overlay；不能插入第二行。
-- `title_source=auto` 且尚未首次发送时，自动标题与每次成功 Draft commit 在同一 transaction 更新：非空文字使用现有可见规则（trim、连续空白折叠；总长最多 48 个 Unicode code points，超长为前 45 个去尾空白后加 `...`）；否则使用首个 Draft document 的安全 display name；图片-only 使用 `Image · YYYY-MM-DD HH:mm:ss`，完全为空使用 `Untitled draft · YYYY-MM-DD HH:mm:ss`。Main 在 materialize 时一次生成并持久化本地 creation second；第一次需要 generic fallback 时，同一 Worker transaction 在该 second 内分配从 1 起最小的当前未使用 `fallback_ordinal`，1 不显示，2 起追加 ` · 2`、` · 3`。单 Worker + partial unique constraint 保证同时存在的同秒 generic fallback 可区分；后续在 Image/Untitled 间切换复用同一 second/ordinal，重启、时区变化或其他 Thread Rename/Delete 都不重算仍存在的标题。Thread/空壳删除后可由未来 Thread 复用空出的 ordinal，不需要永久计数表。第一次 Send transaction 冻结当时的自动标题；`title_source=manual` 永不被 Draft 或 Send 覆盖。标题只来自 Main-acked Draft 与 persisted creation fallback，不读取 Renderer overlay，不调用模型。
+- Main 在首次 materialize 调用内先生成并保留稳定 `threadId`。该调用携带 dispatch 时完整、已被 Main 接受的初始 Draft 语义值：文字、safe target selection、ordered ready image/document refs，以及显式 Rename 时的已验证手工标题；新附件 bytes 只由 Main sidecar owner 验证、发布，不进入 Worker。Worker 用 `threadId + expected absent` 在一个 transaction 中创建 Thread、revision-0 Draft、资源 ownership rows 和初始标题/fallback identity。该 create ack 是首个 Draft durability boundary，只把 placeholder 原地 rekey；dispatch 后发生的 overlay edits 才在 ack 后用普通 save CAS flush，不能先创建空 Draft、显示 generic ghost title或插入第二行。
+- `title_source=auto` 且尚未首次发送时，自动标题与 materialize/每次成功 Draft commit 在同一 transaction 更新：非空文字使用现有可见规则（trim、连续空白折叠；总长最多 48 个 Unicode code points，超长为前 45 个去尾空白后加 `...`）；否则使用 ordered Draft 中首个 ready document 的 Main-validated safe display name。Document title 只取该 display name，不读路径；trim 两端、把连续 Unicode whitespace 折叠为一个空格。规范化结果不超过 48 code points 时原样使用；超长时，若最后一个 `.` 不在首位且含 `.` 的非空扩展名不超过 44 code points，则保留扩展名，用 `48 - 3 - extensionLength` 个 stem code points 去尾空白后加 `...` 与扩展名；否则使用前 45 个 code points 去尾空白后加 `...`。图片-only 使用 `Image · YYYY-MM-DD HH:mm:ss`，完全为空使用 `Untitled draft · YYYY-MM-DD HH:mm:ss`。
+- Main 在 materialize 时一次生成本地 creation second，Worker 将它持久化为该 auto Thread 的稳定 fallback second；即使当前标题来自文字或文档，它也不能丢失。`fallback_ordinal` 初始可空；第一次需要 Image/Untitled generic title 时，同一 Worker transaction 读取该 second 的存量 identity：没有 survivor 时分配 1，否则分配 `max(existing ordinal) + 1`。1 不显示，2 起追加 ` · 2`、` · 3`；不填补 survivor 之间的空号。一旦分配，首次 Send 前在文字、文档、Image、Untitled 间切换都保留同一 second/ordinal；单 Worker + partial unique constraint 只约束非空 ordinal。第一次 Send transaction 冻结当时的自动标题：若冻结的是 generic title，保留 identity；若冻结的是文字/文档标题，清除不再需要的 fallback identity。手工 Rename 同样清除 identity，且 `title_source=manual` 永不被 Draft 或 Send 覆盖。重启、时区变化或其他 Thread Rename/Delete 都不重算仍存在的 generic 标题；只要同秒 survivor 仍存在，未来 Thread 继续用 max + 1；全部相关 identity 消失后才可从 1 重新开始，不需要永久计数表。标题只来自 Main-acked Draft 与 persisted creation fallback，不读取 Renderer overlay，不调用模型。
 - 手工 Rename 复用一个 Main-authoritative pure validator，Renderer 只复用它做即时提示，Main 在发给 Worker 前仍重验：trim 后必须为 1–48 个 Unicode code points，不静默截断，允许与其他 Thread 重名。空值、纯空白或第 49 个 code point 返回安全 field error，不提交 transaction、不更新 revision/activity/title；inline input 保留用户输入与焦点，原标题和所有其他 surface 保持。Enter 只提交有效值，Escape 放弃编辑并恢复原标题。完整标题可在 row/Search/accessible name/退出结果 barrier 中使用；重名仍按 7.6 的 creation time/必要时完整 UUID 消歧。
 - 正常 autosave 不显示噪音；明显延迟或失败在 Composer 附近显示 Saving / Not saved，dirty overlay 不得被迟到 snapshot 覆盖，除非用户明确选择 `Close without saving`。
 - “零 Turn + auto title + 空 Draft + 无附件”的 materialized Thread 是可回收空壳：正常导航/关闭只能在当前 mutation queue drained、没有 dirty/preparing overlay 且空 Draft 已 Main ack 后，由 Main 用 exact Draft revision 和上述条件原子删除；启动恢复可直接按 canonical 状态检查。显式 Rename 过的 Thread 永不自动回收。任一条件或竞态失败就保留，不做 best-effort 猜测。
@@ -246,7 +247,8 @@ SQLite 使用 strict tables、bound parameters、FK、defensive、`trusted_schem
 - `trashed_pin_position`：从 Available Pinned 进入 Trash 时保存；Restore 时按当前位置边界插回并事务内重排；
 - `pin_position`：仅 Available Pinned 非空；partial unique index 保证位置唯一，所有 move/archive/trash/restore 在事务内重排为连续位置；
 - `title`、`title_source: auto | manual`；
-- `fallback_local_second` 与 nullable `fallback_ordinal`：只用于当前存量 collision-free generic auto title；partial unique `(fallback_local_second, fallback_ordinal)`；存量 row 不重编号，删除后可复用空号；
+- `fallback_local_second`：每个新 materialized、尚未首次发送的 auto Thread 的稳定本地 creation second；imported 已发送的文字/文档 v5 Thread 可为空且不回算，imported Image/Untitled generic Thread 保留 D1 importer 已从 legacy `createdAt` 一次确定的 second + ordinal 1；activation 后两者都不重算；
+- nullable `fallback_ordinal`：在该 Thread 第一次需要 Image/Untitled generic title 时分配，分配后在首次 Send 前跨自动标题形态保留；partial unique 只覆盖非空 `(fallback_local_second, fallback_ordinal)`。数据库约束允许 second 非空而 ordinal 为空，但不允许 ordinal 脱离 second，也不允许 manual title 保留 identity。generic freeze 后存量 row 不重编号；只要同秒 identity 仍有 survivor，新分配就取 max + 1 而不回填空号；全部消失后才可从 1 开始；
 - `thread_revision`：只保护 Rename/location 等 Thread metadata mutation；
 - `last_user_activity_at`；
 - `result_revision`、`seen_result_revision`；
@@ -306,9 +308,9 @@ Main 为 accepted Turn 生成/确认 canonical message identity，并从 exact T
 ### 7.1 Materialize / autosave
 
 - 当前 placeholder/thread 使用一个 Renderer mutation queue；Main 仍以一个覆盖 text/target/attachments 的 Draft CAS 为准。
-- Main 为首次 create 预生成稳定 thread id；Worker 只接受 `expected absent`。首次 create 返回 thread id/revision 后只做 rekey；队列随后发送最新 overlay。
-- Worker 在 create commit 后、reply 前退出时，Main 必须先用同一 id 重读：内容/初始 revision 完全匹配则视为已提交并返回 ack；不存在则保留 overlay、显示 Not saved，并让用户 Retry 复用 Main 保留的同一 id；存在但不匹配则 fail closed。Main 不得让 Renderer Retry 时生成新 id，也不得自动重放 create。
-- CAS conflict 返回 canonical revision，但不得用 snapshot 覆盖 dirty overlay；Renderer 重新基于最新 revision 提交或显示 Not saved。
+- Main 为首次 create 预生成稳定 thread id 与本地 creation second，并把 dispatch 时完整的 Main-accepted Draft 语义值交给 materialize owner；Main 先验证、发布任何新 sidecar，Worker 只接收 semantic rows，不接收 bytes/path。Worker 只接受 `expected absent`，并在同一 transaction 写 Thread、revision-0 Draft、ordered resource refs、初始标题与 fallback identity。首个 Draft 需要 generic title时立即按 max + 1 规则分配 ordinal；文字/文档标题暂不分配。create 返回 thread id/revision 后只做 rekey；队列只发送 dispatch 后新增的 overlay edits。
+- Worker 在 create commit 后、reply 前退出时，Main 必须先用同一 id 重读：Thread、完整初始 Draft、ordered resource refs、初始 title/fallback identity 与 revision 完全匹配才视为已提交并返回 ack；不存在则保留 overlay和已准备 sidecar、显示 Not saved，并让用户 Retry 复用 Main 保留的同一 id；存在但不匹配则 fail closed。Main 不得让 Renderer Retry 时生成新 id、删除无法判定归属的 sidecar或自动重放 create。
+- CAS conflict 返回 canonical revision，但不得用 snapshot 覆盖 dirty overlay；Renderer 重新基于最新 revision 提交或显示 Not saved。每次成功 CAS 在同一 transaction 更新未发送 auto title；第一次进入 generic title 时分配 ordinal，已有 ordinal 在首次 Send 前跨标题形态保留。
 - 附件只有在 Main 完成 staging、完整性校验和 durable write 后才能释放 Renderer bytes。
 - 所有 navigation/lifecycle/close/quit 复用同一 queue barrier，不另建第二保存路径；失败后的 Stay/Retry/Discard 与焦点规则统一使用 3.4，Send 仍只有 Stay/Retry。
 
@@ -489,6 +491,15 @@ D1/D2 只构建并用 fixtures 验证 importer/domain，不激活新库。C1 是
 - Validation：exact allowed-file inventory、relative links、format-check、`git diff --check`、plan hash、独立 product/design/strict technical review。
 - Stop if：single-instance owner、Draft + process-wide unsaved-result quit barriers/native focus、Library/Thread unavailable、Worker owner/materialize/terminal-sidecar unknown-commit、snapshot/Search barrier/backpressure/truncation/announcement、navigation discard、Search return、Sidebar paging/selection、collision-free pre-send title、Pin/Trash/settlement-failed actions、mode return/sort、import activation/cleanup ratchet、Unarchive/Restore、image-bearing navigation gate、G2R 候选顺序或 A1/M1/P1 依赖仍需实现者猜测。
 
+### V5.4 — C1 title-identity constraint amendment
+
+- Type：docs-only Stop repair；不实现产品代码。
+- Allowed：仅本文与 `agent-workbench-task-slices.md`；冻结现有两个 fallback 字段的可表示状态、SQLite CHECK/index、typed protocol 与 C1 regression matrix。
+- Forbidden：新字段、表、schema version、迁移 reader、第二标题 owner、删除/覆盖已激活库、放宽手工标题或 generic collision 规则。
+- Decision：materialize 原子写入完整初始 Draft 与其 title；auto materialize 总是持久化 local second；ordinal 延迟到首次 generic title，有 survivor 时取 max + 1；首次 Send 前保留已分配 ordinal；non-generic Send/Rename 清除 identity。Document title 使用 3.4 的唯一 48-code-point/extension-preserving 规则。现有 development schema 仍为 version 1，但 C1 激活前必须更新 exact schema fingerprint；不迁移任何已激活 target，发现 target bytes 不匹配仍按 Library unavailable fail closed。
+- Validation：完整初始 Draft/resource materialize 与 reply-loss exact reread、不出现 generic ghost title；text/document materialize 的 second + null ordinal；text → empty/image → text → generic 的同 identity；同秒 `1/2/3 → delete 2 → 4`、`delete 1 with survivor 3 → 4`、全部删除后重回 1；首次 Send generic retain / non-generic release；manual clear；restart/timezone；超长 document display name/extension；导入 generic + 未来同秒 generic 唯一；protocol 与 SQLite 直接写拒绝非法 identity；schema fingerprint 与 activation fresh target。多行 row/creation-label UI 只在 U1 验收，不阻塞 C1。
+- Stop if：需要第三字段、schema version/migration、Main title truth、读取 Renderer history，或无法在一个 Worker Draft/Send transaction 内保持上述状态。
+
 ### G1W — Whole-DB Node Worker gate（OS temp）
 
 - Dependencies：G1 `VALID_STOP` evidence + reviewed v5.3 amendment present in HEAD。
@@ -533,6 +544,7 @@ D1/D2 只构建并用 fixtures 验证 importer/domain，不激活新库。C1 是
 
 ### C1 — Import activation + Thread API/chat cutover
 
+- Dependencies：D2 complete + reviewed V5.4 title-identity amendment present in HEAD。
 - Allowed：用已验证 importer 完成首次 staging import + atomic activation；随后新增仅含 4 节 C1 方法集的 `window.nyx.threads`、保留并 thread-scope `window.nyx.chat`、移除 request.messages、subscribe-buffer-snapshot/cursor，并暴露 redacted Library/Thread available/unavailable projection 与 Retry；Renderer adapter 仍可只显示一条 imported Thread。
 - Forbidden：删除整个 chat namespace、提前暴露 L1/Q1/P1 方法或 no-op stub、全库 Renderer message cache、多窗口同步、OCaml changes。
 - Invariant：activation 前不写新库，activation 后不读/写旧 root；Main-derived exact history；Provider/credentials 不跨 preload；A/B late event 不污染选择。
@@ -552,7 +564,7 @@ D1/D2 只构建并用 fixtures 验证 importer/domain，不激活新库。C1 是
 - Allowed：New/placeholder、list/select、per-thread Draft、确定性 pre-send auto title、Pinned/Recent row/status、selection/scroll restore、仅对本 slice 已存在控件的固定 top/middle-scroll/bottom Sidebar、Library/Thread unavailable surfaces、collapsed attention、`settlement_failed` 的 `Retry saving`、上述 keyboard/focus/close-flush contract。
 - Forbidden：Archive/Trash/Purge/Search、第三面板、虚拟列表、新状态库、视觉重构。
 - Invariant：主聊天保持视觉中心；未保存 overlay 不丢；后台完成不跳序；每行一个主状态；切换后旧 image detail/full dialog 不留在 DOM且不取消后台 Run。
-- Validation：至少 137 Thread 与最小窗口下固定 Nyx/New、Pinned/Recent 单一滚动 collection、固定 Connections/Local user 的鼠标/Tab/VoiceOver 可达性；50-row initial/Load more/Loading more/end、Home/End loaded-only、initial/load-more failure Retry、迟到 page/event cursor/dedupe 与焦点/scroll；启动恢复和 matching reorder 选择第 2/3 页 Thread 时共用 pending-selection 规则，覆盖显现、目标失效、load error/Retry、end/cursor-gap single rehydrate/fail-safe，且尚未授权的 Search/Archived/Trash/Back/Rename 不存在；长中英文标题；至少三条同一 local second 的 image-only/empty fallback Thread 和多份文字 Draft、附件-only、首字符后清空、首次 Send、重启/时区变化/Rename/Delete 后的 deterministic collision ordinal/完整 accessible name，并验证删除不重编号仍存在的标题、未来 Thread 可以复用空出的 ordinal；first-character→clear→立即 New/Available Thread 切换的 save-barrier 与空壳回收；分别注入单附件失败、target-only save failure 与 disk-full，验证 Stay/Retry 不丢 overlay/target、确认框只显示 safe target labels、明确 Discard 后文字/附件/target 都回到 Main-acked Draft并可进入 New/另一 Available Thread、其他 Thread 可读可运行；DOM action 的 Stay/Escape/Retry/Discard 回焦；full-image `<dialog>` 打开时标题栏 Close/Cmd-Q 复用同一顶层 dialog、不叠 modal，Stay/Escape/失败 Retry 的有效焦点与成功 close/quit；Thread surface 上的 Library/Thread unavailable 首次/Retry失败/恢复成功 focus与单次 announcement，Connections surface 故障时不改 route/input/focus、返回 Thread surface 才聚焦 Retry，后台 Thread error不抢焦点；图片/文档坏资源只显示 resource placeholder、Responses repair 回退 visible text且其他内容仍可读/运行；attention seen/collapse、Retry saving 不重发 Provider、keyboard/VoiceOver smoke；fresh packaged profile 用三个不同 image id 的 Thread（每个 9 个 512×288 preview + 一个不同的历史 3840×2160 full）循环 A→B→C 三轮并各 open/close full，断言 DOM 只有选中 Thread 的 9 个 preview/至多一个 full、Draft/anchor/focus 与后台 Run 正确、Renderer heartbeat `<=50 ms`、Main sync `<=250 ms`、whole-process peak delta `<=192 MiB`，完整 cycle 的 final-200ms post-unmount median #2 `<= #1+16 MiB`、#3 `<= #2+8 MiB`。
+- Validation：至少 137 Thread 与最小窗口下固定 Nyx/New、Pinned/Recent 单一滚动 collection、固定 Connections/Local user 的鼠标/Tab/VoiceOver 可达性；50-row initial/Load more/Loading more/end、Home/End loaded-only、initial/load-more failure Retry、迟到 page/event cursor/dedupe 与焦点/scroll；启动恢复和 matching reorder 选择第 2/3 页 Thread 时共用 pending-selection 规则，覆盖显现、目标失效、load error/Retry、end/cursor-gap single rehydrate/fail-safe，且尚未授权的 Search/Archived/Trash/Back/Rename 不存在；长中英文标题；至少三条同一 local second 的 image-only/empty fallback Thread 和多份文字 Draft、附件-only、首字符后清空、首次 Send、重启/时区变化/Rename/Delete 后的 deterministic collision ordinal/完整 accessible name，并验证 survivor 不重编号、仍有 survivor 时新 Thread 取 max + 1、全部消失后才从 1 重启；最小窗口中的 creation label、48-code-point 手工重名、鼠标/roving keyboard/VoiceOver 与 Rename/Delete 后 threadId 回焦；255-byte document display name、CJK/emoji/whitespace/长扩展名、移除或重排首个文档、首次 Send/restart 的 exact auto title；first-character→clear→立即 New/Available Thread 切换的 save-barrier 与空壳回收；分别注入单附件失败、target-only save failure 与 disk-full，验证 Stay/Retry 不丢 overlay/target、确认框只显示 safe target labels、明确 Discard 后文字/附件/target 都回到 Main-acked Draft并可进入 New/另一 Available Thread、其他 Thread 可读可运行；DOM action 的 Stay/Escape/Retry/Discard 回焦；full-image `<dialog>` 打开时标题栏 Close/Cmd-Q 复用同一顶层 dialog、不叠 modal，Stay/Escape/失败 Retry 的有效焦点与成功 close/quit；Thread surface 上的 Library/Thread unavailable 首次/Retry失败/恢复成功 focus与单次 announcement，Connections surface 故障时不改 route/input/focus、返回 Thread surface 才聚焦 Retry，后台 Thread error不抢焦点；图片/文档坏资源只显示 resource placeholder、Responses repair 回退 visible text且其他内容仍可读/运行；attention seen/collapse、Retry saving 不重发 Provider、keyboard/VoiceOver smoke；fresh packaged profile 用三个不同 image id 的 Thread（每个 9 个 512×288 preview + 一个不同的历史 3840×2160 full）循环 A→B→C 三轮并各 open/close full，断言 DOM 只有选中 Thread 的 9 个 preview/至多一个 full、Draft/anchor/focus 与后台 Run 正确、Renderer heartbeat `<=50 ms`、Main sync `<=250 ms`、whole-process peak delta `<=192 MiB`，完整 cycle 的 final-200ms post-unmount median #2 `<= #1+16 MiB`、#3 `<= #2+8 MiB`。
 - Stop if：264px Sidebar 无法保持低噪音、实现需要全库 detail cache，或不同图片 Thread 切换突破既有 memory/responsiveness line；后者返回图片生命周期 replan，不把 G2R 变成 A1 依赖。
 
 ### L1 — Reversible library lifecycle

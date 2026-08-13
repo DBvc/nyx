@@ -145,8 +145,8 @@ Use relative documentation links. Do not add local absolute paths.
 - The explicitly requested `multi-thread-library` workstream is active as of
   2026-08-12. Its implementation source is
   [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
-  v5.3 at SHA-256
-  `5e7f4c9feeb4858f84b8e0ce555dd0ba6523ac5443d1f126fadc1bfe37e1f2a7`. S0
+  v5.4 at SHA-256
+  `fb513b014c18717b18521b3000318fc7c96de51c028981e6bb9153dc0098c228`. S0
   remains complete. G1 and G2 both reached
   independently reviewed `VALID_STOP`; their durable summary is in
   [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
@@ -156,10 +156,12 @@ Use relative documentation links. Do not add local absolute paths.
   completed at `0e3b2ef` after scoped closure review
   `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at `0e4f02e`, and D1 code
   completed at `8d4d73e` after independent review
-  `NYX-MTL-D1-CODE-20260813-03`. The docs-only D2 scope lock below is now the
-  only executable tracked-file step. D2 code and every later product slice
-  remain blocked until that scope lock passes independent review and enters
-  HEAD.
+  `NYX-MTL-D1-CODE-20260813-03`. D2 completed at `15c8b00`; the C1 scope lock
+  completed at `b647cde`. C1 implementation then found that the D1 SQLite CHECK
+  could not represent the reviewed pre-send fallback-title identity and stopped
+  before activation. Only the docs-only C1 title-identity amendment below is
+  executable; C1 product work resumes only after its exact reviews and HEAD
+  ratchet pass.
 
 ## A0: Scope Gate Docs
 
@@ -3315,14 +3317,17 @@ at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at
 `NYX-MTL-D1-CODE-20260813-03`. The D2 scope lock completed at `5efed87`, and
 D2 code completed at `15c8b00` after reviews
 `NYX-MTL-D2-CODE-20260813-04` and
-`NYX-MTL-D2-EVIDENCE-20260813-02`. The C1 scope lock below is now the only
-executable tracked-file step. C1 product code remains blocked until that exact
-scope is independently reviewed and present in HEAD.
+`NYX-MTL-D2-EVIDENCE-20260813-02`. The C1 scope lock completed at `b647cde`
+after review `NYX-MTL-C1-SCOPE-20260813-01`. C1 implementation then reached its
+reviewed Stop condition: the D1 title CHECK cannot represent a stable local
+creation second with a not-yet-allocated ordinal while the current auto title
+comes from text or a document. The C1 title-identity amendment below is now the
+only executable tracked-file step; C1 product code is paused.
 
 The reviewed source candidate is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
-v5.3 at SHA-256
-`5e7f4c9feeb4858f84b8e0ce555dd0ba6523ac5443d1f126fadc1bfe37e1f2a7`.
+v5.4 at SHA-256
+`fb513b014c18717b18521b3000318fc7c96de51c028981e6bb9153dc0098c228`.
 Durable gate evidence is in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
@@ -3333,7 +3338,7 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 → E1 → U1 → L1 → Q1 → A1 → M1
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 → U1 → L1 → Q1 → A1 → M1
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
@@ -3430,8 +3435,8 @@ native close/full-image focus, settlement-failed lifecycle, latest-Search
 announcements/failure/truncation, 50-row collection paging with one common
 out-of-loaded selection rule, unavailable focus, collision-free generic title,
 bridge method ratchets, resource-level degradation and Pin/Unpin remount focus;
-make deep-page title hits retain Thread-heading focus, allow a deleted generic
-ordinal to be reused without renumbering survivors, use only legal document
+make deep-page title hits retain Thread-heading focus, keep generic survivor
+ordinals stable and allocate max + 1 until that second has no identity, use only legal document
 capacity in Search evidence, order Running intent before the Draft barrier, and
 list exact affected Thread identities in every unsaved-result quit barrier;
 freeze one Main-authoritative 1–48-code-point manual Rename validator with
@@ -3572,8 +3577,10 @@ matching v5.3 sections:
 - U1: New/list/select/Draft/Pinned/Recent UI, deterministic pre-send titles,
   fixed then-present Sidebar regions, Library/Thread unavailable surfaces,
   collection paging/failure/end and common deep-selection restore, stable
-  collision-resolved image-time fallback whose deleted ordinal may be reused
-  without renumbering survivors, unavailable focus/announcements
+  collision-resolved image-time fallback whose survivors never renumber and
+  whose next ordinal is max + 1, minimum-width visible creation-label
+  disambiguation for same-second/cross-year/DST-equal/manual duplicates and
+  pagination-set changes, unavailable focus/announcements
   without interrupting Connections, attention, safe save/discard and
   native-close/full-image focus barrier, image-detail teardown/distinct-image
   memory gate and keyboard/accessibility;
@@ -4333,6 +4340,93 @@ Before C1 implementation may be committed, the exact allowed bytes, all checks,
 OS-temp and packaged acceptance, old-root/bridge/forbidden-surface scans and an
 independent strict code review bound to the final artifact must pass. C1
 completion does not authorize E1 without E1's own reviewed scope lock.
+
+### multi-thread-library/C1-title-identity-amendment: Existing-field constraint repair
+
+Type: documentation-only Stop repair.
+
+Status: this two-file amendment is the current and only executable tracked-file
+step. C1 product implementation is paused with its uncommitted allowed-file
+worktree preserved. This amendment completes without a follow-up status edit
+only when independent exact-byte product, design and strict technical reviews
+accept the same two files and those bytes enter HEAD. Then the existing C1 code
+inventory above resumes; no later slice becomes executable.
+
+This amendment may change exactly:
+
+```text
+docs/next/agent-workbench-task-slices.md
+docs/next/multi-thread-library-technical-plan.md
+```
+
+The plan-killer is concrete: D1's CHECK requires `fallback_local_second` and
+`fallback_ordinal` to be simultaneously null/non-null and, when non-null,
+requires the current title itself to be Image/Untitled generic. The reviewed C1
+product rule instead persists one local creation second at materialize, delays
+ordinal allocation until the first generic title, and retains an allocated
+identity while a pre-send Draft temporarily has a text/document title. The old
+schema cannot store either required intermediate state.
+
+The only accepted repair is:
+
+- materialize carries the complete Main-accepted initial Draft semantic payload.
+  Main publishes new sidecars first; one Worker transaction creates the Thread,
+  revision-0 Draft, ordered resource rows, title and fallback identity. Its ack
+  is the first Draft durability boundary; only edits made while it is in flight
+  use a later save CAS;
+- every new auto materialize persists its stable local creation second. Imported
+  already-sent text/document v5 Threads may keep both fields null; imported
+  Image/Untitled generic v5 Threads retain the D1 importer's deterministic
+  second + ordinal 1. Neither is recomputed after activation;
+- `fallback_ordinal` stays null until the first Image/Untitled title, then the
+  same Draft transaction assigns 1 when no identity for that second survives,
+  otherwise `max(existing ordinal) + 1`; it remains stable across pre-send
+  text/document/generic changes and never fills a survivor's lower-numbered
+  hole;
+- the SQLite CHECK permits non-null second + null ordinal, rejects ordinal
+  without second, and requires manual title rows to have both null. The partial
+  unique index covers only non-null ordinal pairs. Typed Worker commands remain
+  the sole title derivation owner; Renderer overlay never becomes title truth;
+- first Send freezes the current auto title. A generic freeze retains its
+  identity; a text/document freeze clears it. Rename clears it. Existing generic
+  survivors never renumber; numbering restarts at 1 only after every identity
+  for that second is gone;
+- document-derived auto titles use the first ordered ready document's
+  Main-validated display name, trim/collapse whitespace, cap at 48 Unicode code
+  points and preserve a valid final extension exactly as section 3.4 specifies;
+  there is no second filename/title rule in Renderer;
+- U1, not this C1 amendment, owns the multi-row visible disambiguation and its
+  mouse/keyboard/VoiceOver acceptance. C1 keeps its reviewed one-row adapter and
+  has no creation-label or rendered-collision implementation;
+- update the exact schema fingerprint and typed protocol in the already allowed
+  C1 Worker/protocol/test files. This is still the unreleased development schema
+  version 1: no new field, table, schema version, migration reader, fallback
+  open, second database or activated-target rewrite is allowed. An existing
+  target with mismatched bytes remains Library unavailable and Retry-only.
+
+Required regression coverage before C1 can return to its full acceptance gate:
+
+- full initial text/target/ordered resource materialize commits in one
+  transaction, and reply loss reconciles the exact Draft/refs/title without a
+  generic ghost title or duplicate row;
+- text/document first materialize stores second + null ordinal;
+- text → empty/image → text → generic reuses one second and, once assigned, one
+  ordinal; same-second concurrent generic Threads receive unique max + 1
+  ordinals with stable unknown-commit reread;
+- generic Send retains identity; non-generic Send and Rename release it; restart,
+  timezone change, `1/2/3 → delete 2 → 4`, `delete 1 while 3 survives → 4`,
+  all-gone → 1 and survivor-no-renumber behavior remain exact;
+- imported generic plus a future same-second generic remain uniquely titled;
+- 255-byte legal document names, whitespace, CJK/emoji, long extensions,
+  reorder/removal before Send, first Send and restart follow one exact title;
+- direct invalid SQL states and malformed protocol rows fail closed; schema
+  fingerprint/open/activation tests use the revised exact version-1 schema;
+- no Renderer messages, Main title cache, extra column/version or migration path
+  appears in the final C1 diff.
+
+The amendment stops if these states require a third persisted field, a schema
+version/migration, a second title owner, or any file outside the two docs for
+this control step and the existing C1 code inventory after it completes.
 
 ### Global Stop conditions
 
