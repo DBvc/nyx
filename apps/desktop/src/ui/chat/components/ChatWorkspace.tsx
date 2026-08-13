@@ -2,7 +2,7 @@ import { PanelLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ConnectionsSettingsPage } from '../../settings/ConnectionsSettingsPage'
-import { threadPreview, threadTitle } from '../chat-presenters'
+import { threadPreview } from '../chat-presenters'
 import { toThreadStreamItems } from '../thread-items'
 import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
@@ -209,6 +209,7 @@ export function ChatWorkspace() {
   const settingsPopoverRef = useRef<HTMLDivElement>(null)
   const sidebarContentRef = useRef<HTMLDivElement>(null)
   const sidebarToggleRef = useRef<HTMLButtonElement>(null)
+  const retryOpenRef = useRef<HTMLButtonElement>(null)
   const connectionSetup = useConnectionStatus()
   const {
     state,
@@ -228,6 +229,7 @@ export function ChatWorkspace() {
     retryMessage,
     stopActiveResponse,
     startNewChat,
+    retryOpen,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -252,8 +254,10 @@ export function ChatWorkspace() {
 
   const threadItems = useMemo(() => toThreadStreamItems(state.messages), [state.messages])
   const latestMessageItem = threadItems.at(-1)
-  const currentThreadTitle = threadTitle(state.messages)
-  const currentThreadPreview = threadPreview(state.messages)
+  const currentThreadTitle =
+    state.threadSummary?.title ??
+    (state.hydrationError ? "Couldn't open Thread Library" : 'New thread')
+  const currentThreadPreview = state.hydrationError ? '' : threadPreview(state.messages)
   const { containerRef, followLatest, handleScroll, isFollowing } = useAutoScroll(
     threadItems.length,
     latestMessageItem?.message.content ?? state.runStatus,
@@ -301,6 +305,12 @@ export function ChatWorkspace() {
     }
   }, [toggleSidebar])
 
+  useEffect(() => {
+    if (activeView === 'chat' && state.hydrationStatus === 'error' && !state.hydrationRetrying) {
+      retryOpenRef.current?.focus()
+    }
+  }, [activeView, state.hydrationError, state.hydrationRetrying, state.hydrationStatus])
+
   function handleSend() {
     if (!canSend) {
       return
@@ -315,7 +325,8 @@ export function ChatWorkspace() {
       state.hydrationStatus !== 'ready' ||
       isBusy ||
       isResetting ||
-      state.retryableTurn?.assistantMessageId !== messageId
+      (state.retryableTurn?.assistantMessageId !== messageId &&
+        state.settlementFailure?.assistantMessageId !== messageId)
     ) {
       return
     }
@@ -352,7 +363,7 @@ export function ChatWorkspace() {
         >
           <ChatSidebar
             activeView={activeView}
-            newThreadDisabled={state.hydrationStatus === 'loading' || isResetting}
+            newThreadDisabled={state.hydrationStatus !== 'ready' || isResetting}
             onNewThread={() => {
               void startNewChat()
               setActiveView('chat')
@@ -378,70 +389,101 @@ export function ChatWorkspace() {
                 runStatus={state.runStatus}
                 title={currentThreadTitle}
               />
-              <ChatThread
-                connectionStatus={connectionSetup.status}
-                hydrationError={state.hydrationError}
-                hydrationStatus={state.hydrationStatus}
-                isFollowing={isFollowing}
-                resetError={state.resetError}
-                containerRef={containerRef}
-                items={threadItems}
-                onJumpToLatest={followLatest}
-                onOpenConnectionsSettings={() => {
-                  setActiveView('connections')
-                }}
-                onRefreshConnectionStatus={connectionSetup.refresh}
-                onRetry={handleRetry}
-                onScroll={handleScroll}
-              />
-              <ChatComposer
-                canSend={canSend}
-                composerError={state.composerError}
-                composerNotice={state.composerNotice}
-                disabled={state.hydrationStatus !== 'ready' || isResetting}
-                draftDocuments={state.draftDocuments}
-                draftImages={state.draftImages}
-                input={state.input}
-                isAccepting={isAccepting}
-                isBusy={isBusy}
-                onAddImages={addDraftImages}
-                onAddDocuments={addDraftDocuments}
-                onInputChange={setInput}
-                onRemoveImage={removeDraftImage}
-                onRemoveDocument={removeDraftDocument}
-                onRetryImage={retryDraftImage}
-                onRetryDocument={retryDraftDocument}
-                targetAction={
-                  targetPresentation.action === 'refresh'
-                    ? {
-                        label: 'Refresh targets',
-                        run: () => {
-                          void connectionSetup.refresh()
-                        },
-                      }
-                    : targetPresentation.action === 'connections'
+              {state.hydrationStatus === 'error' ? (
+                <div className='flex min-h-0 flex-1 items-center'>
+                  <section
+                    className='mx-auto w-full max-w-[40rem] space-y-3 px-6'
+                    aria-live='polite'
+                  >
+                    <p className='text-[12px] font-medium text-nyx-danger'>
+                      {state.hydrationErrorThreadId
+                        ? 'Thread unavailable'
+                        : 'Thread Library unavailable'}
+                    </p>
+                    <h2 className='text-[22px] font-semibold text-nyx-ink'>
+                      {state.hydrationErrorThreadId
+                        ? "Couldn't open this thread"
+                        : "Couldn't open Thread Library"}
+                    </h2>
+                    <button
+                      className='rounded-lg bg-nyx-accent px-3 py-2 text-[13px] font-medium text-nyx-canvas disabled:opacity-50'
+                      disabled={state.hydrationRetrying}
+                      onClick={() => void retryOpen()}
+                      ref={retryOpenRef}
+                      type='button'
+                    >
+                      {state.hydrationRetrying ? 'Retrying…' : 'Retry'}
+                    </button>
+                  </section>
+                </div>
+              ) : (
+                <ChatThread
+                  connectionStatus={connectionSetup.status}
+                  hydrationError={null}
+                  hydrationStatus={state.hydrationStatus}
+                  isFollowing={isFollowing}
+                  resetError={null}
+                  containerRef={containerRef}
+                  items={threadItems}
+                  onJumpToLatest={followLatest}
+                  onOpenConnectionsSettings={() => {
+                    setActiveView('connections')
+                  }}
+                  onRefreshConnectionStatus={connectionSetup.refresh}
+                  onRetry={handleRetry}
+                  onScroll={handleScroll}
+                />
+              )}
+              {state.hydrationStatus === 'error' ? null : (
+                <ChatComposer
+                  canSend={canSend}
+                  composerError={state.composerError}
+                  composerNotice={state.composerNotice}
+                  disabled={state.hydrationStatus !== 'ready' || isResetting}
+                  draftDocuments={state.draftDocuments}
+                  draftImages={state.draftImages}
+                  input={state.input}
+                  isAccepting={isAccepting}
+                  isBusy={isBusy}
+                  onAddImages={addDraftImages}
+                  onAddDocuments={addDraftDocuments}
+                  onInputChange={setInput}
+                  onRemoveImage={removeDraftImage}
+                  onRemoveDocument={removeDraftDocument}
+                  onRetryImage={retryDraftImage}
+                  onRetryDocument={retryDraftDocument}
+                  targetAction={
+                    targetPresentation.action === 'refresh'
                       ? {
-                          label: 'Open Connections',
+                          label: 'Refresh targets',
                           run: () => {
-                            setActiveView('connections')
+                            void connectionSetup.refresh()
                           },
                         }
-                      : null
-                }
-                onTargetChange={(value) => {
-                  const option = targetOptions.find((candidate) => candidate.value === value)
-
-                  if (option) {
-                    setTargetSelection(option.selection)
+                      : targetPresentation.action === 'connections'
+                        ? {
+                            label: 'Open Connections',
+                            run: () => {
+                              setActiveView('connections')
+                            },
+                          }
+                        : null
                   }
-                }}
-                onSend={handleSend}
-                onStop={stopActiveResponse}
-                targetDisabled={targetPresentation.disabled}
-                targetOptions={targetOptions}
-                targetStatus={targetPresentation.status}
-                targetValue={state.targetDraft ? chatTargetSelectionKey(state.targetDraft) : ''}
-              />
+                  onTargetChange={(value) => {
+                    const option = targetOptions.find((candidate) => candidate.value === value)
+
+                    if (option) {
+                      setTargetSelection(option.selection)
+                    }
+                  }}
+                  onSend={handleSend}
+                  onStop={stopActiveResponse}
+                  targetDisabled={targetPresentation.disabled}
+                  targetOptions={targetOptions}
+                  targetStatus={targetPresentation.status}
+                  targetValue={state.targetDraft ? chatTargetSelectionKey(state.targetDraft) : ''}
+                />
+              )}
             </>
           ) : (
             <ConnectionsSettingsPage

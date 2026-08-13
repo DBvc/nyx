@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { NyxChatRequest } from '../../../shared/chat/types'
 import type { ResolvedChatTarget } from '../connections/provider-resolver'
-import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import {
+  type ChatProviderMessage,
   buildChatCompletionsUrl,
   buildOpenAiCompatibleChatRequest,
   buildOpenAiResponsesInput,
@@ -109,7 +109,7 @@ async function streamWithResponse(
   response: Response,
   signal = new AbortController().signal,
   onDelta = vi.fn(),
-  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>,
+  providerMessages?: ReadonlyArray<ChatProviderMessage>,
   documentBearing = false,
 ) {
   vi.stubGlobal(
@@ -120,7 +120,7 @@ async function streamWithResponse(
   const result = await streamChatCompletion({
     target: resolvedTarget,
     request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
-    ...(providerMessages ? { providerMessages } : {}),
+    providerMessages: providerMessages ?? [{ role: 'user', content: 'Hello' }],
     documentBearing,
     signal,
     onDelta,
@@ -144,6 +144,7 @@ async function streamResponses(
     result: await streamChatCompletion({
       target,
       request: requestWithMessages([{ role: 'user', content: 'Hello' }]),
+      providerMessages: [{ role: 'user', content: 'Hello' }],
       signal: new AbortController().signal,
       onDelta,
     }),
@@ -176,14 +177,13 @@ describe('buildChatCompletionsUrl', () => {
 
 describe('buildProviderMessages', () => {
   it('prepends the default system prompt when no system message exists', () => {
-    const messages = buildProviderMessages(
-      requestWithMessages([
-        {
-          role: 'user',
-          content: 'Hello',
-        },
-      ]),
-    )
+    const request = requestWithMessages([
+      {
+        role: 'user',
+        content: 'Hello',
+      },
+    ])
+    const messages = buildProviderMessages(request, request.messages)
 
     expect(messages).toEqual([
       {
@@ -209,20 +209,23 @@ describe('buildProviderMessages', () => {
       },
     ])
 
-    expect(buildProviderMessages(request)).toBe(request.messages)
+    expect(buildProviderMessages(request, request.messages)).toBe(request.messages)
   })
 
   it('uses a custom system prompt when no system message exists', () => {
     expect(
-      buildProviderMessages({
-        ...requestWithMessages([
-          {
-            role: 'user',
-            content: 'Hello',
-          },
-        ]),
-        systemPrompt: 'Custom system prompt.',
-      }),
+      buildProviderMessages(
+        {
+          ...requestWithMessages([
+            {
+              role: 'user',
+              content: 'Hello',
+            },
+          ]),
+          systemPrompt: 'Custom system prompt.',
+        },
+        [{ role: 'user', content: 'Hello' }],
+      ),
     ).toEqual([
       {
         role: 'system',
@@ -236,19 +239,15 @@ describe('buildProviderMessages', () => {
   })
 
   it('keeps turn user message identity out of provider messages', () => {
+    const legacyRequest = {
+      ...requestWithMessages([{ role: 'user', content: 'Provider context only.' }]),
+      turnUserMessage: {
+        id: 'user-with-id',
+        content: 'Explicit current prompt.',
+      },
+    }
     expect(
-      buildProviderMessages({
-        ...requestWithMessages([
-          {
-            role: 'user',
-            content: 'Provider context only.',
-          },
-        ]),
-        turnUserMessage: {
-          id: 'user-with-id',
-          content: 'Explicit current prompt.',
-        },
-      }),
+      buildProviderMessages(legacyRequest, [{ role: 'user', content: 'Provider context only.' }]),
     ).toEqual([
       {
         role: 'system',
@@ -266,7 +265,7 @@ describe('buildOpenAiCompatibleChatRequest', () => {
   it('preserves the existing generic request mapping', () => {
     const request = requestWithMessages([{ role: 'user', content: 'Hello' }])
 
-    expect(buildOpenAiCompatibleChatRequest(resolvedTarget, request)).toEqual({
+    expect(buildOpenAiCompatibleChatRequest(resolvedTarget, request, request.messages)).toEqual({
       url: 'https://api.example.test/v1/chat/completions',
       options: {
         method: 'POST',
@@ -293,7 +292,7 @@ describe('buildOpenAiCompatibleChatRequest', () => {
   })
 
   it('maps text first and ordered main-only image data without durable ids or paths', () => {
-    const providerMessages: CurrentThreadProviderMessage[] = [
+    const providerMessages: ChatProviderMessage[] = [
       {
         role: 'user',
         content: [
@@ -347,7 +346,7 @@ describe('OpenAI Responses request mapping', () => {
   })
 
   it('maps text, image, instructions, stateless continuation, and auto context exactly', () => {
-    const providerMessages: CurrentThreadProviderMessage[] = [
+    const providerMessages: ChatProviderMessage[] = [
       { role: 'system', content: 'System instruction.' },
       { role: 'assistant', content: 'Prior answer.' },
       {

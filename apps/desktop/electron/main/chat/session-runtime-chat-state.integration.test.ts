@@ -1,195 +1,113 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { WebContents } from 'electron'
 
+import type { WebContents } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { NyxChatEvent } from '../../../shared/chat/events'
-import type { NyxChatRequest } from '../../../shared/chat/types'
-import type { CurrentThreadImageFiles } from '../current-thread/image-files'
-import { CurrentThreadSessionCoordinator } from '../current-thread/session-coordinator'
-import { CurrentThreadSnapshotService } from '../current-thread/snapshot'
-import { CurrentThreadStore } from '../current-thread/store'
+import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import {
   createRuntimeChatStateClient,
-  type RuntimeChatReducerState,
   type RuntimeChatStateClient,
 } from '../runtime/chat-state-client'
+import { type PreparedThreadTurn, ThreadLibraryCoordinator } from '../thread-library/coordinator'
+import type { ThreadLibraryThreadDetail } from '../thread-library/protocol'
 
 const streamChatCompletion = vi.hoisted(() => vi.fn())
+vi.mock('./client', () => ({ streamChatCompletion }))
 
-vi.mock('./client', () => ({
-  streamChatCompletion,
-}))
-
-vi.mock('./env', () => ({
-  readChatProviderConfig: () => ({
-    baseUrl: 'https://example.com/v1/',
-    token: 'token',
-    model: 'model',
-  }),
-}))
-
-import { ChatSessionManager } from './session'
+import { ChatSessionManager, type UnclockedNyxChatEvent } from './session'
 
 const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const artifactPath = join(repoRoot, 'apps', 'desktop', '.runtime-artifacts', 'nyx-runtime')
 const integrationIt = process.env.NYX_RUNTIME_CHAT_STATE_INTEGRATION === '1' ? it : it.skip
-const imageRef = {
-  imageId: '00000000-0000-4000-8000-000000000001',
-  mediaType: 'image/png',
-  width: 2,
-  height: 1,
-} as const
-const newImage = {
-  imageId: imageRef.imageId,
-  canonicalBytes: Uint8Array.from([1]),
-  previewBytes: Uint8Array.from([2]),
-} as const
-
-function configuredRuntimeArtifactPath() {
-  const configuredRuntimePath = process.env.NYX_RUNTIME_PATH
-
-  if (!configuredRuntimePath) {
-    throw new Error('NYX_RUNTIME_PATH must point at the generated runtime artifact.')
-  }
-
-  return resolve(configuredRuntimePath)
-}
+const threadId = '00000000-0000-4000-8000-000000000001'
+const imageId = '00000000-0000-4000-8000-000000000002'
+const timestamp = '2026-08-13T00:00:00.000Z'
+const selection = { kind: 'env_fallback' } as const
+const attribution = { kind: 'env_fallback', modelId: 'model' } as const
 
 function checkedRuntimeArtifactPath() {
-  const runtimePath = configuredRuntimeArtifactPath()
-
+  const runtimePath = resolve(process.env.NYX_RUNTIME_PATH ?? '')
   expect(process.env.NYX_RUNTIME_CHAT_STATE).toBeUndefined()
   expect(runtimePath).toBe(artifactPath)
   expect(existsSync(runtimePath)).toBe(true)
-
-  return runtimePath
 }
 
-function chatRequest({
-  requestId,
-  userMessageId = 'user-1',
-  assistantMessageId = 'assistant-1',
-  turnIntent = 'new_user_message',
-  content = 'Hello Nyx',
-}: {
-  requestId: string
-  userMessageId?: string
-  assistantMessageId?: string
-  turnIntent?: NyxChatRequest['turnIntent']
-  content?: string
-}): NyxChatRequest {
+function detail(): ThreadLibraryThreadDetail {
   return {
-    requestId,
-    userMessageId,
-    assistantMessageId,
-    turnIntent,
-    turnUserMessage: {
-      id: userMessageId,
-      content,
+    summary: {
+      id: threadId,
+      location: 'available',
+      trashedFromLocation: null,
+      trashedPinPosition: null,
+      pinPosition: null,
+      title: 'Thread',
+      titleSource: 'auto',
+      fallbackLocalSecond: null,
+      fallbackOrdinal: null,
+      threadRevision: 1,
+      lastUserActivityAt: timestamp,
+      resultRevision: 0,
+      seenResultRevision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     },
-    messages: [
+    draft: {
+      threadId,
+      draftRevision: 1,
+      text: '',
+      targetSelection: selection,
+      updatedAt: timestamp,
+    },
+    turns: [
       {
-        role: 'user',
-        content,
+        threadId,
+        ordinal: 0,
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: 'Hello Nyx',
+        assistantContent: '',
+        assistantStatus: 'pending',
+        error: null,
+        targetSelection: selection,
+        targetAttribution: attribution,
+        providerStateId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
       },
     ],
-    targetSelection: { kind: 'env_fallback' },
+    images: [],
+    documents: [],
+    providerStateRefs: [],
   }
 }
 
-function mockSender() {
-  const listeners = new Map<string, Set<() => void>>()
-  const sender = {
-    isDestroyed: vi.fn(() => false),
-    send: vi.fn(),
-    once: vi.fn(),
-    off: vi.fn(),
-    emitDestroyed: vi.fn(),
+function prepared(): PreparedThreadTurn {
+  const pending = detail()
+  return {
+    detail: pending,
+    runtimeReplayDetail: { ...pending, turns: [] },
+    threadId,
+    requestId: 'request-1',
+    userMessageId: 'user-1',
+    assistantMessageId: 'assistant-1',
+    targetSelection: selection,
+    documentBearing: false,
   }
-
-  sender.once.mockImplementation((event: string, listener: () => void) => {
-    const eventListeners = listeners.get(event) ?? new Set<() => void>()
-
-    eventListeners.add(listener)
-    listeners.set(event, eventListeners)
-
-    return sender
-  })
-  sender.off.mockImplementation((event: string, listener: () => void) => {
-    listeners.get(event)?.delete(listener)
-
-    return sender
-  })
-  sender.emitDestroyed.mockImplementation(() => {
-    sender.isDestroyed.mockReturnValue(true)
-
-    const destroyedListeners = listeners.get('destroyed')
-
-    if (destroyedListeners) {
-      for (const listener of destroyedListeners) {
-        listener()
-      }
-    }
-
-    listeners.delete('destroyed')
-  })
-
-  return sender as unknown as WebContents & typeof sender
 }
 
-function sentChatEvents(sender: ReturnType<typeof mockSender>) {
-  return sender.send.mock.calls.map(([_channel, event]) => event as NyxChatEvent)
-}
-
-async function waitForAssertion(assertion: () => void, timeoutMs = 5_000, intervalMs = 25) {
-  let lastError: unknown
-  const deadline = Date.now() + timeoutMs
-
-  while (Date.now() <= deadline) {
-    try {
-      assertion()
-      return
-    } catch (error) {
-      lastError = error
-      await new Promise((resolve) => setTimeout(resolve, intervalMs))
-    }
+function target(): ResolvedChatTarget {
+  return {
+    providerId: 'env',
+    baseUrl: 'https://example.test/v1',
+    token: 'token',
+    modelId: 'model',
+    protocolConfig: { protocol: 'openai-chat-completions' },
+    executionIdentity: 'a'.repeat(64),
+    targetAttribution: attribution,
   }
-
-  throw lastError
-}
-
-function createObservableRuntimeChatStateClient(
-  clearStates: RuntimeChatReducerState[],
-  submittedContents: string[] = [],
-) {
-  const client = createRuntimeChatStateClient()
-  const observableClient: RuntimeChatStateClient = {
-    submitUserMessage: (turn) => {
-      submittedContents.push(turn.content)
-      return client.submitUserMessage(turn)
-    },
-    retryFailed: (turn) => client.retryFailed(turn),
-    startAssistant: (turn) => client.startAssistant(turn),
-    appendDelta: (turn) => client.appendDelta(turn),
-    complete: (turn) => client.complete(turn),
-    cancel: (turn) => client.cancel(turn),
-    fail: (turn) => client.fail(turn),
-    clear: async () => {
-      const state = await client.clear()
-
-      clearStates.push(state)
-
-      return state
-    },
-    close: () => client.close(),
-  }
-
-  return observableClient
 }
 
 function abortError() {
@@ -198,661 +116,341 @@ function abortError() {
   return error
 }
 
+async function waitFor(assertion: () => void) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((done) => setTimeout(done, 25))
+    }
+  }
+  throw lastError
+}
+
 describe('ChatSessionManager runtime chat state artifact integration', () => {
-  beforeEach(() => {
-    streamChatCompletion.mockReset()
-  })
+  beforeEach(() => streamChatCompletion.mockReset())
 
-  integrationIt(
-    'completes a streamed turn through the runtime-backed chat state path',
-    async () => {
-      checkedRuntimeArtifactPath()
-      streamChatCompletion.mockImplementation(
-        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-          await onDelta('Hel', 'Hel')
-          await onDelta('lo', 'Hello')
-          return { finalContent: 'Hello' }
-        },
-      )
-      const sender = mockSender()
-      const manager = new ChatSessionManager()
-
-      try {
-        manager.start(sender, chatRequest({ requestId: 'request-complete-1' }))
-
-        await waitForAssertion(() => {
-          expect(sentChatEvents(sender).at(-1)).toEqual({
-            type: 'chat:done',
-            requestId: 'request-complete-1',
-            assistantMessageId: 'assistant-1',
-            status: 'completed',
-            finalContent: 'Hello',
-          })
-        })
-
-        expect(sentChatEvents(sender)).toEqual([
-          {
-            type: 'chat:start',
-            requestId: 'request-complete-1',
-            assistantMessageId: 'assistant-1',
-            status: 'streaming',
-            targetAttribution: {
-              kind: 'env_fallback',
-              modelId: 'model',
-            },
-          },
-          {
-            type: 'chat:delta',
-            requestId: 'request-complete-1',
-            assistantMessageId: 'assistant-1',
-            delta: 'Hel',
-            snapshot: 'Hel',
-          },
-          {
-            type: 'chat:delta',
-            requestId: 'request-complete-1',
-            assistantMessageId: 'assistant-1',
-            delta: 'lo',
-            snapshot: 'Hello',
-          },
-          {
-            type: 'chat:done',
-            requestId: 'request-complete-1',
-            assistantMessageId: 'assistant-1',
-            status: 'completed',
-            finalContent: 'Hello',
-          },
-        ])
-      } finally {
-        await manager.reset(sender)
-      }
-    },
-  )
-
-  integrationIt('projects an image-only turn as empty Runtime text', async () => {
+  integrationIt('projects one canonical Thread turn through the real Runtime reducer', async () => {
     checkedRuntimeArtifactPath()
-    const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-image-only-'))
-    const store = new CurrentThreadStore({
-      filePath: join(tempDir, 'current-thread.json'),
-      generateId: () => 'thread-image-only',
+    const events: UnclockedNyxChatEvent[] = []
+    const runtimeClients: RuntimeChatStateClient[] = []
+    const pending = prepared()
+    const coordinator = {
+      prepareTurn: vi.fn(async () => pending),
+      bindPreparedTarget: vi.fn(async () => pending.detail),
+      materializeProviderMessages: vi.fn(async () => [
+        { role: 'user' as const, content: 'Hello Nyx' },
+      ]),
+      replayRuntimeHistory: vi.fn(async () => undefined),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: detail() })),
+    }
+    streamChatCompletion.mockImplementationOnce(async ({ onDelta }) => {
+      await onDelta('Hel', 'Hel')
+      await onDelta('lo', 'Hello')
+      return { finalContent: 'Hello' }
     })
-    const images = {
-      reconcile: vi.fn(async () => undefined),
-      writeNewImages: vi.fn(async () => [imageRef.imageId]),
-      rollbackImages: vi.fn(async () => undefined),
-      readCanonical: vi.fn(async () => newImage.canonicalBytes),
-      canonicalBytes: vi.fn(async () => 0),
-      reset: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadImageFiles
-    const coordinator = new CurrentThreadSessionCoordinator({ store, images })
-    const submittedContents: string[] = []
-    const sender = mockSender()
     const manager = new ChatSessionManager({
-      createRuntimeChatStateClient: () =>
-        createObservableRuntimeChatStateClient([], submittedContents),
-      resolveCurrentThreadSession: () => coordinator,
-    })
-    streamChatCompletion.mockImplementationOnce(
-      async ({
-        providerMessages,
-        onDelta,
-      }: {
-        providerMessages: unknown
-        onDelta: (delta: string, snapshot: string) => Promise<void>
-      }) => {
-        expect(providerMessages).toEqual([
-          {
-            role: 'user',
-            content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
-          },
-        ])
-        await onDelta('Image answer', 'Image answer')
-        return { finalContent: 'Image answer' }
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient: () => {
+        const client = createRuntimeChatStateClient()
+        runtimeClients.push(client)
+        return client
       },
-    )
-
-    try {
-      manager.start(sender, {
-        requestId: 'request-image-1',
-        userMessageId: 'user-image-1',
-        assistantMessageId: 'assistant-image-1',
-        turnIntent: 'new_user_message',
-        turnUserMessage: { id: 'user-image-1', content: '', imageRefs: [imageRef] },
-        messages: [{ role: 'user', content: '' }],
-        targetSelection: { kind: 'env_fallback' },
-        newImages: [newImage],
-      })
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toMatchObject({
-          type: 'chat:done',
-          requestId: 'request-image-1',
-          finalContent: 'Image answer',
-        })
-      })
-      expect(submittedContents).toEqual([''])
-    } finally {
-      await manager.reset(sender)
-      await rm(tempDir, { recursive: true, force: true })
-    }
-  })
-
-  integrationIt('cancels an active runtime-backed turn with partial content', async () => {
-    checkedRuntimeArtifactPath()
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(
-      async ({
-        signal,
-        onDelta,
-      }: {
-        signal: AbortSignal
-        onDelta: (delta: string, snapshot: string) => Promise<void>
-      }) => {
-        activeSignal = signal
-        await onDelta('Part', 'Part')
-
-        return await new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(abortError()), { once: true })
-        })
-      },
-    )
-    const sender = mockSender()
-    const manager = new ChatSessionManager()
-
-    try {
-      manager.start(sender, chatRequest({ requestId: 'request-cancel-1' }))
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toMatchObject({
-          type: 'chat:delta',
-          requestId: 'request-cancel-1',
-          snapshot: 'Part',
-        })
-      })
-
-      manager.cancel({ requestId: 'request-cancel-1' })
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toEqual({
-          type: 'chat:done',
-          requestId: 'request-cancel-1',
-          assistantMessageId: 'assistant-1',
-          status: 'cancelled',
-          finalContent: 'Part',
-        })
-      })
-
-      expect(activeSignal?.aborted).toBe(true)
-    } finally {
-      await manager.reset(sender)
-    }
-  })
-
-  integrationIt(
-    'fails and retries a runtime-backed turn without resubmitting the user message',
-    async () => {
-      checkedRuntimeArtifactPath()
-      streamChatCompletion
-        .mockRejectedValueOnce(new Error('Provider exploded'))
-        .mockImplementationOnce(
-          async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-            await onDelta('Retried', 'Retried')
-            return { finalContent: 'Retried answer' }
-          },
-        )
-      const sender = mockSender()
-      const manager = new ChatSessionManager()
-
-      try {
-        manager.start(sender, chatRequest({ requestId: 'request-fail-1' }))
-
-        await waitForAssertion(() => {
-          expect(sentChatEvents(sender).at(-1)).toEqual({
-            type: 'chat:error',
-            requestId: 'request-fail-1',
-            assistantMessageId: 'assistant-1',
-            status: 'failed',
-            targetAttribution: {
-              kind: 'env_fallback',
-              modelId: 'model',
-            },
-            error: {
-              code: 'unknown',
-              message: 'Provider exploded',
-              retryable: true,
-            },
-          })
-        })
-
-        manager.start(
-          sender,
-          chatRequest({
-            requestId: 'request-retry-1',
-            turnIntent: 'retry_failed_response',
-          }),
-        )
-
-        await waitForAssertion(() => {
-          expect(sentChatEvents(sender).at(-1)).toEqual({
-            type: 'chat:done',
-            requestId: 'request-retry-1',
-            assistantMessageId: 'assistant-1',
-            status: 'completed',
-            finalContent: 'Retried answer',
-          })
-        })
-      } finally {
-        await manager.reset(sender)
-      }
-    },
-  )
-
-  integrationIt('starts a fresh runtime-backed user message after a provider failure', async () => {
-    checkedRuntimeArtifactPath()
-    streamChatCompletion
-      .mockRejectedValueOnce(new Error('Provider exploded'))
-      .mockImplementationOnce(
-        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-          await onDelta('Fresh', 'Fresh')
-          return { finalContent: 'Fresh answer' }
-        },
-      )
-    const sender = mockSender()
-    const manager = new ChatSessionManager()
-
-    try {
-      manager.start(sender, chatRequest({ requestId: 'request-fail-new-1' }))
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toEqual({
-          type: 'chat:error',
-          requestId: 'request-fail-new-1',
-          assistantMessageId: 'assistant-1',
-          status: 'failed',
-          targetAttribution: {
-            kind: 'env_fallback',
-            modelId: 'model',
-          },
-          error: {
-            code: 'unknown',
-            message: 'Provider exploded',
-            retryable: true,
-          },
-        })
-      })
-
-      manager.start(
-        sender,
-        chatRequest({
-          requestId: 'request-after-fail-new-1',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          content: 'Fresh prompt',
-        }),
-      )
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toEqual({
-          type: 'chat:done',
-          requestId: 'request-after-fail-new-1',
-          assistantMessageId: 'assistant-2',
-          status: 'completed',
-          finalContent: 'Fresh answer',
-        })
-      })
-
-      expect(streamChatCompletion).toHaveBeenCalledTimes(2)
-      expect(streamChatCompletion.mock.calls[1]?.[0]).toMatchObject({
-        request: {
-          requestId: 'request-after-fail-new-1',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          turnIntent: 'new_user_message',
-          turnUserMessage: {
-            id: 'user-2',
-            content: 'Fresh prompt',
-          },
-        },
-      })
-    } finally {
-      await manager.reset(sender)
-    }
-  })
-
-  integrationIt('resets and clears a runtime-backed turn before the next request', async () => {
-    checkedRuntimeArtifactPath()
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion
-      .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
-        activeSignal = signal
-
-        return new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(abortError()), { once: true })
-        })
-      })
-      .mockImplementationOnce(
-        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-          await onDelta('Fresh', 'Fresh')
-          return { finalContent: 'Fresh answer' }
-        },
-      )
-    const sender = mockSender()
-    const clearStates: RuntimeChatReducerState[] = []
-    const manager = new ChatSessionManager({
-      createRuntimeChatStateClient: () => createObservableRuntimeChatStateClient(clearStates),
+      now: () => timestamp,
     })
 
-    manager.start(sender, chatRequest({ requestId: 'request-reset-1' }))
-
-    await waitForAssertion(() => {
-      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-1',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 0,
     })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    await manager.reset(sender)
-
-    expect(activeSignal?.aborted).toBe(true)
-    expect(clearStates).toEqual([
-      {
-        transcript: [],
-        current_turn: {
-          type: 'no_turn',
-        },
-      },
+    expect(events.map((event) => event.type)).toEqual([
+      'chat:accepted',
+      'chat:start',
+      'chat:delta',
+      'chat:delta',
+      'chat:done',
     ])
+    expect(coordinator.settleTurn).toHaveBeenCalledOnce()
+    expect(runtimeClients).toHaveLength(1)
+  })
 
-    manager.start(
-      sender,
-      chatRequest({
-        requestId: 'request-after-reset-1',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        content: 'Fresh prompt',
+  integrationIt('projects an image-only Thread turn as empty Runtime text', async () => {
+    checkedRuntimeArtifactPath()
+    const events: UnclockedNyxChatEvent[] = []
+    const pending = prepared()
+    pending.detail.turns[0] = { ...pending.detail.turns[0]!, userContent: '' }
+    pending.detail.images = [
+      {
+        threadId,
+        owner: 'turn',
+        turnOrdinal: 0,
+        position: 0,
+        imageId,
+        mediaType: 'image/png',
+        width: 2,
+        height: 1,
+        available: true,
+      },
+    ]
+    const providerMessages = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AQ==' } }],
+      },
+    ]
+    const coordinator = {
+      prepareTurn: vi.fn(async () => pending),
+      bindPreparedTarget: vi.fn(async () => pending.detail),
+      materializeProviderMessages: vi.fn(async () => providerMessages),
+      replayRuntimeHistory: vi.fn(async () => undefined),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: pending.detail })),
+    }
+    streamChatCompletion.mockImplementationOnce(async ({ providerMessages: actual, onDelta }) => {
+      expect(actual).toEqual(providerMessages)
+      await onDelta('Image answer', 'Image answer')
+      return { finalContent: 'Image answer' }
+    })
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-1',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 0,
+    })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(events.at(-1)).toMatchObject({ finalContent: 'Image answer' })
+  })
+
+  integrationIt('cancels a streaming Runtime turn with its partial content', async () => {
+    checkedRuntimeArtifactPath()
+    const events: UnclockedNyxChatEvent[] = []
+    const pending = prepared()
+    const coordinator = {
+      prepareTurn: vi.fn(async () => pending),
+      bindPreparedTarget: vi.fn(async () => pending.detail),
+      materializeProviderMessages: vi.fn(async () => [
+        { role: 'user' as const, content: 'Hello Nyx' },
+      ]),
+      replayRuntimeHistory: vi.fn(async () => undefined),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: pending.detail })),
+    }
+    streamChatCompletion.mockImplementationOnce(async ({ signal, onDelta }) => {
+      await onDelta('Part', 'Partial answer')
+      return await new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(abortError()), { once: true })
+      })
+    })
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-1',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 0,
+    })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:delta'))
+    manager.cancel({ threadId, requestId: 'request-1' })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantStatus: 'cancelled',
+        assistantContent: 'Partial answer',
       }),
     )
-
-    try {
-      await waitForAssertion(() => {
-        expect(sentChatEvents(sender).at(-1)).toEqual({
-          type: 'chat:done',
-          requestId: 'request-after-reset-1',
-          assistantMessageId: 'assistant-2',
-          status: 'completed',
-          finalContent: 'Fresh answer',
-        })
-      })
-    } finally {
-      await manager.reset(sender)
-    }
+    expect(events.at(-1)).toMatchObject({ status: 'cancelled', finalContent: 'Partial answer' })
   })
 
-  integrationIt(
-    'removes an aborted durable turn before a fresh runtime-backed request',
-    async () => {
-      checkedRuntimeArtifactPath()
-      const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-reset-'))
-      const store = new CurrentThreadStore({
-        filePath: join(tempDir, 'current-thread.json'),
-        generateId: () => 'thread-after-reset',
-      })
-      const coordinator = new CurrentThreadSessionCoordinator({ store })
-      const sender = mockSender()
-      const clearStates: RuntimeChatReducerState[] = []
-      streamChatCompletion
-        .mockImplementationOnce(
-          ({ signal }: { signal: AbortSignal }) =>
-            new Promise((_resolve, reject) => {
-              signal.addEventListener('abort', () => reject(abortError()), { once: true })
-            }),
-        )
-        .mockImplementationOnce(
-          async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-            await onDelta('Fresh', 'Fresh')
-            return { finalContent: 'Fresh answer' }
-          },
-        )
-      const manager = new ChatSessionManager({
-        createRuntimeChatStateClient: () => createObservableRuntimeChatStateClient(clearStates),
-        resolveCurrentThreadSession: () => coordinator,
-      })
-
-      try {
-        manager.start(sender, chatRequest({ requestId: 'request-durable-reset-1' }))
-        await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-        await expect(store.read()).resolves.toMatchObject({
-          turns: [{ assistantStatus: 'pending' }],
-        })
-
-        await expect(manager.reset(sender)).resolves.toEqual({ ok: true })
-
-        await expect(store.read()).resolves.toBeNull()
-        expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-          'chat:accepted',
-          'chat:start',
-        ])
-        expect(clearStates).toEqual([
-          {
-            transcript: [],
-            current_turn: { type: 'no_turn' },
-          },
-        ])
-
-        manager.start(
-          sender,
-          chatRequest({
-            requestId: 'request-after-durable-reset-1',
-            userMessageId: 'user-2',
-            assistantMessageId: 'assistant-2',
-            content: 'Fresh prompt',
-          }),
-        )
-
-        await waitForAssertion(() => {
-          expect(sentChatEvents(sender).at(-1)).toMatchObject({
-            type: 'chat:done',
-            requestId: 'request-after-durable-reset-1',
-            finalContent: 'Fresh answer',
-          })
-        })
-        await expect(store.read()).resolves.toMatchObject({
-          threadId: 'thread-after-reset',
-          turns: [
-            {
-              userMessageId: 'user-2',
-              assistantStatus: 'completed',
-              assistantContent: 'Fresh answer',
-            },
-          ],
-        })
-      } finally {
-        await manager.reset(sender)
-        await rm(tempDir, { recursive: true, force: true })
-      }
-    },
-  )
-
-  integrationIt(
-    'replays a durable completed turn into a fresh runtime before continuing',
-    async () => {
-      checkedRuntimeArtifactPath()
-      const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-replay-'))
-      const store = new CurrentThreadStore({
-        filePath: join(tempDir, 'current-thread.json'),
-        generateId: () => 'thread-durable-1',
-      })
-      const coordinator = new CurrentThreadSessionCoordinator({ store })
-      const firstSender = mockSender()
-      const secondSender = mockSender()
-      streamChatCompletion
-        .mockImplementationOnce(
-          async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-            await onDelta('First answer', 'First answer')
-            return { finalContent: 'First answer' }
-          },
-        )
-        .mockImplementationOnce(
-          async ({
-            request,
-            onDelta,
-          }: {
-            request: NyxChatRequest
-            onDelta: (delta: string, snapshot: string) => Promise<void>
-          }) => {
-            expect(request.messages).toEqual([
-              { role: 'user', content: 'Hello Nyx' },
-              { role: 'assistant', content: 'First answer' },
-              { role: 'user', content: 'Continue' },
-            ])
-            await onDelta('Second answer', 'Second answer')
-            return { finalContent: 'Second answer' }
-          },
-        )
-      const firstManager = new ChatSessionManager({
-        resolveCurrentThreadSession: () => coordinator,
-      })
-
-      try {
-        firstManager.start(firstSender, chatRequest({ requestId: 'request-durable-1' }))
-        await waitForAssertion(() => {
-          expect(sentChatEvents(firstSender).at(-1)).toMatchObject({
-            type: 'chat:done',
-            finalContent: 'First answer',
-          })
-        })
-        firstSender.emitDestroyed()
-
-        const secondManager = new ChatSessionManager({
-          resolveCurrentThreadSession: () => coordinator,
-        })
-        secondManager.start(secondSender, {
-          requestId: 'request-durable-2',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          turnIntent: 'new_user_message',
-          turnUserMessage: { id: 'user-2', content: 'Continue' },
-          messages: [
-            { role: 'user', content: 'Hello Nyx' },
-            { role: 'assistant', content: 'First answer' },
-            { role: 'user', content: 'Continue' },
-          ],
-          targetSelection: { kind: 'env_fallback' },
-        })
-
-        await waitForAssertion(() => {
-          expect(sentChatEvents(secondSender).at(-1)).toMatchObject({
-            type: 'chat:done',
-            finalContent: 'Second answer',
-          })
-        })
-        secondSender.emitDestroyed()
-
-        await expect(store.read()).resolves.toMatchObject({
-          turns: [
-            { assistantStatus: 'completed', assistantContent: 'First answer' },
-            { assistantStatus: 'completed', assistantContent: 'Second answer' },
-          ],
-        })
-      } finally {
-        await rm(tempDir, { recursive: true, force: true })
-      }
-    },
-  )
-
-  integrationIt('rebuilds durable owners and runtime from disk before retrying', async () => {
+  integrationIt('records a Provider failure through the real Runtime reducer', async () => {
     checkedRuntimeArtifactPath()
-    const tempDir = await mkdtemp(join(tmpdir(), 'nyx-runtime-durable-retry-'))
-    const filePath = join(tempDir, 'current-thread.json')
-    const firstStore = new CurrentThreadStore({
-      filePath,
-      generateId: () => 'thread-durable-retry-1',
-    })
-    const firstCoordinator = new CurrentThreadSessionCoordinator({ store: firstStore })
-    const firstRuntimeClient = createRuntimeChatStateClient()
-    const firstSender = mockSender()
-    const secondSender = mockSender()
-    streamChatCompletion
-      .mockRejectedValueOnce(new Error('Provider failed'))
-      .mockImplementationOnce(
-        async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-          await onDelta('Retried answer', 'Retried answer')
-          return { finalContent: 'Retried answer' }
-        },
-      )
-    const firstManager = new ChatSessionManager({
-      createRuntimeChatStateClient: () => firstRuntimeClient,
-      resolveCurrentThreadSession: () => firstCoordinator,
-    })
-
-    try {
-      firstManager.start(firstSender, chatRequest({ requestId: 'request-durable-fail-1' }))
-      await waitForAssertion(() => {
-        expect(sentChatEvents(firstSender).at(-1)).toMatchObject({ type: 'chat:error' })
-      })
-      firstSender.emitDestroyed()
-
-      const secondStore = new CurrentThreadStore({ filePath })
-      const secondCoordinator = new CurrentThreadSessionCoordinator({ store: secondStore })
-      const snapshotService = new CurrentThreadSnapshotService({
-        resolveReader: () => secondStore,
-      })
-      const secondRuntimeClient = createRuntimeChatStateClient()
-
-      await expect(snapshotService.getSnapshot()).resolves.toMatchObject({
-        ok: true,
-        value: {
-          runStatus: 'failed',
-          selectedTarget: { kind: 'env_fallback' },
-          retryableTurn: {
-            userMessageId: 'user-1',
-            assistantMessageId: 'assistant-1',
-          },
-          messages: [
-            { id: 'user-1' },
-            {
-              id: 'assistant-1',
-              targetAttribution: { kind: 'env_fallback', modelId: 'model' },
-            },
-          ],
-        },
-      })
-
-      const secondManager = new ChatSessionManager({
-        createRuntimeChatStateClient: () => secondRuntimeClient,
-        resolveCurrentThreadSession: () => secondCoordinator,
-      })
-      secondManager.start(
-        secondSender,
-        chatRequest({
-          requestId: 'request-durable-retry-1',
-          turnIntent: 'retry_failed_response',
-        }),
-      )
-
-      await waitForAssertion(() => {
-        expect(sentChatEvents(secondSender).at(-1)).toMatchObject({
-          type: 'chat:done',
-          requestId: 'request-durable-retry-1',
-          finalContent: 'Retried answer',
-        })
-      })
-      secondSender.emitDestroyed()
-
-      await expect(secondStore.read()).resolves.toMatchObject({
-        turns: [
-          {
-            attemptRequestId: 'request-durable-retry-1',
-            userMessageId: 'user-1',
-            assistantMessageId: 'assistant-1',
-            assistantStatus: 'completed',
-            assistantContent: 'Retried answer',
-            targetBinding: {
-              selection: { kind: 'env_fallback' },
-              attribution: { kind: 'env_fallback', modelId: 'model' },
-            },
-          },
-        ],
-      })
-    } finally {
-      await rm(tempDir, { recursive: true, force: true })
+    const events: UnclockedNyxChatEvent[] = []
+    const pending = prepared()
+    const coordinator = {
+      prepareTurn: vi.fn(async () => pending),
+      bindPreparedTarget: vi.fn(async () => pending.detail),
+      materializeProviderMessages: vi.fn(async () => [
+        { role: 'user' as const, content: 'Hello Nyx' },
+      ]),
+      replayRuntimeHistory: vi.fn(async () => undefined),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: pending.detail })),
     }
+    streamChatCompletion.mockRejectedValueOnce(new Error('Provider failed'))
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-1',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 0,
+    })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantStatus: 'failed', assistantContent: '' }),
+    )
+    expect(events.at(-1)).toMatchObject({
+      targetAttribution: attribution,
+      error: { message: 'Provider failed', retryable: true },
+    })
+  })
+
+  integrationIt('replays a completed Thread before starting the next canonical turn', async () => {
+    checkedRuntimeArtifactPath()
+    const events: UnclockedNyxChatEvent[] = []
+    const beforeNext = detail()
+    beforeNext.turns[0] = {
+      ...beforeNext.turns[0]!,
+      assistantStatus: 'completed',
+      assistantContent: 'Earlier answer',
+    }
+    const pending = detail()
+    pending.turns = [
+      beforeNext.turns[0]!,
+      {
+        ...pending.turns[0]!,
+        ordinal: 1,
+        attemptRequestId: 'request-2',
+        userMessageId: 'user-2',
+        assistantMessageId: 'assistant-2',
+        userContent: 'Continue',
+      },
+    ]
+    const nextPrepared: PreparedThreadTurn = {
+      ...prepared(),
+      detail: pending,
+      runtimeReplayDetail: beforeNext,
+      requestId: 'request-2',
+      userMessageId: 'user-2',
+      assistantMessageId: 'assistant-2',
+    }
+    const coordinator = {
+      prepareTurn: vi.fn(async () => nextPrepared),
+      bindPreparedTarget: vi.fn(async () => pending),
+      materializeProviderMessages: vi.fn(async () => [
+        { role: 'user' as const, content: 'Hello Nyx' },
+        { role: 'assistant' as const, content: 'Earlier answer' },
+        { role: 'user' as const, content: 'Continue' },
+      ]),
+      replayRuntimeHistory: vi.fn(
+        (runtime: RuntimeChatStateClient, history: ThreadLibraryThreadDetail) =>
+          ThreadLibraryCoordinator.prototype.replayRuntimeHistory.call(
+            {} as ThreadLibraryCoordinator,
+            runtime,
+            history,
+          ),
+      ),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: pending })),
+    }
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Next answer' })
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-2',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 1,
+    })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(coordinator.replayRuntimeHistory).toHaveBeenCalledWith(expect.anything(), beforeNext)
+    expect(events.at(-1)).toMatchObject({ finalContent: 'Next answer' })
+  })
+
+  integrationIt('replays one canonical failure before applying its exact Retry', async () => {
+    checkedRuntimeArtifactPath()
+    const events: UnclockedNyxChatEvent[] = []
+    const beforeRetry = detail()
+    beforeRetry.turns[0] = {
+      ...beforeRetry.turns[0]!,
+      attemptRequestId: 'request-failed',
+      assistantStatus: 'failed',
+      error: {
+        code: 'network_error',
+        message: 'Nyx could not reach the provider.',
+        retryable: true,
+      },
+    }
+    const pending = detail()
+    pending.turns[0] = { ...pending.turns[0]!, attemptRequestId: 'request-retry' }
+    const retryPrepared: PreparedThreadTurn = {
+      ...prepared(),
+      requestId: 'request-retry',
+      detail: pending,
+      runtimeReplayDetail: beforeRetry,
+    }
+    const coordinator = {
+      prepareTurn: vi.fn(async () => retryPrepared),
+      bindPreparedTarget: vi.fn(async () => pending),
+      materializeProviderMessages: vi.fn(async () => [
+        { role: 'user' as const, content: 'Hello Nyx' },
+      ]),
+      replayRuntimeHistory: vi.fn(
+        (runtime: RuntimeChatStateClient, history: ThreadLibraryThreadDetail) =>
+          ThreadLibraryCoordinator.prototype.replayRuntimeHistory.call(
+            {} as ThreadLibraryCoordinator,
+            runtime,
+            history,
+          ),
+      ),
+      settleTurn: vi.fn(async () => ({ id: 'settled', ok: true, value: pending })),
+    }
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Retried answer' })
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => target(),
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+
+    manager.start({} as WebContents, {
+      threadId,
+      requestId: 'request-retry',
+      turnIntent: 'retry_failed_response',
+      turnOrdinal: 0,
+      expectedAttemptRequestId: 'request-failed',
+      expectedDraftRevision: 1,
+    })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(coordinator.replayRuntimeHistory).toHaveBeenCalledWith(expect.anything(), beforeRetry)
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'request-retry', assistantStatus: 'completed' }),
+    )
   })
 })

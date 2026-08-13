@@ -17,6 +17,8 @@ vi.mock('node:worker_threads', async () => {
     readonly specifier: URL
     readonly options: { name?: string }
     exited = false
+    readonly generation: string
+    watermark = 0
     throwOnPost = false
 
     constructor(specifier: URL, options: { name?: string }) {
@@ -24,6 +26,9 @@ vi.mock('node:worker_threads', async () => {
       this.specifier = specifier
       this.options = options
       workerMock.instances.push(this)
+      this.generation = `00000000-0000-4000-8000-${workerMock.instances.length
+        .toString()
+        .padStart(12, '0')}`
       workerMock.maxActive = Math.max(
         workerMock.maxActive,
         (workerMock.instances as FakeWorker[]).filter((worker) => !worker.exited).length,
@@ -60,6 +65,8 @@ type FakeWorker = EventEmitter & {
   specifier: URL
   options: { name?: string }
   exited: boolean
+  generation: string
+  watermark: number
   throwOnPost: boolean
   exit(code: number): void
 }
@@ -68,13 +75,17 @@ const timestamp = '2026-08-12T00:00:00.000Z'
 const threadId = '00000000-0000-4000-8000-000000000001'
 const materializeInput: ThreadLibraryOperationInput['materialize'] = {
   threadId,
-  title: 'First thread',
-  targetSelection: {
-    kind: 'connection',
-    providerId: 'provider-1',
-    modelId: 'model-1',
+  draft: {
+    text: 'First thread',
+    targetSelection: {
+      kind: 'connection',
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    },
+    images: [],
+    documents: [],
   },
-  fallbackLocalSecond: null,
+  fallbackLocalSecond: '2026-08-12T08:00:00',
   createdAt: timestamp,
 }
 const saveDraftInput: ThreadLibraryOperationInput['saveDraft'] = {
@@ -82,7 +93,7 @@ const saveDraftInput: ThreadLibraryOperationInput['saveDraft'] = {
   expectedDraftRevision: 0,
   draft: {
     text: 'Draft text',
-    targetSelection: materializeInput.targetSelection,
+    targetSelection: materializeInput.draft.targetSelection,
     images: [],
     documents: [],
   },
@@ -106,10 +117,10 @@ function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = 
       trashedFromLocation: null,
       trashedPinPosition: null,
       pinPosition: null,
-      title: input.title,
+      title: input.draft.text,
       titleSource: 'auto',
       fallbackLocalSecond: input.fallbackLocalSecond,
-      fallbackOrdinal: input.fallbackLocalSecond ? 1 : null,
+      fallbackOrdinal: null,
       threadRevision: 1,
       lastUserActivityAt: input.createdAt,
       resultRevision: 0,
@@ -120,15 +131,41 @@ function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = 
     draft: {
       threadId: input.threadId,
       draftRevision: 0,
-      text: '',
-      targetSelection: input.targetSelection,
+      text: input.draft.text,
+      targetSelection: input.draft.targetSelection,
       updatedAt: input.createdAt,
     },
     turns: [],
-    images: [],
-    documents: [],
+    images: input.draft.images.map((row) => ({
+      ...row,
+      threadId: input.threadId,
+      owner: 'draft' as const,
+      turnOrdinal: null,
+    })),
+    documents: input.draft.documents.map((row) => ({
+      ...row,
+      threadId: input.threadId,
+      owner: 'draft' as const,
+      turnOrdinal: null,
+    })),
     providerStateRefs: [],
   } as const
+}
+
+function genericMaterializedDetail(
+  input: ThreadLibraryOperationInput['materialize'],
+  fallbackOrdinal: number,
+) {
+  const detail = materializedDetail(input)
+  const suffix = fallbackOrdinal === 1 ? '' : ` · ${fallbackOrdinal}`
+  return {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      title: `Image · ${input.fallbackLocalSecond.replace('T', ' ')}${suffix}`,
+      fallbackOrdinal,
+    },
+  }
 }
 
 function savedDraftDetail() {
@@ -167,7 +204,7 @@ function terminalDetail(status: 'pending' | 'completed' = 'completed') {
         assistantContent: status === 'completed' ? settleInput.assistantContent : '',
         assistantStatus: status,
         error: null,
-        targetSelection: materializeInput.targetSelection,
+        targetSelection: materializeInput.draft.targetSelection,
         targetAttribution: {
           kind: 'connection' as const,
           providerId: 'provider-1',
@@ -188,11 +225,14 @@ function importedRows(): ImportedV5Rows {
     thread: {
       ...materializedDetail().summary,
       title: 'Imported',
+      fallbackLocalSecond: null,
+      fallbackOrdinal: null,
       lastUserActivityAt: timestamp,
     },
     draft: {
       ...materializedDetail().draft,
       draftRevision: 1,
+      text: '',
     },
     turns: [
       {
@@ -205,7 +245,7 @@ function importedRows(): ImportedV5Rows {
         assistantContent: 'Done',
         assistantStatus: 'completed',
         error: null,
-        targetSelection: materializeInput.targetSelection,
+        targetSelection: materializeInput.draft.targetSelection,
         targetAttribution: {
           kind: 'connection',
           providerId: 'provider-1',
@@ -265,8 +305,25 @@ async function waitForPost(instance: FakeWorker, index: number) {
   return instance.posts[index]!
 }
 
-function succeed(instance: FakeWorker, request: ThreadLibraryRequest, value: unknown) {
-  instance.emit('message', { id: request.id, ok: true, value })
+function succeed(
+  instance: FakeWorker,
+  request: ThreadLibraryRequest,
+  value: unknown,
+  actualMutation = false,
+) {
+  if (actualMutation) {
+    instance.watermark += 1
+  }
+  instance.emit('message', {
+    id: request.id,
+    ok: true,
+    value,
+    clock: {
+      generation: instance.generation,
+      watermark: instance.watermark,
+      actualMutation,
+    },
+  })
 }
 
 function fail(
@@ -288,15 +345,22 @@ function fail(
   })
 }
 
-async function openClient() {
+async function openClient(
+  observeAcknowledgement?: ConstructorParameters<typeof ThreadLibraryClient>[1],
+) {
   const index = workerMock.instances.length
-  const client = new ThreadLibraryClient('/tmp/nyx-thread-library.sqlite')
+  const client = new ThreadLibraryClient('/tmp/nyx-thread-library.sqlite', observeAcknowledgement)
   const opening = client.open()
   const instance = await waitForWorker(index)
   const request = await waitForPost(instance, 0)
   expect(request.operation).toBe('open')
   succeed(instance, request, { schemaVersion: 1 })
-  await expect(opening).resolves.toEqual({ id: request.id, ok: true, value: { schemaVersion: 1 } })
+  await expect(opening).resolves.toEqual({
+    id: request.id,
+    ok: true,
+    value: { schemaVersion: 1 },
+    clock: { generation: instance.generation, watermark: 0, actualMutation: false },
+  })
   return { client, instance }
 }
 
@@ -307,6 +371,64 @@ beforeEach(() => {
 })
 
 describe('ThreadLibraryClient', () => {
+  it('observes validated FIFO clocks synchronously and exposes only the latest acknowledgement', async () => {
+    const observed: Array<{ operation: string; watermark: number; actualMutation: boolean }> = []
+    const { client, instance } = await openClient()
+    client.setAcknowledgementObserver(({ operation, clock }) => {
+      observed.push({
+        operation,
+        watermark: clock.watermark,
+        actualMutation: clock.actualMutation,
+      })
+    })
+    expect(client.currentClock()).toEqual({ generation: instance.generation, watermark: 0 })
+    expect(observed).toEqual([])
+
+    const materializing = client.materialize(materializeInput)
+    const materializeRequest = await waitForPost(instance, 1)
+    succeed(instance, materializeRequest, materializedDetail(), true)
+    expect(observed.at(-1)).toEqual({
+      operation: 'materialize',
+      watermark: 1,
+      actualMutation: true,
+    })
+    await expect(materializing).resolves.toMatchObject({ ok: true })
+    expect(client.currentClock()).toEqual({ generation: instance.generation, watermark: 1 })
+
+    const snapshotting = client.snapshot({ threadId: null })
+    const snapshotRequest = await waitForPost(instance, 2)
+    succeed(instance, snapshotRequest, { detail: null, includedThroughCursor: 1 })
+    await expect(snapshotting).resolves.toMatchObject({
+      ok: true,
+      value: { detail: null, includedThroughCursor: 1 },
+    })
+    expect(observed.at(-1)).toEqual({
+      operation: 'snapshot',
+      watermark: 1,
+      actualMutation: false,
+    })
+  })
+
+  it('invalidates a generation whose validated reply clock regresses', async () => {
+    const { client, instance } = await openClient()
+    const materializing = client.materialize(materializeInput)
+    const materializeRequest = await waitForPost(instance, 1)
+    succeed(instance, materializeRequest, materializedDetail(), true)
+    await materializing
+
+    const snapshotting = client.snapshot({ threadId: null })
+    const snapshotRequest = await waitForPost(instance, 2)
+    instance.emit('message', {
+      id: snapshotRequest.id,
+      ok: true,
+      value: { detail: null, includedThroughCursor: 0 },
+      clock: { generation: instance.generation, watermark: 0, actualMutation: false },
+    })
+    await expect(snapshotting).rejects.toBeInstanceOf(ThreadLibraryTransportError)
+    await vi.waitFor(() => expect(instance.exited).toBe(true))
+    expect(() => client.currentClock()).toThrow('no verified acknowledgement clock')
+  })
+
   it('canonically confirms Draft and terminal writes after reply loss without replaying them', async () => {
     const { client, instance: first } = await openClient()
     const saving = client.saveDraft(saveDraftInput)
@@ -406,9 +528,28 @@ describe('ThreadLibraryClient', () => {
     expect(workerMock.instances).toHaveLength(1)
   })
 
-  it('rereads a committed materialize after reply loss and reuses the same id on explicit Retry', async () => {
+  it('rereads one exact same-second generic materialize after reply loss and Retry', async () => {
+    const genericInput: ThreadLibraryOperationInput['materialize'] = {
+      ...materializeInput,
+      draft: {
+        ...materializeInput.draft,
+        text: '',
+        images: [
+          {
+            imageId: '00000000-0000-4000-8000-000000000011',
+            position: 0,
+            mediaType: 'image/png',
+            width: 2,
+            height: 1,
+            available: true,
+          },
+        ],
+        documents: [],
+      },
+    }
+    const canonical = genericMaterializedDetail(genericInput, 2)
     const { client, instance: first } = await openClient()
-    const materializing = client.materialize(materializeInput)
+    const materializing = client.materialize(genericInput)
     const firstMaterialize = await waitForPost(first, 1)
     expect(firstMaterialize.operation).toBe('materialize')
     first.exit(1)
@@ -418,27 +559,43 @@ describe('ThreadLibraryClient', () => {
     const replacementOpen = await waitForPost(replacement, 0)
     succeed(replacement, replacementOpen, { schemaVersion: 1 })
     const canonicalRead = await waitForPost(replacement, 1)
-    first.emit('message', { id: firstMaterialize.id, ok: true, value: materializedDetail() })
-    succeed(replacement, canonicalRead, materializedDetail())
-
-    await expect(materializing).resolves.toMatchObject({
+    first.emit('message', {
       id: firstMaterialize.id,
       ok: true,
-      value: { summary: { id: threadId } },
+      value: canonical,
+    })
+    succeed(replacement, canonicalRead, canonical)
+
+    await expect(materializing).resolves.toEqual({
+      id: firstMaterialize.id,
+      ok: true,
+      value: canonical,
+      clock: {
+        generation: replacement.generation,
+        watermark: 0,
+        actualMutation: false,
+      },
     })
 
-    const explicitRetry = client.materialize(materializeInput)
+    const explicitRetry = client.materialize(genericInput)
     const retryRequest = await waitForPost(replacement, 2)
-    expect(retryRequest.input).toMatchObject({ threadId })
+    expect(retryRequest.input).toEqual(genericInput)
     fail(replacement, retryRequest, 'already_exists')
     const retryRead = await waitForPost(replacement, 3)
-    succeed(replacement, retryRead, materializedDetail())
-    await expect(explicitRetry).resolves.toMatchObject({
+    succeed(replacement, retryRead, canonical)
+    await expect(explicitRetry).resolves.toEqual({
+      id: retryRequest.id,
       ok: true,
-      value: { summary: { id: threadId } },
+      value: canonical,
+      clock: {
+        generation: replacement.generation,
+        watermark: 0,
+        actualMutation: false,
+      },
     })
 
     expect(posts('materialize')).toHaveLength(2)
+    expect(posts('readThread')).toHaveLength(2)
     expect(workerMock.maxActive).toBe(1)
   })
 
@@ -551,7 +708,7 @@ describe('ThreadLibraryClient', () => {
     const canonicalRead = await waitForPost(replacement, 1)
     succeed(replacement, canonicalRead, importedDetail(rows))
 
-    await expect(importing).resolves.toEqual({
+    await expect(importing).resolves.toMatchObject({
       id: importRequest.id,
       ok: true,
       value: { threadId, imported: true },

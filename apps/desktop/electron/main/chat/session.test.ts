@@ -1,191 +1,125 @@
-import { createHash } from 'node:crypto'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
 import type { WebContents } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { NyxChatEvent } from '../../../shared/chat/events'
-import type { NyxChatRequest } from '../../../shared/chat/types'
-import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
-import {
-  CurrentThreadSessionCoordinator,
-  CurrentThreadSessionError,
-  type CurrentThreadProviderMessage,
-  type PreparedCurrentThreadTurn,
-} from '../current-thread/session-coordinator'
-import { CurrentThreadStore } from '../current-thread/store'
-import { CurrentThreadDocumentFiles } from '../current-thread/document-files'
-import { parseCurrentThreadRecord } from '../current-thread/schemas'
+import type { NyxThreadChatRequest } from '../../../shared/chat/types'
+import type { ResolvedChatTarget } from '../connections/provider-resolver'
 import {
   RuntimeChatStateClientError,
   type RuntimeChatStateClient,
-  type RuntimeChatReducerState,
 } from '../runtime/chat-state-client'
+import {
+  ThreadLibraryCoordinatorError,
+  type ThreadLibraryCoordinator,
+  type PreparedThreadTurn,
+} from '../thread-library/coordinator'
+import type { ThreadLibraryThreadDetail } from '../thread-library/protocol'
 
 const streamChatCompletion = vi.hoisted(() => vi.fn())
+vi.mock('./client', () => ({ streamChatCompletion }))
 
-vi.mock('./client', () => ({
-  streamChatCompletion,
-}))
-
-vi.mock('./env', () => ({
-  readChatProviderConfig: () => ({
-    baseUrl: 'https://example.com/v1/',
-    token: 'token',
-    model: 'model',
-  }),
-}))
-
+import type { ChatProviderMessage } from './client'
 import { createChatBridgeError } from './errors'
-import { ChatSessionManager, validateChatRequest } from './session'
+import { ChatSessionManager, type UnclockedNyxChatEvent, validateChatRequest } from './session'
 
-const runtimeChatStateDisabledEnv = {
-  NYX_RUNTIME_CHAT_STATE: '0',
-}
-const targetSelection = {
-  kind: 'env_fallback',
-} as const
-const targetAttribution = {
-  kind: 'env_fallback',
-  modelId: 'model',
-} as const
-const imageRef = {
-  imageId: '00000000-0000-4000-8000-000000000001',
-  mediaType: 'image/png',
-  width: 2,
-  height: 1,
-} as const
-const newImage = {
-  imageId: imageRef.imageId,
-  canonicalBytes: new Uint8Array([1]),
-  previewBytes: new Uint8Array([2]),
-} as const
-const documentRef = {
-  documentId: '00000000-0000-4000-8000-000000000010',
-  name: 'notes.txt',
-  mediaType: 'text/plain',
-  byteLength: 1,
-  extractedByteLength: 1,
-} as const
-const documentSource = new Uint8Array([104])
-const newDocument = {
-  documentId: documentRef.documentId,
-  sourceBytes: documentSource,
-  extractedTextBytes: documentSource,
-  extractedFromSha256: createHash('sha256').update(documentSource).digest('hex'),
-} as const
+const threadId = '00000000-0000-4000-8000-000000000001'
+const otherThreadId = '00000000-0000-4000-8000-000000000002'
+const imageId = '00000000-0000-4000-8000-000000000003'
+const documentId = '00000000-0000-4000-8000-000000000004'
+const timestamp = '2026-08-13T00:00:00.000Z'
+const selection = { kind: 'env_fallback' } as const
+const attribution = { kind: 'env_fallback', modelId: 'model' } as const
 
-function validRequest(): NyxChatRequest {
+function request(overrides: Partial<NyxThreadChatRequest> = {}): NyxThreadChatRequest {
   return {
+    threadId,
+    requestId: 'request-1',
+    turnIntent: 'new_user_message',
+    expectedDraftRevision: 0,
+    ...overrides,
+  } as NyxThreadChatRequest
+}
+
+function detail(status: 'pending' | 'completed' | 'cancelled' | 'failed' = 'pending') {
+  return {
+    summary: {
+      id: threadId,
+      location: 'available',
+      trashedFromLocation: null,
+      trashedPinPosition: null,
+      pinPosition: null,
+      title: 'Thread',
+      titleSource: 'auto',
+      fallbackLocalSecond: null,
+      fallbackOrdinal: null,
+      threadRevision: 1,
+      lastUserActivityAt: timestamp,
+      resultRevision: status === 'pending' ? 0 : 1,
+      seenResultRevision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    draft: {
+      threadId,
+      draftRevision: 1,
+      text: '',
+      targetSelection: selection,
+      updatedAt: timestamp,
+    },
+    turns: [
+      {
+        threadId,
+        ordinal: 0,
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: 'Canonical prompt',
+        assistantContent: status === 'pending' ? '' : 'Answer',
+        assistantStatus: status,
+        error:
+          status === 'failed'
+            ? {
+                code: 'network_error',
+                message: 'Nyx could not reach the provider.',
+                retryable: true,
+              }
+            : null,
+        targetSelection: selection,
+        targetAttribution: attribution,
+        providerStateId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    images: [],
+    documents: [],
+    providerStateRefs: [],
+  } satisfies ThreadLibraryThreadDetail
+}
+
+function prepared(): PreparedThreadTurn {
+  const pending = detail()
+  return {
+    detail: pending,
+    runtimeReplayDetail: { ...pending, turns: [] },
+    threadId,
     requestId: 'request-1',
     userMessageId: 'user-1',
     assistantMessageId: 'assistant-1',
-    turnIntent: 'new_user_message',
-    turnUserMessage: {
-      id: 'user-1',
-      content: 'Hello Nyx',
-    },
-    messages: [
-      {
-        role: 'user',
-        content: 'Hello Nyx',
-      },
-    ],
-    targetSelection,
+    targetSelection: selection,
+    documentBearing: false,
   }
 }
 
-function requestWithIds({
-  requestId,
-  userMessageId,
-  assistantMessageId,
-  content,
-}: {
-  requestId: string
-  userMessageId: string
-  assistantMessageId: string
-  content: string
-}): NyxChatRequest {
+function resolvedTarget(): ResolvedChatTarget {
   return {
-    ...validRequest(),
-    requestId,
-    userMessageId,
-    assistantMessageId,
-    turnUserMessage: {
-      id: userMessageId,
-      content,
-    },
-    messages: [
-      {
-        role: 'user',
-        content,
-      },
-    ],
+    providerId: 'env',
+    baseUrl: 'https://example.test/v1',
+    token: 'token',
+    modelId: 'model',
+    protocolConfig: { protocol: 'openai-chat-completions' },
+    executionIdentity: 'a'.repeat(64),
+    targetAttribution: attribution,
   }
-}
-
-function mockSender(eventOrder?: string[]) {
-  const listeners = new Map<string, Set<() => void>>()
-  const sender = {
-    isDestroyed: vi.fn(() => false),
-    send: vi.fn((_channel: string, event: NyxChatEvent) => {
-      eventOrder?.push(`event:${event.type}`)
-    }),
-    once: vi.fn(),
-    off: vi.fn(),
-    emitDestroyed: vi.fn(),
-  }
-
-  sender.once.mockImplementation((event: string, listener: () => void) => {
-    const eventListeners = listeners.get(event) ?? new Set<() => void>()
-
-    eventListeners.add(listener)
-    listeners.set(event, eventListeners)
-
-    return sender
-  })
-  sender.off.mockImplementation((event: string, listener: () => void) => {
-    listeners.get(event)?.delete(listener)
-
-    return sender
-  })
-  sender.emitDestroyed.mockImplementation(() => {
-    sender.isDestroyed.mockReturnValue(true)
-
-    const destroyedListeners = listeners.get('destroyed')
-
-    if (destroyedListeners) {
-      for (const listener of destroyedListeners) {
-        listener()
-      }
-    }
-
-    listeners.delete('destroyed')
-  })
-
-  return sender as unknown as WebContents & typeof sender
-}
-
-function sentChatEvents(sender: ReturnType<typeof mockSender>) {
-  return sender.send.mock.calls.map(([_channel, event]) => event as NyxChatEvent)
-}
-
-async function waitForAssertion(assertion: () => void) {
-  let lastError: unknown
-
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      assertion()
-      return
-    } catch (error) {
-      lastError = error
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
-  }
-
-  throw lastError
 }
 
 function abortError() {
@@ -194,2431 +128,767 @@ function abortError() {
   return error
 }
 
-function deferred<TValue>() {
-  let resolve!: (value: TValue) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<TValue>((resolvePromise, rejectPromise) => {
+function runtime() {
+  const state = { transcript: [], current_turn: { type: 'no_turn' as const } }
+  return {
+    submitUserMessage: vi.fn(async () => state),
+    retryFailed: vi.fn(async () => state),
+    startAssistant: vi.fn(async () => state),
+    appendDelta: vi.fn(async () => state),
+    complete: vi.fn(async () => state),
+    cancel: vi.fn(async () => state),
+    fail: vi.fn(async () => state),
+    clear: vi.fn(async () => state),
+    close: vi.fn(),
+  } as unknown as RuntimeChatStateClient
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise
-    reject = rejectPromise
   })
-
-  return { promise, resolve, reject }
+  return { promise, resolve }
 }
 
-function runtimeState(): RuntimeChatReducerState {
+function setup() {
+  const events: UnclockedNyxChatEvent[] = []
+  const runtimeClient = runtime()
+  const canonicalMessages: ChatProviderMessage[] = [{ role: 'user', content: 'Canonical prompt' }]
+  const coordinator = {
+    prepareTurn: vi.fn(async () => prepared()),
+    bindPreparedTarget: vi.fn(async (turn: PreparedThreadTurn) => turn.detail),
+    materializeProviderMessages: vi.fn(async () => canonicalMessages),
+    replayRuntimeHistory: vi.fn(async () => undefined),
+    settleTurn: vi.fn(async () => ({ id: 'settle', ok: true, value: detail('completed') })),
+    retrySettlement: vi.fn(async () => ({ id: 'retry', ok: true, value: detail('completed') })),
+  }
+  const resolveChatTarget = vi.fn(async () => resolvedTarget())
+  const createRuntimeChatStateClient = vi.fn(() => runtimeClient)
+  const manager = new ChatSessionManager({
+    resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+    publishChatEvent: (_sender, event) => events.push(event),
+    resolveChatTarget,
+    createRuntimeChatStateClient,
+    now: () => timestamp,
+  })
   return {
-    transcript: [],
-    current_turn: {
-      type: 'no_turn',
-    },
+    coordinator,
+    createRuntimeChatStateClient,
+    events,
+    manager,
+    resolveChatTarget,
+    runtimeClient,
+    sender: {} as WebContents,
   }
 }
 
-function fakeRuntimeChatStateClient(order?: string[]) {
-  const track = (name: string) =>
-    vi.fn(async () => {
-      order?.push(`runtime:${name}`)
-      return runtimeState()
-    })
-  const client: RuntimeChatStateClient = {
-    submitUserMessage: track('submitUserMessage'),
-    retryFailed: track('retryFailed'),
-    startAssistant: track('startAssistant'),
-    appendDelta: track('appendDelta'),
-    complete: track('complete'),
-    cancel: track('cancel'),
-    fail: track('fail'),
-    clear: track('clear'),
-    close: vi.fn(() => {
-      order?.push('runtime:close')
-    }),
-  }
-
-  return client
-}
-
-function preparedTurn(providerContent = 'Durable hello'): PreparedCurrentThreadTurn {
-  return {
-    providerMessages: [{ role: 'user', content: providerContent }],
-    replayRecord: null,
-    pendingRecord: {
-      version: 5,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: providerContent,
-          imageRefs: [],
-          documentRefs: [],
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          targetBinding: { selection: targetSelection, attribution: null },
-          providerStateRef: null,
-          createdAt: '2026-07-11T00:00:00.000Z',
-          updatedAt: '2026-07-11T00:00:00.000Z',
-        },
-      ],
-      createdAt: '2026-07-11T00:00:00.000Z',
-      updatedAt: '2026-07-11T00:00:00.000Z',
-    },
-  }
-}
-
-function preparedImageTurn(): PreparedCurrentThreadTurn {
-  return {
-    providerMessages: [{ role: 'user', content: '' }],
-    replayRecord: null,
-    pendingRecord: {
-      version: 5,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: '',
-          imageRefs: [imageRef],
-          documentRefs: [],
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          targetBinding: { selection: targetSelection, attribution: null },
-          providerStateRef: null,
-          createdAt: '2026-08-09T00:00:00.000Z',
-          updatedAt: '2026-08-09T00:00:00.000Z',
-        },
-      ],
-      createdAt: '2026-08-09T00:00:00.000Z',
-      updatedAt: '2026-08-09T00:00:00.000Z',
-    },
+async function waitFor(assertion: () => void) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      if (attempt === 29) throw error
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
   }
 }
 
 describe('validateChatRequest', () => {
-  it('accepts a complete new user message request', () => {
-    expect(validateChatRequest(validRequest())).toBeNull()
-  })
-
-  it('accepts a complete retry failed response request', () => {
+  it('accepts only the thread-scoped live request shape', () => {
+    expect(validateChatRequest(request())).toBeNull()
     expect(
-      validateChatRequest({
-        ...validRequest(),
-        turnIntent: 'retry_failed_response',
-      }),
+      validateChatRequest(
+        request({
+          requestId: 'request-retry',
+          turnIntent: 'retry_failed_response',
+          turnOrdinal: 0,
+          expectedAttemptRequestId: 'request-failed',
+          expectedDraftRevision: 1,
+        }),
+      ),
     ).toBeNull()
-  })
-
-  it('accepts one strict image-only new turn and an existing-image Retry', () => {
-    const imageRequest = {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user' as const, content: '' }],
-      newImages: [newImage],
-    }
-
-    expect(validateChatRequest(imageRequest)).toBeNull()
-    const { newImages: _newImages, ...retryRequest } = imageRequest
-    expect(validateChatRequest({ ...retryRequest, turnIntent: 'retry_failed_response' })).toBeNull()
-  })
-
-  it('parses one strict document-only new turn and an existing-document Retry', () => {
-    const documentRequest = {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
-      messages: [{ role: 'user' as const, content: '' }],
-      newDocuments: [newDocument],
-    }
-
-    expect(validateChatRequest(documentRequest)).toBeNull()
-    const { newDocuments: _newDocuments, ...retryRequest } = documentRequest
-    expect(validateChatRequest({ ...retryRequest, turnIntent: 'retry_failed_response' })).toBeNull()
     expect(
-      validateChatRequest({
-        ...documentRequest,
-        turnUserMessage: {
-          ...documentRequest.turnUserMessage,
-          documentRefs: [{ ...documentRef, name: '../notes.txt' }],
-        },
-      }),
+      validateChatRequest({ ...request(), messages: [{ role: 'user', content: 'stale' }] }),
+    ).toMatchObject({
+      code: 'invalid_request',
+    })
+    expect(validateChatRequest({ requestId: 'request-1', messages: [] })).toMatchObject({
+      code: 'invalid_request',
+    })
+    expect(validateChatRequest(request({ threadId: 'not-a-thread-id' }))).toMatchObject({
+      code: 'invalid_request',
+    })
+    expect(validateChatRequest(request({ expectedDraftRevision: -1 }))).toMatchObject({
+      code: 'invalid_request',
+    })
+    expect(
+      validateChatRequest(
+        request({
+          turnIntent: 'retry_failed_response',
+          turnOrdinal: 0,
+          expectedDraftRevision: 1,
+        } as Partial<NyxThreadChatRequest>),
+      ),
     ).toMatchObject({ code: 'invalid_request' })
   })
-
-  it.each([
-    {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-    },
-    {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [{ ...newImage, imageId: '00000000-0000-4000-8000-000000000002' }],
-    },
-    {
-      ...validRequest(),
-      turnIntent: 'retry_failed_response',
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    },
-    {
-      ...validRequest(),
-      turnUserMessage: {
-        id: 'user-1',
-        content: '',
-        imageRefs: [{ ...imageRef, imageId: 'not-a-uuid' }],
-      },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [{ ...newImage, imageId: 'not-a-uuid' }],
-    },
-    {
-      ...validRequest(),
-      turnUserMessage: {
-        id: 'user-1',
-        content: '',
-        imageRefs: [{ ...imageRef, localPath: '/private/image.png' }],
-      },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    },
-  ])('rejects malformed image-bearing trust-boundary input', (request) => {
-    expect(validateChatRequest(request)).toMatchObject({
-      code: 'invalid_request',
-      retryable: false,
-    })
-  })
-
-  it('requires a stable user message id', () => {
-    expect(
-      validateChatRequest({
-        ...validRequest(),
-        userMessageId: '',
-      }),
-    ).toEqual({
-      code: 'invalid_request',
-      message:
-        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
-      retryable: false,
-    })
-  })
-
-  it('requires an explicit current user message identity', () => {
-    const { turnUserMessage: _turnUserMessage, ...request } = validRequest()
-
-    expect(validateChatRequest(request as NyxChatRequest)).toEqual({
-      code: 'invalid_request',
-      message:
-        'Chat requests must include ids, intent, the current user message, and at least one provider message.',
-      retryable: false,
-    })
-  })
-
-  it('requires the current user message id to match userMessageId', () => {
-    expect(
-      validateChatRequest({
-        ...validRequest(),
-        turnUserMessage: {
-          id: 'other-user',
-          content: 'Hello Nyx',
-        },
-      }),
-    ).toEqual({
-      code: 'invalid_request',
-      message: 'Chat requests must keep the current user message id aligned with userMessageId.',
-      retryable: false,
-    })
-  })
-
-  it('requires the current user message content to match the provider-visible prompt', () => {
-    expect(
-      validateChatRequest({
-        ...validRequest(),
-        turnUserMessage: {
-          id: 'user-1',
-          content: 'Runtime prompt',
-        },
-        messages: [
-          {
-            role: 'user',
-            content: 'Provider prompt',
-          },
-        ],
-      }),
-    ).toEqual({
-      code: 'invalid_request',
-      message:
-        'Chat requests must keep the current user message content aligned with provider messages.',
-      retryable: false,
-    })
-  })
-
-  it('requires a known product turn intent', () => {
-    expect(
-      validateChatRequest({
-        ...validRequest(),
-        turnIntent: 'unknown_intent' as NyxChatRequest['turnIntent'],
-      }),
-    ).toEqual({
-      code: 'invalid_request',
-      message: 'Chat requests must use a known turn intent.',
-      retryable: false,
-    })
-  })
-
-  it.each([
-    null,
-    { ...validRequest(), targetSelection: null },
-    { ...validRequest(), targetSelection: { kind: 'env_fallback', token: 'secret' } },
-    { ...validRequest(), baseUrl: 'https://secret.example.test' },
-    {
-      ...validRequest(),
-      messages: [{ role: 'user', content: 'Hello Nyx', token: 'secret' }],
-    },
-  ])('rejects malformed or secret-bearing trust-boundary input', (request) => {
-    expect(validateChatRequest(request)).toMatchObject({
-      code: 'invalid_request',
-      retryable: false,
-    })
-  })
 })
 
-describe('ChatSessionManager reset', () => {
+describe('ChatSessionManager canonical execution', () => {
   beforeEach(() => {
     streamChatCompletion.mockReset()
+    streamChatCompletion.mockResolvedValue({ finalContent: 'Answer' })
   })
 
-  it('aborts and clears the active session for the same sender', async () => {
-    let signal: AbortSignal | undefined
-    streamChatCompletion
-      .mockImplementationOnce(({ signal: activeSignal }: { signal: AbortSignal }) => {
-        signal = activeSignal
-        return new Promise((_resolve, reject) => {
-          activeSignal.addEventListener('abort', () => reject(abortError()), { once: true })
-        })
-      })
-      .mockResolvedValueOnce({ finalContent: 'Fresh' })
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-    })
+  it('waits for the pending Worker acknowledgement before any Provider effect', async () => {
+    const pending = deferred<PreparedThreadTurn>()
+    const { coordinator, events, manager, sender } = setup()
+    coordinator.prepareTurn.mockReturnValueOnce(pending.promise)
 
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-    await expect(manager.reset(sender)).resolves.toEqual({ ok: true })
-
-    expect(signal?.aborted).toBe(true)
-    expect(sender.send).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, {
-      type: 'chat:start',
-      requestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      status: 'streaming',
-      targetAttribution,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      requestId: 'request-2',
-      assistantMessageId: 'assistant-2',
-    })
-
-    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(2))
-  })
-
-  it('resets the manager-owned active session from another sender', async () => {
-    let signal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(({ signal: activeSignal }: { signal: AbortSignal }) => {
-      signal = activeSignal
-      return new Promise((_resolve, reject) => {
-        activeSignal.addEventListener('abort', () => reject(abortError()), { once: true })
-      })
-    })
-    const sender = mockSender()
-    const otherSender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-    await expect(manager.reset(otherSender)).resolves.toEqual({ ok: true })
-
-    expect(signal?.aborted).toBe(true)
-  })
-
-  it('waits for durable preparation before deleting the current thread', async () => {
-    const order: string[] = []
-    const prepareGate = deferred<PreparedCurrentThreadTurn>()
-    const coordinator = {
-      prepare: vi.fn(async () => {
-        order.push('durable:prepare')
-        const prepared = await prepareGate.promise
-        order.push('durable:prepared')
-        return prepared
-      }),
-      reset: vi.fn(async () => {
-        order.push('durable:reset')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(coordinator.prepare).toHaveBeenCalledTimes(1))
-
-    const resetPromise = manager.reset(sender)
-    expect(coordinator.reset).not.toHaveBeenCalled()
-
-    prepareGate.resolve(preparedTurn())
-    await expect(resetPromise).resolves.toEqual({ ok: true })
-
-    expect(order).toEqual(['durable:prepare', 'durable:prepared', 'durable:reset'])
+    manager.start(sender, request())
+    await Promise.resolve()
     expect(streamChatCompletion).not.toHaveBeenCalled()
-    expect(sender.send).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+
+    pending.resolve(prepared())
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+    expect(events[0]).toMatchObject({
+      type: 'chat:accepted',
+      threadId,
+      requestId: 'request-1',
+    })
   })
 
-  it('waits for provider abort before clearing runtime and durable state', async () => {
-    const order: string[] = []
-    const providerExit = deferred<void>()
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion.mockImplementationOnce(
-      ({ signal }: { signal: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          activeSignal = signal
-          signal.addEventListener(
-            'abort',
-            () => {
-              order.push('provider:aborted')
-              void providerExit.promise.then(() => reject(abortError()))
-            },
-            { once: true },
-          )
-        }),
+  it('rejects stale canonical identity before acceptance or execution', async () => {
+    const { coordinator, events, manager, resolveChatTarget, sender } = setup()
+    coordinator.prepareTurn.mockRejectedValueOnce(
+      new ThreadLibraryCoordinatorError(
+        'This draft changed. Reload it and try again.',
+        'invalid_request',
+      ),
     )
-    const runtimeClient = fakeRuntimeChatStateClient(order)
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      reset: vi.fn(async () => {
-        order.push('durable:reset')
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'chat:error',
+        threadId,
+        requestId: 'request-1',
+        error: expect.objectContaining({ code: 'invalid_request', retryable: false }),
       }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-
-    const resetPromise = manager.reset(sender)
-    await waitForAssertion(() => expect(order).toContain('provider:aborted'))
-    expect(activeSignal?.aborted).toBe(true)
-    expect(runtimeClient.clear).not.toHaveBeenCalled()
-    expect(coordinator.reset).not.toHaveBeenCalled()
-
-    providerExit.resolve()
-    await expect(resetPromise).resolves.toEqual({ ok: true })
-
-    expect(order.slice(-4)).toEqual([
-      'provider:aborted',
-      'runtime:clear',
-      'runtime:close',
-      'durable:reset',
     ])
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
+    expect(coordinator.settleTurn).not.toHaveBeenCalled()
+    expect(resolveChatTarget).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('uses only canonical Provider history and projects thread-scoped events', async () => {
+    const { coordinator, events, manager, resolveChatTarget, sender } = setup()
+    streamChatCompletion.mockImplementationOnce(
+      async ({ documentBearing, providerMessages, onDelta }) => {
+        expect(providerMessages).toEqual([{ role: 'user', content: 'Canonical prompt' }])
+        expect(documentBearing).toBe(false)
+        await onDelta('An', 'An')
+        return { finalContent: 'Answer' }
+      },
+    )
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(coordinator.prepareTurn).toHaveBeenCalledWith(request())
+    expect(coordinator.bindPreparedTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId, requestId: 'request-1' }),
+      attribution,
+    )
+    expect(resolveChatTarget).toHaveBeenCalledWith(selection)
+    expect(streamChatCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ request: {}, target: resolvedTarget() }),
+    )
+    expect(events.map((event) => event.type)).toEqual([
       'chat:accepted',
       'chat:start',
+      'chat:delta',
+      'chat:done',
+    ])
+    expect(events.every((event) => event.threadId === threadId)).toBe(true)
+  })
+
+  it('streams normally while the Runtime projection is explicitly disabled', async () => {
+    const { coordinator, events, runtimeClient, sender } = setup()
+    const createRuntimeChatStateClient = vi.fn(() => runtimeClient)
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
+      resolveChatTarget: async () => resolvedTarget(),
+      createRuntimeChatStateClient,
+      env: { NYX_RUNTIME_CHAT_STATE: '0' },
+      now: () => timestamp,
+    })
+    streamChatCompletion.mockImplementationOnce(async ({ onDelta }) => {
+      await onDelta('An', 'Answer')
+      return { finalContent: 'Answer' }
+    })
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    expect(events.map((event) => event.type)).toEqual([
+      'chat:accepted',
+      'chat:start',
+      'chat:delta',
+      'chat:done',
     ])
   })
 
-  it('returns one safe reset error without exposing store details', async () => {
-    const coordinator = {
-      reset: vi.fn(async () => {
-        throw new Error('Authorization: Bearer secret at /private/current-thread.json')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
+  it('replays canonical Runtime history and settles before Runtime completion', async () => {
+    const order: string[] = []
+    const { coordinator, manager, runtimeClient, sender } = setup()
+    coordinator.replayRuntimeHistory.mockImplementationOnce(async () => {
+      order.push('runtime:replay')
+    })
+    coordinator.settleTurn.mockImplementationOnce(async () => {
+      order.push('worker:settle')
+      return { id: 'settle', ok: true, value: detail('completed') }
+    })
+    vi.mocked(runtimeClient.complete).mockImplementationOnce(async () => {
+      order.push('runtime:complete')
+      return { transcript: [], current_turn: { type: 'no_turn' } }
     })
 
-    const result = await manager.reset(mockSender())
-
-    expect(result).toEqual({
-      ok: false,
-      error: {
-        code: 'reset_failed',
-        message: 'Nyx could not start a fresh thread.',
-      },
-    })
-    expect(JSON.stringify(result)).not.toContain('Bearer secret')
-    expect(JSON.stringify(result)).not.toContain('/private')
-  })
-})
-
-describe('ChatSessionManager provider resolver', () => {
-  beforeEach(() => {
-    streamChatCompletion.mockReset()
+    manager.start(sender, request())
+    await waitFor(() => expect(order).toContain('runtime:complete'))
+    expect(order).toEqual(['runtime:replay', 'worker:settle', 'runtime:complete'])
   })
 
-  it('rejects malformed target input before any durable or execution side effect', () => {
-    const prepare = vi.fn()
-    const resolveChatTarget = vi.fn()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      resolveChatTarget,
-      resolveCurrentThreadSession: () =>
-        ({ prepare }) as unknown as CurrentThreadSessionCoordinator,
+  it('uses the exact Retry identity without resubmitting the user message', async () => {
+    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    const retry = prepared()
+    retry.requestId = 'request-retry'
+    coordinator.prepareTurn.mockResolvedValueOnce(retry)
+    const retryRequest = request({
+      requestId: 'request-retry',
+      turnIntent: 'retry_failed_response',
+      turnOrdinal: 0,
+      expectedAttemptRequestId: 'request-failed',
+      expectedDraftRevision: 1,
     })
 
-    manager.start(sender, {
-      ...validRequest(),
-      targetSelection: { kind: 'env_fallback', token: 'must-not-cross' },
-    })
-    manager.start(sender, null)
+    manager.start(sender, retryRequest)
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    expect(sentChatEvents(sender)).toEqual([
-      {
-        type: 'chat:error',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'failed',
-        error: {
-          code: 'invalid_request',
-          message: 'Chat requests must include one valid target selection.',
-          retryable: false,
-        },
-      },
-    ])
-    expect(prepare).not.toHaveBeenCalled()
-    expect(resolveChatTarget).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
+    expect(coordinator.prepareTurn).toHaveBeenCalledWith(retryRequest)
+    expect(runtimeClient.submitUserMessage).not.toHaveBeenCalled()
+    expect(runtimeClient.retryFailed).toHaveBeenCalledWith({
+      turnRequestId: 'request-retry',
+      userMessageId: 'user-1',
+      assistantMessageId: 'assistant-1',
+    })
   })
 
-  it('routes valid product document requests through durability before execution', () => {
-    const preparation = deferred<PreparedCurrentThreadTurn>()
-    const prepare = vi.fn(() => preparation.promise)
-    const resolveChatTarget = vi.fn()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      resolveChatTarget,
-      resolveCurrentThreadSession: () =>
-        ({ prepare }) as unknown as CurrentThreadSessionCoordinator,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
-      messages: [{ role: 'user', content: '' }],
-      newDocuments: [newDocument],
-    })
-
-    expect(sentChatEvents(sender)).toEqual([])
-    expect(prepare).toHaveBeenCalledWith(
-      expect.objectContaining({
-        turnUserMessage: expect.objectContaining({ documentRefs: [documentRef] }),
-        newDocuments: [newDocument],
-      }),
-      expect.any(AbortSignal),
-    )
-    expect(resolveChatTarget).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('rejects new and Retry document requests when current-thread durability is unavailable', () => {
-    const resolveChatTarget = vi.fn()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({ resolveChatTarget })
-    const request = {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
-      messages: [{ role: 'user' as const, content: '' }],
-      newDocuments: [newDocument],
-    }
-
-    manager.start(sender, request)
-    const { newDocuments: _newDocuments, ...retryRequest } = request
-    manager.start(sender, { ...retryRequest, turnIntent: 'retry_failed_response' })
-
-    expect(sentChatEvents(sender)).toEqual([
-      expect.objectContaining({
-        type: 'chat:error',
-        error: {
-          code: 'invalid_request',
-          message: 'Document attachments require current-thread durability.',
-          retryable: false,
-        },
-      }),
-      expect.objectContaining({
-        type: 'chat:error',
-        error: {
-          code: 'invalid_request',
-          message: 'Document attachments require current-thread durability.',
-          retryable: false,
-        },
-      }),
-    ])
-    expect(resolveChatTarget).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('uses the injected chat target resolver for chat streaming', async () => {
-    const target = {
-      providerId: 'provider-1',
-      baseUrl: 'https://persisted.example.com/v1/',
-      token: 'stored-token',
-      modelId: 'stored-model',
-      protocolConfig: { protocol: 'openai-chat-completions' as const },
-      executionIdentity: 'a'.repeat(64),
-      targetAttribution,
-    }
-    const resolveChatTarget = vi.fn(() => target)
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveChatTarget,
-    })
-
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
-    })
-    expect(resolveChatTarget).toHaveBeenCalledTimes(1)
-    expect(streamChatCompletion.mock.calls[0]?.[0]).toMatchObject({ target })
-  })
-
-  it('attributes each env Retry attempt to the model resolved for that attempt', async () => {
-    const attributionA = { kind: 'env_fallback', modelId: 'env-model-a' } as const
-    const attributionB = { kind: 'env_fallback', modelId: 'env-model-b' } as const
-    const resolvedTarget = (modelId: string) => ({
-      providerId: null,
-      baseUrl: 'https://env.example.com/v1/',
-      token: 'env-token',
-      modelId,
-      protocolConfig: { protocol: 'openai-chat-completions' as const },
-      executionIdentity: null,
-      targetAttribution: { kind: 'env_fallback' as const, modelId },
-    })
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      fail: vi.fn(async () => undefined),
-      complete: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
+  it('re-resolves and binds target attribution for each ordinary Retry attempt', async () => {
+    const { coordinator, events, sender } = setup()
+    const retry = prepared()
+    retry.requestId = 'request-2'
+    const attributionA = { kind: 'env_fallback', modelId: 'model-a' } as const
+    const attributionB = { kind: 'env_fallback', modelId: 'model-b' } as const
     const resolveChatTarget = vi
       .fn()
-      .mockReturnValueOnce(resolvedTarget('env-model-a'))
-      .mockReturnValueOnce(resolvedTarget('env-model-b'))
+      .mockResolvedValueOnce({
+        ...resolvedTarget(),
+        modelId: 'model-a',
+        targetAttribution: attributionA,
+      })
+      .mockResolvedValueOnce({
+        ...resolvedTarget(),
+        modelId: 'model-b',
+        targetAttribution: attributionB,
+      })
+    coordinator.prepareTurn.mockResolvedValueOnce(prepared()).mockResolvedValueOnce(retry)
+    coordinator.settleTurn
+      .mockResolvedValueOnce({ id: 'failed', ok: true, value: detail('failed') })
+      .mockResolvedValueOnce({ id: 'completed', ok: true, value: detail('completed') })
     streamChatCompletion
       .mockRejectedValueOnce(new Error('Provider failed'))
       .mockResolvedValueOnce({ finalContent: 'Retried answer' })
-    const sender = mockSender()
     const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => events.push(event),
       resolveChatTarget,
+      env: { NYX_RUNTIME_CHAT_STATE: '0' },
+      now: () => timestamp,
     })
 
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:error',
-        requestId: 'request-1',
-        targetAttribution: attributionA,
-      })
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      requestId: 'request-2',
-      turnIntent: 'retry_failed_response',
-    })
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:done',
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+    manager.start(
+      sender,
+      request({
         requestId: 'request-2',
-      })
-    })
+        turnIntent: 'retry_failed_response',
+        turnOrdinal: 0,
+        expectedAttemptRequestId: 'request-1',
+        expectedDraftRevision: 1,
+      }),
+    )
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    expect(sentChatEvents(sender).filter((event) => event.type === 'chat:start')).toMatchObject([
+    expect(resolveChatTarget).toHaveBeenNthCalledWith(1, selection)
+    expect(resolveChatTarget).toHaveBeenNthCalledWith(2, selection)
+    expect(coordinator.bindPreparedTarget).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ requestId: 'request-1' }),
+      attributionA,
+    )
+    expect(coordinator.bindPreparedTarget).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ requestId: 'request-2' }),
+      attributionB,
+    )
+    expect(events.filter((event) => event.type === 'chat:start')).toMatchObject([
       { requestId: 'request-1', targetAttribution: attributionA },
       { requestId: 'request-2', targetAttribution: attributionB },
     ])
-    expect(coordinator.bindResolvedTarget).toHaveBeenNthCalledWith(
-      1,
-      'request-1',
-      'assistant-1',
-      attributionA,
-    )
-    expect(coordinator.bindResolvedTarget).toHaveBeenNthCalledWith(
-      2,
-      'request-2',
-      'assistant-1',
-      attributionB,
-    )
-  })
-
-  it('emits a config error without calling the provider and clears the active session', async () => {
-    const resolveChatTarget = vi
-      .fn()
-      .mockRejectedValueOnce(
-        createChatBridgeError({
-          code: 'config_missing',
-          message: 'No usable chat provider configuration is available.',
-          retryable: false,
-        }),
-      )
-      .mockReturnValueOnce({
-        providerId: 'provider-1',
-        baseUrl: 'https://persisted.example.com/v1/',
-        token: 'stored-token',
-        modelId: 'stored-model',
-        protocolConfig: { protocol: 'openai-chat-completions' },
-        executionIdentity: 'a'.repeat(64),
-        targetAttribution,
-      })
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveChatTarget,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender)).toEqual([
-        {
-          type: 'chat:error',
-          requestId: 'request-1',
-          assistantMessageId: 'assistant-1',
-          status: 'failed',
-          error: {
-            code: 'config_missing',
-            message: 'No usable chat provider configuration is available.',
-            retryable: false,
-          },
-        },
-      ])
-    })
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Recovered' })
-    manager.start(sender, {
-      ...validRequest(),
-      requestId: 'request-2',
-      assistantMessageId: 'assistant-2',
-    })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-2',
-        assistantMessageId: 'assistant-2',
-        status: 'completed',
-        finalContent: 'Recovered',
-      })
-    })
-  })
-})
-
-describe('ChatSessionManager runtime chat state gate', () => {
-  beforeEach(() => {
-    streamChatCompletion.mockReset()
-  })
-
-  it('does not create a runtime chat state client when explicitly disabled', async () => {
-    streamChatCompletion.mockImplementation(
-      async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-        await onDelta('Hi', 'Hi')
-        return { finalContent: 'Hi' }
-      },
-    )
-    const createRuntimeChatStateClient = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      createRuntimeChatStateClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
-    await waitForAssertion(() => expect(sender.send).toHaveBeenCalled())
-    expect(sender.send).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, {
-      type: 'chat:start',
+    expect(events.find((event) => event.type === 'chat:error')).toMatchObject({
       requestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      status: 'streaming',
-      targetAttribution,
+      targetAttribution: attributionA,
     })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Hi',
-      })
-    })
-  })
-
-  it('runs a new user message through runtime state by default before streaming events', async () => {
-    const order: string[] = []
-    streamChatCompletion.mockImplementation(
-      async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-        order.push('provider:start')
-        await onDelta('Hel', 'Hel')
-        order.push('provider:afterDelta')
-        return { finalContent: 'Hello' }
-      },
+    expect(coordinator.settleTurn).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ requestId: 'request-1', assistantStatus: 'failed' }),
     )
-    const runtimeClient = fakeRuntimeChatStateClient(order)
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => {
-        order.push('runtime:factory')
-        return runtimeClient
-      },
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Hello',
-      })
-    })
-
-    expect(runtimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      content: 'Hello Nyx',
-    })
-    expect(runtimeClient.startAssistant).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-    })
-    expect(runtimeClient.appendDelta).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      snapshot: 'Hel',
-    })
-    expect(runtimeClient.complete).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      finalContent: 'Hello',
-    })
-    expect(order).toEqual([
-      'runtime:factory',
-      'runtime:submitUserMessage',
-      'runtime:startAssistant',
-      'event:chat:start',
-      'provider:start',
-      'runtime:appendDelta',
-      'event:chat:delta',
-      'provider:afterDelta',
-      'runtime:complete',
-      'event:chat:done',
-    ])
-  })
-
-  it('uses explicit turn user message content for runtime submit when provider context is aligned', async () => {
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Hello' })
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: {
-        id: 'user-1',
-        content: 'Explicit current prompt',
-      },
-      messages: [
-        {
-          role: 'user',
-          content: 'Earlier provider context',
-        },
-        {
-          role: 'assistant',
-          content: 'Earlier assistant context',
-        },
-        {
-          role: 'user',
-          content: 'Explicit current prompt',
-        },
-      ],
-    })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Hello',
-      })
-    })
-
-    expect(runtimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      content: 'Explicit current prompt',
-    })
-  })
-
-  it('retries a failed response without resubmitting the user message', async () => {
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Retried answer' })
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      requestId: 'request-retry-1',
-      turnIntent: 'retry_failed_response',
-    })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-retry-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Retried answer',
-      })
-    })
-
-    expect(runtimeClient.submitUserMessage).not.toHaveBeenCalled()
-    expect(runtimeClient.retryFailed).toHaveBeenCalledWith({
-      turnRequestId: 'request-retry-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-    })
-    expect(runtimeClient.startAssistant).toHaveBeenCalledWith({
-      turnRequestId: 'request-retry-1',
-      assistantMessageId: 'assistant-1',
-    })
-  })
-
-  it('records provider failures in runtime state before emitting chat errors', async () => {
-    const order: string[] = []
-    streamChatCompletion.mockRejectedValue(new Error('Provider exploded'))
-    const runtimeClient = fakeRuntimeChatStateClient(order)
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:error',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'failed',
-        targetAttribution,
-        error: {
-          code: 'unknown',
-          message: 'Provider exploded',
-          retryable: true,
-        },
-      })
-    })
-
-    expect(runtimeClient.fail).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      message: 'Provider exploded',
-    })
-    expect(order.slice(-2)).toEqual(['runtime:fail', 'event:chat:error'])
-  })
-
-  it('records cancellation in runtime state before emitting cancelled done', async () => {
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(
-      async ({
-        signal,
-        onDelta,
-      }: {
-        signal: AbortSignal
-        onDelta: (delta: string, snapshot: string) => Promise<void>
-      }) => {
-        activeSignal = signal
-        await onDelta('Part', 'Part')
-
-        return await new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(abortError()), { once: true })
-        })
-      },
+    expect(coordinator.settleTurn).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ requestId: 'request-2', assistantStatus: 'completed' }),
     )
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:delta',
-        snapshot: 'Part',
-      })
-    })
-
-    manager.cancel({ requestId: 'request-1' })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'cancelled',
-        finalContent: 'Part',
-      })
-    })
-
-    expect(activeSignal?.aborted).toBe(true)
-    expect(runtimeClient.cancel).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      assistantMessageId: 'assistant-1',
-      finalContent: 'Part',
-    })
   })
 
-  it('clears runtime chat state on reset', async () => {
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(({ signal }: { signal: AbortSignal }) => {
-      activeSignal = signal
-      return new Promise((_resolve, reject) => {
+  it('settles Stop after acceptance without resolving a target', async () => {
+    const preparation = deferred<PreparedThreadTurn>()
+    const {
+      coordinator,
+      createRuntimeChatStateClient,
+      events,
+      manager,
+      resolveChatTarget,
+      sender,
+    } = setup()
+    coordinator.prepareTurn.mockReturnValueOnce(preparation.promise)
+
+    manager.start(sender, request())
+    await waitFor(() => expect(coordinator.prepareTurn).toHaveBeenCalledOnce())
+    manager.cancel({ threadId, requestId: 'request-1' })
+    preparation.resolve(prepared())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(events.map((event) => event.type)).toEqual(['chat:accepted', 'chat:done'])
+    expect(events.at(-1)).toMatchObject({ status: 'cancelled', finalContent: '' })
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId,
+        requestId: 'request-1',
+        assistantStatus: 'cancelled',
+        assistantContent: '',
+      }),
+    )
+    expect(resolveChatTarget).not.toHaveBeenCalled()
+    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('settles partial content and Runtime cancellation before emitting Stop completion', async () => {
+    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    streamChatCompletion.mockImplementationOnce(async ({ signal, onDelta }) => {
+      await onDelta('Part', 'Partial answer')
+      return await new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(abortError()), { once: true })
       })
     })
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
 
-    manager.start(sender, validRequest())
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:delta'))
+    manager.cancel({ threadId, requestId: 'request-1' })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    await waitForAssertion(() => {
-      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
-    })
-
-    await manager.reset(sender)
-
-    expect(activeSignal?.aborted).toBe(true)
-    expect(runtimeClient.clear).toHaveBeenCalledTimes(1)
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('clears manager-owned runtime chat state from another sender', async () => {
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const otherSender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Done',
-      })
-    })
-
-    await manager.reset(otherSender)
-
-    expect(runtimeClient.clear).toHaveBeenCalledTimes(1)
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps separate runtime chat state clients per sender', async () => {
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Done' })
-    const firstRuntimeClient = fakeRuntimeChatStateClient()
-    const secondRuntimeClient = fakeRuntimeChatStateClient()
-    const createRuntimeChatStateClient = vi
-      .fn()
-      .mockReturnValueOnce(firstRuntimeClient)
-      .mockReturnValueOnce(secondRuntimeClient)
-    const sender = mockSender()
-    const otherSender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Done',
-      })
-    })
-
-    manager.start(
-      otherSender,
-      requestWithIds({
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        content: 'Hello from another sender',
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantStatus: 'cancelled',
+        assistantContent: 'Partial answer',
       }),
     )
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(otherSender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-2',
-        assistantMessageId: 'assistant-2',
-        status: 'completed',
-        finalContent: 'Done',
-      })
-    })
-
-    expect(firstRuntimeClient.close).not.toHaveBeenCalled()
-    expect(secondRuntimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-2',
-      userMessageId: 'user-2',
-      assistantMessageId: 'assistant-2',
-      content: 'Hello from another sender',
-    })
-    expect(createRuntimeChatStateClient).toHaveBeenCalledTimes(2)
-
-    manager.start(
-      sender,
-      requestWithIds({
-        requestId: 'request-3',
-        userMessageId: 'user-3',
-        assistantMessageId: 'assistant-3',
-        content: 'Back to the first sender',
-      }),
-    )
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-3',
-        assistantMessageId: 'assistant-3',
-        status: 'completed',
-        finalContent: 'Done',
-      })
-    })
-
-    expect(createRuntimeChatStateClient).toHaveBeenCalledTimes(2)
-    expect(firstRuntimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-3',
-      userMessageId: 'user-3',
-      assistantMessageId: 'assistant-3',
-      content: 'Back to the first sender',
-    })
-  })
-
-  it('aborts the active turn and clears every runtime projection on global reset', async () => {
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion
-      .mockResolvedValueOnce({ finalContent: 'Done' })
-      .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
-        activeSignal = signal
-
-        return new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(abortError()), { once: true })
-        })
-      })
-    const idleRuntimeClient = fakeRuntimeChatStateClient()
-    const activeRuntimeClient = fakeRuntimeChatStateClient()
-    const createRuntimeChatStateClient = vi
-      .fn()
-      .mockReturnValueOnce(idleRuntimeClient)
-      .mockReturnValueOnce(activeRuntimeClient)
-    const sender = mockSender()
-    const otherSender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'completed',
-        finalContent: 'Done',
-      })
-    })
-
-    manager.start(
-      otherSender,
-      requestWithIds({
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        content: 'Keep streaming',
-      }),
-    )
-
-    await waitForAssertion(() => {
-      expect(streamChatCompletion).toHaveBeenCalledTimes(2)
-    })
-
-    await manager.reset(sender)
-
-    expect(activeSignal?.aborted).toBe(true)
-    expect(idleRuntimeClient.clear).toHaveBeenCalledTimes(1)
-    expect(idleRuntimeClient.close).toHaveBeenCalledTimes(1)
-    expect(activeRuntimeClient.clear).toHaveBeenCalledTimes(1)
-    expect(activeRuntimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('closes runtime chat state when the owning sender is destroyed', async () => {
-    let activeSignal: AbortSignal | undefined
-    streamChatCompletion.mockImplementation(({ signal }: { signal: AbortSignal }) => {
-      activeSignal = signal
-
-      return new Promise(() => {})
-    })
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(streamChatCompletion).toHaveBeenCalledTimes(1)
-    })
-
-    sender.emitDestroyed()
-
-    expect(activeSignal?.aborted).toBe(true)
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('emits a chat error without calling the provider when runtime state setup fails', async () => {
-    const runtimeClient = fakeRuntimeChatStateClient()
-    vi.mocked(runtimeClient.submitUserMessage).mockRejectedValueOnce(new Error('Runtime failed'))
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender)).toEqual([
-        {
-          type: 'chat:error',
-          requestId: 'request-1',
-          assistantMessageId: 'assistant-1',
-          status: 'failed',
-          targetAttribution,
-          error: {
-            code: 'unknown',
-            message: 'Runtime failed',
-            retryable: false,
-          },
-        },
-      ])
-    })
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('recreates the runtime client after a setup failure is discarded', async () => {
-    streamChatCompletion.mockResolvedValue({ finalContent: 'Recovered' })
-    const failedRuntimeClient = fakeRuntimeChatStateClient()
-    const recoveredRuntimeClient = fakeRuntimeChatStateClient()
-    vi.mocked(failedRuntimeClient.submitUserMessage).mockRejectedValueOnce(
-      new RuntimeChatStateClientError('Runtime setup failed'),
-    )
-    const createRuntimeChatStateClient = vi
-      .fn()
-      .mockReturnValueOnce(failedRuntimeClient)
-      .mockReturnValueOnce(recoveredRuntimeClient)
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:error',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'failed',
-        targetAttribution,
-        error: {
-          code: 'unknown',
-          message: 'Runtime setup failed',
-          retryable: false,
-        },
-      })
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      requestId: 'request-2',
-      assistantMessageId: 'assistant-2',
-    })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:done',
-        requestId: 'request-2',
-        assistantMessageId: 'assistant-2',
-        status: 'completed',
-        finalContent: 'Recovered',
-      })
-    })
-
-    expect(createRuntimeChatStateClient).toHaveBeenCalledTimes(2)
-    expect(failedRuntimeClient.close).toHaveBeenCalledTimes(1)
-    expect(recoveredRuntimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-2',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-2',
-      content: 'Hello Nyx',
-    })
-  })
-
-  it('discards runtime client failures during streaming before emitting a non-retryable error', async () => {
-    streamChatCompletion.mockImplementation(
-      async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-        await onDelta('Part', 'Part')
-        return { finalContent: 'Part' }
-      },
-    )
-    const runtimeClient = fakeRuntimeChatStateClient()
-    vi.mocked(runtimeClient.appendDelta).mockRejectedValueOnce(
-      new RuntimeChatStateClientError('Runtime append failed'),
-    )
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toEqual({
-        type: 'chat:error',
-        requestId: 'request-1',
-        assistantMessageId: 'assistant-1',
-        status: 'failed',
-        targetAttribution,
-        error: {
-          code: 'unknown',
-          message: 'Runtime append failed',
-          retryable: false,
-        },
-      })
-    })
-
-    expect(runtimeClient.fail).not.toHaveBeenCalled()
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('ChatSessionManager durable current thread ordering', () => {
-  beforeEach(() => {
-    streamChatCompletion.mockReset()
-  })
-
-  it('uses main-derived messages and persists terminal state before renderer completion', async () => {
-    const order: string[] = []
-    const prepared = preparedTurn()
-    const coordinator = {
-      prepare: vi.fn(async () => {
-        order.push('durable:pending')
-        return prepared
-      }),
-      bindResolvedTarget: vi.fn(async () => {
-        order.push('durable:bind')
-      }),
-      materializeProviderMessages: vi.fn(async () => {
-        order.push('main:materialize')
-        return prepared.providerMessages
-      }),
-      complete: vi.fn(async () => {
-        order.push('durable:complete')
-      }),
-      cancel: vi.fn(),
-      fail: vi.fn(),
-    } as unknown as CurrentThreadSessionCoordinator
-    const resolveChatTarget = vi.fn(() => {
-      order.push('main:resolve')
-      return {
-        providerId: null,
-        baseUrl: 'https://example.com/v1/',
-        token: 'token',
-        modelId: 'model',
-        protocolConfig: { protocol: 'openai-chat-completions' as const },
-        executionIdentity: null,
-        targetAttribution,
-      }
-    })
-    streamChatCompletion.mockImplementation(
-      async (options: {
-        request: NyxChatRequest
-        providerMessages: ReadonlyArray<CurrentThreadProviderMessage>
-      }) => {
-        expect(options.providerMessages).toEqual(prepared.providerMessages)
-        order.push(`provider:${prepared.providerMessages[0]?.content}`)
-        return { finalContent: 'Done' }
-      },
-    )
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done')
-    })
-
-    expect(order).toEqual([
-      'durable:pending',
-      'event:chat:accepted',
-      'main:resolve',
-      'durable:bind',
-      'main:materialize',
-      'event:chat:start',
-      'provider:Durable hello',
-      'durable:complete',
-      'event:chat:done',
-    ])
-    expect(sentChatEvents(sender)[0]).toEqual({
-      type: 'chat:accepted',
-      requestId: 'request-1',
-      userMessageId: 'user-1',
+    expect(runtimeClient.cancel).toHaveBeenCalledWith({
+      turnRequestId: 'request-1',
       assistantMessageId: 'assistant-1',
-      turnIntent: 'new_user_message',
+      finalContent: 'Partial answer',
+    })
+    expect(coordinator.settleTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(runtimeClient.cancel).mock.invocationCallOrder[0]!,
+    )
+    expect(events.at(-1)).toMatchObject({
+      threadId,
+      status: 'cancelled',
+      finalContent: 'Partial answer',
     })
   })
 
-  it('commits Responses continuation before runtime completion and preserves durable success', async () => {
+  it('settles Stop after a deferred target bind without starting execution', async () => {
+    const binding = deferred<ThreadLibraryThreadDetail>()
+    const { coordinator, createRuntimeChatStateClient, events, manager, sender } = setup()
+    coordinator.bindPreparedTarget.mockReturnValueOnce(binding.promise)
+
+    manager.start(sender, request())
+    await waitFor(() => expect(coordinator.bindPreparedTarget).toHaveBeenCalledOnce())
+    manager.cancel({ threadId, requestId: 'request-1' })
+    binding.resolve(detail())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantStatus: 'cancelled', assistantContent: '' }),
+    )
+    expect(coordinator.materializeProviderMessages).not.toHaveBeenCalled()
+    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+    expect(events.map((event) => event.type)).toEqual(['chat:accepted', 'chat:done'])
+  })
+
+  it('retains the single global active Run while checking thread identity on cancel', async () => {
+    const provider = deferred<{ finalContent: string }>()
+    const { events, manager, sender } = setup()
+    streamChatCompletion.mockReturnValueOnce(provider.promise)
+    manager.start(sender, request())
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+
+    manager.start(sender, request({ threadId: otherThreadId, requestId: 'request-2' }))
+    expect(events.at(-1)).toMatchObject({
+      type: 'chat:error',
+      threadId: otherThreadId,
+      requestId: 'request-2',
+      error: { code: 'invalid_request' },
+    })
+
+    manager.cancel({ threadId: otherThreadId, requestId: 'request-1' })
+    expect(streamChatCompletion.mock.calls[0]![0].signal.aborted).toBe(false)
+    manager.cancel({ threadId, requestId: 'request-1' })
+    expect(streamChatCompletion.mock.calls[0]![0].signal.aborted).toBe(true)
+    provider.resolve({ finalContent: 'ignored' })
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    expect(events.at(-1)).toMatchObject({ status: 'cancelled' })
+  })
+
+  it('settles a target-resolution failure before exposing its safe error', async () => {
+    const {
+      coordinator,
+      createRuntimeChatStateClient,
+      events,
+      manager,
+      resolveChatTarget,
+      sender,
+    } = setup()
+    resolveChatTarget.mockRejectedValueOnce(
+      createChatBridgeError({
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
+      }),
+    )
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(events.map((event) => event.type)).toEqual(['chat:accepted', 'chat:error'])
+    expect(events.at(-1)).toMatchObject({
+      error: {
+        code: 'target_unavailable',
+        message: 'The selected chat target is unavailable.',
+        retryable: true,
+      },
+    })
+    expect(events.at(-1)).not.toHaveProperty('targetAttribution')
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantStatus: 'failed',
+        assistantContent: '',
+        error: {
+          code: 'target_unavailable',
+          message: 'The selected chat target is unavailable.',
+          retryable: true,
+        },
+      }),
+    )
+    expect(coordinator.bindPreparedTarget).not.toHaveBeenCalled()
+    expect(coordinator.materializeProviderMessages).not.toHaveBeenCalled()
+    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('persists a Provider failure with its partial content before Runtime and Renderer', async () => {
+    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    vi.mocked(runtimeClient.fail).mockRejectedValueOnce(
+      new RuntimeChatStateClientError('Runtime failure projection failed'),
+    )
+    streamChatCompletion.mockImplementationOnce(async ({ onDelta }) => {
+      await onDelta('Partial', 'Partial draft')
+      throw createChatBridgeError({
+        code: 'upstream_error',
+        message: 'The provider reached its output limit before completing the answer.',
+        retryable: true,
+        details: 'finish_reason=length',
+      })
+    })
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantStatus: 'failed',
+        assistantContent: 'Partial draft',
+        error: {
+          code: 'upstream_error',
+          message: 'The provider could not complete the response.',
+          retryable: true,
+        },
+      }),
+    )
+    expect(coordinator.settleTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(runtimeClient.fail).mock.invocationCallOrder[0]!,
+    )
+    expect(runtimeClient.close).toHaveBeenCalledOnce()
+    expect(events.at(-1)).toMatchObject({
+      targetAttribution: attribution,
+      error: {
+        code: 'upstream_error',
+        details: 'finish_reason=length',
+        retryable: true,
+      },
+    })
+  })
+
+  it('persists Provider attachment rejection before exposing its safe retryable error', async () => {
+    const { coordinator, events, manager, sender } = setup()
+    const attachmentTurn = prepared()
+    attachmentTurn.documentBearing = true
+    coordinator.prepareTurn.mockResolvedValueOnce(attachmentTurn)
+    streamChatCompletion.mockRejectedValueOnce(
+      createChatBridgeError({
+        code: 'content_rejected',
+        message: 'The selected target rejected this attachment request.',
+        retryable: true,
+      }),
+    )
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(streamChatCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ documentBearing: true }),
+    )
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantStatus: 'failed',
+        error: {
+          code: 'content_rejected',
+          message: 'The selected target rejected this attachment request.',
+          retryable: true,
+        },
+      }),
+    )
+    expect(events.at(-1)).toMatchObject({
+      targetAttribution: attribution,
+      error: { code: 'content_rejected', retryable: true },
+    })
+  })
+
+  it('passes canonical image and document history with the document-bearing flag', async () => {
+    const { coordinator, events, manager, sender } = setup()
+    const attachmentTurn = prepared()
+    attachmentTurn.documentBearing = true
+    attachmentTurn.detail.images = [
+      {
+        threadId,
+        owner: 'turn',
+        turnOrdinal: 0,
+        position: 0,
+        imageId,
+        mediaType: 'image/png',
+        width: 2,
+        height: 1,
+        available: true,
+      },
+    ]
+    attachmentTurn.detail.documents = [
+      {
+        threadId,
+        owner: 'turn',
+        turnOrdinal: 0,
+        position: 0,
+        documentId,
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        byteLength: 5,
+        extractedByteLength: 5,
+        sourceSha256: 'b'.repeat(64),
+        extractedTextSha256: 'c'.repeat(64),
+        available: true,
+        extractedText: 'notes',
+      },
+    ]
+    const providerMessages = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AQ==' } },
+          { type: 'text' as const, text: 'Attached document "notes.txt".\n\nnotes' },
+        ],
+      },
+    ]
+    coordinator.prepareTurn.mockResolvedValueOnce(attachmentTurn)
+    coordinator.materializeProviderMessages.mockResolvedValueOnce(providerMessages)
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+
+    expect(streamChatCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ providerMessages, documentBearing: true }),
+    )
+  })
+
+  it('settles an unavailable attachment without starting Runtime or Provider', async () => {
+    const { coordinator, createRuntimeChatStateClient, events, manager, sender } = setup()
+    coordinator.materializeProviderMessages.mockRejectedValueOnce(
+      new ThreadLibraryCoordinatorError('A Thread document is unavailable.', 'invalid_request'),
+    )
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(events.map((event) => event.type)).toEqual(['chat:accepted', 'chat:error'])
+    expect(events.at(-1)).toMatchObject({
+      error: {
+        code: 'invalid_request',
+        message: 'A Thread document is unavailable.',
+        retryable: false,
+      },
+    })
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantStatus: 'failed', assistantContent: '' }),
+    )
+    expect(createRuntimeChatStateClient).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it('commits a Responses continuation before treating Runtime completion as rebuildable', async () => {
     const order: string[] = []
-    const prepared = preparedTurn()
-    const selection = {
-      kind: 'connection' as const,
+    const { coordinator, events, manager, resolveChatTarget, runtimeClient, sender } = setup()
+    const responseAttribution = {
+      kind: 'connection',
       providerId: 'provider-1',
+      providerDisplayName: 'Provider One',
       modelId: 'model-1',
-    }
-    prepared.pendingRecord.turns[0]!.targetBinding.selection = selection
+      modelDisplayName: 'Model One',
+    } as const
+    resolveChatTarget.mockResolvedValueOnce({
+      providerId: 'provider-1',
+      baseUrl: 'https://example.test/v1',
+      token: 'token',
+      modelId: 'model-1',
+      protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+      executionIdentity: 'd'.repeat(64),
+      targetAttribution: responseAttribution,
+    })
     const providerState = {
-      version: 1 as const,
-      protocol: 'openai-responses' as const,
+      version: 1,
+      protocol: 'openai-responses',
       effectiveReasoningContext: null,
       outputItems: [
         {
           type: 'message',
           role: 'assistant',
           status: 'completed',
-          content: [{ type: 'output_text', text: 'Done' }],
+          content: [{ type: 'output_text', text: 'Answer', annotations: [] }],
         },
       ],
-    }
-    const runtimeClient = fakeRuntimeChatStateClient(order)
+    } as const
+    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Answer', providerState })
+    coordinator.settleTurn.mockImplementationOnce(async () => {
+      order.push('worker:settle')
+      return { id: 'settle', ok: true, value: detail('completed') }
+    })
     vi.mocked(runtimeClient.complete).mockImplementationOnce(async () => {
       order.push('runtime:complete')
-      throw new RuntimeChatStateClientError('Runtime complete failed')
-    })
-    const coordinator = {
-      prepare: vi.fn(async () => prepared),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => prepared.providerMessages),
-      complete: vi.fn(async () => {
-        order.push('durable:complete')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done', providerState })
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget: () => ({
-        providerId: 'provider-1',
-        baseUrl: 'https://example.com/v1/',
-        token: 'token',
-        modelId: 'model-1',
-        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
-        executionIdentity: 'a'.repeat(64),
-        targetAttribution: {
-          kind: 'connection',
-          providerId: 'provider-1',
-          providerDisplayName: 'Provider One',
-          modelId: 'model-1',
-          modelDisplayName: 'Model One',
-        },
-      }),
+      throw new RuntimeChatStateClientError('Runtime completion failed')
     })
 
-    manager.start(sender, { ...validRequest(), targetSelection: selection })
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-    expect(coordinator.complete).toHaveBeenCalledWith('request-1', 'assistant-1', 'Done', {
-      state: providerState,
-      executionIdentity: 'a'.repeat(64),
-    })
-    expect(order.indexOf('durable:complete')).toBeLessThan(order.indexOf('runtime:complete'))
-    expect(order.indexOf('runtime:complete')).toBeLessThan(order.indexOf('event:chat:done'))
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('makes zero provider calls when next-turn runtime rehydration fails', async () => {
-    const prepared = preparedTurn()
-    const firstTurn = {
-      ...prepared.pendingRecord.turns[0]!,
-      assistantContent: 'Earlier answer',
-      assistantStatus: 'completed' as const,
-      targetBinding: {
-        selection: targetSelection,
-        attribution: targetAttribution,
-      },
-    }
-    prepared.replayRecord = parseCurrentThreadRecord({
-      ...prepared.pendingRecord,
-      turns: [firstTurn],
-    })
-    prepared.pendingRecord = parseCurrentThreadRecord({
-      ...prepared.pendingRecord,
-      turns: [
-        firstTurn,
-        {
-          ...prepared.pendingRecord.turns[0]!,
-          attemptRequestId: 'request-2',
-          userMessageId: 'user-2',
-          assistantMessageId: 'assistant-2',
-          userContent: 'Continue',
-          assistantContent: '',
-          assistantStatus: 'pending',
-          error: null,
-          providerStateRef: null,
-          targetBinding: { selection: targetSelection, attribution: null },
-        },
-      ],
-    })
-    prepared.providerMessages = [
-      { role: 'user', content: 'Durable hello' },
-      { role: 'assistant', content: 'Earlier answer' },
-      { role: 'user', content: 'Continue' },
-    ]
-    const runtimeClient = fakeRuntimeChatStateClient()
-    vi.mocked(runtimeClient.submitUserMessage).mockRejectedValueOnce(
-      new RuntimeChatStateClientError('Runtime rehydration failed'),
+    expect(coordinator.bindPreparedTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId, requestId: 'request-1' }),
+      responseAttribution,
     )
-    const coordinator = {
-      prepare: vi.fn(async () => prepared),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => prepared.providerMessages),
-      fail: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(
-      sender,
-      requestWithIds({
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        content: 'Continue',
-      }),
-    )
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-    expect(runtimeClient.submitUserMessage).toHaveBeenCalledWith({
-      turnRequestId: 'request-1',
-      userMessageId: 'user-1',
-      assistantMessageId: 'assistant-1',
-      content: 'Durable hello',
-    })
-    expect(coordinator.fail).toHaveBeenCalledWith(
-      'request-2',
-      'assistant-2',
-      '',
-      expect.objectContaining({ message: 'Runtime rehydration failed', retryable: false }),
-    )
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('persists content rejection before emitting the safe image error', async () => {
-    const order: string[] = []
-    const providerMessages = [
-      {
-        role: 'user' as const,
-        content: [{ type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AQ==' } }],
-      },
-    ]
-    const coordinator = {
-      prepare: vi.fn(async () => {
-        order.push('durable:pending')
-        return preparedImageTurn()
-      }),
-      bindResolvedTarget: vi.fn(async () => {
-        order.push('durable:bind')
-      }),
-      materializeProviderMessages: vi.fn(async () => {
-        order.push('main:materialize')
-        return providerMessages
-      }),
-      fail: vi.fn(async () => {
-        order.push('durable:fail')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockImplementationOnce(
-      async ({ providerMessages: actualMessages }: { providerMessages: unknown }) => {
-        order.push('provider:start')
-        expect(actualMessages).toEqual(providerMessages)
-        throw createChatBridgeError({
-          code: 'content_rejected',
-          message: 'The selected target rejected this image request.',
-          retryable: true,
-        })
-      },
-    )
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-    const request = {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user' as const, content: '' }],
-      newImages: [newImage],
-    }
-
-    manager.start(sender, request)
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(order).toEqual([
-      'durable:pending',
-      'event:chat:accepted',
-      'durable:bind',
-      'main:materialize',
-      'event:chat:start',
-      'provider:start',
-      'durable:fail',
-      'event:chat:error',
-    ])
-    expect(coordinator.fail).toHaveBeenCalledWith('request-1', 'assistant-1', '', {
-      code: 'content_rejected',
-      message: 'The selected target rejected this image request.',
-      retryable: true,
-    })
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({
-      error: { code: 'content_rejected', retryable: true },
-    })
-  })
-
-  it('fails an accepted image turn before Runtime or Provider when materialization fails', async () => {
-    const order: string[] = []
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient(order))
-    const coordinator = {
-      prepare: vi.fn(async () => preparedImageTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => {
-        throw new CurrentThreadSessionError('invalid_request', '/private/secret-image.full')
-      }),
-      fail: vi.fn(async () => {
-        order.push('durable:fail')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    })
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(order).toEqual(['event:chat:accepted', 'durable:fail', 'event:chat:error'])
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({
-      error: {
-        code: 'invalid_request',
-        message: 'A current-thread attachment is unavailable.',
-        retryable: false,
-      },
-    })
-    expect(JSON.stringify(sentChatEvents(sender))).not.toContain('/private/')
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('settles Stop after image materialization without starting Runtime or Provider', async () => {
-    const materializeGate = deferred<
-      Array<{
-        role: 'user'
-        content: Array<{ type: 'image_url'; image_url: { url: string } }>
-      }>
-    >()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedImageTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(() => materializeGate.promise),
-      cancel: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    })
-    await waitForAssertion(() =>
-      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
-    )
-    manager.cancel({ requestId: 'request-1' })
-    materializeGate.resolve([
-      {
-        role: 'user',
-        content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }],
-      },
-    ])
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-      'chat:accepted',
-      'chat:done',
-    ])
-    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('settles Stop when image materialization rejects without persisting failure', async () => {
-    const materializeGate = deferred<never>()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedImageTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(() => materializeGate.promise),
-      cancel: vi.fn(async () => undefined),
-      fail: vi.fn(),
-    } as unknown as CurrentThreadSessionCoordinator
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    })
-    await waitForAssertion(() =>
-      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
-    )
-    manager.cancel({ requestId: 'request-1' })
-    materializeGate.reject(new CurrentThreadSessionError('invalid_request', 'unavailable'))
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-      'chat:accepted',
-      'chat:done',
-    ])
-    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
-    expect(coordinator.fail).not.toHaveBeenCalled()
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('suppresses a stale materialization failure after Reset', async () => {
-    const materializeGate = deferred<never>()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedImageTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(() => materializeGate.promise),
-      fail: vi.fn(),
-      reset: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, {
-      ...validRequest(),
-      turnUserMessage: { id: 'user-1', content: '', imageRefs: [imageRef] },
-      messages: [{ role: 'user', content: '' }],
-      newImages: [newImage],
-    })
-    await waitForAssertion(() =>
-      expect(coordinator.materializeProviderMessages).toHaveBeenCalledTimes(1),
-    )
-    const resetOperation = manager.reset(sender)
-    materializeGate.reject(new CurrentThreadSessionError('invalid_request', 'unavailable'))
-
-    await expect(resetOperation).resolves.toEqual({ ok: true })
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual(['chat:accepted'])
-    expect(coordinator.fail).not.toHaveBeenCalled()
-    expect(coordinator.reset).toHaveBeenCalledTimes(1)
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('reports cancellation without acceptance when Stop wins before record commit', async () => {
-    const coordinator = {
-      prepare: vi.fn((_request: NyxChatRequest, signal: AbortSignal) => {
-        return new Promise<PreparedCurrentThreadTurn>((_resolve, reject) => {
-          signal.addEventListener(
-            'abort',
-            () => {
-              const error = new Error('cancelled before commit')
-              error.name = 'AbortError'
-              reject(error)
-            },
-            { once: true },
-          )
-        })
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(coordinator.prepare).toHaveBeenCalledTimes(1))
-    manager.cancel({ requestId: 'request-1' })
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(sentChatEvents(sender)).toMatchObject([
-      { type: 'chat:error', error: { code: 'cancelled', retryable: false } },
-    ])
-  })
-
-  it('accepts then settles cancelled without resolving a target when Stop loses the commit race', async () => {
-    const prepareGate = deferred<PreparedCurrentThreadTurn>()
-    const coordinator = {
-      prepare: vi.fn(async () => prepareGate.promise),
-      cancel: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const resolveChatTarget = vi.fn()
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(coordinator.prepare).toHaveBeenCalledTimes(1))
-    manager.cancel({ requestId: 'request-1' })
-    prepareGate.resolve(preparedTurn())
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-      'chat:accepted',
-      'chat:done',
-    ])
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({ status: 'cancelled' })
-    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
-    expect(resolveChatTarget).not.toHaveBeenCalled()
-  })
-
-  it('keeps real v5 attachment sidecars when Stop wins immediately after a later commit', async () => {
-    const directoryPath = await mkdtemp(join(tmpdir(), 'nyx-session-v4-stop-'))
-    const documentDirectory = join(directoryPath, 'documents')
-    const store = new CurrentThreadStore({
-      filePath: join(directoryPath, 'current-thread.json'),
-      generateId: () => 'thread-v4',
-      now: () => '2026-08-10T00:00:00.000Z',
-    })
-    const documents = new CurrentThreadDocumentFiles({ directoryPath: documentDirectory })
-    const coordinator = new CurrentThreadSessionCoordinator({ store, documents })
-
-    try {
-      await coordinator.prepare({
-        ...validRequest(),
-        turnUserMessage: { id: 'user-1', content: '', documentRefs: [documentRef] },
-        messages: [{ role: 'user', content: '' }],
-        newDocuments: [newDocument],
-      })
-      await coordinator.bindResolvedTarget('request-1', 'assistant-1', targetAttribution)
-      await coordinator.complete('request-1', 'assistant-1', 'Indexed')
-
-      let manager!: ChatSessionManager
-      const wrappedCoordinator = {
-        prepare: vi.fn(async (request: NyxChatRequest, signal: AbortSignal) => {
-          const prepared = await coordinator.prepare(request, signal)
-          manager.cancel({ requestId: request.requestId })
-          return prepared
-        }),
-        cancel: vi.fn((requestId: string, assistantMessageId: string, finalContent: string) =>
-          coordinator.cancel(requestId, assistantMessageId, finalContent),
-        ),
-      } as unknown as CurrentThreadSessionCoordinator
-      const resolveChatTarget = vi.fn()
-      const sender = mockSender()
-      manager = new ChatSessionManager({
-        env: runtimeChatStateDisabledEnv,
-        resolveCurrentThreadSession: () => wrappedCoordinator,
-        resolveChatTarget,
-      })
-
-      manager.start(sender, {
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        turnIntent: 'new_user_message',
-        turnUserMessage: { id: 'user-2', content: 'Next' },
-        messages: [
-          { role: 'user', content: '' },
-          { role: 'assistant', content: 'Indexed' },
-          { role: 'user', content: 'Next' },
-        ],
-        targetSelection,
-      })
-
-      await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-      expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-        'chat:accepted',
-        'chat:done',
-      ])
-      await expect(store.read()).resolves.toMatchObject({
-        version: 5,
-        turns: [
-          { documentRefs: [expect.objectContaining(documentRef)] },
-          { assistantStatus: 'cancelled', documentRefs: [] },
-        ],
-      })
-      await expect(
-        stat(join(documentDirectory, `${documentRef.documentId}.source`)),
-      ).resolves.toBeDefined()
-      await expect(
-        stat(join(documentDirectory, `${documentRef.documentId}.text`)),
-      ).resolves.toBeDefined()
-      expect(resolveChatTarget).not.toHaveBeenCalled()
-      expect(streamChatCompletion).not.toHaveBeenCalled()
-    } finally {
-      await rm(directoryPath, { recursive: true, force: true })
-    }
-  })
-
-  it('persists accepted cancellation in the real store while target resolution is pending', async () => {
-    const directoryPath = await mkdtemp(join(tmpdir(), 'nyx-session-stop-'))
-    const store = new CurrentThreadStore({
-      filePath: join(directoryPath, 'current-thread.json'),
-      generateId: () => 'thread-1',
-      now: () => '2026-08-09T00:00:00.000Z',
-    })
-    const coordinator = new CurrentThreadSessionCoordinator({ store })
-    const targetGate = deferred<{
-      providerId: null
-      baseUrl: string
-      token: string
-      modelId: string
-      protocolConfig: { protocol: 'openai-chat-completions' }
-      executionIdentity: null
-      targetAttribution: typeof targetAttribution
-    }>()
-    const resolveChatTarget = vi.fn(() => targetGate.promise)
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget,
-    })
-
-    try {
-      manager.start(sender, validRequest())
-      await waitForAssertion(() => expect(resolveChatTarget).toHaveBeenCalledTimes(1))
-      manager.cancel({ requestId: 'request-1' })
-      targetGate.resolve({
-        providerId: null,
-        baseUrl: 'https://example.com/v1/',
-        token: 'token',
-        modelId: 'model',
-        protocolConfig: { protocol: 'openai-chat-completions' },
-        executionIdentity: null,
-        targetAttribution,
-      })
-
-      await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-      expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-        'chat:accepted',
-        'chat:done',
-      ])
-      await expect(store.read()).resolves.toMatchObject({
-        turns: [
-          {
-            assistantStatus: 'cancelled',
-            assistantContent: '',
-            targetBinding: { attribution: null },
-          },
-        ],
-      })
-      expect(streamChatCompletion).not.toHaveBeenCalled()
-    } finally {
-      await rm(directoryPath, { recursive: true, force: true })
-    }
-  })
-
-  it('settles cancellation after a deferred target bind without starting execution', async () => {
-    const bindGate = deferred<void>()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(() => bindGate.promise),
-      cancel: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(coordinator.bindResolvedTarget).toHaveBeenCalledTimes(1))
-    manager.cancel({ requestId: 'request-1' })
-    bindGate.resolve()
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done'))
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-      'chat:accepted',
-      'chat:done',
-    ])
-    expect(coordinator.cancel).toHaveBeenCalledWith('request-1', 'assistant-1', '')
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('does not attempt cancellation settlement after a failed target bind', async () => {
-    const bindGate = deferred<void>()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(() => bindGate.promise),
-      cancel: vi.fn(),
-    } as unknown as CurrentThreadSessionCoordinator
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(coordinator.bindResolvedTarget).toHaveBeenCalledTimes(1))
-    manager.cancel({ requestId: 'request-1' })
-    bindGate.reject(new CurrentThreadSessionError('store_error', 'bind failed'))
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(sentChatEvents(sender).map((event) => event.type)).toEqual([
-      'chat:accepted',
-      'chat:error',
-    ])
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({
-      error: { code: 'unknown', retryable: false },
-    })
-    expect(coordinator.cancel).not.toHaveBeenCalled()
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('settles target resolution failure before the renderer error without starting runtime', async () => {
-    const order: string[] = []
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient(order))
-    const coordinator = {
-      prepare: vi.fn(async () => {
-        order.push('durable:pending')
-        return preparedTurn()
-      }),
-      bindResolvedTarget: vi.fn(),
-      fail: vi.fn(async () => {
-        order.push('durable:fail')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const resolveChatTarget = vi.fn(() => {
-      order.push('main:resolve')
-      throw createChatBridgeError({
-        code: 'target_unavailable',
-        message: 'The selected chat target is unavailable.',
-        retryable: true,
-      })
-    })
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(order).toEqual([
-      'durable:pending',
-      'event:chat:accepted',
-      'main:resolve',
-      'durable:fail',
-      'event:chat:error',
-    ])
-    expect(sentChatEvents(sender).at(-1)).not.toHaveProperty('targetAttribution')
-    expect(coordinator.bindResolvedTarget).not.toHaveBeenCalled()
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('stops after a durable attribution bind failure and leaves recovery to the store', async () => {
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => {
-        throw new CurrentThreadSessionError('store_error', 'bind failed')
-      }),
-      fail: vi.fn(),
-    } as unknown as CurrentThreadSessionCoordinator
-    const runtimeFactory = vi.fn(() => fakeRuntimeChatStateClient())
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: runtimeFactory,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({
-      error: { code: 'unknown', retryable: false },
-    })
-    expect(sentChatEvents(sender).at(-1)).not.toHaveProperty('targetAttribution')
-    expect(coordinator.fail).not.toHaveBeenCalled()
-    expect(runtimeFactory).not.toHaveBeenCalled()
-    expect(streamChatCompletion).not.toHaveBeenCalled()
-  })
-
-  it('keeps bound attribution on a durable terminal write failure', async () => {
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      complete: vi.fn(async () => {
-        throw new CurrentThreadSessionError('store_error', 'complete failed')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done' })
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:error'))
-    expect(sentChatEvents(sender).at(-1)).toMatchObject({
-      type: 'chat:error',
-      targetAttribution,
-      error: {
-        code: 'unknown',
-        message: 'Nyx could not save the current thread.',
-        retryable: false,
-      },
-    })
-    expect(sentChatEvents(sender).some((event) => event.type === 'chat:done')).toBe(false)
-  })
-
-  it('persists the latest assistant draft when the provider reaches its output limit', async () => {
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      fail: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockImplementationOnce(
-      async ({ onDelta }: { onDelta: (delta: string, snapshot: string) => Promise<void> }) => {
-        await onDelta('Partial', 'Partial draft')
-        throw createChatBridgeError({
-          code: 'upstream_error',
-          message: 'The provider reached its output limit before completing the answer.',
-          retryable: true,
-          details: 'finish_reason=length; reasoning_received=false',
-        })
-      },
-    )
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:error',
-        error: {
-          code: 'upstream_error',
-          details: 'finish_reason=length; reasoning_received=false',
-          retryable: true,
-        },
-      })
-    })
-    expect(coordinator.fail).toHaveBeenCalledWith(
-      'request-1',
-      'assistant-1',
-      'Partial draft',
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: 'The provider reached its output limit before completing the answer.',
-        retryable: true,
-        details: 'finish_reason=length; reasoning_received=false',
+        assistantStatus: 'completed',
+        assistantContent: 'Answer',
+        continuation: {
+          executionIdentity: 'd'.repeat(64),
+          state: providerState,
+        },
       }),
     )
+    expect(order).toEqual(['worker:settle', 'runtime:complete'])
+    expect(runtimeClient.close).toHaveBeenCalledOnce()
+    expect(events.at(-1)).toMatchObject({ status: 'completed', finalContent: 'Answer' })
   })
 
-  it('fails closed before provider work when durable request validation fails', async () => {
-    const coordinator = {
-      prepare: vi.fn(async () => {
-        throw new CurrentThreadSessionError('invalid_request', 'Durable messages differ.')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
+  it('settles a Runtime replay failure without starting Provider work', async () => {
+    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    coordinator.replayRuntimeHistory.mockRejectedValueOnce(
+      new RuntimeChatStateClientError('Runtime replay failed'),
+    )
+
+    manager.start(sender, request())
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(coordinator.settleTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantStatus: 'failed', assistantContent: '' }),
+    )
+    expect(runtimeClient.fail).toHaveBeenCalledWith({
+      turnRequestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      message: 'Runtime replay failed',
     })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:error',
-        error: { code: 'invalid_request', retryable: false },
-      })
+    expect(events.at(-1)).toMatchObject({
+      error: { message: 'Runtime replay failed', retryable: false },
     })
     expect(streamChatCompletion).not.toHaveBeenCalled()
   })
 
-  it('resets durable state even when no runtime client was started', async () => {
-    const coordinator = {
-      reset: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const manager = new ChatSessionManager({
-      env: runtimeChatStateDisabledEnv,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    await manager.reset(mockSender())
-
-    expect(coordinator.reset).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps the durable provider failure when runtime failure projection also fails', async () => {
-    const order: string[] = []
-    const runtimeClient = fakeRuntimeChatStateClient(order)
-    vi.mocked(runtimeClient.fail).mockImplementationOnce(async () => {
-      order.push('runtime:fail')
-      throw new RuntimeChatStateClientError('Runtime fail failed')
-    })
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      fail: vi.fn(async () => {
-        order.push('durable:fail')
-      }),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockRejectedValueOnce(new Error('Provider failed'))
-    const sender = mockSender(order)
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
+  it('retries an exact terminal settlement without a second Provider or Runtime call', async () => {
+    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    coordinator.settleTurn.mockResolvedValueOnce({
+      id: 'settle-failed',
+      ok: false,
+      safeError: { code: 'library_unavailable', message: 'Unavailable' },
+      outcome: 'definitely_not_committed',
+    } as never)
+    manager.start(sender, request())
+    await waitFor(() =>
+      expect(events.at(-1)).toMatchObject({
         type: 'chat:error',
-        error: { message: 'Provider failed', retryable: true },
-      })
-    })
-    expect(order.indexOf('durable:fail')).toBeLessThan(order.indexOf('runtime:fail'))
-    expect(order.indexOf('runtime:fail')).toBeLessThan(order.indexOf('event:chat:error'))
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps the durable cancellation when runtime cancellation rejects', async () => {
-    const runtimeClient = fakeRuntimeChatStateClient()
-    vi.mocked(runtimeClient.cancel).mockRejectedValueOnce(
-      new RuntimeChatStateClientError('Runtime cancel failed'),
-    )
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      cancel: vi.fn(async () => undefined),
-      fail: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    streamChatCompletion.mockImplementationOnce(
-      ({ signal }: { signal: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(abortError()), { once: true })
-        }),
-    )
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-    manager.cancel({ requestId: 'request-1' })
-
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:done',
-        status: 'cancelled',
-      })
-    })
-    expect(coordinator.cancel).toHaveBeenCalledTimes(1)
-    expect(coordinator.fail).not.toHaveBeenCalled()
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('discards an existing runtime when config failure advances only durable state', async () => {
-    const runtimeClient = fakeRuntimeChatStateClient()
-    const coordinator = {
-      prepare: vi.fn(async () => preparedTurn()),
-      bindResolvedTarget: vi.fn(async () => undefined),
-      materializeProviderMessages: vi.fn(async () => preparedTurn().providerMessages),
-      complete: vi.fn(async () => undefined),
-      fail: vi.fn(async () => undefined),
-    } as unknown as CurrentThreadSessionCoordinator
-    const resolveChatTarget = vi
-      .fn()
-      .mockReturnValueOnce({
-        providerId: 'provider-1',
-        baseUrl: 'https://example.com/v1/',
-        token: 'token',
-        modelId: 'model',
-        protocolConfig: { protocol: 'openai-chat-completions' },
-        executionIdentity: 'a'.repeat(64),
-        targetAttribution,
-      })
-      .mockImplementationOnce(() => {
-        throw new Error('Config failed')
-      })
-    streamChatCompletion.mockResolvedValueOnce({ finalContent: 'Done' })
-    const sender = mockSender()
-    const manager = new ChatSessionManager({
-      env: {},
-      createRuntimeChatStateClient: () => runtimeClient,
-      resolveCurrentThreadSession: () => coordinator,
-      resolveChatTarget,
-    })
-
-    manager.start(sender, validRequest())
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)?.type).toBe('chat:done')
-    })
-
-    manager.start(
-      sender,
-      requestWithIds({
-        requestId: 'request-2',
-        userMessageId: 'user-2',
-        assistantMessageId: 'assistant-2',
-        content: 'Continue',
+        error: { code: 'unknown', message: "Couldn't save result" },
       }),
     )
-    await waitForAssertion(() => {
-      expect(sentChatEvents(sender).at(-1)).toMatchObject({
-        type: 'chat:error',
-        error: { message: 'Config failed' },
-      })
-    })
+    expect(runtimeClient.complete).not.toHaveBeenCalled()
 
-    expect(coordinator.fail).toHaveBeenCalledTimes(1)
-    expect(runtimeClient.close).toHaveBeenCalledTimes(1)
+    await manager.retrySettlement(sender, { threadId, requestId: 'request-1' })
+    expect(events.at(-1)).toMatchObject({ type: 'chat:done', finalContent: 'Answer' })
+    expect(streamChatCompletion).toHaveBeenCalledTimes(1)
+    expect(runtimeClient.complete).not.toHaveBeenCalled()
+    expect(coordinator.retrySettlement).toHaveBeenCalledWith(threadId, 'request-1')
   })
 })

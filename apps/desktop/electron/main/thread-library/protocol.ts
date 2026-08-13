@@ -19,8 +19,12 @@ const localSecond = z.iso.datetime({ local: true, precision: 0 })
 const location = z.enum(['available', 'archived', 'trash'])
 const position = z.number().int().nonnegative()
 
-function genericTitle(local: string, ordinal: number, kind: 'Image' | 'Untitled draft') {
-  const base = `${kind} · ${local.replace('T', ' ')}`
+export function formatThreadGenericTitle(
+  localSecond: string,
+  ordinal: number,
+  kind: 'Image' | 'Untitled draft',
+) {
+  const base = `${kind} · ${localSecond.replace('T', ' ')}`
   return ordinal === 1 ? base : `${base} · ${ordinal}`
 }
 
@@ -44,16 +48,17 @@ const threadRowSchema = z
   })
   .strict()
   .superRefine((row, context) => {
-    if ((row.fallbackLocalSecond === null) !== (row.fallbackOrdinal === null)) {
-      context.addIssue({ code: 'custom', message: 'Fallback identity must be complete.' })
+    if (row.fallbackOrdinal !== null && row.fallbackLocalSecond === null) {
+      context.addIssue({ code: 'custom', message: 'Fallback ordinal requires a local second.' })
     }
     if (
-      row.fallbackLocalSecond !== null &&
-      row.fallbackOrdinal !== null &&
-      row.title !== genericTitle(row.fallbackLocalSecond, row.fallbackOrdinal, 'Image') &&
-      row.title !== genericTitle(row.fallbackLocalSecond, row.fallbackOrdinal, 'Untitled draft')
+      row.titleSource === 'manual' &&
+      (row.fallbackLocalSecond !== null || row.fallbackOrdinal !== null)
     ) {
-      context.addIssue({ code: 'custom', message: 'Fallback title does not match its identity.' })
+      context.addIssue({
+        code: 'custom',
+        message: 'Manual titles cannot retain fallback identity.',
+      })
     }
     if (
       (row.location === 'trash') !== (row.trashedFromLocation !== null) ||
@@ -243,6 +248,24 @@ export const importedV5RowsSchema = z
 
 export type ImportedV5Rows = z.infer<typeof importedV5RowsSchema>
 
+function importedFallbackIdentityMatches(rows: ImportedV5Rows) {
+  const second = rows.thread.fallbackLocalSecond
+  const ordinal = rows.thread.fallbackOrdinal
+  return (
+    (second === null && ordinal === null) ||
+    (second !== null &&
+      ordinal === 1 &&
+      (rows.thread.title === formatThreadGenericTitle(second, ordinal, 'Image') ||
+        rows.thread.title === formatThreadGenericTitle(second, ordinal, 'Untitled draft')))
+  )
+}
+
+const importedV5InputRowsSchema = importedV5RowsSchema.superRefine((rows, context) => {
+  if (!importedFallbackIdentityMatches(rows)) {
+    context.addIssue({ code: 'custom', message: 'Imported fallback identity is invalid.' })
+  }
+})
+
 const draftImageInputSchema = chatImageRefSchema.extend({ position, available: z.boolean() })
 const draftDocumentInputSchema = chatDocumentRefSchema
   .extend({ position, available: z.boolean(), extractedText: z.string().nullable() })
@@ -262,10 +285,14 @@ const draftPayloadSchema = z
   .strict()
   .superRefine((draft, context) => {
     if (
-      duplicate(draft.images.map((row) => row.imageId)) ||
+      duplicate([
+        ...draft.images.map((row) => row.imageId),
+        ...draft.documents.map((row) => row.documentId),
+      ]) ||
       duplicate(draft.images.map((row) => row.position)) ||
-      duplicate(draft.documents.map((row) => row.documentId)) ||
-      duplicate(draft.documents.map((row) => row.position))
+      draft.images.some((row, index) => row.position !== index) ||
+      duplicate(draft.documents.map((row) => row.position)) ||
+      draft.documents.some((row, index) => row.position !== index)
     ) {
       context.addIssue({ code: 'custom', message: 'Draft resources must be unique and ordered.' })
     }
@@ -299,29 +326,29 @@ const operationInputSchemas = {
   materialize: z
     .object({
       threadId: uuid,
-      title: nonBlank,
-      targetSelection: chatTargetSelectionSchema,
-      fallbackLocalSecond: localSecond.nullable(),
+      draft: draftPayloadSchema,
+      fallbackLocalSecond: localSecond,
       createdAt: timestamp,
     })
     .strict()
     .superRefine((input, context) => {
       if (
-        input.fallbackLocalSecond !== null &&
-        input.title !== genericTitle(input.fallbackLocalSecond, 1, 'Image') &&
-        input.title !== genericTitle(input.fallbackLocalSecond, 1, 'Untitled draft')
+        input.draft.text.trim().length === 0 &&
+        input.draft.images.length === 0 &&
+        input.draft.documents.length === 0
       ) {
         context.addIssue({
           code: 'custom',
-          message: 'Fallback title does not match its identity.',
+          message: 'Materialize requires text or an accepted resource.',
         })
       }
     }),
   readThread: z.object({ threadId: uuid }).strict(),
+  snapshot: z.object({ threadId: uuid.nullable() }).strict(),
   listPage: z
     .object({ location, cursor: z.string().max(1024).nullable(), limit: z.literal(50) })
     .strict(),
-  importV5: z.object({ rows: importedV5RowsSchema }).strict(),
+  importV5: z.object({ rows: importedV5InputRowsSchema }).strict(),
   saveDraft: z
     .object({
       threadId: uuid,
@@ -386,11 +413,64 @@ const operationInputSchemas = {
       repairedAt: timestamp,
     })
     .strict(),
+  markSeen: z
+    .object({
+      threadId: uuid,
+      observedResultRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
+  discardEmptyShell: z
+    .object({
+      threadId: uuid,
+      expectedDraftRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
 } as const
 
 export type ThreadLibraryOperation = keyof typeof operationInputSchemas
 export type ThreadLibraryOperationInput = {
   [Operation in ThreadLibraryOperation]: z.infer<(typeof operationInputSchemas)[Operation]>
+}
+
+export function deriveThreadDraftTitle(
+  draft: ThreadLibraryOperationInput['saveDraft']['draft'],
+): { title: string; genericKind: null } | { title: null; genericKind: 'Image' | 'Untitled draft' } {
+  const normalizedText = draft.text.trim().replace(/\s+/gu, ' ')
+  const text = Array.from(normalizedText)
+  if (text.length > 0) {
+    return {
+      title: text.length <= 48 ? normalizedText : `${text.slice(0, 45).join('').trimEnd()}...`,
+      genericKind: null,
+    }
+  }
+
+  const document = [...draft.documents]
+    .sort((left, right) => left.position - right.position)
+    .find((row) => row.available)
+  if (!document) {
+    return {
+      title: null,
+      genericKind: draft.images.some((row) => row.available) ? 'Image' : 'Untitled draft',
+    }
+  }
+
+  const normalizedName = document.name.trim().replace(/\s+/gu, ' ')
+  const name = Array.from(normalizedName)
+  if (name.length <= 48) {
+    return { title: normalizedName, genericKind: null }
+  }
+  const dot = name.lastIndexOf('.')
+  const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot) : []
+  return {
+    title:
+      extension.length > 0 && extension.length <= 44
+        ? `${name
+            .slice(0, 48 - 3 - extension.length)
+            .join('')
+            .trimEnd()}...${extension.join('')}`
+        : `${name.slice(0, 45).join('').trimEnd()}...`,
+    genericKind: null,
+  }
 }
 
 export type ThreadLibraryRequest = {
@@ -400,6 +480,13 @@ export type ThreadLibraryRequest = {
     input: ThreadLibraryOperationInput[Operation]
   }
 }[ThreadLibraryOperation]
+
+export function parseThreadLibraryOperationInput<Operation extends ThreadLibraryOperation>(
+  operation: Operation,
+  value: unknown,
+): ThreadLibraryOperationInput[Operation] {
+  return operationInputSchemas[operation].parse(value) as ThreadLibraryOperationInput[Operation]
+}
 
 export type ThreadLibraryMutationOutcome =
   | 'definitely_not_committed'
@@ -447,12 +534,20 @@ const threadSummarySchema = z
     createdAt: timestamp,
     updatedAt: timestamp,
     threadRevision: z.number().int().positive(),
+    resultRevision: z.number().int().nonnegative(),
+    seenResultRevision: z.number().int().nonnegative(),
   })
   .strict()
-const threadListRowSchema = z.discriminatedUnion('availability', [
-  threadSummarySchema.extend({ availability: z.literal('available') }),
-  threadIdentitySchema.extend({ availability: z.literal('unavailable') }),
-])
+const threadListRowSchema = z
+  .discriminatedUnion('availability', [
+    threadSummarySchema.extend({ availability: z.literal('available') }),
+    threadIdentitySchema.extend({ availability: z.literal('unavailable') }),
+  ])
+  .superRefine((row, context) => {
+    if (row.availability === 'available' && row.seenResultRevision > row.resultRevision) {
+      context.addIssue({ code: 'custom', message: 'Seen result revision is ahead of the result.' })
+    }
+  })
 
 const threadDetailSchema = z
   .object({
@@ -535,6 +630,12 @@ const operationValueSchemas = {
   close: z.object({ closed: z.literal(true) }).strict(),
   materialize: threadDetailSchema,
   readThread: threadDetailSchema.nullable(),
+  snapshot: z
+    .object({
+      detail: threadDetailSchema.nullable(),
+      includedThroughCursor: z.number().int().nonnegative(),
+    })
+    .strict(),
   listPage: z
     .object({
       rows: z.array(threadListRowSchema).max(50),
@@ -551,6 +652,8 @@ const operationValueSchemas = {
   recoverPending: z.object({ recovered: z.number().int().nonnegative() }).strict(),
   setResourceAvailability: threadDetailSchema,
   repairProviderStateRef: threadDetailSchema,
+  markSeen: threadDetailSchema,
+  discardEmptyShell: z.object({ discarded: z.boolean() }).strict(),
 } as const
 
 export type ThreadLibraryOperationValue = {
@@ -558,6 +661,16 @@ export type ThreadLibraryOperationValue = {
 }
 export type ThreadLibraryThreadDetail = ThreadLibraryOperationValue['materialize']
 export type ThreadLibraryListRow = ThreadLibraryOperationValue['listPage']['rows'][number]
+
+const acknowledgementClockSchema = z
+  .object({
+    generation: uuid,
+    watermark: z.number().int().nonnegative(),
+    actualMutation: z.boolean(),
+  })
+  .strict()
+
+export type ThreadLibraryAcknowledgementClock = z.infer<typeof acknowledgementClockSchema>
 
 export function parseThreadLibraryThreadIdentity(value: unknown) {
   return threadIdentitySchema.parse(value)
@@ -572,7 +685,12 @@ export function parseThreadLibraryThreadDetail(value: unknown): ThreadLibraryThr
 }
 
 export type ThreadLibraryReply<Operation extends ThreadLibraryOperation = ThreadLibraryOperation> =
-  | { id: string; ok: true; value: ThreadLibraryOperationValue[Operation] }
+  | {
+      id: string
+      ok: true
+      value: ThreadLibraryOperationValue[Operation]
+      clock: ThreadLibraryAcknowledgementClock
+    }
   | {
       id: string
       ok: false
@@ -594,7 +712,7 @@ export function parseThreadLibraryRequest(value: unknown): ThreadLibraryRequest 
   const envelope = requestEnvelopeSchema.parse(value)
   return {
     ...envelope,
-    input: operationInputSchemas[envelope.operation].parse(envelope.input),
+    input: parseThreadLibraryOperationInput(envelope.operation, envelope.input),
   } as ThreadLibraryRequest
 }
 
@@ -604,7 +722,14 @@ export function parseThreadLibraryReply<Operation extends ThreadLibraryOperation
 ): ThreadLibraryReply<Operation> {
   const envelope = z
     .discriminatedUnion('ok', [
-      z.object({ id: nonEmpty, ok: z.literal(true), value: z.unknown() }).strict(),
+      z
+        .object({
+          id: nonEmpty,
+          ok: z.literal(true),
+          value: z.unknown(),
+          clock: acknowledgementClockSchema,
+        })
+        .strict(),
       z
         .object({
           id: nonEmpty,
@@ -620,8 +745,14 @@ export function parseThreadLibraryReply<Operation extends ThreadLibraryOperation
     return envelope
   }
 
-  return {
-    ...envelope,
-    value: operationValueSchemas[operation].parse(envelope.value),
-  } as ThreadLibraryReply<Operation>
+  const parsedValue = operationValueSchemas[operation].parse(envelope.value)
+
+  if (
+    (operation === 'listPage' || operation === 'snapshot') &&
+    (parsedValue as ThreadLibraryOperationValue['listPage']).includedThroughCursor !==
+      envelope.clock.watermark
+  ) {
+    throw new Error('Thread Library reply clock does not match its snapshot boundary.')
+  }
+  return { ...envelope, value: parsedValue } as ThreadLibraryReply<Operation>
 }

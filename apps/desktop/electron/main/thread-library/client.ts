@@ -2,17 +2,27 @@ import { Worker } from 'node:worker_threads'
 import { isDeepStrictEqual } from 'node:util'
 
 import {
+  deriveThreadDraftTitle,
+  formatThreadGenericTitle,
   parseThreadLibraryReply,
   threadLibrarySafeErrorMessages,
+  type ThreadLibraryAcknowledgementClock,
   type ImportedV5Rows,
   type ThreadLibraryMutationOutcome,
   type ThreadLibraryOperation,
   type ThreadLibraryOperationInput,
+  type ThreadLibraryOperationValue,
   type ThreadLibraryReply,
   type ThreadLibraryRequest,
   type ThreadLibrarySafeErrorCode,
   type ThreadLibraryThreadDetail,
 } from './protocol'
+
+export type ThreadLibraryAcknowledgement = {
+  operation: ThreadLibraryOperation
+  value: ThreadLibraryOperationValue[ThreadLibraryOperation]
+  clock: ThreadLibraryAcknowledgementClock
+}
 
 type PendingRequest = {
   generation: number
@@ -49,9 +59,17 @@ function matchesMaterialize(
   input: ThreadLibraryOperationInput['materialize'],
   detail: ThreadLibraryThreadDetail,
 ) {
+  const derivedTitle = deriveThreadDraftTitle(input.draft)
   const fallbackOrdinal = detail.summary.fallbackOrdinal
   const expectedTitle =
-    fallbackOrdinal && fallbackOrdinal > 1 ? `${input.title} · ${fallbackOrdinal}` : input.title
+    derivedTitle.title ??
+    (fallbackOrdinal === null
+      ? null
+      : formatThreadGenericTitle(
+          input.fallbackLocalSecond,
+          fallbackOrdinal,
+          derivedTitle.genericKind,
+        ))
 
   return (
     detail.summary.id === input.threadId &&
@@ -60,9 +78,9 @@ function matchesMaterialize(
     detail.summary.title === expectedTitle &&
     detail.summary.titleSource === 'auto' &&
     detail.summary.fallbackLocalSecond === input.fallbackLocalSecond &&
-    (input.fallbackLocalSecond === null
-      ? fallbackOrdinal === null
-      : fallbackOrdinal !== null && fallbackOrdinal > 0) &&
+    (derivedTitle.title === null
+      ? fallbackOrdinal !== null && fallbackOrdinal > 0
+      : fallbackOrdinal === null) &&
     detail.summary.threadRevision === 1 &&
     detail.summary.lastUserActivityAt === input.createdAt &&
     detail.summary.resultRevision === 0 &&
@@ -71,12 +89,18 @@ function matchesMaterialize(
     detail.summary.updatedAt === input.createdAt &&
     detail.draft.threadId === input.threadId &&
     detail.draft.draftRevision === 0 &&
-    detail.draft.text === '' &&
-    isDeepStrictEqual(detail.draft.targetSelection, input.targetSelection) &&
+    detail.draft.text === input.draft.text &&
+    isDeepStrictEqual(detail.draft.targetSelection, input.draft.targetSelection) &&
     detail.draft.updatedAt === input.createdAt &&
     detail.turns.length === 0 &&
-    detail.images.length === 0 &&
-    detail.documents.length === 0 &&
+    isDeepStrictEqual(
+      detail.images.map(({ threadId: _, owner: __, turnOrdinal: ___, ...row }) => row),
+      input.draft.images,
+    ) &&
+    isDeepStrictEqual(
+      detail.documents.map(({ threadId: _, owner: __, turnOrdinal: ___, ...row }) => row),
+      input.draft.documents,
+    ) &&
     detail.providerStateRefs.length === 0
   )
 }
@@ -194,9 +218,23 @@ export class ThreadLibraryClient {
   private replacement: { generation: number; promise: Promise<boolean> } | null = null
   private requestCounter = 0
   private worker: Worker | null = null
+  private verifiedClock: Omit<ThreadLibraryAcknowledgementClock, 'actualMutation'> | null = null
+  private observeAcknowledgement:
+    | ((acknowledgement: ThreadLibraryAcknowledgement) => void)
+    | undefined
 
-  constructor(databasePath: string) {
+  constructor(
+    databasePath: string,
+    observeAcknowledgement?: (acknowledgement: ThreadLibraryAcknowledgement) => void,
+  ) {
     this.databasePath = databasePath
+    this.observeAcknowledgement = observeAcknowledgement
+  }
+
+  setAcknowledgementObserver(
+    observeAcknowledgement: ((acknowledgement: ThreadLibraryAcknowledgement) => void) | undefined,
+  ) {
+    this.observeAcknowledgement = observeAcknowledgement
   }
 
   async open() {
@@ -210,7 +248,11 @@ export class ThreadLibraryClient {
 
   async close() {
     if (!this.worker) {
-      return { id: 'closed', ok: true, value: { closed: true } } as const
+      return failure(
+        'closed',
+        'library_unavailable',
+        'definitely_not_committed',
+      ) as ThreadLibraryReply<'close'>
     }
     const reply = await this.send('close', {})
     await this.lastExit
@@ -221,8 +263,92 @@ export class ThreadLibraryClient {
     return this.send('readThread', input)
   }
 
+  snapshot(input: ThreadLibraryOperationInput['snapshot']) {
+    return this.send('snapshot', input)
+  }
+
   listPage(input: ThreadLibraryOperationInput['listPage']) {
     return this.send('listPage', input)
+  }
+
+  markSeen(input: ThreadLibraryOperationInput['markSeen']) {
+    return this.mutateThread('markSeen', input, (id, canonical) => {
+      if (canonical === undefined) {
+        return failure(id, 'library_unavailable', 'outcome_unknown')
+      }
+      if (canonical === null) {
+        return failure(id, 'not_found', 'definitely_not_committed')
+      }
+      if (canonical.summary.resultRevision < input.observedResultRevision) {
+        return failure(id, 'invalid_request', 'definitely_not_committed')
+      }
+      if (canonical.summary.seenResultRevision >= input.observedResultRevision) {
+        return { id, ok: true, value: canonical, clock: this.requiredClock() }
+      }
+      return failure(id, 'library_unavailable', 'definitely_not_committed')
+    })
+  }
+
+  async discardEmptyShell(input: ThreadLibraryOperationInput['discardEmptyShell']) {
+    const failedGeneration = this.generation
+    let requestId = ''
+    try {
+      const reply = await this.send('discardEmptyShell', input, (id) => {
+        requestId = id
+      })
+      if (reply.ok || reply.outcome === 'definitely_not_committed') {
+        return reply
+      }
+      this.invalidateGeneration(failedGeneration, 'Thread discard outcome is unknown.')
+    } catch (error) {
+      if (!(error instanceof ThreadLibraryTransportError)) {
+        throw error
+      }
+      if (error.outcome === 'definitely_not_committed') {
+        return failure(
+          requestId || 'discardEmptyShell',
+          'library_unavailable',
+          'definitely_not_committed',
+        ) as ThreadLibraryReply<'discardEmptyShell'>
+      }
+    }
+
+    const canonical = await this.readCanonical(input.threadId, failedGeneration)
+    if (canonical === undefined) {
+      return failure(
+        requestId || 'discardEmptyShell',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'discardEmptyShell'>
+    }
+    if (canonical === null) {
+      return {
+        id: requestId || 'discardEmptyShell',
+        ok: true,
+        value: { discarded: true },
+        clock: this.requiredClock(),
+      } as ThreadLibraryReply<'discardEmptyShell'>
+    }
+    return {
+      id: requestId || 'discardEmptyShell',
+      ok: true,
+      value: { discarded: false },
+      clock: this.requiredClock(),
+    } as ThreadLibraryReply<'discardEmptyShell'>
+  }
+
+  currentClock() {
+    if (!this.verifiedClock) {
+      throw new ThreadLibraryTransportError(
+        'The Thread Library has no verified acknowledgement clock.',
+        'definitely_not_committed',
+      )
+    }
+    return this.verifiedClock
+  }
+
+  private requiredClock(): ThreadLibraryAcknowledgementClock {
+    return { ...this.currentClock(), actualMutation: false }
   }
 
   saveDraft(input: ThreadLibraryOperationInput['saveDraft']) {
@@ -234,7 +360,12 @@ export class ThreadLibraryClient {
         return failure(id, 'not_found', 'definitely_not_committed')
       }
       if (draftMatches(input, canonical)) {
-        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+        return {
+          id,
+          ok: true,
+          value: { status: 'committed', detail: canonical },
+          clock: this.requiredClock(),
+        }
       }
       return failure(
         id,
@@ -257,7 +388,12 @@ export class ThreadLibraryClient {
         return failure(id, 'not_found', 'definitely_not_committed')
       }
       if (startMatches(input, canonical)) {
-        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+        return {
+          id,
+          ok: true,
+          value: { status: 'committed', detail: canonical },
+          clock: this.requiredClock(),
+        }
       }
       return failure(
         id,
@@ -280,7 +416,12 @@ export class ThreadLibraryClient {
         return failure(id, 'not_found', 'definitely_not_committed')
       }
       if (retryMatches(input, canonical)) {
-        return { id, ok: true, value: { status: 'committed', detail: canonical } }
+        return {
+          id,
+          ok: true,
+          value: { status: 'committed', detail: canonical },
+          clock: this.requiredClock(),
+        }
       }
       const previous = canonical.turns[input.turnOrdinal]
       if (
@@ -307,7 +448,7 @@ export class ThreadLibraryClient {
         }
         const turn = canonical.turns.find((row) => row.attemptRequestId === input.requestId)
         if (turn && isDeepStrictEqual(turn.targetAttribution, input.targetAttribution)) {
-          return { id, ok: true, value: canonical }
+          return { id, ok: true, value: canonical, clock: this.requiredClock() }
         }
         return failure(
           id,
@@ -335,7 +476,7 @@ export class ThreadLibraryClient {
           return failure(id, 'not_found', 'definitely_not_committed')
         }
         if (terminalMatches(input, canonical)) {
-          return { id, ok: true, value: canonical }
+          return { id, ok: true, value: canonical, clock: this.requiredClock() }
         }
         const turn = canonical.turns.find((row) => row.attemptRequestId === input.requestId)
         return failure(
@@ -362,7 +503,7 @@ export class ThreadLibraryClient {
         input.images.every((row) => images.get(row.id) === row.available) &&
         input.documents.every((row) => documents.get(row.id) === row.available)
       ) {
-        return { id, ok: true, value: canonical }
+        return { id, ok: true, value: canonical, clock: this.requiredClock() }
       }
       return failure(id, 'library_unavailable', 'outcome_unknown')
     })
@@ -381,7 +522,7 @@ export class ThreadLibraryClient {
         (row) => row.stateId === input.providerStateRef.stateId,
       )
       if (turn && turn.providerStateId === null && ref === undefined) {
-        return { id, ok: true, value: canonical }
+        return { id, ok: true, value: canonical, clock: this.requiredClock() }
       }
       if (
         turn?.providerStateId === input.providerStateRef.stateId &&
@@ -545,7 +686,7 @@ export class ThreadLibraryClient {
     if (!matchesMaterialize(input, canonical)) {
       return failure(requestId, 'already_exists', 'definitely_not_committed')
     }
-    return { id: requestId, ok: true, value: canonical }
+    return { id: requestId, ok: true, value: canonical, clock: this.requiredClock() }
   }
 
   private async reconcileImport(
@@ -575,7 +716,12 @@ export class ThreadLibraryClient {
         'definitely_not_committed',
       ) as ThreadLibraryReply<'importV5'>
     }
-    return { id: requestId, ok: true, value: { threadId: rows.thread.id, imported: true } }
+    return {
+      id: requestId,
+      ok: true,
+      value: { threadId: rows.thread.id, imported: true },
+      clock: this.requiredClock(),
+    }
   }
 
   private async readCanonical(threadId: string, replaceGeneration: number | null) {
@@ -631,6 +777,7 @@ export class ThreadLibraryClient {
       worker.once('exit', (code) => {
         if (this.worker === worker) {
           this.worker = null
+          this.verifiedClock = null
         }
         this.rejectGeneration(
           generation,
@@ -762,15 +909,51 @@ export class ThreadLibraryClient {
       this.invalidateGeneration(generation, 'Thread Library Worker sent an invalid reply.')
       return
     }
+    if (reply.ok && !this.acceptsClock(pending.operation, reply.clock)) {
+      this.invalidateGeneration(generation, 'Thread Library Worker clock is invalid.')
+      return
+    }
     clearTimeout(pending.timer)
     this.pending.delete(message.id)
+    if (reply.ok) {
+      this.verifiedClock = {
+        generation: reply.clock.generation,
+        watermark: reply.clock.watermark,
+      }
+      try {
+        this.observeAcknowledgement?.({
+          operation: pending.operation,
+          value: reply.value,
+          clock: reply.clock,
+        })
+      } catch {
+        pending.reject(
+          new ThreadLibraryTransportError('Thread Library acknowledgement could not be observed.'),
+        )
+        this.invalidateGeneration(generation, 'Thread Library acknowledgement observer failed.')
+        return
+      }
+    }
     pending.resolve(reply)
+  }
+
+  private acceptsClock(
+    operation: ThreadLibraryOperation,
+    clock: ThreadLibraryAcknowledgementClock,
+  ) {
+    const current = this.verifiedClock
+    if (!current || current.generation !== clock.generation) {
+      return operation === 'open' && clock.watermark === 0 && !clock.actualMutation
+    }
+    const expectedWatermark = current.watermark + Number(clock.actualMutation)
+    return clock.watermark === expectedWatermark
   }
 
   private invalidateGeneration(generation: number, message: string) {
     if (generation !== this.generation) {
       return
     }
+    this.verifiedClock = null
     this.rejectGeneration(generation, new ThreadLibraryTransportError(message))
     if (this.worker) {
       void this.worker.terminate()

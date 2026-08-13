@@ -5,8 +5,7 @@ import {
   nyxChatImageVariants,
   type NyxChatImageVariant,
 } from '../../../shared/chat/image-url'
-import type { CurrentThreadImageFiles } from './image-files'
-import type { CurrentThreadRecord } from './schemas'
+import type { NyxChatImageRef } from '../../../shared/chat/types'
 
 const imageIdPattern =
   /^\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -28,8 +27,16 @@ export interface ImageProtocolNet {
   fetch(input: string, options: { bypassCustomProtocolHandlers: true }): Promise<Response>
 }
 
-export interface CurrentThreadImageRecordReader {
-  read(): Promise<CurrentThreadRecord | null>
+export interface ThreadLibraryImageAuthorization {
+  resolve(imageId: string): { threadId: string; ref: NyxChatImageRef } | null
+}
+
+export interface ThreadLibraryImageFiles {
+  resolveImageProtocolFile(
+    threadId: string,
+    ref: NyxChatImageRef,
+    variant: NyxChatImageVariant,
+  ): Promise<{ filePath: string; mediaType: string }>
 }
 
 export function registerNyxImageScheme(registrar: ImageSchemeRegistrar) {
@@ -75,13 +82,13 @@ export function parseNyxImageRequest(request: Request) {
 export function registerNyxImageProtocol({
   protocol,
   net,
-  recordReader,
+  authorization,
   images,
 }: {
   protocol: ImageProtocolRegistrar
   net: ImageProtocolNet
-  recordReader: CurrentThreadImageRecordReader
-  images: CurrentThreadImageFiles
+  authorization: ThreadLibraryImageAuthorization
+  images: ThreadLibraryImageFiles
 }) {
   protocol.handle(nyxChatImageScheme, async (request) => {
     const route = parseNyxImageRequest(request)
@@ -94,13 +101,17 @@ export function registerNyxImageProtocol({
     }
 
     try {
-      const record = await recordReader.read()
+      const authorized = authorization.resolve(route.imageId)
 
-      if (!record) {
+      if (!authorized) {
         return new Response(null, { status: 404 })
       }
 
-      const image = await images.resolveProtocolFile(record, route.imageId, route.variant)
+      const image = await images.resolveImageProtocolFile(
+        authorized.threadId,
+        authorized.ref,
+        route.variant,
+      )
       const fileResponse = await net.fetch(pathToFileURL(image.filePath).toString(), {
         bypassCustomProtocolHandlers: true,
       })

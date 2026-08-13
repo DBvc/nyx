@@ -1,22 +1,22 @@
 import type {
-  NyxChatError,
   NyxChatDocumentMediaType,
   NyxChatDocumentRef,
-  NyxChatInputMessage,
+  NyxChatError,
   NyxChatImageRef,
   NyxChatMessage,
   NyxChatRunStatus,
   NyxChatTargetSelection,
   NyxChatTurnIntent,
-  NyxChatTurnUserMessage,
 } from '../../../shared/chat/types'
 import type {
-  NyxCurrentThreadResetError,
-  NyxCurrentThreadSnapshotError,
-} from '../../../shared/chat/snapshot'
+  NyxThreadRetryableTurn,
+  NyxThreadSafeError,
+  NyxThreadSettlementFailure,
+  NyxThreadSummary,
+} from '../../../shared/threads/types'
 
 export type ChatHydrationStatus = 'loading' | 'ready' | 'error'
-export type ChatResetStatus = 'idle' | 'resetting'
+export type ChatSaveStatus = 'idle' | 'saving'
 
 export type ChatImageDraft =
   | {
@@ -31,8 +31,8 @@ export type ChatImageDraft =
       status: 'ready'
       source: null
       image: Omit<NyxChatImageRef, 'imageId'>
-      canonicalBytes: Uint8Array
-      previewBytes: Uint8Array
+      canonicalBytes?: Uint8Array
+      previewBytes?: Uint8Array
       previewUrl: string
     }
   | {
@@ -58,9 +58,9 @@ export type ChatDocumentDraft =
       status: 'ready'
       source: null
       document: Omit<NyxChatDocumentRef, 'documentId'>
-      sourceBytes: Uint8Array
-      extractedTextBytes: Uint8Array
-      extractedFromSha256: string
+      sourceBytes?: Uint8Array
+      extractedTextBytes?: Uint8Array
+      extractedFromSha256?: string
     }
   | {
       id: string
@@ -72,45 +72,48 @@ export type ChatDocumentDraft =
     }
 
 export interface ChatTurnRequest {
+  threadId: string
   requestId: string
-  userMessageId: string
-  assistantMessageId: string
   turnIntent: NyxChatTurnIntent
   accepted: boolean
-  turnUserMessage: NyxChatTurnUserMessage
-  submittedMessages: ReadonlyArray<NyxChatInputMessage>
-  targetSelection: NyxChatTargetSelection
+  expectedDraftRevision: number
+  turnOrdinal?: number
+  expectedAttemptRequestId?: string
   capturedInput: string
   capturedDraftImageIds: ReadonlyArray<string>
   capturedDraftDocumentIds: ReadonlyArray<string>
-  userMessage?: NyxChatMessage
-  assistantMessage?: NyxChatMessage
-}
-
-export interface RetryableChatTurn {
-  userMessageId: string
-  assistantMessageId: string
-  turnUserMessage: NyxChatTurnUserMessage
-  submittedMessages: ReadonlyArray<NyxChatInputMessage>
+  userMessageId?: string
+  assistantMessageId?: string
 }
 
 export interface ChatState {
+  selectedThreadId: string | null
+  threadSummary: NyxThreadSummary | null
   messages: NyxChatMessage[]
   input: string
   draftImages: ChatImageDraft[]
   draftDocuments: ChatDocumentDraft[]
+  draftRevision: number
+  draftEditVersion: number
+  savedEditVersion: number
   composerNotice: string | null
   composerError: NyxChatError | null
   runStatus: NyxChatRunStatus
   activeRequestId: string | undefined
   activeAssistantMessageId: string | undefined
   activeTurn: ChatTurnRequest | null
-  retryableTurn: RetryableChatTurn | null
+  retryableTurn: NyxThreadRetryableTurn | null
+  settlementFailure: NyxThreadSettlementFailure | null
   hydrationStatus: ChatHydrationStatus
-  hydrationError: NyxCurrentThreadSnapshotError | null
+  hydrationError: NyxThreadSafeError | null
+  hydrationErrorThreadId: string | null
+  hydrationRetrying: boolean
+  newThreadPending: boolean
   projectionGeneration: number
-  resetStatus: ChatResetStatus
-  resetError: NyxCurrentThreadResetError | null
+  saveStatus: ChatSaveStatus
+  eventEpoch: string | null
+  listCursor: number
+  detailCursor: number
   committedTarget: NyxChatTargetSelection | null
   targetDraft: NyxChatTargetSelection | null
   targetInitialized: boolean
@@ -120,10 +123,15 @@ export interface ChatState {
 }
 
 export const initialChatState: ChatState = {
+  selectedThreadId: null,
+  threadSummary: null,
   messages: [],
   input: '',
   draftImages: [],
   draftDocuments: [],
+  draftRevision: 0,
+  draftEditVersion: 0,
+  savedEditVersion: 0,
   composerNotice: null,
   composerError: null,
   runStatus: 'idle',
@@ -131,11 +139,17 @@ export const initialChatState: ChatState = {
   activeAssistantMessageId: undefined,
   activeTurn: null,
   retryableTurn: null,
+  settlementFailure: null,
   hydrationStatus: 'loading',
   hydrationError: null,
+  hydrationErrorThreadId: null,
+  hydrationRetrying: false,
+  newThreadPending: false,
   projectionGeneration: 0,
-  resetStatus: 'idle',
-  resetError: null,
+  saveStatus: 'idle',
+  eventEpoch: null,
+  listCursor: 0,
+  detailCursor: 0,
   committedTarget: null,
   targetDraft: null,
   targetInitialized: false,

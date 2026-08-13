@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../shared/connections/ipc'
 import type { NyxConnectionsOverviewResult } from '../../shared/connections/types'
+import { NYX_THREADS_IPC_CHANNELS } from '../../shared/threads/ipc'
 
 type RegisteredIpcHandler = (
   event: { sender: WebContents; senderFrame?: WebFrameMain | null },
@@ -85,6 +86,7 @@ vi.mock('electron', () => ({
 
 import {
   acquireSingleInstanceOwnership,
+  bindRendererProjectionTeardown,
   configureRendererPermissions,
   registerIpcHandlers,
   resolveDevServerUrl,
@@ -218,47 +220,91 @@ describe('single-instance ownership', () => {
   })
 })
 
+describe('Renderer projection lifecycle', () => {
+  it('revokes projection-owned authorization on close, crash, and main-frame replacement', () => {
+    const windowListeners = new Map<string, (...args: never[]) => void>()
+    const webContentsListeners = new Map<string, (...args: never[]) => void>()
+    const teardown = vi.fn()
+    const window = {
+      on: vi.fn((event: string, listener: (...args: never[]) => void) => {
+        windowListeners.set(event, listener)
+      }),
+      webContents: {
+        on: vi.fn((event: string, listener: (...args: never[]) => void) => {
+          webContentsListeners.set(event, listener)
+        }),
+      },
+    }
+
+    bindRendererProjectionTeardown(window as never, teardown)
+    webContentsListeners.get('did-start-navigation')?.({
+      isMainFrame: false,
+      isSameDocument: false,
+    } as never)
+    webContentsListeners.get('did-start-navigation')?.({
+      isMainFrame: true,
+      isSameDocument: true,
+    } as never)
+    expect(teardown).not.toHaveBeenCalled()
+
+    webContentsListeners.get('did-start-navigation')?.({
+      isMainFrame: true,
+      isSameDocument: false,
+    } as never)
+    webContentsListeners.get('render-process-gone')?.()
+    windowListeners.get('closed')?.()
+    expect(teardown).toHaveBeenCalledTimes(3)
+  })
+})
+
 describe('registerIpcHandlers', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     vi.clearAllMocks()
   })
 
-  it('returns the safe async reset result to ipcRenderer.invoke callers', () => {
+  it('returns the settlement Retry promise to ipcRenderer.invoke callers', () => {
     const sender = {} as WebContents
-    const resetPromise = Promise.resolve({ ok: true } as const)
+    const retryPromise = Promise.resolve()
     const chatSessionManager = {
       start: vi.fn(),
       cancel: vi.fn(),
-      reset: vi.fn(() => resetPromise),
+      retrySettlement: vi.fn(() => retryPromise),
     }
 
     registerIpcHandlers({ chatSessionManager })
 
-    const result = registeredHandler(NYX_CHAT_IPC_CHANNELS.reset)({ sender })
+    const input = { threadId: 'thread', requestId: 'request' }
+    const result = registeredHandler(NYX_CHAT_IPC_CHANNELS.retrySettlement)({ sender }, input)
 
-    expect(chatSessionManager.reset).toHaveBeenCalledWith(sender)
-    expect(result).toBe(resetPromise)
+    expect(chatSessionManager.retrySettlement).toHaveBeenCalledWith(sender, input)
+    expect(result).toBe(retryPromise)
   })
 
-  it('returns the safe current thread snapshot promise to ipcRenderer.invoke callers', () => {
-    const snapshotResult = {
-      ok: true,
-      value: null,
-    } as const
-    const snapshotPromise = Promise.resolve(snapshotResult)
-    const currentThreadSnapshot = {
-      getSnapshot: vi.fn(() => snapshotPromise),
+  it('returns the Thread Library controller promise to ipcRenderer.invoke callers', () => {
+    const pagePromise = Promise.resolve({
+      ok: true as const,
+      value: { rows: [], nextCursor: null, eventEpoch: 'epoch', includedThroughCursor: 0 },
+    })
+    const threads = {
+      listPage: vi.fn(() => pagePromise),
+      get: vi.fn(),
+      materialize: vi.fn(),
+      saveDraft: vi.fn(),
+      retryOpen: vi.fn(),
+      markSeen: vi.fn(),
     }
 
-    registerIpcHandlers({ currentThreadSnapshot })
+    registerIpcHandlers({ threads })
 
-    const result = registeredHandler(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot)({
-      sender: {} as WebContents,
-    })
+    const input = { location: 'available', cursor: null, limit: 50 }
+    const result = registeredHandler(NYX_THREADS_IPC_CHANNELS.listPage)(
+      { sender: {} as WebContents },
+      input,
+    )
 
-    expect(currentThreadSnapshot.getSnapshot).toHaveBeenCalledTimes(1)
-    expect(result).toBe(snapshotPromise)
+    expect(threads.listPage).toHaveBeenCalledWith(input)
+    expect(result).toBe(pagePromise)
   })
 
   it('returns connection IPC handler promises to ipcRenderer.invoke callers', () => {
@@ -292,7 +338,7 @@ describe('registerIpcHandlers', () => {
       chatSessionManager: {
         start: vi.fn(),
         cancel: vi.fn(),
-        reset: vi.fn(async () => ({ ok: true as const })),
+        retrySettlement: vi.fn(),
       },
       connections,
     })
@@ -341,7 +387,7 @@ describe('registerIpcHandlers', () => {
     const chatSessionManager = {
       start: vi.fn(),
       cancel: vi.fn(),
-      reset: vi.fn(async () => ({ ok: true as const })),
+      retrySettlement: vi.fn(),
     }
     const connections = {
       overview: vi.fn(),

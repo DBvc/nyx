@@ -2,10 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { NyxChatEvent } from '../../shared/chat/events'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
-import type {
-  NyxCurrentThreadResetResult,
-  NyxCurrentThreadSnapshotResult,
-} from '../../shared/chat/snapshot'
 import { NYX_CONNECTIONS_IPC_CHANNELS } from '../../shared/connections/ipc'
 import type {
   NyxConnectionDeleteProviderInput,
@@ -27,6 +23,8 @@ import type {
 import type { NyxDesktopApi } from '../../shared/contracts/desktop'
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import type { NyxProviderStatus } from '../../shared/provider/types'
+import type { NyxThreadEvent } from '../../shared/threads/events'
+import { NYX_THREADS_IPC_CHANNELS } from '../../shared/threads/ipc'
 
 const api: NyxDesktopApi = {
   platform: process.platform,
@@ -36,16 +34,10 @@ const api: NyxDesktopApi = {
     node: process.versions.node,
   },
   chat: {
-    startChat: (request) =>
-      ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.start, request) as Promise<void>,
-    cancelChat: (request) =>
-      ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.cancel, request) as Promise<void>,
-    resetChatSession: () =>
-      ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.reset) as Promise<NyxCurrentThreadResetResult>,
-    getCurrentThreadSnapshot: () =>
-      ipcRenderer.invoke(
-        NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot,
-      ) as Promise<NyxCurrentThreadSnapshotResult>,
+    start: (request) => ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.start, request) as Promise<void>,
+    cancel: (request) => ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.cancel, request) as Promise<void>,
+    retrySettlement: (request) =>
+      ipcRenderer.invoke(NYX_CHAT_IPC_CHANNELS.retrySettlement, request) as Promise<void>,
     subscribe: (listener) => {
       const subscription = (_event: Electron.IpcRendererEvent, chatEvent: NyxChatEvent) => {
         listener(chatEvent)
@@ -55,6 +47,25 @@ const api: NyxDesktopApi = {
 
       return () => {
         ipcRenderer.removeListener(NYX_CHAT_IPC_CHANNELS.event, subscription)
+      }
+    },
+  },
+  threads: {
+    listPage: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.listPage, input),
+    get: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.get, input),
+    materialize: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.materialize, input),
+    saveDraft: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.saveDraft, input),
+    retryOpen: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.retryOpen, input),
+    markSeen: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.markSeen, input),
+    subscribe: (listener) => {
+      const subscription = (_event: Electron.IpcRendererEvent, threadEvent: NyxThreadEvent) => {
+        listener(threadEvent)
+      }
+
+      ipcRenderer.on(NYX_THREADS_IPC_CHANNELS.event, subscription)
+
+      return () => {
+        ipcRenderer.removeListener(NYX_THREADS_IPC_CHANNELS.event, subscription)
       }
     },
   },

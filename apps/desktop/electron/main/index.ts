@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
-import type { NyxChatCancellationRequest } from '../../shared/chat/types'
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
+import { NYX_THREADS_IPC_CHANNELS } from '../../shared/threads/ipc'
 import { readProviderStatus } from './chat/env'
 import { ChatSessionManager } from './chat/session'
 import {
@@ -29,16 +29,10 @@ import { createConnectionsSettingsPaths } from './connections/config-file'
 import { registerConnectionsIpcHandlers } from './connections/ipc-handlers'
 import { createLazyChatTargetResolver } from './connections/provider-resolver'
 import { createSafeStorageSecretCrypto, SecretStore } from './connections/secret-store'
-import {
-  CurrentThreadSnapshotService,
-  type CurrentThreadSnapshotController,
-} from './current-thread/snapshot'
-import { CurrentThreadSessionCoordinator } from './current-thread/session-coordinator'
-import { CurrentThreadStore } from './current-thread/store'
-import { CurrentThreadImageFiles } from './current-thread/image-files'
-import { CurrentThreadDocumentFiles } from './current-thread/document-files'
 import { registerNyxImageProtocol, registerNyxImageScheme } from './current-thread/image-protocol'
 import { createRuntimeChatStateClient } from './runtime/chat-state-client'
+import { activateThreadLibrary } from './thread-library/activation'
+import { ThreadLibraryService } from './thread-library/service'
 import { configureMainAutoUpdate } from './update/service'
 
 const moduleDir = dirname(fileURLToPath(import.meta.url))
@@ -159,90 +153,34 @@ function createMainConnectionsService() {
   })
 }
 
-function createMainCurrentThreadStoreResolver() {
-  let store: CurrentThreadStore | undefined
-
-  return () => {
-    store ??= new CurrentThreadStore({
-      filePath: join(app.getPath('userData'), 'threads', 'current-thread.json'),
-    })
-
-    return store
-  }
-}
-
-function createMainCurrentThreadSessionResolver(
-  resolveStore: ReturnType<typeof createMainCurrentThreadStoreResolver>,
-  resolveImages: ReturnType<typeof createMainCurrentThreadImageFilesResolver>,
-  resolveDocuments: ReturnType<typeof createMainCurrentThreadDocumentFilesResolver>,
-) {
-  let session: CurrentThreadSessionCoordinator | undefined
-
-  return () => {
-    session ??= new CurrentThreadSessionCoordinator({
-      store: resolveStore(),
-      images: resolveImages(),
-      documents: resolveDocuments(),
-    })
-    return session
-  }
-}
-
-function createMainCurrentThreadDocumentFilesResolver() {
-  let documents: CurrentThreadDocumentFiles | undefined
-
-  return () => {
-    documents ??= new CurrentThreadDocumentFiles({
-      directoryPath: join(app.getPath('userData'), 'threads', 'current-thread-documents'),
-    })
-    return documents
-  }
-}
-
-function createMainCurrentThreadImageFilesResolver() {
-  let images: CurrentThreadImageFiles | undefined
-
-  return () => {
-    images ??= new CurrentThreadImageFiles({
-      directoryPath: join(app.getPath('userData'), 'threads', 'current-thread-assets'),
-      decodeImageSize: (bytes) => {
-        const image = nativeImage.createFromBuffer(
-          Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-        )
-
-        return image.isEmpty() ? null : image.getSize()
-      },
-    })
-
-    return images
-  }
-}
-
 function createMainServices() {
-  const resolveCurrentThreadStore = createMainCurrentThreadStoreResolver()
-  const resolveCurrentThreadImages = createMainCurrentThreadImageFilesResolver()
-  const resolveCurrentThreadDocuments = createMainCurrentThreadDocumentFilesResolver()
-  const resolveCurrentThreadSession = createMainCurrentThreadSessionResolver(
-    resolveCurrentThreadStore,
-    resolveCurrentThreadImages,
-    resolveCurrentThreadDocuments,
-  )
+  const threadLibraryService = new ThreadLibraryService({
+    activate: () =>
+      activateThreadLibrary({
+        userDataPath: app.getPath('userData'),
+        decodeImageSize: (bytes) => {
+          const image = nativeImage.createFromBuffer(
+            Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          )
+          return image.isEmpty() ? null : image.getSize()
+        },
+      }),
+    broadcastThreadEvent: (event) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(NYX_THREADS_IPC_CHANNELS.event, event)
+      }
+    },
+  })
 
   return {
     chatSessionManager: new ChatSessionManager({
       createRuntimeChatStateClient: createMainRuntimeChatStateClient,
       resolveChatTarget: createMainChatTargetResolver(),
-      resolveCurrentThreadSession,
+      resolveThreadLibraryCoordinator: () => threadLibraryService.resolveCoordinator(),
+      publishChatEvent: (sender, event) => threadLibraryService.publishChatEvent(sender, event),
     }),
     connectionsService: createMainConnectionsService(),
-    currentThreadSnapshotService: new CurrentThreadSnapshotService({
-      resolveReader: resolveCurrentThreadStore,
-      resolveImages: resolveCurrentThreadImages,
-      resolveDocuments: resolveCurrentThreadDocuments,
-    }),
-    resolveCurrentThreadDocuments,
-    resolveCurrentThreadImages,
-    resolveCurrentThreadStore,
+    threadLibraryService,
   }
 }
 
@@ -253,12 +191,16 @@ function resolveMainServices() {
   return mainServices
 }
 
-type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'reset'>
+type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'retrySettlement'>
+type ThreadLibraryController = Pick<
+  ThreadLibraryService,
+  'listPage' | 'get' | 'materialize' | 'saveDraft' | 'retryOpen' | 'markSeen'
+>
 
 export interface RegisterIpcHandlersOptions {
   chatSessionManager?: ChatSessionController
   connections?: ConnectionsController
-  currentThreadSnapshot?: CurrentThreadSnapshotController
+  threads?: ThreadLibraryController
   providerStatusReader?: typeof readProviderStatus
 }
 
@@ -266,31 +208,37 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}) {
   const defaults = resolveMainServices()
   const manager = options.chatSessionManager ?? defaults.chatSessionManager
   const connections = options.connections ?? defaults.connectionsService
-  const currentThreadSnapshot =
-    options.currentThreadSnapshot ?? defaults.currentThreadSnapshotService
+  const threads = options.threads ?? defaults.threadLibraryService
   const providerStatusReader = options.providerStatusReader ?? readProviderStatus
 
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.start)
   ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.cancel)
-  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.reset)
-  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot)
+  ipcMain.removeHandler(NYX_CHAT_IPC_CHANNELS.retrySettlement)
+  for (const channel of Object.values(NYX_THREADS_IPC_CHANNELS)) {
+    if (channel !== NYX_THREADS_IPC_CHANNELS.event) ipcMain.removeHandler(channel)
+  }
   ipcMain.removeHandler(NYX_PROVIDER_IPC_CHANNELS.status)
 
   ipcMain.handle(NYX_CHAT_IPC_CHANNELS.start, (event, request: unknown) => {
     manager.start(event.sender, request)
   })
 
-  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: NyxChatCancellationRequest) => {
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.cancel, (_event, request: unknown) => {
     manager.cancel(request)
   })
 
-  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.reset, (event) => {
-    return manager.reset(event.sender)
+  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.retrySettlement, (event, request: unknown) => {
+    return manager.retrySettlement(event.sender, request)
   })
 
-  ipcMain.handle(NYX_CHAT_IPC_CHANNELS.currentThreadSnapshot, () => {
-    return currentThreadSnapshot.getSnapshot()
-  })
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.listPage, (_event, input) => threads.listPage(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.get, (_event, input) => threads.get(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.materialize, (_event, input) =>
+    threads.materialize(input),
+  )
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.saveDraft, (_event, input) => threads.saveDraft(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.retryOpen, (_event, input) => threads.retryOpen(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.markSeen, (_event, input) => threads.markSeen(input))
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())
 
@@ -316,6 +264,9 @@ function createMainWindow() {
       nodeIntegration: false,
     },
   })
+  bindRendererProjectionTeardown(window, () =>
+    resolveMainServices().threadLibraryService.rendererTeardown(),
+  )
 
   if (devServerUrl) {
     void window.loadURL(devServerUrl)
@@ -325,6 +276,17 @@ function createMainWindow() {
 
   void window.loadFile(join(rendererDistPath, 'index.html'))
   return window
+}
+
+export function bindRendererProjectionTeardown(
+  window: Pick<BrowserWindow, 'on' | 'webContents'>,
+  teardown: () => void,
+) {
+  window.on('closed', teardown)
+  window.webContents.on('render-process-gone', teardown)
+  window.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) teardown()
+  })
 }
 
 function configureAutoUpdate() {
@@ -338,23 +300,21 @@ function configureAutoUpdate() {
 if (ownsSingleInstance) {
   app.whenReady().then(async () => {
     const services = resolveMainServices()
+    await services.threadLibraryService.initialize()
 
     nativeTheme.themeSource = 'dark'
     configureRendererPermissions(electronSession.defaultSession)
     registerNyxImageProtocol({
       protocol: electronSession.defaultSession.protocol,
       net,
-      recordReader: services.resolveCurrentThreadStore(),
-      images: services.resolveCurrentThreadImages(),
+      authorization: {
+        resolve: (imageId) => services.threadLibraryService.resolveAuthorizedImage(imageId),
+      },
+      images: {
+        resolveImageProtocolFile: (threadId, ref, variant) =>
+          services.threadLibraryService.resolveImageProtocolFile(threadId, ref, variant),
+      },
     })
-
-    try {
-      const record = await services.resolveCurrentThreadStore().read()
-      await services.resolveCurrentThreadImages().reconcile(record)
-      await services.resolveCurrentThreadDocuments().reconcile(record)
-    } catch {
-      // Malformed or unknown records must not authorize cleanup.
-    }
 
     registerIpcHandlers()
     createMainWindow()

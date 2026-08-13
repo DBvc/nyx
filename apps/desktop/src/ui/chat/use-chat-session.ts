@@ -1,19 +1,17 @@
 import { useEffect, useReducer, useRef } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
+import type { NyxThreadEvent } from '../../../shared/threads/events'
+import type {
+  NyxThreadDetail,
+  NyxThreadSafeError,
+  NyxThreadSaveDraftInput,
+} from '../../../shared/threads/types'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
 import type {
-  NyxCurrentThreadResetError,
-  NyxCurrentThreadSnapshotError,
-} from '../../../shared/chat/snapshot'
-import type {
   NyxChatError,
   NyxChatDocumentMediaType,
-  NyxChatInputMessage,
-  NyxChatMessage,
-  NyxChatNewDocument,
-  NyxChatNewImage,
   NyxChatTargetSelection,
 } from '../../../shared/chat/types'
 import { chatReducer } from './chat-reducer'
@@ -50,50 +48,19 @@ function normalizeBridgeError(error: unknown): NyxChatError {
   }
 }
 
-function currentThreadSnapshotBridgeError(): NyxCurrentThreadSnapshotError {
+function threadLibraryBridgeError(): NyxThreadSafeError {
   return {
-    code: 'load_failed',
-    message: 'Nyx could not load the current thread.',
+    code: 'library_unavailable',
+    message: "Couldn't open Thread Library",
   }
 }
 
-function currentThreadResetBridgeError(): NyxCurrentThreadResetError {
+function threadMutationError(error: NyxThreadSafeError): NyxChatError {
   return {
-    code: 'reset_failed',
-    message: 'Nyx could not start a fresh thread.',
+    code: error.code === 'invalid_request' ? 'invalid_request' : 'unknown',
+    message: error.message,
+    retryable: true,
   }
-}
-
-export function toRequestMessages(messages: ReadonlyArray<NyxChatMessage>): NyxChatInputMessage[] {
-  const requestMessages: NyxChatInputMessage[] = []
-
-  for (const message of messages) {
-    if (message.role === 'assistant') {
-      if (message.status === 'failed' || message.content.length === 0) {
-        continue
-      }
-
-      requestMessages.push({
-        role: 'assistant',
-        content: message.content,
-      })
-      continue
-    }
-
-    if (
-      message.content.length === 0 &&
-      !(message.role === 'user' && (message.images?.length || message.documents?.length))
-    ) {
-      continue
-    }
-
-    requestMessages.push({
-      role: message.role,
-      content: message.content,
-    })
-  }
-
-  return requestMessages
 }
 
 interface UseChatSessionOptions {
@@ -106,6 +73,46 @@ interface DocumentPreparationOperation {
   worker: Worker
   draftId: string
   timeout: number
+}
+
+type SaveDraftOutcome = { ok: true; detail: NyxThreadDetail | null } | { ok: false }
+
+function detailMatchesDraftInput(
+  detail: NyxThreadDetail,
+  input: Omit<NyxThreadSaveDraftInput, 'threadId' | 'expectedDraftRevision'>,
+) {
+  const selection = detail.draft.targetSelection
+  const sameSelection =
+    selection.kind === input.targetSelection.kind &&
+    (selection.kind === 'env_fallback' ||
+      (input.targetSelection.kind === 'connection' &&
+        selection.providerId === input.targetSelection.providerId &&
+        selection.modelId === input.targetSelection.modelId))
+  return (
+    detail.draft.text === input.text &&
+    sameSelection &&
+    detail.draft.images.length === input.images.length &&
+    detail.draft.images.every((image, index) => {
+      const expected = input.images[index]
+      return (
+        expected?.imageId === image.imageId &&
+        expected.mediaType === image.mediaType &&
+        expected.width === image.width &&
+        expected.height === image.height
+      )
+    }) &&
+    detail.draft.documents.length === input.documents.length &&
+    detail.draft.documents.every((document, index) => {
+      const expected = input.documents[index]
+      return (
+        expected?.documentId === document.documentId &&
+        expected.name === document.name &&
+        expected.mediaType === document.mediaType &&
+        expected.byteLength === document.byteLength &&
+        expected.extractedByteLength === document.extractedByteLength
+      )
+    })
+  )
 }
 
 type TargetCatalogAction =
@@ -131,7 +138,7 @@ export function deriveTargetCatalogAction(
   state: ChatState,
   connectionStatus: ConnectionStatusState,
 ): TargetCatalogAction | null {
-  if (state.hydrationStatus !== 'ready' || state.resetStatus === 'resetting') {
+  if (state.hydrationStatus !== 'ready' || state.saveStatus === 'saving') {
     return null
   }
 
@@ -170,7 +177,7 @@ export function canSubmitChat(state: ChatState, connectionStatus: ConnectionStat
 
   return (
     state.hydrationStatus === 'ready' &&
-    state.resetStatus === 'idle' &&
+    state.saveStatus === 'idle' &&
     hasContent &&
     imagesReady &&
     documentsReady &&
@@ -210,7 +217,17 @@ export function useChatSession({
   const pendingDraftsRef = useRef(new Map<string, ReadonlyArray<string>>())
   const pendingDocumentDraftsRef = useRef(new Map<string, ReadonlyArray<string>>())
   const submittingRef = useRef(false)
+  const activeRequestIdRef = useRef<string | null>(null)
+  const selectedThreadIdRef = useRef<string | null>(null)
+  const saveQueueRef = useRef<Promise<SaveDraftOutcome>>(
+    Promise.resolve({ ok: true, detail: null }),
+  )
+  const hydrationRef = useRef(0)
+  const retryHydrationRef = useRef<(() => Promise<void>) | null>(null)
+  const terminalWaitersRef = useRef(new Map<string, (settled: boolean) => void>())
   stateRef.current = state
+  selectedThreadIdRef.current = state.selectedThreadId
+  activeRequestIdRef.current = state.activeRequestId ?? null
 
   function failDraft(imageId: string, error = 'Nyx could not prepare this image.') {
     workerDraftsRef.current.delete(imageId)
@@ -535,9 +552,54 @@ export function useChatSession({
     }
 
     let disposed = false
-    const hydrationGeneration = projectionGeneration.current
     const chat = window.nyx.chat
-    const unsubscribe = chat.subscribe((event: NyxChatEvent) => {
+    const threads = window.nyx.threads
+    const bufferedEvents: Array<
+      { kind: 'chat'; event: NyxChatEvent } | { kind: 'thread'; event: NyxThreadEvent }
+    > = []
+    let hydrated = false
+    let eventEpoch: string | null = null
+    let listCursor = 0
+    let detailCursor = 0
+
+    function acceptClock(nextEpoch: string, cursor: number) {
+      if (!eventEpoch || nextEpoch !== eventEpoch) {
+        void hydrateThreadLibrary()
+        return null
+      }
+
+      let listAdvanced = false
+      let detailAdvanced = false
+      if (cursor > listCursor) {
+        if (cursor !== listCursor + 1) {
+          void hydrateThreadLibrary()
+          return null
+        }
+        listCursor = cursor
+        listAdvanced = true
+      }
+      if (cursor > detailCursor) {
+        if (cursor !== detailCursor + 1) {
+          void hydrateThreadLibrary()
+          return null
+        }
+        detailCursor = cursor
+        detailAdvanced = true
+      }
+      return { listAdvanced, detailAdvanced }
+    }
+
+    function handleChatEvent(event: NyxChatEvent) {
+      const accepted = acceptClock(event.eventEpoch, event.cursor)
+      if (!accepted || !accepted.detailAdvanced) return
+      if (
+        event.threadId !== selectedThreadIdRef.current ||
+        event.requestId !== activeRequestIdRef.current
+      ) {
+        void hydrateThreadLibrary()
+        return
+      }
+
       switch (event.type) {
         case 'chat:accepted': {
           submittingRef.current = false
@@ -557,8 +619,11 @@ export function useChatSession({
 
           dispatch({
             type: 'request-accepted',
+            threadId: event.threadId,
             requestId: event.requestId,
+            userMessageId: event.userMessageId,
             assistantMessageId: event.assistantMessageId,
+            turnIntent: event.turnIntent,
           })
           return
         }
@@ -566,6 +631,7 @@ export function useChatSession({
         case 'chat:start':
           dispatch({
             type: 'request-started',
+            threadId: event.threadId,
             requestId: event.requestId,
             assistantMessageId: event.assistantMessageId,
             targetAttribution: event.targetAttribution,
@@ -575,6 +641,7 @@ export function useChatSession({
         case 'chat:delta':
           dispatch({
             type: 'request-delta',
+            threadId: event.threadId,
             requestId: event.requestId,
             assistantMessageId: event.assistantMessageId,
             snapshot: event.snapshot,
@@ -582,8 +649,11 @@ export function useChatSession({
           return
 
         case 'chat:done':
+          activeRequestIdRef.current = null
+          terminalWaitersRef.current.get(event.requestId)?.(true)
           dispatch({
             type: 'request-completed',
+            threadId: event.threadId,
             requestId: event.requestId,
             assistantMessageId: event.assistantMessageId,
             status: event.status,
@@ -592,13 +662,22 @@ export function useChatSession({
           return
 
         case 'chat:error':
+          const settledProviderFailure =
+            event.error.message !== "Couldn't save result" &&
+            stateRef.current.settlementFailure?.requestId === event.requestId &&
+            stateRef.current.settlementFailure.assistantMessageId === event.assistantMessageId
+          activeRequestIdRef.current = null
+          terminalWaitersRef.current.get(event.requestId)?.(
+            event.error.message !== "Couldn't save result",
+          )
           submittingRef.current = false
           pendingDraftsRef.current.delete(event.requestId)
           pendingDocumentDraftsRef.current.delete(event.requestId)
           dispatch({
             type: 'request-failed',
+            threadId: event.threadId,
             requestId: event.requestId,
-            assistantMessageId: event.assistantMessageId,
+            ...(event.assistantMessageId ? { assistantMessageId: event.assistantMessageId } : {}),
             error: event.error,
             ...(event.targetAttribution ? { targetAttribution: event.targetAttribution } : {}),
           })
@@ -606,44 +685,206 @@ export function useChatSession({
           if (event.error.code === 'target_unavailable') {
             void refreshConnections()
           }
+          if (settledProviderFailure) void hydrateThreadLibrary()
       }
+    }
+
+    function handleThreadEvent(event: NyxThreadEvent) {
+      if (event.type === 'threads:epoch-changed') {
+        void hydrateThreadLibrary()
+        return
+      }
+
+      const cursor = event.includedThroughCursor
+      const accepted = acceptClock(event.eventEpoch, cursor)
+      if (!accepted) return
+      if (accepted.listAdvanced) {
+        if (
+          event.type === 'threads:changed' &&
+          event.detail.summary.id === selectedThreadIdRef.current
+        ) {
+          dispatch({ type: 'thread-summary-changed', summary: event.detail.summary, cursor })
+        }
+      }
+
+      if (!accepted.detailAdvanced) return
+
+      if (
+        event.type === 'threads:changed' &&
+        event.detail.summary.id === selectedThreadIdRef.current
+      ) {
+        const current = stateRef.current
+        dispatch({
+          type: 'thread-detail-changed',
+          detail: event.detail,
+          cursor,
+          preserveOverlay: current.draftEditVersion > current.savedEditVersion,
+        })
+      } else if (
+        event.type === 'threads:removed' &&
+        event.threadId === selectedThreadIdRef.current
+      ) {
+        if (stateRef.current.newThreadPending) {
+          selectedThreadIdRef.current = null
+          return
+        }
+        const generation = projectionGeneration.current + 1
+        projectionGeneration.current = generation
+        selectedThreadIdRef.current = null
+        dispatch({
+          type: 'show-placeholder',
+          generation,
+          minimumCatalogEpoch: getLatestConnectionRequestEpoch() + 1,
+        })
+      } else if (event.type === 'threads:library-unavailable') {
+        dispatch({
+          type: 'thread-library-hydration-failed',
+          generation: projectionGeneration.current,
+          error: event.error,
+        })
+      } else if (
+        event.type === 'threads:thread-unavailable' &&
+        event.threadId === selectedThreadIdRef.current
+      ) {
+        dispatch({
+          type: 'thread-unavailable',
+          threadId: event.threadId,
+          error: event.error,
+          cursor,
+        })
+      }
+    }
+
+    const unsubscribeChat = chat.subscribe((event) => {
+      if (!hydrated) bufferedEvents.push({ kind: 'chat', event })
+      else handleChatEvent(event)
+    })
+    const unsubscribeThreads = threads.subscribe((event) => {
+      if (!hydrated) bufferedEvents.push({ kind: 'thread', event })
+      else handleThreadEvent(event)
     })
 
-    void chat
-      .getCurrentThreadSnapshot()
-      .then((result) => {
-        if (disposed) {
+    async function hydrateThreadLibrary() {
+      const request = ++hydrationRef.current
+      const generation = projectionGeneration.current
+      hydrated = false
+      bufferedEvents.length = 0
+
+      try {
+        const pageResult = await threads.listPage({ location: 'available', limit: 50 })
+        if (disposed || request !== hydrationRef.current) return
+        if (!pageResult.ok) {
+          dispatch({ type: 'thread-library-hydration-failed', generation, error: pageResult.error })
           return
         }
 
-        if (result.ok) {
-          dispatch({
-            type: 'current-thread-hydrated',
-            generation: hydrationGeneration,
-            snapshot: result.value,
-          })
+        const firstSummary = pageResult.value.rows[0] ?? null
+        let storedId: string | null = null
+        try {
+          storedId = window.localStorage.getItem('nyx.thread.selected.v1')
+        } catch {
+          // A blocked UI preference does not block canonical hydration.
+        }
+
+        let selectedId = storedId ?? firstSummary?.id ?? null
+        let summary =
+          pageResult.value.rows.find((row) => row.id === selectedId) ??
+          (selectedId === firstSummary?.id ? firstSummary : null)
+        let detailResult = selectedId ? await threads.get({ threadId: selectedId }) : null
+        if (disposed || request !== hydrationRef.current) return
+        if (
+          storedId &&
+          selectedId === storedId &&
+          ((!detailResult?.ok &&
+            (detailResult?.error.code === 'invalid_request' ||
+              detailResult?.error.code === 'not_found')) ||
+            (detailResult?.ok && detailResult.value.detail === null))
+        ) {
+          selectedId = firstSummary?.id ?? null
+          summary = firstSummary
+          detailResult = selectedId ? await threads.get({ threadId: selectedId }) : null
+          if (disposed || request !== hydrationRef.current) return
+        }
+        if (detailResult && !detailResult.ok) {
+          if (detailResult.error.code === 'thread_unavailable' && selectedId) {
+            summary = {
+              availability: 'unavailable',
+              id: selectedId,
+              location: summary?.location ?? 'available',
+              title: "Couldn't open this thread",
+              unavailable: detailResult.error,
+            }
+          } else {
+            dispatch({
+              type: 'thread-library-hydration-failed',
+              generation,
+              error: detailResult.error,
+            })
+            return
+          }
+        }
+
+        const snapshot = detailResult?.ok ? detailResult.value : null
+        if (snapshot && snapshot.eventEpoch !== pageResult.value.eventEpoch) {
+          void hydrateThreadLibrary()
           return
         }
 
+        const resolvedSummary =
+          snapshot?.detail?.summary ?? (summary?.availability === 'unavailable' ? summary : null)
+        eventEpoch = pageResult.value.eventEpoch
+        listCursor = pageResult.value.includedThroughCursor
+        detailCursor = snapshot?.includedThroughCursor ?? listCursor
+        selectedThreadIdRef.current = resolvedSummary?.id ?? null
+        if (snapshot?.detail?.activeRun) {
+          activeRequestIdRef.current = snapshot.detail.activeRun.requestId
+        } else if (snapshot?.detail?.runStatus !== 'streaming') {
+          activeRequestIdRef.current = null
+        }
+        if (selectedThreadIdRef.current) {
+          try {
+            window.localStorage.setItem('nyx.thread.selected.v1', selectedThreadIdRef.current)
+          } catch {
+            // A blocked UI preference does not block canonical hydration.
+          }
+        }
         dispatch({
-          type: 'current-thread-hydration-failed',
-          generation: hydrationGeneration,
-          error: result.error,
+          type: 'thread-library-hydrated',
+          generation,
+          summary: resolvedSummary,
+          detail: snapshot?.detail ?? null,
+          eventEpoch,
+          listCursor,
+          detailCursor,
+          preserveOverlay:
+            stateRef.current.selectedThreadId === resolvedSummary?.id &&
+            stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
-      })
-      .catch(() => {
-        if (!disposed) {
+        hydrated = true
+        for (const buffered of bufferedEvents.splice(0)) {
+          if (!hydrated) break
+          if (buffered.kind === 'chat') handleChatEvent(buffered.event)
+          else handleThreadEvent(buffered.event)
+        }
+      } catch {
+        if (!disposed && request === hydrationRef.current) {
           dispatch({
-            type: 'current-thread-hydration-failed',
-            generation: hydrationGeneration,
-            error: currentThreadSnapshotBridgeError(),
+            type: 'thread-library-hydration-failed',
+            generation,
+            error: threadLibraryBridgeError(),
           })
         }
-      })
+      }
+    }
+
+    retryHydrationRef.current = hydrateThreadLibrary
+    void hydrateThreadLibrary()
 
     return () => {
       disposed = true
-      unsubscribe()
+      if (retryHydrationRef.current === hydrateThreadLibrary) retryHydrationRef.current = null
+      unsubscribeChat()
+      unsubscribeThreads()
     }
   }, [refreshConnections])
 
@@ -660,7 +901,7 @@ export function useChatSession({
     state.committedTarget,
     state.hydrationStatus,
     state.projectionGeneration,
-    state.resetStatus,
+    state.saveStatus,
     state.targetDraft,
     state.targetInitialized,
   ])
@@ -668,7 +909,7 @@ export function useChatSession({
   function addDraftImages(sources: ReadonlyArray<Blob>) {
     if (
       state.hydrationStatus !== 'ready' ||
-      state.resetStatus === 'resetting' ||
+      stateRef.current.newThreadPending ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
       return
@@ -710,7 +951,8 @@ export function useChatSession({
   function addDraftDocuments(sources: ReadonlyArray<File>) {
     if (
       state.hydrationStatus !== 'ready' ||
-      state.resetStatus === 'resetting' ||
+      stateRef.current.newThreadPending ||
+      state.saveStatus === 'saving' ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
       return
@@ -756,7 +998,7 @@ export function useChatSession({
   }
 
   function removeDraftImage(imageId: string) {
-    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
       return
     }
 
@@ -767,11 +1009,13 @@ export function useChatSession({
     }
 
     releaseDrafts(new Set([imageId]))
-    dispatch({ type: 'draft-image-removed', imageId })
+    const action = { type: 'draft-image-removed' as const, imageId }
+    stateRef.current = chatReducer(stateRef.current, action)
+    dispatch(action)
   }
 
   function retryDraftImage(imageId: string) {
-    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
       return
     }
 
@@ -788,7 +1032,7 @@ export function useChatSession({
   }
 
   function removeDraftDocument(documentId: string) {
-    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
       return
     }
 
@@ -797,11 +1041,13 @@ export function useChatSession({
     }
 
     releaseDocumentDrafts(new Set([documentId]))
-    dispatch({ type: 'draft-document-removed', documentId })
+    const action = { type: 'draft-document-removed' as const, documentId }
+    stateRef.current = chatReducer(stateRef.current, action)
+    dispatch(action)
   }
 
   function retryDraftDocument(documentId: string) {
-    if (state.resetStatus === 'resetting' || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
       return
     }
 
@@ -817,175 +1063,313 @@ export function useChatSession({
     void prepareDraftDocument(documentId, document.source, document.mediaType)
   }
 
-  async function sendCurrentInput() {
-    const prompt = state.input.trim()
-    const targetSelection = state.targetDraft
+  function queueSaveDraft(discardEmptyShell = false, requireLatest = false) {
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => ({ ok: false as const }))
+      .then(async () => {
+        for (;;) {
+          const current = stateRef.current
+          const targetSelection = current.targetDraft
+          const readyImages = current.draftImages.filter(
+            (image): image is Extract<ChatImageDraft, { status: 'ready' }> =>
+              image.status === 'ready',
+          )
+          const readyDocuments = current.draftDocuments.filter(
+            (document): document is Extract<ChatDocumentDraft, { status: 'ready' }> =>
+              document.status === 'ready',
+          )
+          if (
+            readyImages.length !== current.draftImages.length ||
+            readyDocuments.length !== current.draftDocuments.length
+          ) {
+            return { ok: false as const }
+          }
+          const meaningful =
+            current.input.trim().length > 0 || readyImages.length > 0 || readyDocuments.length > 0
 
+          if (!window.nyx || !targetSelection) {
+            return !selectedThreadIdRef.current && !meaningful
+              ? { ok: true as const, detail: null }
+              : { ok: false as const }
+          }
+          if (!selectedThreadIdRef.current && !meaningful) {
+            return { ok: true as const, detail: null }
+          }
+
+          dispatch({ type: 'save-started' })
+          const submittedVersion = current.draftEditVersion
+          let threadId = selectedThreadIdRef.current
+          let expectedDraftRevision = current.draftRevision
+          const draftInput: Omit<NyxThreadSaveDraftInput, 'threadId' | 'expectedDraftRevision'> = {
+            text: current.input,
+            targetSelection,
+            images: readyImages.map((image, position) => ({
+              imageId: image.id,
+              ...image.image,
+              position,
+            })),
+            documents: readyDocuments.map((document, position) => ({
+              documentId: document.id,
+              ...document.document,
+              position,
+            })),
+            newImages: readyImages
+              .filter(
+                (image) => image.canonicalBytes !== undefined && image.previewBytes !== undefined,
+              )
+              .map((image) => ({
+                imageId: image.id,
+                canonicalBytes: image.canonicalBytes!,
+                previewBytes: image.previewBytes!,
+              })),
+            newDocuments: readyDocuments
+              .filter(
+                (document) =>
+                  document.sourceBytes !== undefined &&
+                  document.extractedTextBytes !== undefined &&
+                  document.extractedFromSha256 !== undefined,
+              )
+              .map((document) => ({
+                documentId: document.id,
+                sourceBytes: document.sourceBytes!,
+                extractedTextBytes: document.extractedTextBytes!,
+                extractedFromSha256: document.extractedFromSha256!,
+              })),
+          }
+
+          if (!threadId) {
+            const materialized = await window.nyx.threads.materialize(draftInput)
+            if (!materialized.ok) {
+              dispatch({ type: 'save-failed', error: threadMutationError(materialized.error) })
+              return { ok: false as const }
+            }
+            const matchesSubmittedDraft = detailMatchesDraftInput(
+              materialized.value.detail,
+              draftInput,
+            )
+            threadId = materialized.value.detail.summary.id
+            selectedThreadIdRef.current = threadId
+            try {
+              window.localStorage.setItem('nyx.thread.selected.v1', threadId)
+            } catch {
+              // A blocked UI preference does not block canonical persistence.
+            }
+            if (matchesSubmittedDraft && stateRef.current.draftEditVersion === submittedVersion) {
+              releaseDrafts(new Set(readyImages.map((image) => image.id)))
+              releaseDocumentDrafts(new Set(readyDocuments.map((document) => document.id)))
+              const action = {
+                type: 'save-succeeded',
+                detail: materialized.value.detail,
+                submittedVersion,
+                cursor: materialized.value.includedThroughCursor,
+                eventEpoch: materialized.value.eventEpoch,
+              } as const
+              stateRef.current = chatReducer(stateRef.current, action)
+              dispatch(action)
+              return { ok: true as const, detail: materialized.value.detail }
+            }
+            expectedDraftRevision = materialized.value.detail.draft.revision
+            const action = {
+              type: 'thread-materialized',
+              detail: materialized.value.detail,
+              cursor: materialized.value.includedThroughCursor,
+              eventEpoch: materialized.value.eventEpoch,
+            } as const
+            stateRef.current = chatReducer(stateRef.current, action)
+            dispatch(action)
+            continue
+          }
+
+          const saved = await window.nyx.threads.saveDraft({
+            ...draftInput,
+            threadId,
+            expectedDraftRevision,
+            ...(discardEmptyShell ? { discardEmptyShell: true } : {}),
+          })
+          if (!saved.ok) {
+            dispatch({ type: 'save-failed', error: threadMutationError(saved.error) })
+            return { ok: false as const }
+          }
+          if (!saved.value.detail) {
+            if (saved.value.discarded) {
+              selectedThreadIdRef.current = null
+              const action = {
+                type: 'thread-discarded',
+                submittedVersion,
+                cursor: saved.value.includedThroughCursor,
+                eventEpoch: saved.value.eventEpoch,
+              } as const
+              stateRef.current = chatReducer(stateRef.current, action)
+              dispatch(action)
+              return { ok: true as const, detail: null }
+            }
+            dispatch({
+              type: 'save-failed',
+              error: {
+                code: 'unknown',
+                message: 'Nyx could not save this draft.',
+                retryable: true,
+              },
+            })
+            return { ok: false as const }
+          }
+          if (stateRef.current.draftEditVersion === submittedVersion) {
+            releaseDrafts(new Set(readyImages.map((image) => image.id)))
+            releaseDocumentDrafts(new Set(readyDocuments.map((document) => document.id)))
+          }
+          const action = {
+            type: 'save-succeeded',
+            detail: saved.value.detail,
+            submittedVersion,
+            cursor: saved.value.includedThroughCursor,
+            eventEpoch: saved.value.eventEpoch,
+          } as const
+          stateRef.current = chatReducer(stateRef.current, action)
+          dispatch(action)
+          if (requireLatest && stateRef.current.draftEditVersion !== submittedVersion) continue
+          return { ok: true as const, detail: saved.value.detail }
+        }
+      })
+    return saveQueueRef.current
+  }
+
+  useEffect(() => {
+    if (
+      state.hydrationStatus !== 'ready' ||
+      state.activeRequestId ||
+      state.draftEditVersion <= state.savedEditVersion
+    )
+      return
+
+    const hasReadyAttachment =
+      state.draftImages.some((image) => image.status === 'ready') ||
+      state.draftDocuments.some((document) => document.status === 'ready')
+    if (!state.selectedThreadId && state.input.trim().length === 0 && !hasReadyAttachment) return
+
+    const timeout = window.setTimeout(() => void queueSaveDraft(), 250)
+    return () => window.clearTimeout(timeout)
+  }, [state.activeRequestId, state.draftEditVersion, state.hydrationStatus, state.savedEditVersion])
+
+  async function sendCurrentInput() {
     if (
       submittingRef.current ||
+      stateRef.current.newThreadPending ||
       !canSubmitChat(state, connectionStatus) ||
-      !targetSelection ||
       !window.nyx
-    ) {
-      return
-    }
-
-    const readyImages = state.draftImages.filter(
-      (image): image is Extract<ChatImageDraft, { status: 'ready' }> =>
-        image.status === 'ready' && liveDraftsRef.current.has(image.id),
     )
-    const readyDocuments = state.draftDocuments.filter(
-      (document): document is Extract<ChatDocumentDraft, { status: 'ready' }> =>
-        document.status === 'ready' && liveDocumentDraftsRef.current.has(document.id),
-    )
-
-    if (prompt.length === 0 && readyImages.length === 0 && readyDocuments.length === 0) {
       return
-    }
 
     submittingRef.current = true
-    const requestId = crypto.randomUUID()
-    const userMessageId = crypto.randomUUID()
-    const assistantMessageId = crypto.randomUUID()
-    const imageRefs = readyImages.map((image) => ({
-      imageId: crypto.randomUUID(),
-      ...image.image,
-    }))
-    const newImages: NyxChatNewImage[] = readyImages.map((image, index) => ({
-      imageId: imageRefs[index]!.imageId,
-      canonicalBytes: image.canonicalBytes,
-      previewBytes: image.previewBytes,
-    }))
-    const documentRefs = readyDocuments.map((document) => ({
-      documentId: crypto.randomUUID(),
-      ...document.document,
-    }))
-    const newDocuments: NyxChatNewDocument[] = readyDocuments.map((document, index) => ({
-      documentId: documentRefs[index]!.documentId,
-      sourceBytes: document.sourceBytes,
-      extractedTextBytes: document.extractedTextBytes,
-      extractedFromSha256: document.extractedFromSha256,
-    }))
-    const turnUserMessage = {
-      id: userMessageId,
-      content: prompt,
-      ...(imageRefs.length > 0 ? { imageRefs } : {}),
-      ...(documentRefs.length > 0 ? { documentRefs } : {}),
+    const saved = await queueSaveDraft(false, true)
+    const threadId = selectedThreadIdRef.current
+    if (!saved.ok || !saved.detail || !threadId) {
+      submittingRef.current = false
+      return
     }
-    const requestMessages = [
-      ...toRequestMessages(state.messages),
-      { role: 'user' as const, content: prompt },
-    ]
+    const detail = saved.detail
+
+    const requestId = crypto.randomUUID()
+    activeRequestIdRef.current = requestId
     pendingDraftsRef.current.set(
       requestId,
-      readyImages.map((image) => image.id),
+      state.draftImages.filter((image) => image.status === 'ready').map((image) => image.id),
     )
     pendingDocumentDraftsRef.current.set(
       requestId,
-      readyDocuments.map((document) => document.id),
+      state.draftDocuments
+        .filter((document) => document.status === 'ready')
+        .map((document) => document.id),
     )
-
     dispatch({
       type: 'request-submitted',
+      threadId,
       requestId,
-      assistantMessageId,
-      turnUserMessage,
-      submittedMessages: requestMessages,
-      userMessage: {
-        id: userMessageId,
-        role: 'user',
-        content: prompt,
-        status: 'completed',
-        ...(imageRefs.length > 0
-          ? { images: imageRefs.map((imageRef) => ({ ...imageRef, available: true })) }
-          : {}),
-        ...(documentRefs.length > 0
-          ? {
-              documents: documentRefs.map((documentRef) => ({
-                ...documentRef,
-                available: true,
-              })),
-            }
-          : {}),
-      },
-      assistantMessage: {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: '',
-        status: 'pending',
-      },
-      targetSelection,
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: detail.draft.revision,
     })
 
     try {
-      await window.nyx.chat.startChat({
+      await window.nyx.chat.start({
+        threadId,
         requestId,
-        userMessageId,
-        assistantMessageId,
         turnIntent: 'new_user_message',
-        turnUserMessage,
-        messages: requestMessages,
-        targetSelection,
-        ...(newImages.length > 0 ? { newImages } : {}),
-        ...(newDocuments.length > 0 ? { newDocuments } : {}),
+        expectedDraftRevision: detail.draft.revision,
       })
     } catch (error) {
+      activeRequestIdRef.current = null
       submittingRef.current = false
-      pendingDraftsRef.current.delete(requestId)
-      pendingDocumentDraftsRef.current.delete(requestId)
       dispatch({
         type: 'request-failed',
+        threadId,
         requestId,
-        assistantMessageId,
         error: normalizeBridgeError(error),
       })
     }
   }
 
   async function retryMessage(messageId: string) {
+    const threadId = state.selectedThreadId
     if (
+      stateRef.current.newThreadPending ||
       state.activeRequestId ||
       state.hydrationStatus !== 'ready' ||
-      state.resetStatus === 'resetting' ||
       !window.nyx ||
-      !state.retryableTurn ||
-      state.retryableTurn.assistantMessageId !== messageId ||
-      !state.targetInitialized ||
-      !state.targetAvailable ||
-      !state.targetDraft ||
-      connectionStatus.kind !== 'ready' ||
-      !isChatTargetAvailable(state.targetDraft, connectionStatus.overview)
-    ) {
+      !threadId
+    )
+      return
+
+    if (state.settlementFailure?.assistantMessageId === messageId) {
+      const failure = state.settlementFailure
+      activeRequestIdRef.current = failure.requestId
+      dispatch({
+        type: 'settlement-retry-submitted',
+        threadId,
+        requestId: failure.requestId,
+        assistantMessageId: failure.assistantMessageId,
+        expectedDraftRevision: state.draftRevision,
+      })
+      try {
+        await window.nyx.chat.retrySettlement({ threadId, requestId: failure.requestId })
+      } catch (error) {
+        activeRequestIdRef.current = null
+        dispatch({
+          type: 'request-failed',
+          threadId,
+          requestId: failure.requestId,
+          assistantMessageId: failure.assistantMessageId,
+          error: normalizeBridgeError(error),
+        })
+      }
       return
     }
 
-    const requestId = crypto.randomUUID()
     const retryableTurn = state.retryableTurn
-    const targetSelection = state.targetDraft
-
+    if (!retryableTurn || retryableTurn.assistantMessageId !== messageId) return
+    const requestId = crypto.randomUUID()
+    activeRequestIdRef.current = requestId
     dispatch({
-      type: 'retry-requested',
+      type: 'request-submitted',
+      threadId,
       requestId,
-      userMessageId: retryableTurn.userMessageId,
-      assistantMessageId: retryableTurn.assistantMessageId,
-      turnUserMessage: retryableTurn.turnUserMessage,
-      submittedMessages: retryableTurn.submittedMessages,
-      targetSelection,
+      turnIntent: 'retry_failed_response',
+      expectedDraftRevision: retryableTurn.expectedDraftRevision,
+      turnOrdinal: retryableTurn.turnOrdinal,
+      expectedAttemptRequestId: retryableTurn.expectedAttemptRequestId,
     })
-
     try {
-      await window.nyx.chat.startChat({
+      await window.nyx.chat.start({
+        threadId,
         requestId,
-        userMessageId: retryableTurn.userMessageId,
-        assistantMessageId: retryableTurn.assistantMessageId,
         turnIntent: 'retry_failed_response',
-        turnUserMessage: retryableTurn.turnUserMessage,
-        messages: retryableTurn.submittedMessages,
-        targetSelection,
+        turnOrdinal: retryableTurn.turnOrdinal,
+        expectedAttemptRequestId: retryableTurn.expectedAttemptRequestId,
+        expectedDraftRevision: retryableTurn.expectedDraftRevision,
       })
     } catch (error) {
+      activeRequestIdRef.current = null
       dispatch({
         type: 'request-failed',
+        threadId,
         requestId,
         assistantMessageId: retryableTurn.assistantMessageId,
         error: normalizeBridgeError(error),
@@ -994,89 +1378,136 @@ export function useChatSession({
   }
 
   async function stopActiveResponse() {
-    if (!state.activeRequestId || !window.nyx) {
-      return
-    }
-
-    await window.nyx.chat.cancelChat({
+    if (!state.activeRequestId || !state.selectedThreadId || !window.nyx) return
+    await window.nyx.chat.cancel({
+      threadId: state.selectedThreadId,
       requestId: state.activeRequestId,
     })
   }
 
   async function startNewChat() {
-    if (state.hydrationStatus === 'loading' || state.resetStatus === 'resetting') {
-      return
+    if (
+      state.hydrationStatus !== 'ready' ||
+      stateRef.current.newThreadPending ||
+      stateRef.current.settlementFailure ||
+      !window.nyx
+    )
+      return false
+
+    const activeRequestId = activeRequestIdRef.current
+    const selectedThreadId = selectedThreadIdRef.current
+    if (activeRequestId && selectedThreadId) {
+      const requestId = activeRequestId
+      const terminal = new Promise<boolean>((resolve) =>
+        terminalWaitersRef.current.set(requestId, resolve),
+      )
+      try {
+        await window.nyx.chat.cancel({ threadId: selectedThreadId, requestId })
+      } catch {
+        terminalWaitersRef.current.delete(requestId)
+        return false
+      }
+      const settled = await terminal
+      terminalWaitersRef.current.delete(requestId)
+      if (!settled) return false
     }
 
-    const restoreTargetInitialized = state.targetInitialized
-    const restoreTargetAvailable = state.targetAvailable
-    const restoreMinimumCatalogEpoch = state.targetMinimumCatalogEpoch
-    const minimumCatalogEpoch = getLatestConnectionRequestEpoch() + 1
+    if (stateRef.current.settlementFailure) return false
 
-    if (!window.nyx) {
-      const generation = projectionGeneration.current + 1
-      projectionGeneration.current = generation
-      dispatch({ type: 'reset-started', generation, minimumCatalogEpoch })
-      releaseAllDrafts()
-      dispatch({ type: 'clear-chat', generation, minimumCatalogEpoch })
-      return
+    const started = { type: 'new-thread-started' as const }
+    stateRef.current = chatReducer(stateRef.current, started)
+    dispatch(started)
+    const fail = async () => {
+      const action = { type: 'new-thread-failed' as const }
+      stateRef.current = chatReducer(stateRef.current, action)
+      dispatch(action)
+      await retryHydrationRef.current?.()
+      return false
+    }
+
+    try {
+      for (;;) {
+        const saved = await queueSaveDraft(true, true)
+        if (!saved.ok) return fail()
+        if (!saved.detail) selectedThreadIdRef.current = null
+        const cleared = await window.nyx.threads.get({ threadId: null })
+        if (!cleared.ok) {
+          dispatch({
+            type: 'thread-library-hydration-failed',
+            generation: projectionGeneration.current,
+            error: cleared.error,
+          })
+          return fail()
+        }
+        if (stateRef.current.draftEditVersion === stateRef.current.savedEditVersion) break
+      }
+    } catch {
+      dispatch({
+        type: 'thread-library-hydration-failed',
+        generation: projectionGeneration.current,
+        error: threadLibraryBridgeError(),
+      })
+      return fail()
     }
 
     const generation = projectionGeneration.current + 1
     projectionGeneration.current = generation
-    dispatch({ type: 'reset-started', generation, minimumCatalogEpoch })
-
-    try {
-      const result = await window.nyx.chat.resetChatSession()
-
-      if (!result.ok) {
-        dispatch({
-          type: 'reset-failed',
-          generation,
-          error: result.error,
-          restoreTargetInitialized,
-          restoreTargetAvailable,
-          restoreMinimumCatalogEpoch,
-        })
-        return
-      }
-    } catch {
-      dispatch({
-        type: 'reset-failed',
-        generation,
-        error: currentThreadResetBridgeError(),
-        restoreTargetInitialized,
-        restoreTargetAvailable,
-        restoreMinimumCatalogEpoch,
-      })
-      return
-    }
-
-    const refreshOperation = refreshConnections()
-    const resetCatalogEpoch = getLatestConnectionRequestEpoch()
+    selectedThreadIdRef.current = null
     releaseAllDrafts()
     submittingRef.current = false
     dispatch({
-      type: 'clear-chat',
+      type: 'show-placeholder',
       generation,
-      minimumCatalogEpoch: resetCatalogEpoch,
+      minimumCatalogEpoch: getLatestConnectionRequestEpoch() + 1,
     })
-    await refreshOperation
+    await refreshConnections()
+    return true
+  }
+
+  async function retryOpen() {
+    if (!window.nyx || !state.hydrationError || state.hydrationRetrying) return
+    dispatch({ type: 'thread-library-retry-started' })
+    const input = state.hydrationErrorThreadId
+      ? { scope: 'thread' as const, threadId: state.hydrationErrorThreadId }
+      : { scope: 'library' as const }
+    try {
+      const result = await window.nyx.threads.retryOpen(input)
+      if (!result.ok) {
+        const threadId =
+          result.error.code === 'thread_unavailable' ? state.hydrationErrorThreadId : null
+        dispatch({
+          type: 'thread-library-hydration-failed',
+          generation: projectionGeneration.current,
+          error: result.error,
+          ...(threadId ? { threadId } : {}),
+        })
+        return
+      }
+      await retryHydrationRef.current?.()
+    } catch {
+      dispatch({
+        type: 'thread-library-hydration-failed',
+        generation: projectionGeneration.current,
+        error: threadLibraryBridgeError(),
+      })
+    }
   }
 
   return {
     state,
     isBusy: Boolean(state.activeRequestId),
     isAccepting: Boolean(state.activeTurn && !state.activeTurn.accepted),
-    isResetting: state.resetStatus === 'resetting',
+    isResetting: state.newThreadPending,
     canSend: canSubmitChat(state, connectionStatus),
     setInput(value: string) {
+      if (stateRef.current.newThreadPending) return
       dispatch({
         type: 'set-input',
         value,
       })
     },
     setTargetSelection(selection: NyxChatTargetSelection) {
+      if (stateRef.current.newThreadPending) return
       dispatch({
         type: 'target-draft-changed',
         selection,
@@ -1095,5 +1526,6 @@ export function useChatSession({
     retryMessage,
     stopActiveResponse,
     startNewChat,
+    retryOpen,
   }
 }

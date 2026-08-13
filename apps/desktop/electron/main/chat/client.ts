@@ -1,10 +1,9 @@
 import {
   nyxChatAttachmentContentRejectedMessage,
   nyxChatContentRejectedMessage,
-  type NyxChatRequest,
+  type NyxChatInputMessage,
 } from '../../../shared/chat/types'
 import type { ResolvedChatTarget } from '../connections/provider-resolver'
-import type { CurrentThreadProviderMessage } from '../current-thread/session-coordinator'
 import { createChatBridgeError } from './errors'
 import {
   decodeOpenAiResponsesStream,
@@ -20,18 +19,32 @@ import {
 
 const DEFAULT_SYSTEM_PROMPT = 'You are Nyx, a concise and reliable desktop AI assistant.'
 
+export type ChatProviderRichUserPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+export type ChatProviderMessage =
+  | NyxChatInputMessage
+  | { kind: 'responses-output-item'; item: JsonValue }
+  | {
+      role: 'user'
+      content: ReadonlyArray<ChatProviderRichUserPart>
+    }
+
+type ChatProviderRequestOptions = { systemPrompt?: string }
+
 interface StreamChatCompletionOptions {
   target: ResolvedChatTarget
-  request: NyxChatRequest
-  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>
+  request: ChatProviderRequestOptions
+  providerMessages: ReadonlyArray<ChatProviderMessage>
   documentBearing?: boolean
   signal: AbortSignal
   onDelta: (delta: string, snapshot: string) => void | Promise<void>
 }
 
 function isResponsesOutputItem(
-  message: CurrentThreadProviderMessage,
-): message is Extract<CurrentThreadProviderMessage, { kind: 'responses-output-item' }> {
+  message: ChatProviderMessage,
+): message is Extract<ChatProviderMessage, { kind: 'responses-output-item' }> {
   return 'kind' in message && message.kind === 'responses-output-item'
 }
 
@@ -53,15 +66,15 @@ export function buildChatCompletionsUrl(baseUrl: string) {
 }
 
 export function buildProviderMessages(
-  request: NyxChatRequest,
-  messages: ReadonlyArray<CurrentThreadProviderMessage> = request.messages,
+  request: ChatProviderRequestOptions,
+  messages: ReadonlyArray<ChatProviderMessage>,
 ) {
   if (messages.some(isResponsesOutputItem)) {
     throw new Error('Chat Completions cannot receive Responses continuation items.')
   }
 
   const chatMessages = messages as ReadonlyArray<
-    Exclude<CurrentThreadProviderMessage, { kind: 'responses-output-item' }>
+    Exclude<ChatProviderMessage, { kind: 'responses-output-item' }>
   >
   const alreadyHasSystemMessage = chatMessages.some((message) => message.role === 'system')
 
@@ -80,8 +93,8 @@ export function buildProviderMessages(
 
 export function buildOpenAiCompatibleChatRequest(
   target: ResolvedChatTarget,
-  request: NyxChatRequest,
-  providerMessages: ReadonlyArray<CurrentThreadProviderMessage> = request.messages,
+  request: ChatProviderRequestOptions,
+  providerMessages: ReadonlyArray<ChatProviderMessage>,
 ) {
   return {
     url: buildChatCompletionsUrl(target.baseUrl),
@@ -118,7 +131,7 @@ export function buildResponsesUrl(baseUrl: string) {
 }
 
 export function buildOpenAiResponsesInput(
-  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+  providerMessages: ReadonlyArray<ChatProviderMessage>,
 ): JsonValue[] {
   return providerMessages.flatMap((message): JsonValue[] => {
     if (isResponsesOutputItem(message)) {
@@ -152,13 +165,11 @@ export function buildOpenAiResponsesInput(
 }
 
 export function buildOpenAiResponsesInstructions(
-  request: NyxChatRequest,
-  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+  request: ChatProviderRequestOptions,
+  providerMessages: ReadonlyArray<ChatProviderMessage>,
 ) {
   const systemMessage = providerMessages.find(
-    (
-      message,
-    ): message is Exclude<CurrentThreadProviderMessage, { kind: 'responses-output-item' }> =>
+    (message): message is Exclude<ChatProviderMessage, { kind: 'responses-output-item' }> =>
       !isResponsesOutputItem(message) && message.role === 'system',
   )
 
@@ -207,8 +218,8 @@ export function buildOpenAiResponsesRequest({
 
 function buildChatProviderRequest(
   target: ResolvedChatTarget,
-  request: NyxChatRequest,
-  providerMessages: ReadonlyArray<CurrentThreadProviderMessage>,
+  request: ChatProviderRequestOptions,
+  providerMessages: ReadonlyArray<ChatProviderMessage>,
 ) {
   switch (target.protocolConfig.protocol) {
     case 'openai-chat-completions':
@@ -544,7 +555,7 @@ export async function streamOpenAiResponses({
 export async function streamChatCompletion({
   target,
   request,
-  providerMessages = request.messages,
+  providerMessages,
   documentBearing = false,
   signal,
   onDelta,

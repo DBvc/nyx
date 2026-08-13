@@ -1,20 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import type { NyxChatError, NyxChatInputMessage, NyxChatMessage } from '../../../shared/chat/types'
-import type { NyxCurrentThreadSnapshot } from '../../../shared/chat/snapshot'
+import type { NyxChatError, NyxChatMessage } from '../../../shared/chat/types'
+import type { NyxThreadDetail } from '../../../shared/threads/types'
 import { chatReducer } from './chat-reducer'
 import { initialChatState } from './chat-types'
 
+const threadId = 'thread-a'
 const requestId = 'request-1'
 const userMessageId = 'user-1'
 const assistantMessageId = 'assistant-1'
-const staleRequestId = 'request-stale'
-const staleAssistantMessageId = 'assistant-stale'
-const targetSelection = {
-  kind: 'connection',
-  providerId: 'provider-1',
-  modelId: 'model-1',
-} as const
+const target = { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' } as const
 const targetAttribution = {
   kind: 'connection',
   providerId: 'provider-1',
@@ -22,172 +17,334 @@ const targetAttribution = {
   modelId: 'model-1',
   modelDisplayName: 'Model One',
 } as const
-
-const submittedMessages: ReadonlyArray<NyxChatInputMessage> = [
-  {
-    role: 'user',
-    content: 'Hello Nyx',
-  },
-]
-
-const userMessage: NyxChatMessage = {
-  id: userMessageId,
-  role: 'user',
-  content: 'Hello Nyx',
-  status: 'completed',
-}
-
-const turnUserMessage = {
-  id: userMessageId,
-  content: 'Hello Nyx',
-}
-
-const assistantMessage: NyxChatMessage = {
-  id: assistantMessageId,
-  role: 'assistant',
-  content: '',
-  status: 'pending',
-}
-
 const retryableError: NyxChatError = {
   code: 'network_error',
   message: 'Network failed.',
   retryable: true,
-  details: 'Connection closed.',
 }
 
-function submittedState() {
-  return chatReducer(
-    {
-      ...initialChatState,
-      input: 'Hello Nyx',
+function detail(overrides: Partial<NyxThreadDetail> = {}): NyxThreadDetail {
+  return {
+    summary: {
+      availability: 'available',
+      id: 'thread-a',
+      location: 'available',
+      title: 'Canonical title',
+      threadRevision: 1,
+      resultRevision: 0,
+      seenResultRevision: 0,
+      lastUserActivityAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
     },
-    {
-      type: 'request-submitted',
-      requestId,
-      assistantMessageId,
-      turnUserMessage,
-      submittedMessages,
-      userMessage,
-      assistantMessage,
-      targetSelection,
+    draft: {
+      revision: 2,
+      text: 'saved draft',
+      targetSelection: target,
+      images: [],
+      documents: [],
     },
-  )
+    messages: [],
+    runStatus: 'idle',
+    activeRun: null,
+    retryableTurn: null,
+    settlementFailure: null,
+    ...overrides,
+  }
 }
 
-function streamingState() {
-  return chatReducer(acceptedState(), {
+function hydrated() {
+  const value = detail()
+  return chatReducer(initialChatState, {
+    type: 'thread-library-hydrated',
+    generation: 0,
+    summary: value.summary,
+    detail: value,
+    eventEpoch: 'epoch-1',
+    listCursor: 4,
+    detailCursor: 6,
+  })
+}
+
+function submittedState(
+  state = hydrated(),
+  turnIntent: 'new_user_message' | 'retry_failed_response' = 'new_user_message',
+) {
+  return chatReducer(state, {
+    type: 'request-submitted',
+    threadId,
+    requestId,
+    turnIntent,
+    expectedDraftRevision: state.draftRevision,
+    ...(turnIntent === 'retry_failed_response'
+      ? { turnOrdinal: 1, expectedAttemptRequestId: 'attempt-1' }
+      : {}),
+  })
+}
+
+function acceptedState(state = submittedState()) {
+  return chatReducer(state, {
+    type: 'request-accepted',
+    threadId,
+    requestId,
+    userMessageId,
+    assistantMessageId,
+    turnIntent: state.activeTurn?.turnIntent ?? 'new_user_message',
+  })
+}
+
+function streamingState(state = acceptedState()) {
+  return chatReducer(state, {
     type: 'request-started',
+    threadId,
     requestId,
     assistantMessageId,
     targetAttribution,
   })
 }
 
-function acceptedState() {
-  return chatReducer(submittedState(), {
-    type: 'request-accepted',
-    requestId,
-    assistantMessageId,
-  })
-}
-
 function assistantFrom(messages: ReadonlyArray<NyxChatMessage>) {
   const message = messages.find((candidate) => candidate.id === assistantMessageId)
-
   expect(message).toBeDefined()
-
-  return message as NyxChatMessage
+  return message!
 }
 
-describe('chatReducer', () => {
-  it('starts with current thread hydration blocking the renderer projection', () => {
-    expect(initialChatState.hydrationStatus).toBe('loading')
-    expect(initialChatState.hydrationError).toBeNull()
-    expect(initialChatState.projectionGeneration).toBe(0)
-    expect(initialChatState.resetStatus).toBe('idle')
-    expect(initialChatState.resetError).toBeNull()
-  })
+describe('chatReducer C1 projection', () => {
+  it('hydrates only the selected canonical detail and its independent watermarks', () => {
+    const state = hydrated()
 
-  it('hydrates an empty current thread into a ready state with no active identity', () => {
-    const state = chatReducer(
-      {
-        ...initialChatState,
-        input: 'must be cleared',
-        activeRequestId: 'stale-request',
-      },
-      {
-        type: 'current-thread-hydrated',
-        generation: 0,
-        snapshot: null,
-      },
-    )
-
-    expect(state).toEqual({
-      ...initialChatState,
+    expect(state).toMatchObject({
+      selectedThreadId: 'thread-a',
+      threadSummary: { title: 'Canonical title' },
+      input: 'saved draft',
+      draftRevision: 2,
+      eventEpoch: 'epoch-1',
+      listCursor: 4,
+      detailCursor: 6,
       hydrationStatus: 'ready',
     })
+    expect(state.messages).toEqual([])
   })
 
-  it('hydrates terminal messages and retry metadata without restoring active ids or input', () => {
-    const snapshot: NyxCurrentThreadSnapshot = {
-      messages: [userMessage, { ...assistantMessage, status: 'failed', error: retryableError }],
+  it('hydrates canonical attachments and retry metadata without restoring active ids', () => {
+    const value = detail({
+      draft: {
+        ...detail().draft,
+        images: [
+          {
+            imageId: 'image-1',
+            mediaType: 'image/png',
+            width: 2,
+            height: 3,
+            available: true,
+          },
+        ],
+        documents: [
+          {
+            documentId: 'document-1',
+            name: 'notes.txt',
+            mediaType: 'text/plain',
+            byteLength: 5,
+            extractedByteLength: 5,
+            available: true,
+          },
+        ],
+      },
+      messages: [
+        { id: userMessageId, role: 'user', content: 'Hello', status: 'completed' },
+        {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: 'Partial',
+          status: 'failed',
+          error: retryableError,
+          canRetry: true,
+        },
+      ],
       runStatus: 'failed',
       retryableTurn: {
+        turnOrdinal: 1,
+        expectedAttemptRequestId: requestId,
+        expectedDraftRevision: 2,
         userMessageId,
         assistantMessageId,
-        turnUserMessage,
-        submittedMessages,
-      },
-      selectedTarget: targetSelection,
-    }
-    const state = chatReducer(initialChatState, {
-      type: 'current-thread-hydrated',
-      generation: 0,
-      snapshot,
-    })
-
-    expect(state.messages).toEqual(snapshot.messages)
-    expect(state.runStatus).toBe('failed')
-    expect(state.retryableTurn).toEqual(snapshot.retryableTurn)
-    expect(state.input).toBe('')
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.hydrationStatus).toBe('ready')
-    expect(state.hydrationError).toBeNull()
-  })
-
-  it('stores only the safe current thread load error and remains blocked', () => {
-    const state = chatReducer(initialChatState, {
-      type: 'current-thread-hydration-failed',
-      generation: 0,
-      error: {
-        code: 'load_failed',
-        message: 'Nyx could not load the current thread.',
       },
     })
-
-    expect(state.hydrationStatus).toBe('error')
-    expect(state.hydrationError).toEqual({
-      code: 'load_failed',
-      message: 'Nyx could not load the current thread.',
+    const state = chatReducer(initialChatState, {
+      type: 'thread-library-hydrated',
+      generation: 0,
+      summary: value.summary,
+      detail: value,
+      eventEpoch: 'epoch-1',
+      listCursor: 2,
+      detailCursor: 3,
     })
-    expect(state.messages).toEqual([])
-    expect(state.activeRequestId).toBeUndefined()
+
+    expect(state).toMatchObject({
+      runStatus: 'failed',
+      retryableTurn: value.retryableTurn,
+      activeRequestId: undefined,
+      activeAssistantMessageId: undefined,
+      activeTurn: null,
+    })
+    expect(state.draftImages[0]).toMatchObject({
+      id: 'image-1',
+      status: 'ready',
+      previewUrl: 'nyx-image://preview/image-1',
+    })
+    expect(state.draftDocuments[0]).toMatchObject({ id: 'document-1', status: 'ready' })
   })
 
-  it('seeds once and lets later catalog updates change availability without changing the draft', () => {
-    const hydrated = chatReducer(initialChatState, {
-      type: 'current-thread-hydrated',
-      generation: 0,
-      snapshot: null,
+  it('restores the exact active run identity from a live Main snapshot', () => {
+    const value = detail({
+      runStatus: 'streaming',
+      activeRun: { requestId, assistantMessageId, turnIntent: 'new_user_message' },
     })
-    const seeded = chatReducer(hydrated, {
+    const state = chatReducer(initialChatState, {
+      type: 'thread-library-hydrated',
+      generation: 0,
+      summary: value.summary,
+      detail: value,
+      eventEpoch: 'epoch-1',
+      listCursor: 0,
+      detailCursor: 0,
+    })
+
+    expect(state).toMatchObject({
+      activeRequestId: requestId,
+      activeAssistantMessageId: assistantMessageId,
+      activeTurn: { requestId, assistantMessageId, accepted: true },
+    })
+  })
+
+  it('refreshes active run identity while keeping a dirty Draft overlay', () => {
+    const current = chatReducer(hydrated(), { type: 'set-input', value: 'dirty overlay' })
+    const changed = detail({
+      runStatus: 'streaming',
+      activeRun: { requestId, assistantMessageId, turnIntent: 'new_user_message' },
+    })
+
+    const state = chatReducer(current, {
+      type: 'thread-detail-changed',
+      detail: changed,
+      cursor: 7,
+      preserveOverlay: true,
+    })
+
+    expect(state).toMatchObject({
+      input: 'dirty overlay',
+      activeRequestId: requestId,
+      activeAssistantMessageId: assistantMessageId,
+      activeTurn: { requestId, accepted: true },
+    })
+  })
+
+  it('keeps only an unaccepted local start and clears an accepted run when canonical becomes terminal', () => {
+    const submitted = submittedState()
+    const pending = chatReducer(submitted, {
+      type: 'thread-detail-changed',
+      detail: detail({ runStatus: 'streaming', activeRun: null }),
+      cursor: 7,
+      preserveOverlay: false,
+    })
+    expect(pending).toMatchObject({
+      activeRequestId: requestId,
+      activeTurn: { requestId, accepted: false },
+    })
+
+    const dirtyAccepted = chatReducer(acceptedState(), { type: 'set-input', value: 'dirty' })
+    const terminal = chatReducer(dirtyAccepted, {
+      type: 'thread-detail-changed',
+      detail: detail({ runStatus: 'completed', activeRun: null }),
+      cursor: 8,
+      preserveOverlay: true,
+    })
+    expect(terminal).toMatchObject({ input: 'dirty', runStatus: 'completed' })
+    expect(terminal.activeRequestId).toBeUndefined()
+    expect(terminal.activeAssistantMessageId).toBeUndefined()
+    expect(terminal.activeTurn).toBeNull()
+  })
+
+  it('stores only a safe library load error and remains blocked', () => {
+    const state = chatReducer(initialChatState, {
+      type: 'thread-library-hydration-failed',
+      generation: 0,
+      error: { code: 'library_unavailable', message: "Couldn't open Thread Library" },
+    })
+
+    expect(state).toMatchObject({
+      hydrationStatus: 'error',
+      hydrationError: { code: 'library_unavailable', message: "Couldn't open Thread Library" },
+      messages: [],
+      activeRequestId: undefined,
+    })
+  })
+
+  it('never lets a late hydration generation replace the current placeholder', () => {
+    const placeholder = chatReducer(hydrated(), {
+      type: 'show-placeholder',
+      generation: 1,
+      minimumCatalogEpoch: 3,
+    })
+    const stale = chatReducer(placeholder, {
+      type: 'thread-library-hydrated',
+      generation: 0,
+      summary: detail().summary,
+      detail: detail(),
+      eventEpoch: 'epoch-1',
+      listCursor: 8,
+      detailCursor: 8,
+    })
+
+    expect(stale).toBe(placeholder)
+    expect(stale.selectedThreadId).toBeNull()
+  })
+
+  it('keeps the selected overlay but hides it behind Thread unavailable Retry', () => {
+    const dirty = chatReducer(hydrated(), { type: 'set-input', value: 'local edit' })
+    const unavailable = chatReducer(dirty, {
+      type: 'thread-unavailable',
+      threadId: 'thread-a',
+      error: { code: 'thread_unavailable', message: "Couldn't open this thread" },
+      cursor: 7,
+    })
+
+    expect(unavailable).toMatchObject({
+      hydrationStatus: 'error',
+      hydrationErrorThreadId: 'thread-a',
+      input: 'local edit',
+      threadSummary: {
+        availability: 'unavailable',
+        title: "Couldn't open this thread",
+      },
+    })
+  })
+
+  it('keeps a newer dirty overlay while accepting canonical messages and revision', () => {
+    const dirty = chatReducer(hydrated(), { type: 'set-input', value: 'newer local edit' })
+    const next = detail({
+      draft: { ...detail().draft, revision: 3, text: 'older acknowledged edit' },
+      messages: [{ id: 'user-1', role: 'user', content: 'hello', status: 'completed' }],
+    })
+    const state = chatReducer(dirty, {
+      type: 'thread-detail-changed',
+      detail: next,
+      cursor: 7,
+      preserveOverlay: true,
+    })
+
+    expect(state.input).toBe('newer local edit')
+    expect(state.draftRevision).toBe(3)
+    expect(state.messages).toEqual(next.messages)
+    expect(state.detailCursor).toBe(7)
+  })
+
+  it('seeds once and lets newer catalog updates change availability without changing the draft', () => {
+    const seeded = chatReducer(hydrated(), {
       type: 'target-context-ready',
       generation: 0,
       catalogEpoch: 2,
-      selection: targetSelection,
+      selection: target,
       available: true,
     })
     const refreshed = chatReducer(seeded, {
@@ -203,27 +360,22 @@ describe('chatReducer', () => {
       available: true,
     })
 
-    expect(refreshed.targetDraft).toEqual(targetSelection)
+    expect(refreshed.targetDraft).toEqual(target)
     expect(refreshed.targetAvailable).toBe(false)
     expect(stale).toBe(refreshed)
   })
 
-  it('accepts only the registered post-reset catalog epoch for a new seed', () => {
-    const resetting = chatReducer(initialChatState, {
-      type: 'reset-started',
+  it('accepts only the registered post-New catalog epoch for a placeholder seed', () => {
+    const placeholder = chatReducer(hydrated(), {
+      type: 'show-placeholder',
       generation: 1,
       minimumCatalogEpoch: 6,
     })
-    const cleared = chatReducer(resetting, {
-      type: 'clear-chat',
-      generation: 1,
-      minimumCatalogEpoch: 6,
-    })
-    const stale = chatReducer(cleared, {
+    const stale = chatReducer(placeholder, {
       type: 'target-context-ready',
       generation: 1,
       catalogEpoch: 5,
-      selection: targetSelection,
+      selection: target,
       available: true,
     })
     const seeded = chatReducer(stale, {
@@ -234,206 +386,116 @@ describe('chatReducer', () => {
       available: true,
     })
 
-    expect(stale).toBe(cleared)
+    expect(stale).toBe(placeholder)
     expect(seeded.targetDraft).toEqual({ kind: 'env_fallback' })
-    expect(seeded.targetInitialized).toBe(true)
   })
 
-  it('blocks the projection while reset is in progress', () => {
-    const state = chatReducer(submittedState(), {
-      type: 'reset-started',
-      generation: 1,
-      minimumCatalogEpoch: 2,
+  it('treats a save ack as the only durability boundary without erasing later edits', () => {
+    const firstEdit = chatReducer(hydrated(), { type: 'set-input', value: 'first edit' })
+    const laterEdit = chatReducer(firstEdit, { type: 'set-input', value: 'later edit' })
+    const saved = chatReducer(laterEdit, {
+      type: 'save-succeeded',
+      detail: detail({ draft: { ...detail().draft, revision: 3, text: 'first edit' } }),
+      submittedVersion: firstEdit.draftEditVersion,
+      cursor: 7,
+      eventEpoch: 'epoch-1',
     })
 
-    expect(state.resetStatus).toBe('resetting')
-    expect(state.resetError).toBeNull()
-    expect(state.projectionGeneration).toBe(1)
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toBeNull()
+    expect(saved.input).toBe('later edit')
+    expect(saved.savedEditVersion).toBe(firstEdit.draftEditVersion)
+    expect(saved.draftEditVersion).toBe(laterEdit.draftEditVersion)
+    expect(saved.draftRevision).toBe(3)
   })
 
-  it('ignores a stale hydration result after reset advances the projection generation', () => {
-    const resettingState = chatReducer(submittedState(), {
-      type: 'reset-started',
-      generation: 1,
-      minimumCatalogEpoch: 2,
+  it('uses Main message ids only after the matching thread/request is accepted', () => {
+    const submitted = chatReducer(hydrated(), {
+      type: 'request-submitted',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 2,
     })
-    const state = chatReducer(resettingState, {
-      type: 'current-thread-hydrated',
-      generation: 0,
-      snapshot: null,
+    const foreign = chatReducer(submitted, {
+      type: 'request-accepted',
+      threadId: 'thread-b',
+      requestId: 'request-1',
+      userMessageId: 'user-main',
+      assistantMessageId: 'assistant-main',
+      turnIntent: 'new_user_message',
+    })
+    const accepted = chatReducer(foreign, {
+      type: 'request-accepted',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      userMessageId: 'user-main',
+      assistantMessageId: 'assistant-main',
+      turnIntent: 'new_user_message',
     })
 
-    expect(state).toBe(resettingState)
-    expect(state.resetStatus).toBe('resetting')
-    expect(state.projectionGeneration).toBe(1)
+    expect(foreign).toBe(submitted)
+    expect(accepted.messages.map((message) => message.id)).toEqual(['user-main', 'assistant-main'])
+    expect(accepted.input).toBe('')
   })
 
-  it('keeps reset failure safe and blocks stale conversation actions', () => {
-    const draftImages = [
-      {
-        id: 'ready',
-        name: 'ready.png',
-        status: 'ready' as const,
-        source: null,
-        image: { mediaType: 'image/png' as const, width: 1, height: 1 },
-        canonicalBytes: new Uint8Array([1]),
-        previewBytes: new Uint8Array([2]),
-        previewUrl: 'blob:ready',
-      },
-      {
-        id: 'preparing',
-        name: 'preparing.png',
-        status: 'preparing' as const,
-        source: new Blob([new Uint8Array([3])], { type: 'image/png' }),
-      },
-      {
-        id: 'failed',
-        name: 'failed.png',
-        status: 'failed' as const,
-        source: new Blob([new Uint8Array([4])], { type: 'image/png' }),
-        error: 'failed',
-      },
-    ]
-    const resettingState = chatReducer(
-      { ...submittedState(), draftImages, composerNotice: 'Keep this draft.' },
-      {
-        type: 'reset-started',
-        generation: 1,
-        minimumCatalogEpoch: 2,
-      },
-    )
-    const state = chatReducer(resettingState, {
-      type: 'reset-failed',
-      generation: 1,
-      error: {
-        code: 'reset_failed',
-        message: 'Nyx could not start a fresh thread.',
-      },
-      restoreTargetInitialized: true,
-      restoreTargetAvailable: true,
-      restoreMinimumCatalogEpoch: 0,
-    })
-
-    expect(state.hydrationStatus).toBe('error')
-    expect(state.resetStatus).toBe('idle')
-    expect(state.resetError).toEqual({
-      code: 'reset_failed',
-      message: 'Nyx could not start a fresh thread.',
-    })
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toBeNull()
-    expect(state.input).toBe('Hello Nyx')
-    expect(state.draftImages).toEqual(draftImages)
-    expect(state.composerNotice).toBe('Keep this draft.')
-  })
-
-  it('locks a submitted request without clearing or inserting before accepted', () => {
+  it('locks a submitted request without clearing its captured Composer', () => {
     const state = submittedState()
 
-    expect(state.input).toBe('Hello Nyx')
-    expect(state.runStatus).toBe('submitting')
-    expect(state.activeRequestId).toBe(requestId)
-    expect(state.activeAssistantMessageId).toBe(assistantMessageId)
-    expect(state.activeTurn).toEqual({
-      requestId,
-      userMessageId,
-      assistantMessageId,
-      turnIntent: 'new_user_message',
-      accepted: false,
-      turnUserMessage,
-      submittedMessages,
-      targetSelection,
-      capturedInput: 'Hello Nyx',
-      capturedDraftImageIds: [],
-      capturedDraftDocumentIds: [],
-      userMessage,
-      assistantMessage,
+    expect(state).toMatchObject({
+      input: 'saved draft',
+      runStatus: 'submitting',
+      activeRequestId: requestId,
+      activeAssistantMessageId: undefined,
+      messages: [],
+      activeTurn: {
+        threadId,
+        requestId,
+        accepted: false,
+        capturedInput: 'saved draft',
+        expectedDraftRevision: 2,
+      },
     })
-    expect(state.retryableTurn).toBeNull()
-    expect(state.messages).toEqual([])
+    expect(chatReducer(state, { type: 'set-input', value: 'blocked' })).toBe(state)
   })
 
-  it('commits the captured request on accepted', () => {
-    const state = acceptedState()
-
-    expect(state.input).toBe('')
-    expect(state.activeTurn?.accepted).toBe(true)
-    expect(state.committedTarget).toEqual(targetSelection)
-    expect(state.messages).toEqual([userMessage, assistantMessage])
-  })
-
-  it('retains the captured Composer when a request fails before accepted', () => {
-    const state = chatReducer(submittedState(), {
-      type: 'request-failed',
-      requestId,
-      assistantMessageId,
-      error: retryableError,
-    })
-
-    expect(state.input).toBe('Hello Nyx')
-    expect(state.messages).toEqual([])
-    expect(state.committedTarget).toBeNull()
-    expect(state.activeTurn).toBeNull()
-    expect(state.composerError).toEqual(retryableError)
-  })
-
-  it('clears only captured image drafts and inserts stable refs on accepted', () => {
-    const imageId = '00000000-0000-4000-8000-000000000001'
-    const draft = {
-      id: 'draft-1',
-      name: 'image.png',
+  it('retains the captured Composer and attachments when a request fails before acceptance', () => {
+    const image = {
+      id: 'image-1',
+      name: 'one.png',
       status: 'ready' as const,
       source: null,
       image: { mediaType: 'image/png' as const, width: 1, height: 1 },
       canonicalBytes: new Uint8Array([1]),
       previewBytes: new Uint8Array([2]),
-      previewUrl: 'blob:preview',
+      previewUrl: 'blob:one',
     }
-    const imageUserMessage = {
-      ...userMessage,
-      content: '',
-      images: [{ imageId, ...draft.image, available: true }],
-    }
-    const imageTurn = {
-      id: userMessageId,
-      content: '',
-      imageRefs: [{ imageId, ...draft.image }],
-    }
-    const submitted = chatReducer(
-      { ...initialChatState, draftImages: [draft] },
-      {
-        type: 'request-submitted',
-        requestId,
-        assistantMessageId,
-        turnUserMessage: imageTurn,
-        submittedMessages: [{ role: 'user', content: '' }],
-        userMessage: imageUserMessage,
-        assistantMessage,
-        targetSelection,
-      },
-    )
-    const accepted = chatReducer(submitted, {
-      type: 'request-accepted',
+    const state = submittedState({ ...hydrated(), input: 'Hello', draftImages: [image] })
+    const failed = chatReducer(state, {
+      type: 'request-failed',
+      threadId,
       requestId,
-      assistantMessageId,
+      error: retryableError,
     })
 
-    expect(submitted.draftImages).toEqual([draft])
-    expect(submitted.messages).toEqual([])
-    expect(accepted.draftImages).toEqual([])
-    expect(accepted.messages[0]).toEqual(imageUserMessage)
+    expect(failed.input).toBe('Hello')
+    expect(failed.draftImages).toEqual([image])
+    expect(failed.messages).toEqual([])
+    expect(failed.activeTurn).toBeNull()
+    expect(failed.composerError).toEqual(retryableError)
   })
 
-  it('retains a document before acceptance and clears only the captured draft after acceptance', () => {
-    const documentId = '00000000-0000-4000-8000-000000000010'
-    const draft = {
-      id: 'document-draft-1',
+  it('clears captured ready attachments only after acceptance and inserts Main-owned message ids', () => {
+    const image = {
+      id: 'image-1',
+      name: 'one.png',
+      status: 'ready' as const,
+      source: null,
+      image: { mediaType: 'image/png' as const, width: 1, height: 1 },
+      canonicalBytes: new Uint8Array([1]),
+      previewBytes: new Uint8Array([2]),
+      previewUrl: 'blob:one',
+    }
+    const document = {
+      id: 'document-1',
       name: 'notes.txt',
       mediaType: 'text/plain' as const,
       status: 'ready' as const,
@@ -448,399 +510,361 @@ describe('chatReducer', () => {
       extractedTextBytes: new TextEncoder().encode('hello'),
       extractedFromSha256: 'a'.repeat(64),
     }
-    const documentUserMessage = {
-      ...userMessage,
-      content: '',
-      documents: [{ documentId, ...draft.document, available: true }],
-    }
-    const submitted = chatReducer(
-      { ...initialChatState, draftDocuments: [draft] },
-      {
-        type: 'request-submitted',
-        requestId,
-        assistantMessageId,
-        turnUserMessage: {
-          id: userMessageId,
-          content: '',
-          documentRefs: [{ documentId, ...draft.document }],
-        },
-        submittedMessages: [{ role: 'user', content: '' }],
-        userMessage: documentUserMessage,
-        assistantMessage,
-        targetSelection,
-      },
-    )
-    const failedBeforeAcceptance = chatReducer(submitted, {
-      type: 'request-failed',
-      requestId,
-      assistantMessageId,
-      error: retryableError,
+    const submitted = submittedState({
+      ...hydrated(),
+      input: '',
+      draftImages: [image],
+      draftDocuments: [document],
     })
-    const accepted = chatReducer(submitted, {
-      type: 'request-accepted',
-      requestId,
-      assistantMessageId,
-    })
+    const accepted = acceptedState(submitted)
 
-    expect(failedBeforeAcceptance.draftDocuments).toEqual([draft])
+    expect(submitted.draftImages).toEqual([image])
+    expect(submitted.draftDocuments).toEqual([document])
+    expect(accepted.draftImages).toEqual([])
     expect(accepted.draftDocuments).toEqual([])
-    expect(accepted.messages[0]).toEqual(documentUserMessage)
+    expect(accepted.messages).toEqual([
+      {
+        id: userMessageId,
+        role: 'user',
+        content: '',
+        status: 'completed',
+        images: [{ imageId: 'image-1', ...image.image, available: true }],
+        documents: [{ documentId: 'document-1', ...document.document, available: true }],
+      },
+      { id: assistantMessageId, role: 'assistant', content: '', status: 'pending' },
+    ])
   })
 
-  it('keeps the active selection immutable when the Composer draft changes', () => {
-    const submitted = {
-      ...submittedState(),
-      targetInitialized: true,
-      targetAvailable: true,
-      targetDraft: targetSelection,
-    }
-    const changed = chatReducer(submitted, {
+  it('keeps target selection locked before acceptance and editable during generation', () => {
+    const seeded = chatReducer(hydrated(), {
+      type: 'target-context-ready',
+      generation: 0,
+      catalogEpoch: 1,
+      selection: target,
+      available: true,
+    })
+    const submitted = submittedState(seeded)
+    const blocked = chatReducer(submitted, {
       type: 'target-draft-changed',
       selection: { kind: 'env_fallback' },
       available: true,
     })
-
-    expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
-    expect(changed.targetDraft).toEqual(targetSelection)
-  })
-
-  it('keeps active attribution after the Composer draft changes during generation', () => {
-    const streaming = {
-      ...streamingState(),
-      targetInitialized: true,
-      targetAvailable: true,
-      targetDraft: targetSelection,
-    }
+    const streaming = streamingState(acceptedState(submitted))
     const changed = chatReducer(streaming, {
       type: 'target-draft-changed',
       selection: { kind: 'env_fallback' },
       available: true,
     })
-    const completed = chatReducer(changed, {
-      type: 'request-completed',
-      requestId,
-      assistantMessageId,
-      status: 'completed',
-      finalContent: 'Final response',
-    })
 
-    expect(changed.activeTurn?.targetSelection).toEqual(targetSelection)
+    expect(blocked).toBe(submitted)
     expect(changed.targetDraft).toEqual({ kind: 'env_fallback' })
-    expect(assistantFrom(completed.messages).targetAttribution).toEqual(targetAttribution)
+    expect(assistantFrom(changed.messages).targetAttribution).toEqual(targetAttribution)
   })
 
-  it('marks the pending assistant message as streaming when the request starts', () => {
-    const state = streamingState()
-
-    expect(state.runStatus).toBe('streaming')
-    expect(assistantFrom(state.messages).status).toBe('streaming')
-    expect(assistantFrom(state.messages).targetAttribution).toEqual(targetAttribution)
-  })
-
-  it('stores streaming snapshots on request deltas', () => {
-    const state = chatReducer(streamingState(), {
+  it('streams snapshots and finalizes completed or cancelled content', () => {
+    const streaming = streamingState()
+    const delta = chatReducer(streaming, {
       type: 'request-delta',
+      threadId,
       requestId,
       assistantMessageId,
       snapshot: 'Partial response',
     })
-
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.runStatus).toBe('streaming')
-    expect(assistant.content).toBe('Partial response')
-    expect(assistant.status).toBe('streaming')
-  })
-
-  it('finalizes a completed request and clears active ids', () => {
-    const state = chatReducer(streamingState(), {
+    const completed = chatReducer(delta, {
       type: 'request-completed',
+      threadId,
       requestId,
       assistantMessageId,
       status: 'completed',
       finalContent: 'Final response',
     })
-
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toBeNull()
-    expect(state.runStatus).toBe('completed')
-    expect(assistant.content).toBe('Final response')
-    expect(assistant.status).toBe('completed')
-    expect(assistant.canRetry).toBe(false)
-    expect(assistant.error).toBeUndefined()
-  })
-
-  it('preserves partial content when a request is cancelled', () => {
-    const state = chatReducer(streamingState(), {
+    const cancelled = chatReducer(delta, {
       type: 'request-completed',
+      threadId,
       requestId,
       assistantMessageId,
       status: 'cancelled',
       finalContent: 'Partial response',
     })
 
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toBeNull()
-    expect(state.runStatus).toBe('cancelled')
-    expect(assistant.content).toBe('Partial response')
-    expect(assistant.status).toBe('cancelled')
-    expect(assistant.canRetry).toBe(false)
-    expect(assistant.error).toBeUndefined()
+    expect(assistantFrom(delta.messages)).toMatchObject({
+      content: 'Partial response',
+      status: 'streaming',
+      targetAttribution,
+    })
+    expect(completed).toMatchObject({
+      runStatus: 'completed',
+      activeRequestId: undefined,
+      activeAssistantMessageId: undefined,
+      activeTurn: null,
+    })
+    expect(assistantFrom(completed.messages)).toMatchObject({
+      content: 'Final response',
+      status: 'completed',
+      canRetry: false,
+    })
+    expect(assistantFrom(cancelled.messages)).toMatchObject({
+      content: 'Partial response',
+      status: 'cancelled',
+    })
   })
 
-  it('ignores stale request lifecycle events', () => {
+  it('ignores lifecycle events for another thread, request, or assistant identity', () => {
     const state = streamingState()
-    const staleActions = [
+    const actions = [
       {
-        type: 'request-started' as const,
-        requestId: staleRequestId,
+        type: 'request-delta' as const,
+        threadId: 'thread-b',
+        requestId,
         assistantMessageId,
-        targetAttribution,
+        snapshot: 'wrong thread',
       },
       {
         type: 'request-delta' as const,
-        requestId: staleRequestId,
+        threadId,
+        requestId: 'request-stale',
         assistantMessageId,
-        snapshot: 'Stale response',
+        snapshot: 'wrong request',
       },
       {
         type: 'request-completed' as const,
-        requestId: staleRequestId,
-        assistantMessageId,
+        threadId,
+        requestId,
+        assistantMessageId: 'assistant-stale',
         status: 'completed' as const,
-        finalContent: 'Stale final response',
-      },
-      {
-        type: 'request-failed' as const,
-        requestId: staleRequestId,
-        assistantMessageId,
-        error: retryableError,
+        finalContent: 'wrong assistant',
       },
     ]
 
-    for (const action of staleActions) {
-      expect(chatReducer(state, action)).toBe(state)
-    }
+    for (const action of actions) expect(chatReducer(state, action)).toBe(state)
   })
 
-  it('ignores lifecycle events for a stale assistant message identity', () => {
-    const submitted = submittedState()
-
-    expect(
-      chatReducer(submitted, {
-        type: 'request-started',
-        requestId,
-        assistantMessageId: staleAssistantMessageId,
-        targetAttribution,
-      }),
-    ).toBe(submitted)
-
-    const state = streamingState()
-    const staleActions = [
-      {
-        type: 'request-delta' as const,
-        requestId,
-        assistantMessageId: staleAssistantMessageId,
-        snapshot: 'Stale response',
-      },
-      {
-        type: 'request-completed' as const,
-        requestId,
-        assistantMessageId: staleAssistantMessageId,
-        status: 'completed' as const,
-        finalContent: 'Stale final response',
-      },
-      {
-        type: 'request-failed' as const,
-        requestId,
-        assistantMessageId: staleAssistantMessageId,
-        error: retryableError,
-      },
-    ]
-
-    for (const action of staleActions) {
-      expect(chatReducer(state, action)).toBe(state)
-    }
-  })
-
-  it('stores retryable failures on the assistant message', () => {
-    const state = chatReducer(streamingState(), {
+  it('stores retryability and attribution on provider failures', () => {
+    const failed = chatReducer(streamingState(), {
       type: 'request-failed',
-      requestId,
-      assistantMessageId,
-      error: retryableError,
-    })
-
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.activeRequestId).toBeUndefined()
-    expect(state.activeAssistantMessageId).toBeUndefined()
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toEqual({
-      userMessageId,
-      assistantMessageId,
-      turnUserMessage,
-      submittedMessages,
-    })
-    expect(state.runStatus).toBe('failed')
-    expect(assistant.status).toBe('failed')
-    expect(assistant.error).toEqual(retryableError)
-    expect(assistant.canRetry).toBe(true)
-  })
-
-  it('retains attribution on a post-bind failure even when chat:start was not observed', () => {
-    const state = chatReducer(acceptedState(), {
-      type: 'request-failed',
+      threadId,
       requestId,
       assistantMessageId,
       error: retryableError,
       targetAttribution,
     })
-
-    expect(assistantFrom(state.messages).targetAttribution).toEqual(targetAttribution)
-  })
-
-  it('does not allow retry for non-retryable failures', () => {
-    const nonRetryableError: NyxChatError = {
-      code: 'auth_failed',
-      message: 'Authentication failed.',
-      retryable: false,
-    }
-
-    const state = chatReducer(streamingState(), {
+    const nonRetryable = chatReducer(streamingState(), {
       type: 'request-failed',
+      threadId,
       requestId,
       assistantMessageId,
-      error: nonRetryableError,
+      error: { code: 'auth_failed', message: 'Authentication failed.', retryable: false },
     })
 
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.runStatus).toBe('failed')
-    expect(state.activeTurn).toBeNull()
-    expect(state.retryableTurn).toBeNull()
-    expect(assistant.status).toBe('failed')
-    expect(assistant.error).toEqual(nonRetryableError)
-    expect(assistant.canRetry).toBe(false)
-  })
-
-  it('reuses message identity and binds the current Composer draft when retrying', () => {
-    const failedState = chatReducer(streamingState(), {
-      type: 'request-failed',
-      requestId,
-      assistantMessageId,
+    expect(failed).toMatchObject({ runStatus: 'failed', activeTurn: null })
+    expect(assistantFrom(failed.messages)).toMatchObject({
+      status: 'failed',
       error: retryableError,
+      canRetry: true,
+      targetAttribution,
     })
-
-    const selectedForRetry = chatReducer(
-      {
-        ...failedState,
-        input: 'Next question',
-        draftImages: [
-          {
-            id: 'draft-next',
-            name: 'next.png',
-            status: 'failed',
-            source: new Blob(),
-            error: 'failed',
-          },
-        ],
-        targetInitialized: true,
-        targetDraft: targetSelection,
-      },
-      {
-        type: 'target-draft-changed',
-        selection: { kind: 'env_fallback' },
-        available: true,
-      },
-    )
-
-    const accepting = chatReducer(selectedForRetry, {
-      type: 'retry-requested',
-      requestId: 'request-2',
-      userMessageId,
-      assistantMessageId,
-      turnUserMessage,
-      submittedMessages,
-      targetSelection: { kind: 'env_fallback' },
+    expect(assistantFrom(nonRetryable.messages)).toMatchObject({
+      status: 'failed',
+      canRetry: false,
     })
-
-    expect(assistantFrom(accepting.messages).error).toEqual(retryableError)
-    expect(accepting.retryableTurn).toEqual(failedState.retryableTurn)
-
-    const state = chatReducer(accepting, {
-      type: 'request-accepted',
-      requestId: 'request-2',
-      assistantMessageId,
-    })
-    const assistant = assistantFrom(state.messages)
-
-    expect(state.runStatus).toBe('submitting')
-    expect(state.activeRequestId).toBe('request-2')
-    expect(state.activeAssistantMessageId).toBe(assistantMessageId)
-    expect(state.activeTurn).toEqual({
-      requestId: 'request-2',
-      userMessageId,
-      assistantMessageId,
-      turnIntent: 'retry_failed_response',
-      accepted: true,
-      turnUserMessage,
-      submittedMessages,
-      targetSelection: { kind: 'env_fallback' },
-      capturedInput: '',
-      capturedDraftImageIds: [],
-      capturedDraftDocumentIds: [],
-    })
-    expect(state.retryableTurn).toBeNull()
-    expect(state.input).toBe('Next question')
-    expect(state.draftImages).toHaveLength(1)
-    expect(assistant.id).toBe(assistantMessageId)
-    expect(assistant.content).toBe('')
-    expect(assistant.status).toBe('pending')
-    expect(assistant.error).toBeUndefined()
-    expect(assistant.canRetry).toBe(false)
-    expect(assistant.targetAttribution).toBeUndefined()
   })
 
-  it('clears the chat back to the initial state', () => {
-    const resettingState = chatReducer(
-      {
-        ...submittedState(),
-        draftImages: [
-          {
-            id: 'failed',
-            name: 'failed.png',
-            status: 'failed',
-            source: new Blob(),
-            error: 'failed',
-          },
-        ],
+  it('reuses canonical assistant identity for an ordinary Retry without clearing the Composer', () => {
+    const failedDetail = detail({
+      messages: [
+        { id: userMessageId, role: 'user', content: 'Hello', status: 'completed' },
+        {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: 'Partial',
+          status: 'failed',
+          error: retryableError,
+          canRetry: true,
+          targetAttribution,
+        },
+      ],
+      runStatus: 'failed',
+      retryableTurn: {
+        turnOrdinal: 1,
+        expectedAttemptRequestId: 'attempt-1',
+        expectedDraftRevision: 2,
+        userMessageId,
+        assistantMessageId,
       },
+    })
+    const hydratedFailure = chatReducer(initialChatState, {
+      type: 'thread-library-hydrated',
+      generation: 0,
+      summary: failedDetail.summary,
+      detail: failedDetail,
+      eventEpoch: 'epoch-1',
+      listCursor: 1,
+      detailCursor: 1,
+    })
+    const submitted = submittedState(
+      { ...hydratedFailure, input: 'Next question' },
+      'retry_failed_response',
+    )
+    const accepted = acceptedState(submitted)
+
+    expect(accepted.input).toBe('Next question')
+    expect(accepted.retryableTurn).toBeNull()
+    expect(assistantFrom(accepted.messages)).toEqual({
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      status: 'pending',
+      canRetry: false,
+    })
+  })
+
+  it('keeps terminal settlement failure separate from provider retry state', () => {
+    const accepted = chatReducer(
+      chatReducer(hydrated(), {
+        type: 'request-submitted',
+        threadId: 'thread-a',
+        requestId: 'request-1',
+        turnIntent: 'new_user_message',
+        expectedDraftRevision: 2,
+      }),
       {
-        type: 'reset-started',
-        generation: 1,
-        minimumCatalogEpoch: 2,
+        type: 'request-accepted',
+        threadId: 'thread-a',
+        requestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        turnIntent: 'new_user_message',
       },
     )
-    const state = chatReducer(resettingState, {
-      type: 'clear-chat',
-      generation: 1,
-      minimumCatalogEpoch: 3,
+    const failed = chatReducer(accepted, {
+      type: 'request-failed',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      error: {
+        code: 'unknown',
+        message: "Couldn't save result",
+        retryable: true,
+      },
     })
 
-    expect(state).toEqual({
-      ...initialChatState,
-      hydrationStatus: 'ready',
-      projectionGeneration: 1,
-      targetMinimumCatalogEpoch: 3,
+    expect(failed.settlementFailure).toEqual({
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
     })
+    expect(failed.retryableTurn).toBeNull()
+    expect(failed.messages.at(-1)?.error?.code).toBe('unknown')
+
+    const retrying = chatReducer(failed, {
+      type: 'settlement-retry-submitted',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      expectedDraftRevision: 2,
+    })
+    const completed = chatReducer(retrying, {
+      type: 'request-completed',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      status: 'completed',
+      finalContent: '',
+    })
+    expect(completed.messages.at(-1)?.content).toBe(accepted.messages.at(-1)?.content)
+    expect(completed.messages.at(-1)?.status).toBe('completed')
+    expect(completed.settlementFailure).toBeNull()
+
+    const providerFailed = chatReducer(retrying, {
+      type: 'request-failed',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      error: {
+        code: 'upstream_error',
+        message: 'The provider could not complete the response.',
+        retryable: true,
+      },
+    })
+    expect(providerFailed.messages.at(-1)?.error?.code).toBe('upstream_error')
+    expect(providerFailed.messages.at(-1)?.canRetry).toBe(true)
+    expect(providerFailed.settlementFailure).toBeNull()
+  })
+
+  it('does not let an old hydration result unlock a pending New barrier', () => {
+    const pending = chatReducer(hydrated(), { type: 'new-thread-started' })
+    const next = chatReducer(pending, {
+      type: 'thread-library-hydrated',
+      generation: pending.projectionGeneration,
+      summary: detail().summary,
+      detail: detail(),
+      eventEpoch: 'epoch-1',
+      listCursor: 3,
+      detailCursor: 3,
+    })
+
+    expect(next).toBe(pending)
+    expect(next.newThreadPending).toBe(true)
+  })
+
+  it('materializes only ready attachments, not preparation or failure', () => {
+    const preparing = chatReducer(initialChatState, {
+      type: 'draft-images-added',
+      images: [{ id: 'image-1', name: 'one.png', status: 'preparing', source: new Blob() }],
+    })
+    const failed = chatReducer(preparing, {
+      type: 'draft-image-failed',
+      imageId: 'image-1',
+      error: 'failed',
+    })
+    const ready = chatReducer(preparing, {
+      type: 'draft-image-ready',
+      imageId: 'image-1',
+      image: { mediaType: 'image/png', width: 1, height: 1 },
+      canonicalBytes: new Uint8Array([1]),
+      previewBytes: new Uint8Array([2]),
+      previewUrl: 'blob:one',
+    })
+
+    expect(preparing.draftEditVersion).toBe(0)
+    expect(failed.draftEditVersion).toBe(0)
+    expect(ready.draftEditVersion).toBe(1)
+  })
+
+  it('tracks document readiness and removal as Draft edits', () => {
+    const source = new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    const preparing = chatReducer(hydrated(), {
+      type: 'draft-documents-added',
+      documents: [
+        {
+          id: 'document-1',
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          status: 'preparing',
+          source,
+        },
+      ],
+    })
+    const ready = chatReducer(preparing, {
+      type: 'draft-document-ready',
+      documentId: 'document-1',
+      document: {
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        byteLength: 5,
+        extractedByteLength: 5,
+      },
+      sourceBytes: new TextEncoder().encode('hello'),
+      extractedTextBytes: new TextEncoder().encode('hello'),
+      extractedFromSha256: 'a'.repeat(64),
+    })
+    const removed = chatReducer(ready, {
+      type: 'draft-document-removed',
+      documentId: 'document-1',
+    })
+
+    expect(preparing.draftEditVersion).toBe(0)
+    expect(ready.draftEditVersion).toBe(1)
+    expect(removed.draftEditVersion).toBe(2)
+    expect(removed.draftDocuments).toEqual([])
   })
 })

@@ -114,6 +114,23 @@ describe('ThreadLibrarySidecars', () => {
     })
     await sidecars.publishResponseBytes(threadId, response.ref, response.bytes, 'Answer')
 
+    await expect(sidecars.readCanonicalImage(threadId, imageInput[0].ref)).resolves.toEqual(png)
+    await expect(
+      sidecars.resolveImageProtocolFile(threadId, imageInput[0].ref, 'full'),
+    ).resolves.toEqual({
+      filePath: join(rootPath, 'threads', threadId, 'images', `${imageId}.full`),
+      mediaType: 'image/png',
+    })
+    await expect(
+      sidecars.resolveImageProtocolFile(threadId, imageInput[0].ref, 'preview'),
+    ).resolves.toEqual({
+      filePath: join(rootPath, 'threads', threadId, 'images', `${imageId}.preview`),
+      mediaType: 'image/png',
+    })
+    await expect(sidecars.readResponseState(threadId, response.ref)).resolves.toEqual(
+      continuation(),
+    )
+
     const threadPath = join(rootPath, 'threads', threadId)
     for (const directory of ['images', 'documents', 'responses']) {
       expect((await stat(join(threadPath, directory))).mode & 0o777).toBe(0o700)
@@ -268,6 +285,50 @@ describe('ThreadLibrarySidecars', () => {
     await expect(readFile(join(directory, `${documentId}.source`))).resolves.toEqual(
       Buffer.from('changed'),
     )
+  })
+
+  it('fails closed when a Main-only read does not match the exact Thread ref', async () => {
+    const { sidecars } = await createSidecars()
+    const imageRef = { imageId, mediaType: 'image/png', width: 2, height: 1 } as const
+    await sidecars.publishImages(threadId, [
+      {
+        ref: imageRef,
+        image: { imageId, canonicalBytes: png, previewBytes: png },
+        position: 0,
+      },
+    ])
+
+    await expect(sidecars.readCanonicalImage(threadId, { ...imageRef, width: 3 })).rejects.toThrow()
+    await expect(
+      sidecars.resolveImageProtocolFile(threadId, { ...imageRef, height: 2 }, 'preview'),
+    ).rejects.toThrow()
+    await expect(sidecars.readCanonicalImage('../other', imageRef)).rejects.toThrow()
+  })
+
+  it('resolves a preview for streaming without reading canonical image bytes into Main', async () => {
+    const base = createCurrentThreadFileAdapter()
+    let canonicalReads = 0
+    const { sidecars } = await createSidecars({
+      ...base,
+      readBytes: async (path, maximumBytes) => {
+        if (path.endsWith('.full')) canonicalReads += 1
+        return base.readBytes(path, maximumBytes)
+      },
+    })
+    const ref = { imageId, mediaType: 'image/png', width: 2, height: 1 } as const
+    await sidecars.publishImages(threadId, [
+      {
+        ref,
+        image: { imageId, canonicalBytes: png, previewBytes: png },
+        position: 0,
+      },
+    ])
+    canonicalReads = 0
+
+    await expect(
+      sidecars.resolveImageProtocolFile(threadId, ref, 'preview'),
+    ).resolves.toMatchObject({ mediaType: 'image/png' })
+    expect(canonicalReads).toBe(0)
   })
 
   it('does not leave canonical files when staging publication fails', async () => {

@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildNyxChatImageUrl } from '../../../shared/chat/image-url'
-import type { CurrentThreadImageFiles } from './image-files'
 import {
   parseNyxImageRequest,
   registerNyxImageProtocol,
   registerNyxImageScheme,
 } from './image-protocol'
-import { parseCurrentThreadRecord, type CurrentThreadRecord } from './schemas'
 
 const imageId = '00000000-0000-4000-8000-000000000001'
 
@@ -42,58 +40,37 @@ describe('nyx-image protocol', () => {
     }
   })
 
-  it('authorizes from the durable record and streams the file response', async () => {
+  it('authorizes from the selected Thread projection and streams the file response', async () => {
     let handler: ((request: Request) => Promise<Response>) | undefined
     const protocol = {
       handle: vi.fn((_scheme: string, routeHandler: (request: Request) => Promise<Response>) => {
         handler = routeHandler
       }),
     }
-    const record = parseCurrentThreadRecord({
-      version: 5,
-      threadId: 'thread-1',
-      turns: [
-        {
-          attemptRequestId: 'request-1',
-          userMessageId: 'user-1',
-          assistantMessageId: 'assistant-1',
-          userContent: '',
-          imageRefs: [{ imageId, mediaType: 'image/png', width: 2, height: 1 }],
-          documentRefs: [],
-          assistantContent: 'Done',
-          assistantStatus: 'completed',
-          error: null,
-          targetBinding: {
-            selection: { kind: 'env_fallback' },
-            attribution: { kind: 'env_fallback', modelId: 'model' },
-          },
-          providerStateRef: null,
-          createdAt: '2026-08-11T00:00:00.000Z',
-          updatedAt: '2026-08-11T00:00:00.000Z',
-        },
-      ],
-      createdAt: '2026-08-11T00:00:00.000Z',
-      updatedAt: '2026-08-11T00:00:00.000Z',
-    })
-    const recordReader = {
-      read: vi.fn<() => Promise<CurrentThreadRecord | null>>(async () => record),
+    const ref = { imageId, mediaType: 'image/png' as const, width: 2, height: 1 }
+    const authorization = {
+      resolve: vi.fn<() => { threadId: string; ref: typeof ref } | null>(() => ({
+        threadId: 'thread-1',
+        ref,
+      })),
     }
     const images = {
-      resolveProtocolFile: vi.fn(async () => ({
+      resolveImageProtocolFile: vi.fn(async () => ({
         filePath: '/private/current-thread-assets/image.preview',
         mediaType: 'image/png' as const,
       })),
-    } as unknown as CurrentThreadImageFiles
+    }
     const net = {
       fetch: vi.fn(async () => new Response(Uint8Array.from([1, 2, 3]))),
     }
 
-    registerNyxImageProtocol({ protocol, net, recordReader, images })
+    registerNyxImageProtocol({ protocol, net, authorization, images })
 
     const response = await handler!(new Request(buildNyxChatImageUrl(imageId, 'preview')))
 
     expect(protocol.handle).toHaveBeenCalledWith('nyx-image', expect.any(Function))
-    expect(images.resolveProtocolFile).toHaveBeenCalledWith(record, imageId, 'preview')
+    expect(authorization.resolve).toHaveBeenCalledWith(imageId)
+    expect(images.resolveImageProtocolFile).toHaveBeenCalledWith('thread-1', ref, 'preview')
     expect(net.fetch).toHaveBeenCalledWith('file:///private/current-thread-assets/image.preview', {
       bypassCustomProtocolHandlers: true,
     })
@@ -102,7 +79,7 @@ describe('nyx-image protocol', () => {
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable')
     await expect(response.arrayBuffer()).resolves.toEqual(Uint8Array.from([1, 2, 3]).buffer)
 
-    recordReader.read.mockResolvedValueOnce(null)
+    authorization.resolve.mockReturnValueOnce(null)
     const unavailable = await handler!(new Request(buildNyxChatImageUrl(imageId, 'full')))
     expect(unavailable.status).toBe(404)
 

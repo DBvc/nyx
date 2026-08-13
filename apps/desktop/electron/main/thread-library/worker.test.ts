@@ -7,12 +7,13 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import type {
-  ImportedV5Rows,
-  ThreadLibraryOperation,
-  ThreadLibraryOperationInput,
-  ThreadLibraryOperationValue,
-  ThreadLibraryRequest,
+import {
+  parseThreadLibraryRequest,
+  type ImportedV5Rows,
+  type ThreadLibraryOperation,
+  type ThreadLibraryOperationInput,
+  type ThreadLibraryOperationValue,
+  type ThreadLibraryRequest,
 } from './protocol'
 
 let ThreadLibraryDatabase: (typeof import('./worker'))['ThreadLibraryDatabase']
@@ -20,7 +21,7 @@ const tempDirs: string[] = []
 const timestamp = '2026-08-12T00:00:00.000Z'
 const localSecond = '2026-08-12T08:00:00'
 const targetSelection = { kind: 'env_fallback' } as const
-const expectedSchemaFingerprint = 'b738af3b33da1c928f8ba909fe7c9a9d140f8841fc601544f7a9f5075bfa091b'
+const expectedSchemaFingerprint = '0a422f89b87e53a8917074c7312b44ea38cda5a6a8e883679e512509fa90c213'
 const connectionSelection = {
   kind: 'connection',
   providerId: 'provider-1',
@@ -45,10 +46,48 @@ function at(offset: number) {
 function materializeInput(value: number): ThreadLibraryOperationInput['materialize'] {
   return {
     threadId: uuid(value),
-    title: `Thread ${value}`,
-    targetSelection,
-    fallbackLocalSecond: null,
+    draft: {
+      text: `Thread ${value}`,
+      targetSelection,
+      images: [],
+      documents: [],
+    },
+    fallbackLocalSecond: localSecond,
     createdAt: at(value),
+  }
+}
+
+function imageInput(value: number) {
+  return {
+    imageId: uuid(value),
+    position: 0,
+    mediaType: 'image/png' as const,
+    width: 2,
+    height: 1,
+    available: true,
+  }
+}
+
+function documentInput(value: number, name: string, position = 0) {
+  const extractedText = 'notes'
+  const mediaType = name.endsWith('.pdf')
+    ? ('application/pdf' as const)
+    : name.endsWith('.csv')
+      ? ('text/csv' as const)
+      : name.endsWith('.md')
+        ? ('text/markdown' as const)
+        : ('text/plain' as const)
+  return {
+    documentId: uuid(value),
+    position,
+    name,
+    mediaType,
+    byteLength: 5,
+    extractedByteLength: 5,
+    sourceSha256: createHash('sha256').update(extractedText).digest('hex'),
+    extractedTextSha256: createHash('sha256').update(extractedText).digest('hex'),
+    available: true,
+    extractedText,
   }
 }
 
@@ -261,6 +300,327 @@ afterEach(async () => {
 })
 
 describe('ThreadLibraryDatabase', () => {
+  it('rejects target-only materialize and malformed fallback identity at the typed boundary', () => {
+    const empty = materializeInput(19)
+    empty.draft.text = ''
+    expect(() =>
+      parseThreadLibraryRequest({ id: 'test', operation: 'materialize', input: empty }),
+    ).toThrow()
+
+    const rows = importedRows(19)
+    rows.thread.fallbackOrdinal = 1
+    expect(() =>
+      parseThreadLibraryRequest({ id: 'test', operation: 'importV5', input: { rows } }),
+    ).toThrow()
+  })
+
+  it('materializes the complete initial Draft and preserves its exact canonical state on restart', async () => {
+    const { databasePath, owner } = await createOwner()
+    const input = materializeInput(20)
+    input.draft = {
+      text: '  Hello \n world  ',
+      targetSelection: connectionSelection,
+      images: [imageInput(50_020)],
+      documents: [documentInput(60_020, 'notes.txt')],
+    }
+
+    expect(execute(owner, 'materialize', input)).toMatchObject({
+      summary: {
+        title: 'Hello world',
+        fallbackLocalSecond: localSecond,
+        fallbackOrdinal: null,
+      },
+      draft: {
+        draftRevision: 0,
+        text: input.draft.text,
+        targetSelection: connectionSelection,
+      },
+      images: [{ imageId: uuid(50_020), owner: 'draft', position: 0 }],
+      documents: [{ documentId: uuid(60_020), owner: 'draft', position: 0 }],
+    })
+    owner.close()
+
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'readThread', { threadId: input.threadId })).toMatchObject({
+      summary: { title: 'Hello world', fallbackLocalSecond: localSecond, fallbackOrdinal: null },
+      draft: { draftRevision: 0, text: input.draft.text },
+      images: [{ imageId: uuid(50_020), owner: 'draft' }],
+      documents: [{ documentId: uuid(60_020), owner: 'draft' }],
+    })
+    restarted.close()
+  })
+
+  it('derives one exact document title from ordered ready documents', async () => {
+    const { owner } = await createOwner()
+    const input = materializeInput(120)
+    input.draft = {
+      text: '',
+      targetSelection,
+      images: [],
+      documents: [documentInput(60_120, 'notes   one.txt', 0)],
+    }
+    expect(execute(owner, 'materialize', input)).toMatchObject({
+      summary: {
+        title: 'notes one.txt',
+        fallbackLocalSecond: localSecond,
+        fallbackOrdinal: null,
+      },
+    })
+    owner.close()
+  })
+
+  it.each([
+    { name: `${'a'.repeat(251)}.txt`, title: `${'a'.repeat(41)}....txt` },
+    { name: '报告   😀.pdf', title: '报告 😀.pdf' },
+    { name: `${'文'.repeat(60)}.csv`, title: `${'文'.repeat(41)}....csv` },
+  ])('bounds document title $name', async ({ name, title }) => {
+    const { owner } = await createOwner()
+    const input = materializeInput(121)
+    const document = documentInput(60_122, name)
+    input.draft = { text: '', targetSelection, images: [], documents: [document] }
+    expect(execute(owner, 'materialize', input)).toMatchObject({ summary: { title } })
+    owner.close()
+  })
+
+  it('keeps one generic identity stable across reopen after a timezone change', async () => {
+    const previousTimezone = process.env.TZ
+    let owner: Owner | null = null
+    let reopened: Owner | null = null
+
+    try {
+      process.env.TZ = 'UTC'
+      const created = await createOwner()
+      owner = created.owner
+      const input = materializeInput(123)
+      input.draft = {
+        text: '',
+        targetSelection,
+        images: [imageInput(50_123)],
+        documents: [],
+      }
+      const expectedSummary = {
+        title: 'Image · 2026-08-12 08:00:00',
+        fallbackLocalSecond: localSecond,
+        fallbackOrdinal: 1,
+      }
+
+      expect(execute(owner, 'materialize', input)).toMatchObject({ summary: expectedSummary })
+      owner.close()
+      owner = null
+
+      process.env.TZ = 'Pacific/Honolulu'
+      reopened = new ThreadLibraryDatabase()
+      reopened.open({ databasePath: created.databasePath })
+      expect(execute(reopened, 'readThread', { threadId: input.threadId })).toMatchObject({
+        summary: expectedSummary,
+        draft: { draftRevision: 0, text: '' },
+        images: [{ imageId: uuid(50_123), owner: 'draft', position: 0 }],
+      })
+    } finally {
+      owner?.close()
+      reopened?.close()
+      if (previousTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = previousTimezone
+    }
+  })
+
+  it('freezes one document title after document-image-document ownership changes and reopen', async () => {
+    const { databasePath, owner } = await createOwner()
+    const input = materializeInput(124)
+    input.draft = {
+      text: '',
+      targetSelection,
+      images: [],
+      documents: [documentInput(60_124, 'first.txt')],
+    }
+    expect(execute(owner, 'materialize', input)).toMatchObject({
+      summary: { title: 'first.txt', fallbackLocalSecond: localSecond, fallbackOrdinal: null },
+      documents: [{ documentId: uuid(60_124), owner: 'draft', position: 0 }],
+    })
+
+    const image = draftInput(input.threadId)
+    image.draft = {
+      text: '',
+      targetSelection,
+      images: [imageInput(50_124)],
+      documents: [],
+    }
+    expect(execute(owner, 'saveDraft', image)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: {
+          title: 'Image · 2026-08-12 08:00:00',
+          fallbackLocalSecond: localSecond,
+          fallbackOrdinal: 1,
+        },
+        images: [{ imageId: uuid(50_124), owner: 'draft', position: 0 }],
+        documents: [],
+      },
+    })
+
+    const document = draftInput(input.threadId, 1)
+    document.draft = {
+      text: '',
+      targetSelection,
+      images: [],
+      documents: [documentInput(60_125, 'final.pdf')],
+    }
+    expect(execute(owner, 'saveDraft', document)).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: {
+          title: 'final.pdf',
+          fallbackLocalSecond: localSecond,
+          fallbackOrdinal: 1,
+        },
+        images: [],
+        documents: [{ documentId: uuid(60_125), owner: 'draft', position: 0 }],
+      },
+    })
+
+    expect(
+      execute(owner, 'startTurn', {
+        threadId: input.threadId,
+        requestId: 'request-document-title',
+        expectedDraftRevision: 2,
+        userMessageId: 'user-document-title',
+        assistantMessageId: 'assistant-document-title',
+        startedAt: at(202),
+      }),
+    ).toMatchObject({
+      status: 'committed',
+      detail: {
+        summary: {
+          title: 'final.pdf',
+          fallbackLocalSecond: null,
+          fallbackOrdinal: null,
+        },
+        draft: { draftRevision: 3, text: '' },
+        turns: [{ userContent: '', assistantStatus: 'pending' }],
+        images: [],
+        documents: [{ documentId: uuid(60_125), owner: 'turn', turnOrdinal: 0, position: 0 }],
+      },
+    })
+    owner.close()
+
+    const reopened = new ThreadLibraryDatabase()
+    reopened.open({ databasePath })
+    expect(execute(reopened, 'readThread', { threadId: input.threadId })).toMatchObject({
+      summary: { title: 'final.pdf', fallbackLocalSecond: null, fallbackOrdinal: null },
+      draft: { draftRevision: 3, text: '' },
+      turns: [{ userContent: '', assistantStatus: 'pending' }],
+      images: [],
+      documents: [{ documentId: uuid(60_125), owner: 'turn', turnOrdinal: 0, position: 0 }],
+    })
+    reopened.close()
+  })
+
+  it('keeps one pre-send identity across title shapes and freezes only the title identity Send needs', async () => {
+    const { owner } = await createOwner()
+    const text = materializeInput(21)
+    expect(execute(owner, 'materialize', text)).toMatchObject({
+      summary: { title: 'Thread 21', fallbackLocalSecond: localSecond, fallbackOrdinal: null },
+    })
+
+    const image = draftInput(text.threadId)
+    image.draft = { ...image.draft, text: '', images: [imageInput(50_021)], documents: [] }
+    expect(execute(owner, 'saveDraft', image)).toMatchObject({
+      detail: {
+        summary: { title: 'Image · 2026-08-12 08:00:00', fallbackOrdinal: 1 },
+      },
+    })
+
+    const document = draftInput(text.threadId, 1)
+    document.draft = {
+      ...document.draft,
+      text: '',
+      images: [],
+      documents: [documentInput(60_021, `${'文'.repeat(60)}.pdf`)],
+    }
+    expect(execute(owner, 'saveDraft', document)).toMatchObject({
+      detail: {
+        summary: { title: `${'文'.repeat(41)}....pdf`, fallbackOrdinal: 1 },
+      },
+    })
+
+    const backToText = draftInput(text.threadId, 2)
+    backToText.draft = {
+      ...backToText.draft,
+      text: '  Back   to text  ',
+      images: [],
+      documents: [],
+    }
+    expect(execute(owner, 'saveDraft', backToText)).toMatchObject({
+      detail: { summary: { title: 'Back to text', fallbackOrdinal: 1 } },
+    })
+
+    const backToImage = draftInput(text.threadId, 3)
+    backToImage.draft = {
+      ...backToImage.draft,
+      text: '',
+      images: [imageInput(50_022)],
+      documents: [],
+    }
+    expect(execute(owner, 'saveDraft', backToImage)).toMatchObject({
+      detail: {
+        summary: { title: 'Image · 2026-08-12 08:00:00', fallbackOrdinal: 1 },
+      },
+    })
+    expect(
+      execute(owner, 'startTurn', {
+        threadId: text.threadId,
+        requestId: 'request-generic',
+        expectedDraftRevision: 4,
+        userMessageId: 'user-generic',
+        assistantMessageId: 'assistant-generic',
+        startedAt: at(200),
+      }),
+    ).toMatchObject({
+      detail: { summary: { fallbackLocalSecond: localSecond, fallbackOrdinal: 1 } },
+    })
+
+    const nonGeneric = materializeInput(22)
+    execute(owner, 'materialize', nonGeneric)
+    expect(
+      execute(owner, 'startTurn', {
+        threadId: nonGeneric.threadId,
+        requestId: 'request-text',
+        expectedDraftRevision: 0,
+        userMessageId: 'user-text',
+        assistantMessageId: 'assistant-text',
+        startedAt: at(201),
+      }),
+    ).toMatchObject({
+      detail: { summary: { title: 'Thread 22', fallbackLocalSecond: null, fallbackOrdinal: null } },
+    })
+    owner.close()
+  })
+
+  it('allocates generic ordinals from surviving max and restarts only after all identities disappear', async () => {
+    const { owner } = await createOwner()
+    const database = rawDatabase(owner)
+    const createGeneric = (value: number) => {
+      const input = materializeInput(value)
+      input.draft.text = ''
+      input.draft.images = [imageInput(50_000 + value)]
+      return execute(owner, 'materialize', input)
+    }
+
+    expect([createGeneric(31), createGeneric(32), createGeneric(33)]).toMatchObject([
+      { summary: { fallbackOrdinal: 1 } },
+      { summary: { fallbackOrdinal: 2 } },
+      { summary: { fallbackOrdinal: 3 } },
+    ])
+    database.prepare('DELETE FROM threads WHERE id = ?').run(uuid(32))
+    expect(createGeneric(34)).toMatchObject({ summary: { fallbackOrdinal: 4 } })
+    database.prepare('DELETE FROM threads WHERE id = ?').run(uuid(31))
+    expect(createGeneric(35)).toMatchObject({ summary: { fallbackOrdinal: 5 } })
+    database.prepare('DELETE FROM threads WHERE fallback_local_second = ?').run(localSecond)
+    expect(createGeneric(36)).toMatchObject({ summary: { fallbackOrdinal: 1 } })
+    owner.close()
+  })
+
   it('saves one complete Draft CAS without moving activity for target-only or clear-only saves', async () => {
     const { owner } = await createOwner()
     const input = materializeInput(1)
@@ -573,22 +933,59 @@ describe('ThreadLibraryDatabase', () => {
 
     const first = materializeInput(1)
     expect(execute(owner, 'materialize', first)).toMatchObject({ summary: { id: first.threadId } })
-    const firstFallback = {
-      ...materializeInput(2),
-      title: 'Image · 2026-08-12 08:00:00',
-      fallbackLocalSecond: localSecond,
-    }
-    const secondFallback = {
-      ...materializeInput(3),
-      title: firstFallback.title,
-      fallbackLocalSecond: localSecond,
-    }
+    const firstFallback = materializeInput(2)
+    firstFallback.draft.text = ''
+    firstFallback.draft.images = [
+      {
+        imageId: uuid(50_002),
+        position: 0,
+        mediaType: 'image/png',
+        width: 2,
+        height: 1,
+        available: true,
+      },
+    ]
+    const secondFallback = materializeInput(3)
+    secondFallback.draft.text = ''
+    secondFallback.draft.images = [
+      {
+        imageId: uuid(50_003),
+        position: 0,
+        mediaType: 'image/png',
+        width: 2,
+        height: 1,
+        available: true,
+      },
+    ]
     expect(execute(owner, 'materialize', firstFallback)).toMatchObject({
-      summary: { title: firstFallback.title, fallbackOrdinal: 1 },
+      summary: { title: 'Image · 2026-08-12 08:00:00', fallbackOrdinal: 1 },
     })
     expect(execute(owner, 'materialize', secondFallback)).toMatchObject({
-      summary: { title: `${firstFallback.title} · 2`, fallbackOrdinal: 2 },
+      summary: { title: 'Image · 2026-08-12 08:00:00 · 2', fallbackOrdinal: 2 },
     })
+    expect(
+      database.prepare('UPDATE threads SET fallback_ordinal = 3 WHERE id = ?').run(first.threadId)
+        .changes,
+    ).toBe(1)
+    expect(() =>
+      database
+        .prepare(
+          'UPDATE threads SET fallback_local_second = NULL, fallback_ordinal = 3 WHERE id = ?',
+        )
+        .run(first.threadId),
+    ).toThrow()
+    expect(() =>
+      database
+        .prepare("UPDATE threads SET title_source = 'manual' WHERE id = ?")
+        .run(first.threadId),
+    ).toThrow()
+    expect(
+      database
+        .prepare(
+          "UPDATE threads SET title = 'Manual', title_source = 'manual', fallback_local_second = NULL, fallback_ordinal = NULL WHERE id = ?",
+        )
+        .run(first.threadId).changes,
+    ).toBe(1)
     database.exec(
       "CREATE TRIGGER fail_draft BEFORE INSERT ON drafts BEGIN SELECT RAISE(ABORT, 'fail'); END",
     )
@@ -819,6 +1216,12 @@ describe('ThreadLibraryDatabase', () => {
         fallbackLocalSecond: localSecond,
         fallbackOrdinal: 1,
       },
+    })
+    const future = materializeInput(601)
+    future.draft.text = ''
+    future.draft.images = [imageInput(50_601)]
+    expect(execute(owner, 'materialize', future)).toMatchObject({
+      summary: { title: 'Image · 2026-08-12 08:00:00 · 2', fallbackOrdinal: 2 },
     })
     owner.close()
   })

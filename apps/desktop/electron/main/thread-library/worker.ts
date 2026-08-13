@@ -18,6 +18,8 @@ import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
 import { interruptedThreadErrorMessage } from '../current-thread/schemas'
 import {
+  deriveThreadDraftTitle,
+  formatThreadGenericTitle,
   importedV5RowsSchema,
   parseThreadLibraryListRow,
   parseThreadLibraryThreadDetail,
@@ -36,7 +38,7 @@ import {
 
 const schemaVersion = 1
 const sqliteHeader = Buffer.from('SQLite format 3\0')
-const expectedSchemaFingerprint = 'b738af3b33da1c928f8ba909fe7c9a9d140f8841fc601544f7a9f5075bfa091b'
+const expectedSchemaFingerprint = '0a422f89b87e53a8917074c7312b44ea38cda5a6a8e883679e512509fa90c213'
 
 const schemaSql = `
   CREATE TABLE threads (
@@ -61,17 +63,10 @@ const schemaSql = `
     ),
     CHECK(trashed_pin_position IS NULL OR trashed_from_location = 'available'),
     CHECK(pin_position IS NULL OR location = 'available'),
-    CHECK((fallback_local_second IS NULL) = (fallback_ordinal IS NULL)),
-    CHECK(title_source <> 'manual' OR fallback_local_second IS NULL),
+    CHECK(fallback_ordinal IS NULL OR fallback_local_second IS NOT NULL),
     CHECK(
-      fallback_local_second IS NULL OR (
-        title_source = 'auto' AND title IN (
-          'Image · ' || replace(fallback_local_second, 'T', ' ') ||
-            CASE WHEN fallback_ordinal = 1 THEN '' ELSE ' · ' || fallback_ordinal END,
-          'Untitled draft · ' || replace(fallback_local_second, 'T', ' ') ||
-            CASE WHEN fallback_ordinal = 1 THEN '' ELSE ' · ' || fallback_ordinal END
-        )
-      )
+      title_source <> 'manual' OR
+      (fallback_local_second IS NULL AND fallback_ordinal IS NULL)
     )
   ) STRICT;
 
@@ -79,7 +74,7 @@ const schemaSql = `
     ON threads(pin_position) WHERE location = 'available' AND pin_position IS NOT NULL;
   CREATE UNIQUE INDEX threads_fallback_identity
     ON threads(fallback_local_second, fallback_ordinal)
-    WHERE fallback_local_second IS NOT NULL;
+    WHERE fallback_ordinal IS NOT NULL;
 
   CREATE TABLE drafts (
     thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
@@ -345,6 +340,8 @@ function threadSummary(row: Record<string, unknown>) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     threadRevision: row.thread_revision,
+    resultRevision: row.result_revision,
+    seenResultRevision: row.seen_result_revision,
   }
 }
 
@@ -684,7 +681,13 @@ function assertImportCoherent(rows: ImportedV5Rows) {
     rows.thread.trashedPinPosition !== null ||
     rows.thread.pinPosition !== null ||
     rows.thread.titleSource !== 'auto' ||
-    (rows.thread.fallbackLocalSecond !== null && rows.thread.fallbackOrdinal !== 1) ||
+    (rows.thread.fallbackLocalSecond === null
+      ? rows.thread.fallbackOrdinal !== null
+      : rows.thread.fallbackOrdinal !== 1 ||
+        (rows.thread.title !==
+          formatThreadGenericTitle(rows.thread.fallbackLocalSecond, 1, 'Image') &&
+          rows.thread.title !==
+            formatThreadGenericTitle(rows.thread.fallbackLocalSecond, 1, 'Untitled draft'))) ||
     rows.thread.threadRevision !== 1 ||
     rows.thread.resultRevision !== 0 ||
     rows.thread.seenResultRevision !== 0 ||
@@ -741,21 +744,13 @@ function insertThread(statement: StatementSync, row: ImportedV5Rows['thread']) {
 }
 
 function allocateFallbackOrdinal(database: DatabaseSync, localSecond: string) {
-  const used = database
+  const maximum = database
     .prepare(
-      `SELECT fallback_ordinal FROM threads
-       WHERE fallback_local_second = ? ORDER BY fallback_ordinal`,
+      `SELECT max(fallback_ordinal) AS ordinal FROM threads
+       WHERE fallback_local_second = ? AND fallback_ordinal IS NOT NULL`,
     )
-    .all(localSecond)
-    .map((row) => Number(row.fallback_ordinal))
-  let ordinal = 1
-  for (const value of used) {
-    if (value !== ordinal) {
-      break
-    }
-    ordinal += 1
-  }
-  return ordinal
+    .get(localSecond)?.ordinal
+  return maximum === null || maximum === undefined ? 1 : Number(maximum) + 1
 }
 
 function readImportedRows(database: DatabaseSync, threadId: string): ImportedV5Rows | null {
@@ -971,6 +966,23 @@ function draftRows(database: DatabaseSync, threadId: string) {
   }
 }
 
+function automaticDraftTitle(
+  database: DatabaseSync,
+  localSecond: string,
+  fallbackOrdinal: number | null,
+  draft: ThreadLibraryOperationInput['saveDraft']['draft'],
+) {
+  const derived = deriveThreadDraftTitle(draft)
+  if (derived.title !== null) {
+    return { title: derived.title, fallbackOrdinal }
+  }
+  const ordinal = fallbackOrdinal ?? allocateFallbackOrdinal(database, localSecond)
+  return {
+    title: formatThreadGenericTitle(localSecond, ordinal, derived.genericKind),
+    fallbackOrdinal: ordinal,
+  }
+}
+
 function assertDocumentText(
   row: ThreadLibraryOperationInput['saveDraft']['draft']['documents'][number],
 ) {
@@ -1076,6 +1088,49 @@ function assertStableDraftResources(
   }
 }
 
+function replaceDraftResources(
+  database: DatabaseSync,
+  threadId: string,
+  draft: ThreadLibraryOperationInput['saveDraft']['draft'],
+) {
+  database.prepare("DELETE FROM images WHERE thread_id = ? AND owner = 'draft'").run(threadId)
+  database.prepare("DELETE FROM documents WHERE thread_id = ? AND owner = 'draft'").run(threadId)
+  const image = database.prepare('INSERT INTO images VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  for (const row of draft.images) {
+    image.run(
+      row.imageId,
+      threadId,
+      'draft',
+      null,
+      row.position,
+      row.mediaType,
+      row.width,
+      row.height,
+      Number(row.available),
+    )
+  }
+  const document = database.prepare(
+    'INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  )
+  for (const row of draft.documents) {
+    document.run(
+      row.documentId,
+      threadId,
+      'draft',
+      null,
+      row.position,
+      row.name,
+      row.mediaType,
+      row.byteLength,
+      row.extractedByteLength,
+      row.sourceSha256,
+      row.extractedTextSha256,
+      Number(row.available),
+      row.extractedText,
+    )
+  }
+}
+
 function saveDraft(
   database: DatabaseSync,
   input: ThreadLibraryOperationInput['saveDraft'],
@@ -1106,47 +1161,26 @@ function saveDraft(
         input.draft.documents.map((row) => [row.documentId, row.position]),
       )
     const nonEmptyTextChanged = current.text !== input.draft.text && input.draft.text.length > 0
-
-    database
-      .prepare("DELETE FROM images WHERE thread_id = ? AND owner = 'draft'")
-      .run(input.threadId)
-    database
-      .prepare("DELETE FROM documents WHERE thread_id = ? AND owner = 'draft'")
-      .run(input.threadId)
-    const image = database.prepare('INSERT INTO images VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    for (const row of input.draft.images) {
-      image.run(
-        row.imageId,
-        input.threadId,
-        'draft',
-        null,
-        row.position,
-        row.mediaType,
-        row.width,
-        row.height,
-        Number(row.available),
-      )
-    }
-    const document = database.prepare(
-      'INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    const hasTurns = Boolean(
+      database
+        .prepare('SELECT 1 AS present FROM turns WHERE thread_id = ? LIMIT 1')
+        .get(input.threadId),
     )
-    for (const row of input.draft.documents) {
-      document.run(
-        row.documentId,
-        input.threadId,
-        'draft',
-        null,
-        row.position,
-        row.name,
-        row.mediaType,
-        row.byteLength,
-        row.extractedByteLength,
-        row.sourceSha256,
-        row.extractedTextSha256,
-        Number(row.available),
-        row.extractedText,
-      )
-    }
+    const titleState =
+      thread.title_source === 'auto' && !hasTurns
+        ? automaticDraftTitle(
+            database,
+            String(thread.fallback_local_second),
+            thread.fallback_ordinal === null ? null : Number(thread.fallback_ordinal),
+            input.draft,
+          )
+        : {
+            title: String(thread.title),
+            fallbackOrdinal:
+              thread.fallback_ordinal === null ? null : Number(thread.fallback_ordinal),
+          }
+
+    replaceDraftResources(database, input.threadId, input.draft)
     database
       .prepare(
         `UPDATE drafts SET draft_revision = draft_revision + 1, text = ?,
@@ -1155,10 +1189,13 @@ function saveDraft(
       .run(input.draft.text, json(input.draft.targetSelection), input.savedAt, input.threadId)
     database
       .prepare(
-        `UPDATE threads SET last_user_activity_at = CASE WHEN ? THEN ? ELSE last_user_activity_at END,
+        `UPDATE threads SET title = ?, fallback_ordinal = ?,
+         last_user_activity_at = CASE WHEN ? THEN ? ELSE last_user_activity_at END,
          updated_at = ? WHERE id = ?`,
       )
       .run(
+        titleState.title,
+        titleState.fallbackOrdinal,
         Number(nonEmptyTextChanged || attachmentChanged),
         input.savedAt,
         input.savedAt,
@@ -1209,6 +1246,18 @@ function startTurn(
         .prepare('SELECT count(*) AS count FROM turns WHERE thread_id = ?')
         .get(input.threadId)!.count,
     )
+    const retainsFallbackIdentity =
+      thread.title_source === 'auto' &&
+      typeof thread.fallback_local_second === 'string' &&
+      typeof thread.fallback_ordinal === 'number' &&
+      (thread.title ===
+        formatThreadGenericTitle(thread.fallback_local_second, thread.fallback_ordinal, 'Image') ||
+        thread.title ===
+          formatThreadGenericTitle(
+            thread.fallback_local_second,
+            thread.fallback_ordinal,
+            'Untitled draft',
+          ))
     database
       .prepare('INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(
@@ -1246,9 +1295,17 @@ function startTurn(
       .prepare(
         `UPDATE threads SET location = 'available',
          thread_revision = thread_revision + CASE WHEN location = 'archived' THEN 1 ELSE 0 END,
+         fallback_local_second = CASE WHEN ? THEN fallback_local_second ELSE NULL END,
+         fallback_ordinal = CASE WHEN ? THEN fallback_ordinal ELSE NULL END,
          last_user_activity_at = ?, updated_at = ? WHERE id = ?`,
       )
-      .run(input.startedAt, input.startedAt, input.threadId)
+      .run(
+        Number(retainsFallbackIdentity),
+        Number(retainsFallbackIdentity),
+        input.startedAt,
+        input.startedAt,
+        input.threadId,
+      )
     return {
       mutated: true,
       value: { status: 'committed' as const, detail: queryThread(database, input.threadId)! },
@@ -1495,10 +1552,77 @@ function repairProviderStateRef(
   })
 }
 
+function markSeen(database: DatabaseSync, input: ThreadLibraryOperationInput['markSeen']) {
+  return runTransaction(database, () => {
+    const thread = database.prepare('SELECT * FROM threads WHERE id = ?').get(input.threadId)
+    if (!thread) {
+      throw new DatabaseOperationError('not_found')
+    }
+    const resultRevision = Number(thread.result_revision)
+    const seenResultRevision = Number(thread.seen_result_revision)
+    if (input.observedResultRevision > resultRevision) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (input.observedResultRevision <= seenResultRevision) {
+      return { mutated: false, value: queryThread(database, input.threadId)! }
+    }
+    database
+      .prepare('UPDATE threads SET seen_result_revision = ? WHERE id = ?')
+      .run(input.observedResultRevision, input.threadId)
+    return { mutated: true, value: queryThread(database, input.threadId)! }
+  })
+}
+
+function discardEmptyShell(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['discardEmptyShell'],
+) {
+  return runTransaction(database, () => {
+    const shell = database
+      .prepare(
+        `SELECT threads.title_source, drafts.draft_revision, drafts.text,
+          (SELECT count(*) FROM turns WHERE thread_id = threads.id) AS turn_count,
+          (SELECT count(*) FROM images WHERE thread_id = threads.id) AS image_count,
+          (SELECT count(*) FROM documents WHERE thread_id = threads.id) AS document_count
+         FROM threads JOIN drafts ON drafts.thread_id = threads.id WHERE threads.id = ?`,
+      )
+      .get(input.threadId)
+    if (!shell) {
+      return { mutated: false, value: { discarded: true } }
+    }
+    const exactShell =
+      shell.title_source === 'auto' &&
+      shell.draft_revision === input.expectedDraftRevision &&
+      shell.text === '' &&
+      shell.turn_count === 0 &&
+      shell.image_count === 0 &&
+      shell.document_count === 0
+    if (!exactShell) {
+      return { mutated: false, value: { discarded: false } }
+    }
+    const deleted = database.prepare('DELETE FROM threads WHERE id = ?').run(input.threadId)
+    return { mutated: deleted.changes === 1, value: { discarded: deleted.changes === 1 } }
+  })
+}
+
 export class ThreadLibraryDatabase {
   private database: DatabaseSync | null = null
   private cursorEpoch = randomUUID()
+  private lastActualMutation = false
   private mutationCursor = 0
+
+  acknowledgementClock() {
+    return {
+      generation: this.cursorEpoch,
+      watermark: this.mutationCursor,
+      actualMutation: this.lastActualMutation,
+    }
+  }
+
+  private acknowledgeMutation() {
+    this.mutationCursor += 1
+    this.lastActualMutation = true
+  }
 
   open({ databasePath }: ThreadLibraryOperationInput['open']): ThreadLibraryOperationValue['open'] {
     if (this.database) {
@@ -1550,6 +1674,7 @@ export class ThreadLibraryDatabase {
       }
       this.database = database
       this.cursorEpoch = randomUUID()
+      this.lastActualMutation = false
       this.mutationCursor = 0
       return { schemaVersion }
     } catch (error) {
@@ -1574,6 +1699,7 @@ export class ThreadLibraryDatabase {
   execute(
     request: ThreadLibraryRequest,
   ): ThreadLibraryOperationValue[keyof ThreadLibraryOperationValue] {
+    this.lastActualMutation = false
     if (request.operation === 'open') {
       return this.open(request.input)
     }
@@ -1595,9 +1721,14 @@ export class ThreadLibraryDatabase {
           throw new DatabaseOperationError('already_exists')
         }
         const detail = runTransaction(database, () => {
-          const fallbackOrdinal = request.input.fallbackLocalSecond
-            ? allocateFallbackOrdinal(database, request.input.fallbackLocalSecond)
-            : null
+          assertDraftCapacity(database, request.input.threadId, request.input.draft)
+          assertStableDraftResources(database, request.input.threadId, request.input.draft)
+          const titleState = automaticDraftTitle(
+            database,
+            request.input.fallbackLocalSecond,
+            null,
+            request.input.draft,
+          )
           insertThread(
             database.prepare(
               'INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1608,13 +1739,10 @@ export class ThreadLibraryDatabase {
               trashedFromLocation: null,
               trashedPinPosition: null,
               pinPosition: null,
-              title:
-                fallbackOrdinal && fallbackOrdinal > 1
-                  ? `${request.input.title} · ${fallbackOrdinal}`
-                  : request.input.title,
+              title: titleState.title,
               titleSource: 'auto',
               fallbackLocalSecond: request.input.fallbackLocalSecond,
-              fallbackOrdinal,
+              fallbackOrdinal: titleState.fallbackOrdinal,
               threadRevision: 1,
               lastUserActivityAt: request.input.createdAt,
               resultRevision: 0,
@@ -1627,73 +1755,94 @@ export class ThreadLibraryDatabase {
             .prepare('INSERT INTO drafts VALUES (?, 0, ?, ?, ?)')
             .run(
               request.input.threadId,
-              '',
-              json(request.input.targetSelection),
+              request.input.draft.text,
+              json(request.input.draft.targetSelection),
               request.input.createdAt,
             )
+          replaceDraftResources(database, request.input.threadId, request.input.draft)
           return queryThread(database, request.input.threadId)!
         })
-        this.mutationCursor += 1
+        this.acknowledgeMutation()
         return detail
       }
       case 'readThread':
         return queryThread(database, request.input.threadId)
+      case 'snapshot':
+        return {
+          detail:
+            request.input.threadId === null ? null : queryThread(database, request.input.threadId),
+          includedThroughCursor: this.mutationCursor,
+        }
       case 'listPage':
         return listPage(database, request.input, this.mutationCursor, this.cursorEpoch)
       case 'importV5': {
         const result = importRows(database, request.input.rows)
         if (result.imported) {
-          this.mutationCursor += 1
+          this.acknowledgeMutation()
         }
         return result
       }
       case 'saveDraft': {
         const result = saveDraft(database, request.input)
         if (result.mutated) {
-          this.mutationCursor += 1
+          this.acknowledgeMutation()
         }
         return result.value
       }
       case 'startTurn': {
         const result = startTurn(database, request.input)
         if (result.mutated) {
-          this.mutationCursor += 1
+          this.acknowledgeMutation()
         }
         return result.value
       }
       case 'retryTurn': {
         const result = retryTurn(database, request.input)
         if (result.mutated) {
-          this.mutationCursor += 1
+          this.acknowledgeMutation()
         }
         return result.value
       }
       case 'bindTurnTarget': {
         const detail = bindTurnTarget(database, request.input)
-        this.mutationCursor += 1
+        this.acknowledgeMutation()
         return detail
       }
       case 'settleTurn': {
         const detail = settleTurn(database, request.input)
-        this.mutationCursor += 1
+        this.acknowledgeMutation()
         return detail
       }
       case 'recoverPending': {
         const result = recoverPending(database, request.input)
         if (result.recovered > 0) {
-          this.mutationCursor += 1
+          this.acknowledgeMutation()
         }
         return result
       }
       case 'setResourceAvailability': {
         const detail = setResourceAvailability(database, request.input)
-        this.mutationCursor += 1
+        this.acknowledgeMutation()
         return detail
       }
       case 'repairProviderStateRef': {
         const detail = repairProviderStateRef(database, request.input)
-        this.mutationCursor += 1
+        this.acknowledgeMutation()
         return detail
+      }
+      case 'markSeen': {
+        const result = markSeen(database, request.input)
+        if (result.mutated) {
+          this.acknowledgeMutation()
+        }
+        return result.value
+      }
+      case 'discardEmptyShell': {
+        const result = discardEmptyShell(database, request.input)
+        if (result.mutated) {
+          this.acknowledgeMutation()
+        }
+        return result.value
       }
     }
   }
@@ -1726,7 +1875,12 @@ if (!isMainThread && workerPort) {
     try {
       const request = parseThreadLibraryRequest(value)
       const result = owner.execute(request)
-      workerPort.postMessage({ id: request.id, ok: true, value: result })
+      workerPort.postMessage({
+        id: request.id,
+        ok: true,
+        value: result,
+        clock: owner.acknowledgementClock(),
+      })
       if (request.operation === 'close') {
         workerPort.close()
       }

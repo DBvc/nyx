@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
+import type { NyxChatImageVariant } from '../../../shared/chat/image-url'
 import type {
   NyxChatDocumentRef,
   NyxChatImageRef,
@@ -23,7 +24,11 @@ import {
   type CurrentThreadFileAdapter,
 } from '../current-thread/file-adapter'
 import { CurrentThreadImageFiles, type DecodeImageSize } from '../current-thread/image-files'
-import { parseProviderStateRef, type ProviderStateRef } from '../current-thread/schemas'
+import {
+  parseProviderStateRef,
+  type CurrentThreadRecord,
+  type ProviderStateRef,
+} from '../current-thread/schemas'
 import type { ThreadLibraryThreadDetail } from './protocol'
 
 const uuid = z.uuid()
@@ -352,6 +357,34 @@ export class ThreadLibrarySidecars {
     return { images, documents, corruptProviderStateRefs }
   }
 
+  async readCanonicalImage(threadIdInput: string, ref: NyxChatImageRef) {
+    const threadId = uuid.parse(threadIdInput)
+    uuid.parse(ref.imageId)
+    return this.imageFiles(threadId).readCanonical(ref)
+  }
+
+  async resolveImageProtocolFile(
+    threadIdInput: string,
+    ref: NyxChatImageRef,
+    variant: NyxChatImageVariant,
+  ) {
+    const threadId = uuid.parse(threadIdInput)
+    uuid.parse(ref.imageId)
+    if (variant !== 'full' && variant !== 'preview') {
+      throw new ThreadLibrarySidecarError('Image variant is invalid.')
+    }
+    // The legacy resolver reads only turns[].imageRefs and preserves the streaming path.
+    return this.imageFiles(threadId).resolveProtocolFile(
+      { turns: [{ imageRefs: [ref] }] } as CurrentThreadRecord,
+      ref.imageId,
+      variant,
+    )
+  }
+
+  readResponseState(threadIdInput: string, refInput: ProviderStateRef) {
+    return this.readResponse(uuid.parse(threadIdInput), parseProviderStateRef(refInput))
+  }
+
   async cleanupOrphans(detail: ThreadLibraryThreadDetail) {
     const paths = this.paths(uuid.parse(detail.summary.id))
     await Promise.all([
@@ -398,6 +431,14 @@ export class ThreadLibrarySidecars {
       responses: join(thread, 'responses'),
       staging: join(thread, '.staging'),
     }
+  }
+
+  private imageFiles(threadId: string) {
+    return new CurrentThreadImageFiles({
+      directoryPath: this.paths(threadId).images,
+      decodeImageSize: this.decodeImageSize,
+      fileAdapter: this.files,
+    })
   }
 
   private async readResponse(threadId: string, ref: ProviderStateRef) {

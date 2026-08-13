@@ -1,6 +1,9 @@
-import type { NyxChatCancellationRequest, NyxChatRequest } from '../chat/types'
+import type {
+  NyxThreadChatCancellationRequest,
+  NyxThreadChatRequest,
+  NyxThreadChatSettlementRetryRequest,
+} from '../chat/types'
 import type { NyxChatEventListener } from '../chat/events'
-import type { NyxCurrentThreadResetResult, NyxCurrentThreadSnapshotResult } from '../chat/snapshot'
 import type {
   NyxConnectionDeleteProviderInput,
   NyxConnectionDeleteProviderResult,
@@ -19,13 +22,39 @@ import type {
   NyxConnectionsOverviewResult,
 } from '../connections/types'
 import type { NyxProviderStatus } from '../provider/types'
+import type { NyxThreadEventListener } from '../threads/events'
+import type {
+  NyxThreadGetInput,
+  NyxThreadListPage,
+  NyxThreadListPageInput,
+  NyxThreadMarkSeenInput,
+  NyxThreadMarkSeenResult,
+  NyxThreadMaterializeInput,
+  NyxThreadMaterializeResult,
+  NyxThreadResult,
+  NyxThreadRetryOpenInput,
+  NyxThreadSaveDraftInput,
+  NyxThreadSaveDraftResult,
+  NyxThreadSnapshot,
+} from '../threads/types'
 
 export interface NyxDesktopChatApi {
-  startChat(request: NyxChatRequest): Promise<void>
-  cancelChat(request: NyxChatCancellationRequest): Promise<void>
-  resetChatSession(): Promise<NyxCurrentThreadResetResult>
-  getCurrentThreadSnapshot(): Promise<NyxCurrentThreadSnapshotResult>
+  start(request: NyxThreadChatRequest): Promise<void>
+  cancel(request: NyxThreadChatCancellationRequest): Promise<void>
+  retrySettlement(request: NyxThreadChatSettlementRetryRequest): Promise<void>
   subscribe(listener: NyxChatEventListener): () => void
+}
+
+export interface NyxDesktopThreadsApi {
+  listPage(input: NyxThreadListPageInput): Promise<NyxThreadResult<NyxThreadListPage>>
+  get(input: NyxThreadGetInput): Promise<NyxThreadResult<NyxThreadSnapshot>>
+  materialize(
+    input: NyxThreadMaterializeInput,
+  ): Promise<NyxThreadResult<NyxThreadMaterializeResult>>
+  saveDraft(input: NyxThreadSaveDraftInput): Promise<NyxThreadResult<NyxThreadSaveDraftResult>>
+  retryOpen(input: NyxThreadRetryOpenInput): Promise<NyxThreadResult<null>>
+  markSeen(input: NyxThreadMarkSeenInput): Promise<NyxThreadResult<NyxThreadMarkSeenResult>>
+  subscribe(listener: NyxThreadEventListener): () => void
 }
 
 export interface NyxDesktopProviderApi {
@@ -61,6 +90,7 @@ export interface NyxDesktopApi {
     node: string
   }
   chat: NyxDesktopChatApi
+  threads: NyxDesktopThreadsApi
   provider: NyxDesktopProviderApi
   connections: NyxDesktopConnectionsApi
 }

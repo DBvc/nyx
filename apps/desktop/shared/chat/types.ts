@@ -171,3 +171,26 @@ export interface NyxChatRequest {
 export interface NyxChatCancellationRequest {
   requestId: string
 }
+
+export type NyxThreadChatRequest =
+  | {
+      threadId: string
+      requestId: string
+      turnIntent: 'new_user_message'
+      expectedDraftRevision: number
+    }
+  | {
+      threadId: string
+      requestId: string
+      turnIntent: 'retry_failed_response'
+      turnOrdinal: number
+      expectedAttemptRequestId: string
+      expectedDraftRevision: number
+    }
+
+export interface NyxThreadChatCancellationRequest {
+  threadId: string
+  requestId: string
+}
+
+export type NyxThreadChatSettlementRetryRequest = NyxThreadChatCancellationRequest

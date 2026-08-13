@@ -64,6 +64,7 @@ function continuation(): ResponsesContinuationStateV1 {
 
 function createCoordinator() {
   const client = {
+    materialize: vi.fn(),
     saveDraft: vi.fn(),
     startTurn: vi.fn(),
     retryTurn: vi.fn(),
@@ -121,6 +122,8 @@ function createCoordinator() {
     prepareResponse: vi.fn(() => response),
     publishResponseBytes: vi.fn(async () => undefined),
     rollbackResponse: vi.fn(async () => undefined),
+    readCanonicalImage: vi.fn(async () => new Uint8Array([1])),
+    readResponseState: vi.fn(async () => continuation()),
     inspect: vi.fn(),
     cleanupOrphans: vi.fn(async () => undefined),
   }
@@ -137,6 +140,272 @@ function createCoordinator() {
 }
 
 describe('ThreadLibraryCoordinator', () => {
+  it('keeps an exact settlement failure when storage is replaced', async () => {
+    const { client, coordinator, response, sidecars } = createCoordinator()
+    client.settleTurn.mockRejectedValueOnce(new Error('Worker exited'))
+    await expect(
+      coordinator.settleTurn({
+        threadId,
+        requestId: 'request-1',
+        assistantStatus: 'completed',
+        assistantContent: 'Answer',
+        error: null,
+        settledAt: timestamp,
+        continuation: { executionIdentity: 'a'.repeat(64), state: continuation() },
+      }),
+    ).rejects.toThrow()
+
+    const replacementClient = { ...client, settleTurn: vi.fn(async () => ({ ok: true })) }
+    const replacementSidecars = { ...sidecars }
+    coordinator.replaceStorage(replacementClient as never, replacementSidecars as never)
+
+    await expect(coordinator.retrySettlement(threadId, 'request-1')).resolves.toMatchObject({
+      ok: true,
+    })
+    expect(replacementClient.settleTurn).toHaveBeenCalledOnce()
+    expect(replacementSidecars.publishResponseBytes).toHaveBeenLastCalledWith(
+      threadId,
+      response.ref,
+      response.bytes,
+      'Answer',
+    )
+  })
+
+  it('publishes one complete initial Draft before materialize and keeps unknown sidecars', async () => {
+    const { client, sidecars, coordinator } = createCoordinator()
+    client.readThread.mockResolvedValue({ id: 'read', ok: true, value: null })
+    client.materialize.mockResolvedValueOnce({
+      id: 'materialize-failed',
+      ok: false,
+      safeError: { code: 'library_unavailable', message: 'The Thread Library is unavailable.' },
+      outcome: 'definitely_not_committed',
+    })
+    const input = {
+      threadId,
+      draft: { text: 'Hello', targetSelection: selection, images: [], documents: [] },
+      fallbackLocalSecond: '2026-08-12T08:00:00',
+      createdAt: timestamp,
+    }
+    const newImages = [
+      {
+        ref: { imageId, mediaType: 'image/png' as const, width: 2, height: 1 },
+        image: {
+          imageId,
+          canonicalBytes: new Uint8Array([1]),
+          previewBytes: new Uint8Array([2]),
+        },
+        position: 0,
+      },
+    ]
+    const newDocuments = [
+      {
+        ref: {
+          documentId,
+          name: 'notes.txt',
+          mediaType: 'text/plain' as const,
+          byteLength: 5,
+          extractedByteLength: 5,
+        },
+        document: {
+          documentId,
+          sourceBytes: new Uint8Array([1]),
+          extractedTextBytes: new Uint8Array([2]),
+          extractedFromSha256: 'a'.repeat(64),
+        },
+        position: 0,
+      },
+    ]
+
+    await coordinator.materialize({ input, newImages, newDocuments })
+    expect(client.materialize).toHaveBeenCalledWith({
+      ...input,
+      draft: expect.objectContaining({
+        text: 'Hello',
+        images: [expect.objectContaining({ imageId })],
+        documents: [expect.objectContaining({ documentId, extractedText: 'notes' })],
+      }),
+    })
+    expect(sidecars.publishImages.mock.invocationCallOrder[0]).toBeLessThan(
+      client.materialize.mock.invocationCallOrder[0]!,
+    )
+    expect(sidecars.rollbackImages).toHaveBeenCalledWith(threadId, [imageId])
+    expect(sidecars.rollbackDocuments).toHaveBeenCalledWith(threadId, [documentId])
+
+    sidecars.rollbackImages.mockClear()
+    sidecars.rollbackDocuments.mockClear()
+    client.materialize.mockResolvedValueOnce({
+      id: 'materialize-unknown',
+      ok: false,
+      safeError: { code: 'library_unavailable', message: 'The Thread Library is unavailable.' },
+      outcome: 'outcome_unknown',
+    })
+    await coordinator.materialize({ input, newImages, newDocuments })
+    expect(sidecars.rollbackImages).not.toHaveBeenCalled()
+    expect(sidecars.rollbackDocuments).not.toHaveBeenCalled()
+  })
+
+  it('prepares pending identity before history materialization and replays only prior Runtime turns', async () => {
+    const { client, sidecars, coordinator } = createCoordinator()
+    const before = detail()
+    before.draft = { ...before.draft, text: 'Next', draftRevision: 4 }
+    before.turns = [
+      {
+        threadId,
+        ordinal: 0,
+        attemptRequestId: 'request-old',
+        userMessageId: 'user-old',
+        assistantMessageId: 'assistant-old',
+        userContent: 'Old',
+        assistantContent: 'Answer',
+        assistantStatus: 'completed',
+        error: null,
+        targetSelection: selection,
+        targetAttribution: { kind: 'env_fallback', modelId: 'model' },
+        providerStateId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+    const pending = detail()
+    pending.draft = { ...pending.draft, draftRevision: 5 }
+    pending.turns = [
+      ...before.turns,
+      {
+        ...before.turns[0]!,
+        ordinal: 1,
+        attemptRequestId: 'request-new',
+        userMessageId: stateId,
+        assistantMessageId: stateId,
+        userContent: 'Next',
+        assistantContent: '',
+        assistantStatus: 'pending',
+        targetAttribution: null,
+      },
+    ]
+    client.readThread.mockResolvedValueOnce({ id: 'read', ok: true, value: before })
+    sidecars.inspect.mockResolvedValueOnce({
+      images: [],
+      documents: [],
+      corruptProviderStateRefs: [],
+    })
+    client.startTurn.mockResolvedValueOnce({
+      id: 'start',
+      ok: true,
+      value: { status: 'committed', detail: pending },
+    })
+
+    const prepared = await coordinator.prepareTurn({
+      threadId,
+      requestId: 'request-new',
+      turnIntent: 'new_user_message',
+      expectedDraftRevision: 4,
+    })
+    expect(prepared.runtimeReplayDetail).toBe(before)
+    expect(client.startTurn).toHaveBeenCalledOnce()
+
+    const runtime = {
+      submitUserMessage: vi.fn(async () => undefined),
+      startAssistant: vi.fn(async () => undefined),
+      appendDelta: vi.fn(async () => undefined),
+      complete: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    }
+    await coordinator.replayRuntimeHistory(runtime as never, prepared.runtimeReplayDetail)
+    expect(runtime.submitUserMessage).toHaveBeenCalledTimes(1)
+    expect(runtime.submitUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ turnRequestId: 'request-old' }),
+    )
+  })
+
+  it('materializes exact text, image, document, and Responses history from canonical rows', async () => {
+    const { sidecars, coordinator, response } = createCoordinator()
+    const canonical = detail()
+    canonical.turns = [
+      {
+        threadId,
+        ordinal: 0,
+        attemptRequestId: 'request-1',
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+        userContent: 'Inspect',
+        assistantContent: 'Answer',
+        assistantStatus: 'completed',
+        error: null,
+        targetSelection: selection,
+        targetAttribution: { kind: 'env_fallback', modelId: 'model' },
+        providerStateId: stateId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ]
+    canonical.images = [
+      {
+        threadId,
+        owner: 'turn',
+        turnOrdinal: 0,
+        position: 0,
+        imageId,
+        mediaType: 'image/png',
+        width: 2,
+        height: 1,
+        available: true,
+      },
+    ]
+    canonical.documents = [
+      {
+        threadId,
+        owner: 'turn',
+        turnOrdinal: 0,
+        position: 0,
+        documentId,
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        byteLength: 5,
+        extractedByteLength: 5,
+        sourceSha256: 'c'.repeat(64),
+        extractedTextSha256: 'd'.repeat(64),
+        available: true,
+        extractedText: 'canonical notes',
+      },
+    ]
+    canonical.providerStateRefs = [{ ...response.ref, threadId, turnOrdinal: 0 }]
+
+    await expect(
+      coordinator.materializeProviderMessages(canonical, {
+        protocolConfig: { protocol: 'openai-chat-completions' },
+        executionIdentity: 'a'.repeat(64),
+      }),
+    ).resolves.toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } },
+          {
+            type: 'text',
+            text: expect.stringContaining('canonical notes'),
+          },
+        ],
+      },
+      { role: 'assistant', content: 'Answer' },
+    ])
+    await expect(
+      coordinator.materializeProviderMessages(canonical, {
+        protocolConfig: { protocol: 'openai-responses', reasoningContext: 'auto' },
+        executionIdentity: 'a'.repeat(64),
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ role: 'user' }),
+      ...continuation().outputItems.map((item) => ({ kind: 'responses-output-item', item })),
+    ])
+    expect(sidecars.readCanonicalImage).toHaveBeenCalledWith(threadId, canonical.images[0])
+    expect(sidecars.readResponseState).toHaveBeenCalledWith(
+      threadId,
+      canonical.providerStateRefs[0],
+    )
+  })
+
   it('publishes new Draft files before the CAS and removes only definitely unreferenced files', async () => {
     const { client, sidecars, coordinator } = createCoordinator()
     client.readThread.mockResolvedValue({ id: 'read', ok: true, value: null })

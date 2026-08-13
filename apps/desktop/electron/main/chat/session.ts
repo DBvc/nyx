@@ -1,64 +1,51 @@
 import type { WebContents } from 'electron'
 
 import type { NyxChatEvent, NyxChatErrorEvent } from '../../../shared/chat/events'
-import type { NyxCurrentThreadResetResult } from '../../../shared/chat/snapshot'
-import {
-  type NyxChatDocumentRef,
-  isNyxChatTurnIntent,
-  type NyxChatCancellationRequest,
-  type NyxChatImageRef,
-  type NyxChatInputMessage,
-  type NyxChatNewImage,
-  type NyxChatNewDocument,
-  type NyxChatRequest,
-  type NyxChatTargetAttribution,
-  type NyxChatTargetSelection,
+import type {
+  NyxChatError,
+  NyxChatTargetAttribution,
+  NyxThreadChatCancellationRequest,
+  NyxThreadChatRequest,
+  NyxThreadChatSettlementRetryRequest,
 } from '../../../shared/chat/types'
-import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
-import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
   resolveEnvChatTargetSelection,
   type ChatTargetResolver,
   type ResolvedChatTarget,
 } from '../connections/provider-resolver'
-import { replayCurrentThread } from '../current-thread/runtime-replay'
+import { createSafeThreadErrorRecord, type SafeThreadErrorRecord } from '../current-thread/schemas'
 import {
-  CurrentThreadSessionCoordinator,
-  CurrentThreadSessionError,
-  type CurrentThreadProviderMessage,
-  type PreparedCurrentThreadTurn,
-} from '../current-thread/session-coordinator'
-import { streamChatCompletion } from './client'
-import { isAbortError, toChatError } from './errors'
+  ThreadLibraryCoordinator,
+  ThreadLibraryCoordinatorError,
+  type PreparedThreadTurn,
+} from '../thread-library/coordinator'
 import {
   createRuntimeChatStateClient as createRuntimeChatStateClientDefault,
   NYX_RUNTIME_CHAT_STATE_ENV,
   RuntimeChatStateClientError,
   type RuntimeChatStateClient,
 } from '../runtime/chat-state-client'
+import { streamChatCompletion } from './client'
+import { isAbortError, toChatError } from './errors'
+
+export type UnclockedNyxChatEvent = NyxChatEvent extends infer Event
+  ? Event extends NyxChatEvent
+    ? Omit<Event, 'eventEpoch' | 'cursor'>
+    : never
+  : never
 
 interface ActiveChatSession {
+  threadId: string
   requestId: string
-  userMessageId: string
-  assistantMessageId: string
-  turnIntent: NyxChatRequest['turnIntent']
-  request: NyxChatRequest
+  turnIntent: NyxThreadChatRequest['turnIntent']
+  request: NyxThreadChatRequest
   sender: WebContents
   abortController: AbortController
   finalContent: string
-  runtimeChatStateClient?: RuntimeChatStateClient
-  currentThreadSession?: CurrentThreadSessionCoordinator
-  preparedCurrentThread?: PreparedCurrentThreadTurn
-  providerMessages?: ReadonlyArray<CurrentThreadProviderMessage>
-  boundTargetAttribution?: NyxChatTargetAttribution
+  prepared?: PreparedThreadTurn
+  runtime: RuntimeChatStateClient | undefined
+  targetAttribution?: NyxChatTargetAttribution
   operation?: Promise<void>
-}
-
-interface RuntimeChatStateSession {
-  sender: WebContents
-  client: RuntimeChatStateClient
-  onSenderDestroyed: () => void
-  hydratedThreadId?: string
 }
 
 interface ChatSessionEnv {
@@ -67,56 +54,29 @@ interface ChatSessionEnv {
 }
 
 interface ChatSessionManagerOptions {
+  resolveThreadLibraryCoordinator: () => ThreadLibraryCoordinator
+  publishChatEvent: (sender: WebContents, event: UnclockedNyxChatEvent) => void
   env?: ChatSessionEnv
   createRuntimeChatStateClient?: () => RuntimeChatStateClient
   resolveChatTarget?: ChatTargetResolver
-  resolveCurrentThreadSession?: () => CurrentThreadSessionCoordinator
+  now?: () => string
 }
 
-export function validateChatRequest(request: unknown): NyxChatErrorEvent['error'] | null {
-  const result = parseChatRequest(request)
-  return result.ok ? null : result.error
-}
-
-type ChatRequestCorrelation = Pick<NyxChatRequest, 'requestId' | 'assistantMessageId'>
+type ChatRequestCorrelation = Pick<NyxThreadChatRequest, 'threadId' | 'requestId'>
 
 type ChatRequestParseResult =
-  | { ok: true; request: NyxChatRequest; correlation: ChatRequestCorrelation }
+  | { ok: true; request: NyxThreadChatRequest; correlation: ChatRequestCorrelation }
   | {
       ok: false
       error: NyxChatErrorEvent['error']
       correlation: ChatRequestCorrelation | null
     }
 
-const requestKeys = new Set([
-  'requestId',
-  'userMessageId',
-  'assistantMessageId',
-  'turnIntent',
-  'turnUserMessage',
-  'messages',
-  'targetSelection',
-  'newImages',
-  'newDocuments',
-  'systemPrompt',
-])
-const turnUserMessageKeys = new Set(['id', 'content', 'imageRefs', 'documentRefs'])
-const imageRefKeys = new Set(['imageId', 'mediaType', 'width', 'height'])
-const newImageKeys = new Set(['imageId', 'canonicalBytes', 'previewBytes'])
-const documentRefKeys = new Set([
-  'documentId',
-  'name',
-  'mediaType',
-  'byteLength',
-  'extractedByteLength',
-])
-const newDocumentKeys = new Set([
-  'documentId',
-  'sourceBytes',
-  'extractedTextBytes',
-  'extractedFromSha256',
-])
-const imageIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const threadIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const newTurnKeys = new Set(['threadId', 'requestId', 'turnIntent', 'expectedDraftRevision'])
+const retryTurnKeys = new Set([...newTurnKeys, 'turnOrdinal', 'expectedAttemptRequestId'])
+const identityKeys = new Set(['threadId', 'requestId'])
 
 function invalidRequest(message: string): NyxChatErrorEvent['error'] {
   return { code: 'invalid_request', message, retryable: false }
@@ -126,226 +86,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, allowedKeys: ReadonlySet<string>) {
-  return Object.keys(value).every((key) => allowedKeys.has(key))
+function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>) {
+  return Object.keys(value).every((key) => allowed.has(key))
 }
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
 function requestCorrelation(value: unknown): ChatRequestCorrelation | null {
   if (
     !isRecord(value) ||
-    !nonEmptyString(value.requestId) ||
-    !nonEmptyString(value.assistantMessageId)
+    !nonEmptyString(value.threadId) ||
+    !threadIdPattern.test(value.threadId) ||
+    !nonEmptyString(value.requestId)
   ) {
     return null
   }
-
-  return {
-    requestId: value.requestId,
-    assistantMessageId: value.assistantMessageId,
-  }
-}
-
-function parseTargetSelection(value: unknown): NyxChatTargetSelection | null {
-  if (!isRecord(value) || typeof value.kind !== 'string') {
-    return null
-  }
-
-  if (value.kind === 'env_fallback') {
-    return hasOnlyKeys(value, new Set(['kind'])) ? { kind: 'env_fallback' } : null
-  }
-
-  if (
-    value.kind !== 'connection' ||
-    !hasOnlyKeys(value, new Set(['kind', 'providerId', 'modelId'])) ||
-    !nonEmptyString(value.providerId) ||
-    !value.providerId.trim() ||
-    !nonEmptyString(value.modelId) ||
-    !value.modelId.trim()
-  ) {
-    return null
-  }
-
-  return {
-    kind: 'connection',
-    providerId: value.providerId,
-    modelId: value.modelId,
-  }
-}
-
-function parseInputMessages(value: unknown): NyxChatInputMessage[] | null {
-  if (!Array.isArray(value) || value.length === 0) {
-    return null
-  }
-
-  const messages: NyxChatInputMessage[] = []
-
-  for (const message of value) {
-    if (
-      !isRecord(message) ||
-      !hasOnlyKeys(message, new Set(['role', 'content'])) ||
-      (message.role !== 'system' && message.role !== 'user' && message.role !== 'assistant') ||
-      typeof message.content !== 'string'
-    ) {
-      return null
-    }
-
-    messages.push({ role: message.role, content: message.content })
-  }
-
-  return messages
-}
-
-function parseImageRefs(value: unknown): NyxChatImageRef[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 4) {
-    return null
-  }
-
-  const refs: NyxChatImageRef[] = []
-
-  for (const ref of value) {
-    if (
-      !isRecord(ref) ||
-      !hasOnlyKeys(ref, imageRefKeys) ||
-      typeof ref.imageId !== 'string' ||
-      !imageIdPattern.test(ref.imageId) ||
-      (ref.mediaType !== 'image/png' && ref.mediaType !== 'image/jpeg') ||
-      !Number.isInteger(ref.width) ||
-      !Number.isInteger(ref.height) ||
-      (ref.width as number) <= 0 ||
-      (ref.height as number) <= 0
-    ) {
-      return null
-    }
-
-    refs.push({
-      imageId: ref.imageId,
-      mediaType: ref.mediaType,
-      width: ref.width as number,
-      height: ref.height as number,
-    })
-  }
-
-  return new Set(refs.map((ref) => ref.imageId)).size === refs.length ? refs : null
-}
-
-function parseNewImages(value: unknown): NyxChatNewImage[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 4) {
-    return null
-  }
-
-  const images: NyxChatNewImage[] = []
-
-  for (const image of value) {
-    if (
-      !isRecord(image) ||
-      !hasOnlyKeys(image, newImageKeys) ||
-      typeof image.imageId !== 'string' ||
-      !imageIdPattern.test(image.imageId) ||
-      !(image.canonicalBytes instanceof Uint8Array) ||
-      !(image.previewBytes instanceof Uint8Array)
-    ) {
-      return null
-    }
-
-    images.push({
-      imageId: image.imageId,
-      canonicalBytes: image.canonicalBytes,
-      previewBytes: image.previewBytes,
-    })
-  }
-
-  return new Set(images.map((image) => image.imageId)).size === images.length ? images : null
-}
-
-function parseDocumentRefs(value: unknown): NyxChatDocumentRef[] | null {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.length > nyxChatDocumentLimits.documentsPerTurn
-  ) {
-    return null
-  }
-
-  const refs: NyxChatDocumentRef[] = []
-
-  for (const ref of value) {
-    if (
-      !isRecord(ref) ||
-      !hasOnlyKeys(ref, documentRefKeys) ||
-      typeof ref.documentId !== 'string' ||
-      !imageIdPattern.test(ref.documentId) ||
-      typeof ref.name !== 'string' ||
-      (ref.mediaType !== 'application/pdf' &&
-        ref.mediaType !== 'text/plain' &&
-        ref.mediaType !== 'text/markdown' &&
-        ref.mediaType !== 'text/csv') ||
-      !isNyxChatDocumentName(ref.name, ref.mediaType) ||
-      !Number.isInteger(ref.byteLength) ||
-      (ref.byteLength as number) <= 0 ||
-      (ref.byteLength as number) > nyxChatDocumentLimits.sourceBytesPerDocument ||
-      !Number.isInteger(ref.extractedByteLength) ||
-      (ref.extractedByteLength as number) <= 0 ||
-      (ref.extractedByteLength as number) > nyxChatDocumentLimits.extractedBytesPerDocument
-    ) {
-      return null
-    }
-
-    refs.push({
-      documentId: ref.documentId,
-      name: ref.name,
-      mediaType: ref.mediaType,
-      byteLength: ref.byteLength as number,
-      extractedByteLength: ref.extractedByteLength as number,
-    })
-  }
-
-  return new Set(refs.map((ref) => ref.documentId)).size === refs.length ? refs : null
-}
-
-function parseNewDocuments(value: unknown): NyxChatNewDocument[] | null {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.length > nyxChatDocumentLimits.documentsPerTurn
-  ) {
-    return null
-  }
-
-  const documents: NyxChatNewDocument[] = []
-
-  for (const document of value) {
-    if (
-      !isRecord(document) ||
-      !hasOnlyKeys(document, newDocumentKeys) ||
-      typeof document.documentId !== 'string' ||
-      !imageIdPattern.test(document.documentId) ||
-      !(document.sourceBytes instanceof Uint8Array) ||
-      !(document.extractedTextBytes instanceof Uint8Array) ||
-      document.sourceBytes.byteLength <= 0 ||
-      document.sourceBytes.byteLength > nyxChatDocumentLimits.sourceBytesPerDocument ||
-      document.extractedTextBytes.byteLength <= 0 ||
-      document.extractedTextBytes.byteLength > nyxChatDocumentLimits.extractedBytesPerDocument ||
-      typeof document.extractedFromSha256 !== 'string' ||
-      !/^[0-9a-f]{64}$/u.test(document.extractedFromSha256)
-    ) {
-      return null
-    }
-
-    documents.push({
-      documentId: document.documentId,
-      sourceBytes: document.sourceBytes,
-      extractedTextBytes: document.extractedTextBytes,
-      extractedFromSha256: document.extractedFromSha256,
-    })
-  }
-
-  return new Set(documents.map((document) => document.documentId)).size === documents.length
-    ? documents
-    : null
+  return { threadId: value.threadId, requestId: value.requestId }
 }
 
 function parseChatRequest(value: unknown): ChatRequestParseResult {
@@ -355,203 +117,100 @@ function parseChatRequest(value: unknown): ChatRequestParseResult {
     error: invalidRequest(message),
     correlation,
   })
-
-  if (!isRecord(value) || !hasOnlyKeys(value, requestKeys)) {
-    return malformed('Chat request shape is invalid.')
-  }
-
-  const messages = parseInputMessages(value.messages)
-  const imageRefs =
-    isRecord(value.turnUserMessage) && value.turnUserMessage.imageRefs !== undefined
-      ? parseImageRefs(value.turnUserMessage.imageRefs)
-      : []
-  const newImages = value.newImages === undefined ? [] : parseNewImages(value.newImages)
-  const documentRefs =
-    isRecord(value.turnUserMessage) && value.turnUserMessage.documentRefs !== undefined
-      ? parseDocumentRefs(value.turnUserMessage.documentRefs)
-      : []
-  const newDocuments = value.newDocuments === undefined ? [] : parseNewDocuments(value.newDocuments)
+  if (!isRecord(value)) return malformed('Chat request shape is invalid.')
 
   if (
-    !nonEmptyString(value.requestId) ||
-    !nonEmptyString(value.userMessageId) ||
-    !nonEmptyString(value.assistantMessageId) ||
-    !messages ||
-    !isRecord(value.turnUserMessage) ||
-    !hasOnlyKeys(value.turnUserMessage, turnUserMessageKeys) ||
-    !nonEmptyString(value.turnUserMessage.id) ||
-    typeof value.turnUserMessage.content !== 'string' ||
-    !imageRefs ||
-    !newImages ||
-    !documentRefs ||
-    !newDocuments ||
-    (value.turnUserMessage.content.length === 0 &&
-      imageRefs.length === 0 &&
-      documentRefs.length === 0)
+    value.turnIntent === 'new_user_message' &&
+    hasOnlyKeys(value, newTurnKeys) &&
+    correlation &&
+    nonNegativeInteger(value.expectedDraftRevision)
   ) {
-    return malformed(
-      'Chat requests must include ids, intent, the current user message, and at least one provider message.',
-    )
-  }
-
-  if (!isNyxChatTurnIntent(value.turnIntent)) {
-    return malformed('Chat requests must use a known turn intent.')
+    return {
+      ok: true,
+      correlation,
+      request: {
+        ...correlation,
+        turnIntent: 'new_user_message',
+        expectedDraftRevision: value.expectedDraftRevision,
+      },
+    }
   }
 
   if (
-    (value.turnIntent === 'new_user_message' &&
-      ((imageRefs.length === 0 && newImages.length !== 0) ||
-        (imageRefs.length !== newImages.length && imageRefs.length > 0) ||
-        imageRefs.some((ref, index) => ref.imageId !== newImages[index]?.imageId))) ||
-    (value.turnIntent === 'retry_failed_response' && newImages.length !== 0)
+    value.turnIntent === 'retry_failed_response' &&
+    hasOnlyKeys(value, retryTurnKeys) &&
+    correlation &&
+    nonNegativeInteger(value.turnOrdinal) &&
+    nonEmptyString(value.expectedAttemptRequestId) &&
+    nonNegativeInteger(value.expectedDraftRevision)
   ) {
-    return malformed('Chat image refs and new payloads do not match the turn intent.')
+    return {
+      ok: true,
+      correlation,
+      request: {
+        ...correlation,
+        turnIntent: 'retry_failed_response',
+        turnOrdinal: value.turnOrdinal,
+        expectedAttemptRequestId: value.expectedAttemptRequestId,
+        expectedDraftRevision: value.expectedDraftRevision,
+      },
+    }
   }
 
-  if (
-    (value.turnIntent === 'new_user_message' &&
-      ((documentRefs.length === 0 && newDocuments.length !== 0) ||
-        (documentRefs.length !== newDocuments.length && documentRefs.length > 0) ||
-        documentRefs.some((ref, index) => ref.documentId !== newDocuments[index]?.documentId))) ||
-    (value.turnIntent === 'retry_failed_response' && newDocuments.length !== 0)
-  ) {
-    return malformed('Chat document refs and new payloads do not match the turn intent.')
-  }
+  return malformed('Chat request shape is invalid.')
+}
 
-  const targetSelection = parseTargetSelection(value.targetSelection)
+function parseIdentityRequest(value: unknown) {
+  const correlation = requestCorrelation(value)
+  return isRecord(value) && hasOnlyKeys(value, identityKeys) && correlation ? correlation : null
+}
 
-  if (!targetSelection) {
-    return malformed('Chat requests must include one valid target selection.')
-  }
-
-  if (value.systemPrompt !== undefined && typeof value.systemPrompt !== 'string') {
-    return malformed('Chat request systemPrompt must be a string when provided.')
-  }
-
-  const request: NyxChatRequest = {
-    requestId: value.requestId,
-    userMessageId: value.userMessageId,
-    assistantMessageId: value.assistantMessageId,
-    turnIntent: value.turnIntent,
-    turnUserMessage: {
-      id: value.turnUserMessage.id,
-      content: value.turnUserMessage.content,
-      ...(imageRefs.length > 0 ? { imageRefs } : {}),
-      ...(documentRefs.length > 0 ? { documentRefs } : {}),
-    },
-    messages,
-    targetSelection,
-    ...(newImages.length > 0 ? { newImages } : {}),
-    ...(newDocuments.length > 0 ? { newDocuments } : {}),
-    ...(value.systemPrompt === undefined ? {} : { systemPrompt: value.systemPrompt }),
-  }
-
-  if (request.turnUserMessage.id !== request.userMessageId) {
-    return malformed(
-      'Chat requests must keep the current user message id aligned with userMessageId.',
-    )
-  }
-
-  if (latestProviderUserMessageContent(request) !== request.turnUserMessage.content) {
-    return malformed(
-      'Chat requests must keep the current user message content aligned with provider messages.',
-    )
-  }
-
-  return { ok: true, request, correlation: correlation! }
+export function validateChatRequest(request: unknown): NyxChatErrorEvent['error'] | null {
+  const result = parseChatRequest(request)
+  return result.ok ? null : result.error
 }
 
 function isRuntimeChatStateEnabled(env: ChatSessionEnv) {
   return env[NYX_RUNTIME_CHAT_STATE_ENV] !== '0'
 }
 
-function latestProviderUserMessageContent(request: NyxChatRequest) {
-  for (let index = request.messages.length - 1; index >= 0; index -= 1) {
-    const message = request.messages[index]
-
-    if (message?.role === 'user') {
-      return message.content
-    }
-  }
-
-  return undefined
-}
-
-function toNonRetryableRuntimeChatError(error: unknown): NyxChatErrorEvent['error'] {
-  const chatError = toChatError(error)
-
-  return {
-    ...chatError,
-    retryable: false,
-  }
-}
-
-function currentThreadResetFailure(): NyxCurrentThreadResetResult {
-  return {
-    ok: false,
-    error: {
-      code: 'reset_failed',
-      message: 'Nyx could not start a fresh thread.',
-    },
-  }
+function toNonRetryableChatError(error: unknown): NyxChatError {
+  return { ...toChatError(error), retryable: false }
 }
 
 export class ChatSessionManager {
   private activeSession: ActiveChatSession | undefined
+  private readonly coordinator: () => ThreadLibraryCoordinator
+  private readonly publish: ChatSessionManagerOptions['publishChatEvent']
   private readonly runtimeChatStateEnabled: boolean
   private readonly createRuntimeChatStateClient: () => RuntimeChatStateClient
   private readonly resolveChatTarget: ChatTargetResolver
-  private readonly resolveCurrentThreadSession: (() => CurrentThreadSessionCoordinator) | undefined
-  private readonly runtimeChatStateSessions = new Map<WebContents, RuntimeChatStateSession>()
-  private resetOperation: Promise<NyxCurrentThreadResetResult> | undefined
+  private readonly now: () => string
 
   constructor({
+    resolveThreadLibraryCoordinator,
+    publishChatEvent,
     env = process.env,
     createRuntimeChatStateClient = createRuntimeChatStateClientDefault,
     resolveChatTarget = resolveEnvChatTargetSelection,
-    resolveCurrentThreadSession,
-  }: ChatSessionManagerOptions = {}) {
+    now = () => new Date().toISOString(),
+  }: ChatSessionManagerOptions) {
+    this.coordinator = resolveThreadLibraryCoordinator
+    this.publish = publishChatEvent
     this.runtimeChatStateEnabled = isRuntimeChatStateEnabled(env)
     this.createRuntimeChatStateClient = createRuntimeChatStateClient
     this.resolveChatTarget = resolveChatTarget
-    this.resolveCurrentThreadSession = resolveCurrentThreadSession
+    this.now = now
   }
 
   start(sender: WebContents, value: unknown) {
-    const parsedRequest = parseChatRequest(value)
-
-    if (!parsedRequest.ok) {
-      if (parsedRequest.correlation) {
-        this.emitError(sender, parsedRequest.correlation, parsedRequest.error)
-      }
+    const parsed = parseChatRequest(value)
+    if (!parsed.ok) {
+      if (parsed.correlation) this.emitError(sender, parsed.correlation, parsed.error)
       return
     }
-
-    const request = parsedRequest.request
-
-    if (
-      !this.resolveCurrentThreadSession &&
-      (request.turnUserMessage.documentRefs || request.newDocuments)
-    ) {
-      this.emitError(sender, request, {
-        code: 'invalid_request',
-        message: 'Document attachments require current-thread durability.',
-        retryable: false,
-      })
-      return
-    }
-
-    if (this.resetOperation) {
-      this.emitError(sender, request, {
-        code: 'invalid_request',
-        message: 'Nyx is still starting a fresh thread.',
-        retryable: false,
-      })
-      return
-    }
-
     if (this.activeSession) {
-      this.emitError(sender, request, {
+      this.emitError(sender, parsed.request, {
         code: 'invalid_request',
         message: 'Nyx only supports one active assistant response at a time right now.',
         retryable: false,
@@ -560,695 +219,366 @@ export class ChatSessionManager {
     }
 
     const session: ActiveChatSession = {
-      requestId: request.requestId,
-      userMessageId: request.userMessageId,
-      assistantMessageId: request.assistantMessageId,
-      turnIntent: request.turnIntent,
-      request,
+      threadId: parsed.request.threadId,
+      requestId: parsed.request.requestId,
+      turnIntent: parsed.request.turnIntent,
+      request: parsed.request,
       sender,
       abortController: new AbortController(),
       finalContent: '',
+      runtime: undefined,
     }
-
     this.activeSession = session
-
-    const operation = this.resolveCurrentThreadSession
-      ? this.prepareDurableSession(session, request)
-      : this.resolveTargetAndStart(session, request)
-
-    session.operation = operation
-    void operation
+    session.operation = this.run(session)
+    void session.operation
   }
 
-  private async prepareDurableSession(session: ActiveChatSession, request: NyxChatRequest) {
-    const currentThreadSession = this.resolveCurrentThreadSession!()
-    session.currentThreadSession = currentThreadSession
+  cancel(value: NyxThreadChatCancellationRequest | unknown) {
+    const request = parseIdentityRequest(value)
+    if (
+      request &&
+      this.activeSession?.threadId === request.threadId &&
+      this.activeSession.requestId === request.requestId
+    ) {
+      this.activeSession.abortController.abort()
+    }
+  }
 
+  async retrySettlement(sender: WebContents, value: NyxThreadChatSettlementRetryRequest | unknown) {
+    const request = parseIdentityRequest(value)
+    if (!request) return
+
+    let reply: Awaited<ReturnType<ThreadLibraryCoordinator['retrySettlement']>>
     try {
-      const preparedCurrentThread = await currentThreadSession.prepare(
+      reply = await this.coordinator().retrySettlement(request.threadId, request.requestId)
+    } catch (error) {
+      this.emitError(
+        sender,
         request,
-        session.abortController.signal,
+        error instanceof ThreadLibraryCoordinatorError && error.code === 'invalid_request'
+          ? invalidRequest(error.message)
+          : this.settlementError(),
       )
+      return
+    }
+    if (!reply.ok) {
+      this.emitError(sender, request, this.settlementError())
+      return
+    }
 
-      if (this.activeSession !== session) {
-        return
-      }
+    const turn = reply.value.turns.find(
+      (candidate) => candidate.attemptRequestId === request.requestId,
+    )
+    if (!turn) {
+      this.emitError(sender, request, invalidRequest('The settlement Retry identity is invalid.'))
+      return
+    }
+    if (turn.assistantStatus === 'failed') {
+      this.emitError(
+        sender,
+        { ...request, assistantMessageId: turn.assistantMessageId },
+        turn.error!,
+        turn.targetAttribution ?? undefined,
+      )
+    } else if (turn.assistantStatus === 'completed' || turn.assistantStatus === 'cancelled') {
+      this.emitDone(
+        sender,
+        { ...request, assistantMessageId: turn.assistantMessageId },
+        turn.assistantStatus,
+        turn.assistantContent,
+      )
+    } else {
+      this.emitError(sender, request, invalidRequest('The settlement Retry is still pending.'))
+    }
+  }
 
-      session.preparedCurrentThread = preparedCurrentThread
+  private async run(session: ActiveChatSession) {
+    try {
+      session.prepared = await this.coordinator().prepareTurn(session.request)
+      if (this.activeSession !== session) return
       this.emitAccepted(session)
 
-      if (await this.finishCancelledCommittedSession(session)) {
-        return
-      }
-
-      const durableRequest = {
-        ...request,
-        messages: preparedCurrentThread.providerMessages,
-      }
-      session.request = durableRequest
-      await this.resolveTargetAndStart(session, durableRequest)
-    } catch (error) {
-      if (this.activeSession !== session) {
-        return
-      }
-
-      const chatError =
-        error instanceof CurrentThreadSessionError && error.code === 'invalid_request'
-          ? {
-              code: 'invalid_request' as const,
-              message: error.message,
-              retryable: false,
-            }
-          : toNonRetryableRuntimeChatError(error)
-
-      this.emitSessionError(session, chatError)
-      this.activeSession = undefined
-    }
-  }
-
-  private async resolveTargetAndStart(session: ActiveChatSession, request: NyxChatRequest) {
-    let target: ResolvedChatTarget
-
-    try {
-      target = await this.resolveChatTarget(request.targetSelection)
-    } catch (error) {
-      if (await this.finishCancelledCommittedSession(session)) {
-        return
-      }
-
-      await this.handleChatTargetError(session, request, error)
-      return
-    }
-
-    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
-      return
-    }
-
-    if (session.currentThreadSession) {
-      try {
-        await session.currentThreadSession.bindResolvedTarget(
-          session.requestId,
-          session.assistantMessageId,
-          target.targetAttribution,
-        )
-      } catch {
-        if (this.activeSession === session) {
-          this.emitSessionError(session, {
-            code: 'unknown',
-            message: 'Nyx could not save the current thread.',
-            retryable: false,
-          })
-          this.discardRuntimeChatStateForSender(session.sender)
-          this.activeSession = undefined
-        }
-        return
-      }
-    }
-
-    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
-      return
-    }
-
-    session.boundTargetAttribution = target.targetAttribution
-
-    if (session.currentThreadSession && session.preparedCurrentThread) {
-      try {
-        session.providerMessages = await session.currentThreadSession.materializeProviderMessages(
-          session.preparedCurrentThread.pendingRecord,
-          {
-            protocolConfig: target.protocolConfig,
-            executionIdentity: target.executionIdentity,
-          },
-        )
-      } catch (error) {
-        if (
-          this.activeSession !== session ||
-          (await this.finishCancelledCommittedSession(session))
-        ) {
-          return
-        }
-
-        const chatError =
-          error instanceof CurrentThreadSessionError && error.code === 'invalid_request'
-            ? {
-                code: 'invalid_request' as const,
-                message: 'A current-thread attachment is unavailable.',
-                retryable: false,
-              }
-            : toNonRetryableRuntimeChatError(error)
-
-        if (await this.persistFailure(session, chatError)) {
-          this.discardRuntimeChatStateForSender(session.sender)
-          this.emitSessionError(session, chatError)
-        }
-        this.activeSession = undefined
-        return
-      }
-    }
-
-    if (this.activeSession !== session || (await this.finishCancelledCommittedSession(session))) {
-      return
-    }
-
-    await this.startWithChatTarget(session, target, request)
-  }
-
-  private async finishCancelledCommittedSession(session: ActiveChatSession) {
-    if (
-      this.activeSession !== session ||
-      !session.preparedCurrentThread ||
-      !session.abortController.signal.aborted
-    ) {
-      return false
-    }
-
-    if (await this.persistCancelled(session)) {
-      this.discardRuntimeChatStateForSender(session.sender)
-      this.emitDone(session, 'cancelled')
-    }
-    this.activeSession = undefined
-    return true
-  }
-
-  private startWithChatTarget(
-    session: ActiveChatSession,
-    target: ResolvedChatTarget,
-    request: NyxChatRequest,
-  ): Promise<void> {
-    if (this.activeSession !== session) {
-      return Promise.resolve()
-    }
-
-    if (!this.runtimeChatStateEnabled) {
-      this.emitStart(session)
-      return this.runSession(session, target, request)
-    }
-
-    return this.prepareRuntimeAndRunSession(session, target, request)
-  }
-
-  private async handleChatTargetError(
-    session: ActiveChatSession,
-    request: NyxChatRequest,
-    error: unknown,
-  ) {
-    if (this.activeSession !== session) {
-      return
-    }
-
-    const chatError = toChatError(error)
-
-    if (!(await this.persistFailure(session, chatError))) {
-      return
-    }
-
-    this.discardRuntimeChatStateForSender(session.sender)
-    this.emitSessionError(session, chatError)
-    this.activeSession = undefined
-  }
-
-  cancel(request: NyxChatCancellationRequest) {
-    if (!this.activeSession || this.activeSession.requestId !== request.requestId) {
-      return
-    }
-
-    this.activeSession.abortController.abort()
-  }
-
-  async reset(_sender: WebContents): Promise<NyxCurrentThreadResetResult> {
-    if (this.resetOperation) {
-      return this.resetOperation
-    }
-
-    const resetOperation = this.performReset()
-    this.resetOperation = resetOperation
-
-    try {
-      return await resetOperation
-    } finally {
-      if (this.resetOperation === resetOperation) {
-        this.resetOperation = undefined
-      }
-    }
-  }
-
-  private async performReset(): Promise<NyxCurrentThreadResetResult> {
-    try {
-      if (this.activeSession) {
-        const session = this.activeSession
-        session.abortController.abort()
-        this.activeSession = undefined
-
-        try {
-          await session.operation
-        } catch {
-          // Explicit reset still owns cleanup when an abandoned session exits unexpectedly.
-        }
-      }
-
-      for (const runtimeChatStateSession of this.runtimeChatStateSessions.values()) {
-        this.detachRuntimeChatStateSession(runtimeChatStateSession)
-
-        try {
-          await runtimeChatStateSession.client.clear()
-        } catch {
-          // Reset detaches the old runtime client so the next turn starts from a fresh session.
-        } finally {
-          runtimeChatStateSession.client.close()
-        }
-      }
-
-      if (this.resolveCurrentThreadSession) {
-        await this.resolveCurrentThreadSession().reset()
-      }
-
-      return { ok: true }
-    } catch {
-      return currentThreadResetFailure()
-    }
-  }
-
-  private async prepareRuntimeAndRunSession(
-    session: ActiveChatSession,
-    target: ResolvedChatTarget,
-    request: NyxChatRequest,
-  ) {
-    try {
-      const runtimeChatStateSession = this.getRuntimeChatStateSession(session.sender)
-      const runtimeChatStateClient = runtimeChatStateSession.client
-
-      session.runtimeChatStateClient = runtimeChatStateClient
-
-      if (
-        session.preparedCurrentThread &&
-        runtimeChatStateSession.hydratedThreadId !==
-          session.preparedCurrentThread.pendingRecord.threadId
-      ) {
-        await replayCurrentThread(
-          runtimeChatStateClient,
-          session.preparedCurrentThread.replayRecord,
-        )
-        runtimeChatStateSession.hydratedThreadId =
-          session.preparedCurrentThread.pendingRecord.threadId
-      }
-
-      await this.startRuntimeTurn(runtimeChatStateClient, request)
-
-      if (this.activeSession !== session) {
-        return
-      }
-
-      this.emitStart(session)
-
       if (session.abortController.signal.aborted) {
-        if (await this.persistCancelled(session)) {
-          try {
-            await runtimeChatStateClient.cancel({
-              turnRequestId: session.requestId,
-              assistantMessageId: session.assistantMessageId,
-              finalContent: session.finalContent,
-            })
-          } catch {
-            this.discardRuntimeChatStateClient(runtimeChatStateClient)
-          }
-          this.emitDone(session, 'cancelled')
-        }
-        this.activeSession = undefined
+        await this.finishCancelled(session)
         return
       }
 
-      await this.runSession(session, target, request)
+      const target = await this.resolveChatTarget(session.prepared.targetSelection)
+      if (this.activeSession !== session) return
+      if (session.abortController.signal.aborted) {
+        await this.finishCancelled(session)
+        return
+      }
+
+      await this.coordinator().bindPreparedTarget(session.prepared, target.targetAttribution)
+      session.targetAttribution = target.targetAttribution
+      if (this.activeSession !== session) return
+      if (session.abortController.signal.aborted) {
+        await this.finishCancelled(session)
+        return
+      }
+
+      const providerMessages = await this.coordinator().materializeProviderMessages(
+        session.prepared.detail,
+        target,
+      )
+      if (this.activeSession !== session) return
+
+      if (this.runtimeChatStateEnabled) {
+        session.runtime = this.createRuntimeChatStateClient()
+        await this.coordinator().replayRuntimeHistory(
+          session.runtime,
+          session.prepared.runtimeReplayDetail,
+        )
+        await this.startRuntimeTurn(session.runtime, session)
+      }
+      if (this.activeSession !== session) return
+      if (session.abortController.signal.aborted) {
+        await this.finishCancelled(session)
+        return
+      }
+
+      this.emitStart(session)
+      await this.runProvider(session, target, providerMessages)
     } catch (error) {
-      if (this.activeSession !== session) {
-        return
+      if (this.activeSession !== session) return
+      if (session.prepared) {
+        if (session.abortController.signal.aborted || isAbortError(error)) {
+          await this.finishCancelled(session)
+        } else {
+          const chatError =
+            error instanceof ThreadLibraryCoordinatorError && error.code === 'invalid_request'
+              ? invalidRequest(error.message)
+              : error instanceof RuntimeChatStateClientError
+                ? toNonRetryableChatError(error)
+                : toChatError(error)
+          await this.finishFailed(session, chatError)
+        }
+      } else {
+        const chatError =
+          error instanceof ThreadLibraryCoordinatorError && error.code === 'invalid_request'
+            ? invalidRequest(error.message)
+            : toNonRetryableChatError(error)
+        this.emitError(session.sender, session, chatError)
       }
-
-      this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-      const chatError = toNonRetryableRuntimeChatError(error)
-
-      if (await this.persistFailure(session, chatError)) {
-        this.emitSessionError(session, chatError)
-      }
-      this.activeSession = undefined
+    } finally {
+      if (this.activeSession === session) this.activeSession = undefined
+      session.runtime?.close()
     }
   }
 
-  private getRuntimeChatStateSession(sender: WebContents) {
-    const existingSession = this.runtimeChatStateSessions.get(sender)
-
-    if (existingSession && !sender.isDestroyed()) {
-      return existingSession
-    }
-
-    if (existingSession) {
-      this.closeRuntimeChatStateSession(existingSession)
-    }
-
-    const runtimeChatStateClient = this.createRuntimeChatStateClient()
-    const runtimeChatStateSession = this.createRuntimeChatStateSession(
-      sender,
-      runtimeChatStateClient,
-    )
-
-    this.runtimeChatStateSessions.set(sender, runtimeChatStateSession)
-
-    return runtimeChatStateSession
-  }
-
-  private discardRuntimeChatStateClient(runtimeChatStateClient?: RuntimeChatStateClient) {
-    if (!runtimeChatStateClient) {
-      return
-    }
-
-    const runtimeChatStateSession = this.findRuntimeChatStateSession(runtimeChatStateClient)
-
-    if (runtimeChatStateSession) {
-      this.closeRuntimeChatStateSession(runtimeChatStateSession)
-      return
-    }
-
-    runtimeChatStateClient.close()
-  }
-
-  private discardRuntimeChatStateForSender(sender: WebContents) {
-    const runtimeChatStateSession = this.runtimeChatStateSessions.get(sender)
-
-    if (runtimeChatStateSession) {
-      this.closeRuntimeChatStateSession(runtimeChatStateSession)
-    }
-  }
-
-  private createRuntimeChatStateSession(
-    sender: WebContents,
-    client: RuntimeChatStateClient,
-  ): RuntimeChatStateSession {
-    let runtimeChatStateSession: RuntimeChatStateSession | undefined
-    const onSenderDestroyed = () => {
-      if (runtimeChatStateSession) {
-        this.handleRuntimeChatStateSenderDestroyed(runtimeChatStateSession)
-      }
-    }
-    const createdSession = {
-      sender,
-      client,
-      onSenderDestroyed,
-    }
-
-    runtimeChatStateSession = createdSession
-    sender.once('destroyed', onSenderDestroyed)
-
-    return createdSession
-  }
-
-  private detachRuntimeChatStateSession(runtimeChatStateSession: RuntimeChatStateSession) {
-    if (
-      this.runtimeChatStateSessions.get(runtimeChatStateSession.sender) === runtimeChatStateSession
-    ) {
-      this.runtimeChatStateSessions.delete(runtimeChatStateSession.sender)
-    }
-
-    runtimeChatStateSession.sender.off('destroyed', runtimeChatStateSession.onSenderDestroyed)
-  }
-
-  private findRuntimeChatStateSession(runtimeChatStateClient: RuntimeChatStateClient) {
-    for (const runtimeChatStateSession of this.runtimeChatStateSessions.values()) {
-      if (runtimeChatStateSession.client === runtimeChatStateClient) {
-        return runtimeChatStateSession
-      }
-    }
-
-    return undefined
-  }
-
-  private closeRuntimeChatStateSession(runtimeChatStateSession: RuntimeChatStateSession) {
-    this.detachRuntimeChatStateSession(runtimeChatStateSession)
-    runtimeChatStateSession.client.close()
-  }
-
-  private handleRuntimeChatStateSenderDestroyed(runtimeChatStateSession: RuntimeChatStateSession) {
-    if (this.activeSession?.sender === runtimeChatStateSession.sender) {
-      this.activeSession.abortController.abort()
-      this.activeSession = undefined
-    }
-
-    this.closeRuntimeChatStateSession(runtimeChatStateSession)
-  }
-
-  private async startRuntimeTurn(
-    runtimeChatStateClient: RuntimeChatStateClient,
-    request: NyxChatRequest,
-  ) {
-    if (request.turnIntent === 'new_user_message') {
-      await runtimeChatStateClient.submitUserMessage({
-        turnRequestId: request.requestId,
-        userMessageId: request.userMessageId,
-        assistantMessageId: request.assistantMessageId,
-        content: request.turnUserMessage.content,
-      })
-    } else {
-      await runtimeChatStateClient.retryFailed({
-        turnRequestId: request.requestId,
-        userMessageId: request.userMessageId,
-        assistantMessageId: request.assistantMessageId,
-      })
-    }
-
-    await runtimeChatStateClient.startAssistant({
-      turnRequestId: request.requestId,
-      assistantMessageId: request.assistantMessageId,
-    })
-  }
-
-  private async runSession(
+  private async runProvider(
     session: ActiveChatSession,
     target: ResolvedChatTarget,
-    request: NyxChatRequest,
+    providerMessages: Awaited<ReturnType<ThreadLibraryCoordinator['materializeProviderMessages']>>,
   ) {
-    try {
-      const result = await streamChatCompletion({
-        target,
-        request,
-        ...(session.providerMessages ? { providerMessages: session.providerMessages } : {}),
-        documentBearing: Boolean(
-          session.preparedCurrentThread?.pendingRecord.turns.some(
-            (turn) => turn.documentRefs.length > 0,
-          ),
-        ),
-        signal: session.abortController.signal,
-        onDelta: async (delta, snapshot) => {
-          if (this.activeSession !== session) {
-            return
-          }
-
-          session.finalContent = snapshot
-          await session.runtimeChatStateClient?.appendDelta({
-            turnRequestId: session.requestId,
-            assistantMessageId: session.assistantMessageId,
-            snapshot,
-          })
-
-          if (this.activeSession !== session) {
-            return
-          }
-
-          this.emitEvent(session.sender, {
+    const result = await streamChatCompletion({
+      target,
+      request: {},
+      providerMessages,
+      documentBearing: session.prepared!.documentBearing,
+      signal: session.abortController.signal,
+      onDelta: async (delta, snapshot) => {
+        if (this.activeSession !== session) return
+        session.finalContent = snapshot
+        await session.runtime?.appendDelta({
+          turnRequestId: session.requestId,
+          assistantMessageId: session.prepared!.assistantMessageId,
+          snapshot,
+        })
+        if (this.activeSession === session) {
+          this.publish(session.sender, {
             type: 'chat:delta',
+            threadId: session.threadId,
             requestId: session.requestId,
-            assistantMessageId: session.assistantMessageId,
+            assistantMessageId: session.prepared!.assistantMessageId,
             delta,
             snapshot,
           })
-        },
-      })
-
-      if ('providerState' in result && !target.executionIdentity) {
-        throw new Error('A Responses target requires a durable execution identity.')
-      }
-
-      session.finalContent = result.finalContent
-
-      if (this.activeSession === session) {
-        const continuation =
-          'providerState' in result && target.executionIdentity
-            ? { state: result.providerState, executionIdentity: target.executionIdentity }
-            : undefined
-
-        if (await this.persistCompleted(session, continuation)) {
-          try {
-            await session.runtimeChatStateClient?.complete({
-              turnRequestId: session.requestId,
-              assistantMessageId: session.assistantMessageId,
-              finalContent: session.finalContent,
-            })
-          } catch {
-            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          }
-
-          if (this.activeSession === session) {
-            this.emitDone(session, 'completed')
-          }
         }
-      }
-    } catch (error) {
-      if (this.activeSession !== session) {
-        return
-      }
+      },
+    })
 
-      if (error instanceof RuntimeChatStateClientError) {
-        this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-        const chatError = toNonRetryableRuntimeChatError(error)
-
-        if (await this.persistFailure(session, chatError)) {
-          this.emitSessionError(session, chatError)
-        }
-        return
-      }
-
-      if (isAbortError(error)) {
-        if (await this.persistCancelled(session)) {
-          try {
-            await session.runtimeChatStateClient?.cancel({
-              turnRequestId: session.requestId,
-              assistantMessageId: session.assistantMessageId,
-              finalContent: session.finalContent,
-            })
-          } catch {
-            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          }
-          this.emitDone(session, 'cancelled')
-        }
-      } else {
-        const chatError = toChatError(error)
-
-        if (await this.persistFailure(session, chatError)) {
-          try {
-            await session.runtimeChatStateClient?.fail({
-              turnRequestId: session.requestId,
-              assistantMessageId: session.assistantMessageId,
-              message: chatError.message,
-            })
-          } catch {
-            this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-          }
-          this.emitSessionError(session, chatError)
-        }
-      }
-    } finally {
-      if (this.activeSession === session) {
-        this.activeSession = undefined
-      }
+    if (session.abortController.signal.aborted) {
+      await this.finishCancelled(session)
+      return
     }
-  }
 
-  private persistCompleted(
-    session: ActiveChatSession,
-    continuation?: Parameters<CurrentThreadSessionCoordinator['complete']>[3],
-  ) {
-    return this.persistTerminal(session, () =>
-      session.currentThreadSession!.complete(
-        session.requestId,
-        session.assistantMessageId,
-        session.finalContent,
-        continuation,
-      ),
-    )
-  }
-
-  private persistCancelled(session: ActiveChatSession) {
-    return this.persistTerminal(session, () =>
-      session.currentThreadSession!.cancel(
-        session.requestId,
-        session.assistantMessageId,
-        session.finalContent,
-      ),
-    )
-  }
-
-  private async persistFailure(session: ActiveChatSession, error: NyxChatErrorEvent['error']) {
-    return this.persistTerminal(session, () =>
-      session.currentThreadSession!.fail(
-        session.requestId,
-        session.assistantMessageId,
-        session.finalContent,
-        error,
-      ),
-    )
-  }
-
-  private async persistTerminal(session: ActiveChatSession, persist: () => Promise<unknown>) {
-    if (!session.currentThreadSession || !session.preparedCurrentThread) {
-      return true
+    if ('providerState' in result && !target.executionIdentity) {
+      throw new Error('A Responses target requires a durable execution identity.')
     }
+    session.finalContent = result.finalContent
+    const saved = await this.settle(session, {
+      assistantStatus: 'completed',
+      error: null,
+      continuation:
+        'providerState' in result && target.executionIdentity
+          ? { state: result.providerState, executionIdentity: target.executionIdentity }
+          : undefined,
+    })
+    if (!saved) return
 
     try {
-      await persist()
-      return true
-    } catch {
-      this.discardRuntimeChatStateClient(session.runtimeChatStateClient)
-      this.emitSessionError(session, {
-        code: 'unknown',
-        message: 'Nyx could not save the current thread.',
-        retryable: false,
+      await session.runtime?.complete({
+        turnRequestId: session.requestId,
+        assistantMessageId: session.prepared!.assistantMessageId,
+        finalContent: session.finalContent,
       })
-      return false
+    } catch {
+      session.runtime?.close()
+      session.runtime = undefined
+    }
+    if (this.activeSession === session) {
+      this.emitDone(session.sender, session.prepared!, 'completed', session.finalContent)
     }
   }
 
-  private emitError(
-    sender: WebContents,
-    request: ChatRequestCorrelation,
-    error: NyxChatErrorEvent['error'],
-    targetAttribution?: NyxChatTargetAttribution,
+  private async finishCancelled(session: ActiveChatSession) {
+    if (!(await this.settle(session, { assistantStatus: 'cancelled', error: null }))) return
+    try {
+      await session.runtime?.cancel({
+        turnRequestId: session.requestId,
+        assistantMessageId: session.prepared!.assistantMessageId,
+        finalContent: session.finalContent,
+      })
+    } catch {
+      session.runtime?.close()
+      session.runtime = undefined
+    }
+    this.emitDone(session.sender, session.prepared!, 'cancelled', session.finalContent)
+  }
+
+  private async finishFailed(session: ActiveChatSession, error: NyxChatError) {
+    const safeError = createSafeThreadErrorRecord({
+      code: error.code,
+      retryable: error.retryable,
+    })
+    if (!(await this.settle(session, { assistantStatus: 'failed', error: safeError }))) return
+    try {
+      await session.runtime?.fail({
+        turnRequestId: session.requestId,
+        assistantMessageId: session.prepared!.assistantMessageId,
+        message: error.message,
+      })
+    } catch {
+      session.runtime?.close()
+      session.runtime = undefined
+    }
+    this.emitError(session.sender, session.prepared!, error, session.targetAttribution)
+  }
+
+  private async settle(
+    session: ActiveChatSession,
+    terminal: {
+      assistantStatus: 'completed' | 'cancelled' | 'failed'
+      error: SafeThreadErrorRecord | null
+      continuation?: Parameters<ThreadLibraryCoordinator['settleTurn']>[0]['continuation']
+    },
   ) {
-    this.emitEvent(sender, {
-      type: 'chat:error',
-      requestId: request.requestId,
-      assistantMessageId: request.assistantMessageId,
-      status: 'failed',
-      error,
-      ...(targetAttribution ? { targetAttribution } : {}),
-    })
+    try {
+      const reply = await this.coordinator().settleTurn({
+        threadId: session.threadId,
+        requestId: session.requestId,
+        assistantStatus: terminal.assistantStatus,
+        assistantContent: session.finalContent,
+        error: terminal.error,
+        settledAt: this.now(),
+        ...(terminal.continuation ? { continuation: terminal.continuation } : {}),
+      })
+      if (reply.ok) return true
+    } catch {
+      // The coordinator retains the exact terminal input for explicit Retry.
+    }
+    session.runtime?.close()
+    session.runtime = undefined
+    this.emitError(
+      session.sender,
+      session.prepared!,
+      this.settlementError(),
+      session.targetAttribution,
+    )
+    return false
   }
 
-  private emitSessionError(session: ActiveChatSession, error: NyxChatErrorEvent['error']) {
-    this.emitError(session.sender, session.request, error, session.boundTargetAttribution)
+  private startRuntimeTurn(runtime: RuntimeChatStateClient, session: ActiveChatSession) {
+    const prepared = session.prepared!
+    const start =
+      session.turnIntent === 'new_user_message'
+        ? runtime.submitUserMessage({
+            turnRequestId: session.requestId,
+            userMessageId: prepared.userMessageId,
+            assistantMessageId: prepared.assistantMessageId,
+            content: prepared.detail.turns.find(
+              (turn) => turn.attemptRequestId === session.requestId,
+            )!.userContent,
+          })
+        : runtime.retryFailed({
+            turnRequestId: session.requestId,
+            userMessageId: prepared.userMessageId,
+            assistantMessageId: prepared.assistantMessageId,
+          })
+    return start.then(() =>
+      runtime.startAssistant({
+        turnRequestId: session.requestId,
+        assistantMessageId: prepared.assistantMessageId,
+      }),
+    )
   }
 
-  private emitStart(session: ActiveChatSession) {
-    this.emitEvent(session.sender, {
-      type: 'chat:start',
-      requestId: session.requestId,
-      assistantMessageId: session.assistantMessageId,
-      status: 'streaming',
-      targetAttribution: session.boundTargetAttribution!,
-    })
+  private settlementError(): NyxChatError {
+    return { code: 'unknown', message: "Couldn't save result", retryable: true }
   }
 
   private emitAccepted(session: ActiveChatSession) {
-    this.emitEvent(session.sender, {
+    this.publish(session.sender, {
       type: 'chat:accepted',
+      threadId: session.threadId,
       requestId: session.requestId,
-      userMessageId: session.userMessageId,
-      assistantMessageId: session.assistantMessageId,
+      userMessageId: session.prepared!.userMessageId,
+      assistantMessageId: session.prepared!.assistantMessageId,
       turnIntent: session.turnIntent,
     })
   }
 
-  private emitDone(session: ActiveChatSession, status: 'completed' | 'cancelled') {
-    this.emitEvent(session.sender, {
-      type: 'chat:done',
+  private emitStart(session: ActiveChatSession) {
+    this.publish(session.sender, {
+      type: 'chat:start',
+      threadId: session.threadId,
       requestId: session.requestId,
-      assistantMessageId: session.assistantMessageId,
-      status,
-      finalContent: session.finalContent,
+      assistantMessageId: session.prepared!.assistantMessageId,
+      status: 'streaming',
+      targetAttribution: session.targetAttribution!,
     })
   }
 
-  private emitEvent(sender: WebContents, event: NyxChatEvent) {
-    if (sender.isDestroyed()) {
-      return
-    }
+  private emitDone(
+    sender: WebContents,
+    request: ChatRequestCorrelation & { assistantMessageId: string },
+    status: 'completed' | 'cancelled',
+    finalContent: string,
+  ) {
+    this.publish(sender, {
+      type: 'chat:done',
+      ...request,
+      status,
+      finalContent,
+    })
+  }
 
-    sender.send(NYX_CHAT_IPC_CHANNELS.event, event)
+  private emitError(
+    sender: WebContents,
+    request: ChatRequestCorrelation & { assistantMessageId?: string },
+    error: NyxChatError,
+    targetAttribution?: NyxChatTargetAttribution,
+  ) {
+    this.publish(sender, {
+      type: 'chat:error',
+      threadId: request.threadId,
+      requestId: request.requestId,
+      ...(request.assistantMessageId ? { assistantMessageId: request.assistantMessageId } : {}),
+      status: 'failed',
+      error,
+      ...(targetAttribution ? { targetAttribution } : {}),
+    })
   }
 }
