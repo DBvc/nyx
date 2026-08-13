@@ -154,10 +154,12 @@ Use relative documentation links. Do not add local absolute paths.
   release-shape contract in `2196ea6`; G2R reached independently reviewed
   `VALID_STOP`, so Permanent delete remains absent. The revised D1 scope lock
   completed at `0e3b2ef` after scoped closure review
-  `NYX-MTL-D1-SCOPE-20260812-03`. The docs-only D1-R recovery-contract
-  correction below is now the only executable tracked-file step; D1 code is
-  paused until that correction passes independent review and enters HEAD. D2
-  and every later product slice remain blocked.
+  `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at `0e4f02e`, and D1 code
+  completed at `8d4d73e` after independent review
+  `NYX-MTL-D1-CODE-20260813-03`. The docs-only D2 scope lock below is now the
+  only executable tracked-file step. D2 code and every later product slice
+  remain blocked until that scope lock passes independent review and enters
+  HEAD.
 
 ## A0: Scope Gate Docs
 
@@ -3308,9 +3310,11 @@ and entered HEAD at `5a1aeae`, so its self-ratchet is complete. G2R then reached
 independently reviewed `VALID_STOP`; Permanent delete remains absent. G1W's
 release-shape contract correction entered HEAD at `2196ea6`, and corrected
 evidence then passed independent review. The docs-only D1 scope lock completed
-at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`. D1-R below is now the
-only executable tracked-file step; D1 code is paused until its exact recovery
-contract passes independent review and enters HEAD.
+at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at
+`0e4f02e`, and D1 code completed at `8d4d73e` after review
+`NYX-MTL-D1-CODE-20260813-03`. The D2 scope lock below is now the only
+executable tracked-file step. D2 code remains blocked until its exact scope is
+independently reviewed and present in HEAD.
 
 The reviewed source candidate is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3602,10 +3606,10 @@ matching v5.3 sections:
 
 Type: documentation-only correction to the D1 open/validation contract.
 
-Status: landing candidate and the only executable tracked-file step. D1 product
-code is paused. It may resume only when independent strict review
-`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02` accepts these exact bytes and the
-same bytes enter HEAD. D2 and every later product slice stay blocked.
+Status: complete at `0e4f02e` after independent strict review
+`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02`. D1 product code subsequently
+completed at `8d4d73e`; this subsection remains the governing recovery
+contract.
 
 This subsection narrowly supersedes v5.3 and D1-scope-lock wording that requires
 the original database and DELETE journal to remain byte-identical after every
@@ -3665,10 +3669,11 @@ sidecar byte identity, and it does not authorize destructive recovery.
 
 Type: documentation-only control step.
 
-Status: complete at `0e3b2ef` after independent review
+Status: scope lock complete at `0e3b2ef` after independent review
 `NYX-MTL-D1-SCOPE-20260812-03`. Its open/validation byte-preservation wording is
-narrowly superseded by D1-R above; D1 code remains paused until D1-R completes.
-D2 and every later product slice stay blocked.
+narrowly superseded by D1-R above. D1 code completed at `8d4d73e` after
+independent review `NYX-MTL-D1-CODE-20260813-03`; D2 remains blocked until its
+own scope lock below completes.
 
 Dependencies are satisfied only by G1W evidence
 `5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`,
@@ -3782,11 +3787,241 @@ dual-read/write, a second durable truth, raw-SQL RPC, another connection/Worker,
 automatic mutation replay, Main `DatabaseSync`, an ORM/repository, D2/C1/Q1/P1
 behavior, or a product-only test hook.
 
-Before implementation can be marked complete, exact allowed-file and forbidden
-surface scans, all checks above, the packaged acceptance, and independent code
-review `NYX-MTL-D1-CODE-20260812-01` must pass for the same implementation bytes
-that enter HEAD. D1 completion does not authorize D2 without D2's own reviewed
-scope lock.
+Before implementation could be marked complete, exact allowed-file and
+forbidden-surface scans, all checks above, packaged acceptance, and an
+independent code review had to pass for the same implementation bytes entering
+HEAD. Those conditions passed under `NYX-MTL-D1-CODE-20260813-03`; D1
+completion does not authorize D2 without D2's own reviewed scope lock.
+
+### multi-thread-library/D2-scope-lock: Thread resources and settlement domain
+
+Type: documentation-only control step.
+
+Status: this one-file scope lock is the current and only executable tracked-file
+step. It completes without a follow-up status edit only when independent strict
+review `NYX-MTL-D2-SCOPE-20260813-01` accepts these exact bytes and the same
+bytes enter HEAD. Before both conditions hold, D2 product code and every later
+slice remain blocked. After both hold, only the exact D2 code inventory below
+becomes executable; C1 and every later slice remain blocked.
+
+Dependencies are satisfied only by D1 commit `8d4d73e`, D1 code review
+`NYX-MTL-D1-CODE-20260813-03`, D1-R commit `0e4f02e`, and D1-R review
+`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02` in the ancestry of the scope-lock
+commit. D2 must preserve D1's one application Worker/connection, semantic-only
+protocol, exact three-outcome mutation handling and non-destructive unavailable
+states.
+
+This scope-lock step may change exactly:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+After this scope lock completes, D2 may change exactly these tracked files:
+
+```text
+apps/desktop/electron/main/thread-library/protocol.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/worker.ts
+apps/desktop/electron/main/thread-library/worker.test.ts
+apps/desktop/electron/main/thread-library/sidecars.ts
+apps/desktop/electron/main/thread-library/sidecars.test.ts
+apps/desktop/electron/main/thread-library/coordinator.ts
+apps/desktop/electron/main/thread-library/coordinator.test.ts
+```
+
+D2 is a dormant Main/Worker domain foundation. It does not construct the
+Thread Library client during normal startup, open or create the user's real
+library, import or activate data, register IPC, change `window.nyx`, call a
+Provider or Runtime, or change Renderer behavior. C1 remains the only import,
+activation and bridge/chat cutover.
+
+Responsibilities are fixed as follows:
+
+- `protocol.ts` extends the implementation-local semantic Worker contract only
+  with `saveDraft`, `startTurn`, `retryTurn`, `bindTurnTarget`, `settleTurn`,
+  `recoverPending`, `setResourceAvailability` and
+  `repairProviderStateRef`. It represents Draft- and Turn-owned ordered image
+  and document rows without raw bytes or paths. It adds no shared/preload type,
+  raw-SQL message, generic mutation id or later-slice operation.
+- `worker.ts` implements every D2 database transition as one complete short
+  transaction on the existing connection. It does not add a table, column,
+  FTS index, durable Run, settlement journal or second queue. D2 may replace
+  only the existing `documents.available/extracted_text` CHECK so an unavailable
+  source sidecar may retain already validated SQLite extracted text, and may add
+  or tighten an existing-table CHECK/trigger/index required by the frozen D2
+  transitions. Any table, column or schema-version change is a Stop/replan.
+- `client.ts` adds typed wrappers and exact canonical reread for D2 mutations.
+  It never auto-replays a mutation. One call may consume at most the existing
+  single replacement generation; an inconclusive reread remains
+  `outcome_unknown`, and no sidecar may be removed on that outcome. The sole
+  set-based exception is `recoverPending`: it has no external sidecar and cannot
+  reconstruct the affected set after reply loss, so unknown stays unknown until
+  an explicit caller Retry of the same idempotent input.
+- `sidecars.ts` is the sole new Thread Library file owner. Under a caller-owned
+  library root it derives paths only from validated UUIDs and uses the fixed
+  layout `threads/<threadId>/{images,documents,responses,.staging}`. Image full
+  and preview bytes and document source bytes remain files; validated document
+  extracted text exists only in SQLite; Responses continuation remains an
+  integrity-checked JSON sidecar. Directories are 0700 and files 0600. A narrow
+  file-operation seam may exist in this file only for failure tests; D2 adds no
+  filesystem framework or generic Asset service.
+- `coordinator.ts` is the one Main-side D2 coordinator over the existing
+  `ThreadLibraryClient` and `sidecars.ts`. It stages, verifies and atomically
+  publishes new files before asking the Worker to reference them; owns the
+  process-local exact `settlement_failed` inputs, including bounded Responses
+  continuation bytes and one Main-generated stable state id; and exposes Retry
+  of the same terminal input/ref without Provider or Runtime contact. It is not
+  wired into startup and does not add an ActiveRun manager, event bus, service
+  registry or durable failure state.
+- The four listed test files are the only D2 test surfaces. Tests use OS-temp
+  roots and existing image/document/Responses fixtures and limits. D2 adds no
+  fixture tree, production fault flag, product-only hook or dependency.
+
+The Draft contract is one CAS over text, safe target selection and the complete
+ordered image/document ownership set. Main validates and publishes only new
+sidecars; the Worker verifies `threadId + expectedDraftRevision`, replaces the
+Draft-owned metadata set and increments the Draft revision exactly once. A CAS
+conflict returns the canonical revision without overwriting Main/Renderer dirty
+input. Non-empty text or an attachment-set change updates
+`last_user_activity_at`; target-only and empty-text-only saves do not. Resource
+ids remain globally stable and cannot be reparented across Threads.
+
+`startTurn` uses `threadId + requestId + expectedDraftRevision` and Main-owned
+message ids. In one transaction it requires Available or Archived, requires no
+pending Turn, inserts the final pending Turn, moves every ordered Draft resource
+row to that Turn, clears the Draft to a tombstone while preserving its accepted
+safe target selection, increments the Draft revision, restores Archived to
+Available and increments `thread_revision` for that location change, freezes
+the existing auto title, and updates user activity. An Available start does not
+change `thread_revision`. No Provider/Runtime side effect may begin before the
+committed ack. On reply loss, the client rereads the exact request id; it never
+starts Provider work from an unknown result.
+
+`retryTurn` identifies one exact retryable failed Turn by Thread, ordinal and
+previous attempt request id, and that Turn must be the final Turn. It rejects
+Trash, accepts Available, and atomically restores Archived to Available while
+incrementing `thread_revision`; an Available retry does not change that
+revision. It also CAS-checks the current Draft revision, uses that Draft's safe
+target selection, preserves message/content/resource identity, installs the new
+request id, clears the old terminal fields and updates user activity.
+`bindTurnTarget` may bind safe attribution only to the exact still-pending
+request and matching selection before Provider contact. Neither operation
+consumes Draft text or attachments.
+
+All terminal states use one `settleTurn` conditional transaction keyed by
+`threadId + requestId` and requiring exactly one pending row. Exactly one of
+Complete/Fail/Cancel wins; all losers reread canonical terminal state and emit
+no second terminal result. A winning terminal increments `result_revision`
+once, never changes `last_user_activity_at`, and preserves
+`seen_result_revision`. Failed attachment rejection remains legal only for an
+attachment-bearing Turn. Before the Worker call, Main must prove that a
+Responses continuation's visible text equals the durable assistant text. The
+ref is then inserted in the same terminal transaction and must match the exact
+request, safe target attribution, execution identity, byte length and hash.
+
+Responses bytes are prepared, verified and atomically published before
+`settleTurn`. Any prepare or database failure stores the exact terminal input
+in the process-local `settlement_failed` map. `definitely_not_committed` permits
+best-effort removal of the unreferenced file, but Retry must recreate the same
+stable ref from the retained bounded bytes; `committed` retains the referenced
+file;
+`outcome_unknown` retains it and rereads `threadId + requestId + exact ref/hash`.
+A matching terminal is accepted as committed; the same exact pending Turn is
+stored in the process-local map and Retry reuses the same input/ref without
+calling Provider; a different canonical terminal makes the prepared file an
+orphan. No conclusive read means the file and failure input remain. D2 never
+writes a durable settlement journal or marks a failed save as Cancelled.
+
+`recoverPending({ recoveredAt })` is an explicit startup/exit semantic command,
+not an implicit read mutation. It atomically changes every still-pending Turn
+to the existing Interrupted safe failure once and increments each affected
+Thread's result revision once; it does not change user activity. Because the
+affected set is not durably known outside SQLite, reply loss remains
+`outcome_unknown`: the client does not invent a canonical reread and does not
+auto-replay. C1/E1 may offer an explicit Retry with the same `recoveredAt`;
+repeating the command is idempotent because it updates only rows still pending,
+so already recovered Turns and revisions do not change again. D2 proves reply
+loss, explicit Retry and restart idempotence; C1/E1 own when it is called.
+
+Reconciliation is reference-led and fail closed. It first obtains a canonical
+Worker read, then verifies only that Thread's fixed sidecar paths. Missing or
+corrupt image files update only those exact image availability rows. For a
+document, `available` describes the source sidecar only: a missing/corrupt
+source becomes unavailable without clearing already validated
+`extracted_text`; an imported document that never had valid extracted text may
+remain unavailable with `extracted_text = NULL`. Provider materialization and
+Search may continue using non-null validated SQLite text while source-only
+actions show the resource unavailable. Healthy content stays usable. A corrupt
+Responses continuation first uses
+`threadId + requestId + stateId + executionIdentity + byteLength + sha256` to
+delete only the exact ref and fall back to durable visible assistant text. A
+failed/mismatched repair makes only that identifiable Thread unavailable.
+Unreferenced staging/canonical files are best-effort orphans; no file is removed
+while a mutation is `outcome_unknown` or canonical read is unavailable.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/main/index.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/worker.test.ts electron/main/thread-library/v5-importer.test.ts electron/main/thread-library/sidecars.test.ts electron/main/thread-library/coordinator.test.ts
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
+The D2 test matrix must cover:
+
+- Draft text/target/existing/new image/document saves, ordered ownership,
+  target-only and clear-to-empty activity behavior, stale CAS with canonical
+  revision, autosave-versus-Send and two-Send races, and sidecar write/verify/
+  rename/database failures without losing dirty input;
+- Available and Archived Draft-to-Turn, tombstone revision, attachment owner
+  move, Archived/Available `thread_revision`, provider-before-ack canary, exact
+  final retryable failed Turn, Archived/Available/Trash Retry behavior, target
+  binding, duplicate request/message/resource identities and no-pending
+  invariant;
+- Complete/Fail/Cancel concurrency; explicit rollback, commit ack and
+  commit-after-reply-loss outcomes; canonical terminal/ref acceptance; exact
+  pending settlement Retry; mismatched terminal/orphan reconcile; result/seen/
+  activity revisions; and Retry proving zero Provider calls;
+- valid, missing and corrupt image/document parity; valid Responses fixture,
+  visible-text mismatch, corrupt exact-ref repair to durable text, repair CAS
+  failure to Thread unavailable, orphan cleanup failure and a second healthy
+  Thread remaining usable;
+- real process restart with pending-to-Interrupted idempotence, recover reply
+  loss staying unknown, and explicit same-input Retry with no double result
+  revision; Worker crash, timeout, malformed/late reply and replacement-read
+  failure with at most one replacement and no automatic mutation replay;
+  existing v5 importer/read/list/materialize and D1 open/recovery regressions.
+
+OS-temp acceptance has two honest boundaries. A production-shape temporary
+bundle built from the exact D2 `sidecars.ts`/`coordinator.ts` bytes must exercise
+a real thread-owned root, 0700/0600 modes, reply-loss retention/reconciliation
+and pending restart recovery. Separately, the final packaged `.app` and frozen
+`app.asar` inventory must prove the existing static Worker loads and executes
+the D2 semantic commands and must rerun D1's same-profile secondary-process
+protected-root canary. The dormant coordinator is not claimed to be in the app
+archive before C1 wires it. Neither path may use Main `DatabaseSync`, raw
+paths/bytes in Worker messages, a production test hook or a raw-Electron
+packaged-archive hybrid.
+
+D2 stops and returns to planning if implementation needs a file outside the
+nine-file inventory; a schema table/column/version change; shared/preload/IPC,
+Renderer, current-thread, Provider, Runtime, startup/activation or C1+ behavior;
+new or changed attachment/Responses limits; a second durable truth, settlement
+journal, automatic mutation replay, additional Worker/connection/queue, Main
+SQLite, generic repository/Asset service; sidecar deletion without conclusive
+canonical ownership; or a terminal/resource failure cannot be isolated to its
+exact Thread/resource.
+
+Before D2 implementation may be committed, the exact nine-file bytes, all
+required checks, packaged acceptance, allowed/forbidden-surface scans and an
+independent strict code review bound to the final artifact must pass. D2
+completion does not authorize C1 without C1's own reviewed scope lock.
 
 ### Global Stop conditions
 
