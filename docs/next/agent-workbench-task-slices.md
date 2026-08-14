@@ -159,9 +159,12 @@ Use relative documentation links. Do not add local absolute paths.
   `NYX-MTL-D1-CODE-20260813-03`. D2 completed at `15c8b00`; the C1 scope lock
   completed at `b647cde`. The title-identity amendment entered HEAD at
   `d099eec`; C1 then completed at `8b7150e` after independent final review
-  `NYX-MTL-C1-FINAL-CODE-20260813-02`. The docs-only E1 scope lock below is the
-  current and only executable tracked-file step. E1 product code remains blocked
-  until that exact scope lock passes review and enters HEAD.
+  `NYX-MTL-C1-FINAL-CODE-20260813-02`. E1 then stopped on its first valid cap-2
+  performance sample. The docs-only E1R amendment below self-completes when its
+  reviewed exact bytes enter HEAD; before that it is the only executable
+  tracked-file step. After completion only the OS-temp E1R/G0 direction gate may
+  run. E1/E1R product code remains blocked until a reviewed G0 PASS and a later
+  exact product scope lock both enter HEAD.
 
 ## A0: Scope Gate Docs
 
@@ -1962,16 +1965,16 @@ git diff --check
 
 ## R Workstream: Responses Protocol And Native Continuation
 
-Status: Active by explicit user request on 2026-08-11. The locked architecture,
-breaking development cutover, invariants, validation model, and global stop
-conditions are defined in
+Status: complete; no `responses-protocol` slice is executable. The locked
+architecture, breaking development cutover, invariants, validation model, and
+global stop conditions are defined in
 [responses-protocol-technical-plan.md](./responses-protocol-technical-plan.md).
 Evidence status belongs in
 [responses-protocol-runthrough.md](./responses-protocol-runthrough.md).
 
 This workstream supersedes completed C/D restrictions only for the exact named
 slice. It does not reopen stopped image slices or deferred native-document
-slices. The only valid order is:
+slices. The completed historical order was:
 
 ```text
 responses-protocol/S0
@@ -3320,8 +3323,12 @@ D2 code completed at `15c8b00` after reviews
 `NYX-MTL-D2-EVIDENCE-20260813-02`. The C1 scope lock completed at `b647cde`
 after review `NYX-MTL-C1-SCOPE-20260813-01`. The title-identity amendment entered
 HEAD at `d099eec`; C1 completed at `8b7150e` after independent final review
-`NYX-MTL-C1-FINAL-CODE-20260813-02`. The E1 scope lock below is now the only
-executable tracked-file step; E1 product code and U1 remain blocked.
+`NYX-MTL-C1-FINAL-CODE-20260813-02`. The E1 scope lock completed at `786cd50`,
+but its first valid cap-2 sample failed the existing Main/RSS lines and stopped
+that implementation attempt. The E1R amendment below now self-completes on
+exact review plus HEAD; before that it is the only executable tracked-file
+step. After completion only E1R/G0 is executable. Old E1 product bytes,
+E1R-P1/E1R-P2, resumed E1 and U1 remain blocked.
 
 The reviewed source is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3330,17 +3337,22 @@ v5.4 at SHA-256
 Durable gate evidence is in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
-Inside this section, unqualified S0, G1, G2, G1W, G2R, D1, D2, C1, E1, U1,
-L1, Q1, A1, M1, and P1 refer only to this workstream.
+Inside this section, unqualified S0, G1, G2, G1W, G2R, D1, D2, C1, E1, E1R,
+U1, L1, Q1, A1, M1, and P1 refer only to this workstream. `E1R-P1` and
+`E1R-P2` are qualified performance-stage names; unqualified P1 remains
+Permanent delete.
 
 The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 code → U1 → L1 → Q1 → A1 → M1
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
+
+G0 reviewed PASS ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
+                      [conditional and not authorized by this amendment]
 ```
 
 No later slice may begin before every dependency passes its evidence and
@@ -4426,9 +4438,11 @@ this control step and the existing C1 code inventory after it completes.
 Type: documentation-only control step.
 
 Status: complete at `786cd50`; independent strict review
-`NYX-MTL-E1-SCOPE-20260814-05` accepted the exact bytes that entered HEAD. Only
-the exact E1 inventory below is executable; U1 and every later slice remain
-blocked.
+`NYX-MTL-E1-SCOPE-20260814-05` accepted the exact bytes that entered HEAD. Its
+implementation authorization ended when the first valid cap-2 sample failed the
+existing performance lines. The inventory below is historical and no longer
+executable; none of its uncommitted product bytes may enter HEAD. U1 and every
+later product slice remain blocked.
 
 Dependencies are satisfied only by C1 commit `8b7150e` and final review
 `NYX-MTL-C1-FINAL-CODE-20260813-02` in the ancestry of the scope-lock commit.
@@ -4442,7 +4456,7 @@ This scope-lock step may change exactly:
 docs/next/agent-workbench-task-slices.md
 ```
 
-After this scope lock completes, E1 may change exactly these tracked files:
+The stopped attempt's historical inventory was exactly these tracked files:
 
 ```text
 apps/desktop/shared/threads/types.ts
@@ -4680,12 +4694,11 @@ lock.
 
 Type: documentation-only corrective control step.
 
-Status: this one-file amendment is the current and only executable tracked-file
-step. It completes without a follow-up status edit only when independent strict
-review `NYX-MTL-E1-EVIDENCE-AMEND-20260814-01` accepts these exact bytes and the
-same bytes enter HEAD. Until both conditions hold, the uncommitted E1 product
-candidate stays frozen, no candidate sample counts and no E1 product byte may
-enter HEAD.
+Status: complete at `12930fb` after independent strict review
+`NYX-MTL-E1-EVIDENCE-AMEND-20260814-01`; `3b3c83a` repaired only the rendered
+verdict wording. The later sealed cap-2 `candidate-v4-cap-2-rep-1` was valid and
+failed the existing performance lines: Main `265.765833 ms` and whole-process
+RSS delta `318064 KiB`. The first-failure rule stopped E1 before cap 4/8.
 
 This amendment depends on scope-lock commit `786cd50` and changes only:
 
@@ -4767,6 +4780,116 @@ second repetition is required. An `INVALID` attempt does not count and may be
 repeated only with another fresh profile. Any later change to the sealed
 harness, workload, fixtures, audit rules, manifest or candidate index returns
 to this amendment for exact-byte review before another counted sample.
+
+### multi-thread-library/E1R-incremental-performance-amendment
+
+Type: documentation-only corrective scope and direction gate.
+
+Status: this amendment self-completes without a follow-up status edit only when
+an independent strict review accepts these exact bytes and the same bytes enter
+HEAD. It is derived from accepted plan `E1R-PERF-PLAN-session-v9`, SHA-256
+`79627d88706f254fb50b28b1273679afb5a67a92e5cfe33690b4c299aaf46835`,
+review `NYX-E1R-PERF-V9-FINAL-01`. Until completion no E1R gate may run. After
+completion only the OS-temp G0 below is executable; no tracked product byte is
+authorized.
+
+This amendment changes only:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+The prior formal cap-2 evidence remains the historical baseline. Its primary
+result is 112153 bytes at SHA-256
+`49ec9f262bd70d1244b35e8a856b4f7bce1b1d147f5b519c4e99ddb1355da1b7`;
+the stop summary, evidence manifest and harness SHA-256 values are respectively
+`29467c6343373acbcffed77fcd4a95099f55d691157726565d3e6d7f81cd6730`,
+`a2e8ae7ceddc3073df2f8ea24ce83694dafe8e1ca92c5c4878c1fdd77f746bbc`,
+and `37f4a78374a15e1a96bdcd4662594a968a00324c13a070036f4ca3cb20ba6d95`.
+Mutable root summaries are not evidence.
+
+The decision is incremental, not a waiver. Main `<16.667 ms` and whole-process
+RSS delta `<=192 MiB` remain the final E1 completion and capacity-selection
+targets. G0 and the first later product slice need only prove safety,
+correctness and paired non-regression; exceeding either final target is recorded
+but does not alone fail that direction gate. Public behavior, request bytes,
+credentials, ownership, Stop/Retry/settlement/shutdown semantics and every
+security or cleanup line remain hard gates.
+
+G0 uses a sealed OS-temp harness and temporary profiles with the exact existing
+cap-2 workload. It changes no tracked file and does not run cap 4/8 or the full
+E1 matrix. Each of three paired repetitions runs baseline and streaming
+candidate in separate fresh processes against the same Electron build, inputs,
+local receiver/proxy, routes and fault points; pairs 1/3 run baseline first and
+pair 2 runs candidate first. Each repetition covers one Chat Completions Run and
+one Responses Run. Only candidate evidence can prove the new direction.
+
+The candidate uses one Session-owned, Run-scoped immutable spool lease. Main
+creates a mode-`0700` Run directory and an exclusive mode-`0600` empty spool,
+unlinks its pathname before opening or reading the source, then opens the source
+on macOS with `O_RDONLY | O_NOFOLLOW | O_NONBLOCK`. The opened fd must be a
+regular file whose size equals the sealed expected length and stays within the
+existing 8 MiB per-image limit. Copy uses 64 KiB chunks, checks abort per chunk,
+stops at expected length, reads one extra byte to require exact EOF, and requires
+stable before/after `fstat`, byte count and SHA-256. FIFO/non-regular inputs must
+fail closed within 1 second. The source closes before Runtime or Provider
+effects; the retained spool handle is the only sending source and the existing
+outer Session `finally` closes the lease exactly once on every exit path.
+
+Each protocol gets one small feature-local emitter; no general serializer or
+transport subsystem is introduced. Native `JSON.stringify` still emits ordinary
+fragments. Incremental Base64 retains only 0-2 remainder bytes and pads once at
+EOF; Content-Length is computed from exact UTF-8 fragment lengths plus
+`4 * ceil(rawLength / 3)`. Read chunk is 64 KiB, stream high-water mark is one
+chunk, and observable produced-minus-receiver-consumed bytes may never exceed
+1 MiB per request. Slow receiver pause/resume must visibly stop and resume
+source pulls. No full image, Base64 string or image-bearing body may be retained
+in JS.
+
+On success, baseline and candidate must match method, effective headers,
+redirect result, final URL, complete receiver body and public terminal/error
+classification for both protocols. Abort, early response and socket close may
+produce different-length valid body prefixes, but no corrupted prefix,
+post-terminal send, public classification drift, cleanup failure or process
+leak is allowed. The same comparisons cover the current proxy and existing
+301/302/307/308 behavior; needing a redirect engine stops G0.
+
+Each pair records Main routine segments, whole-process RSS, produced/consumed/
+queued bytes, exact body length, spool copy/hash, upload completion, abort,
+handle/process exit, and two latency intervals measured from common external
+boundaries: materialization entry to receiver first body byte, and Provider send
+entry to first response byte or upload/transport terminal. For each interval,
+candidate median increase over baseline may not exceed `max(5 ms, 10%)`, and no
+single pair increase may exceed `max(15 ms, 25%)`. Candidate Main-max median and
+RSS-delta median may not exceed their paired baseline medians.
+
+G0 passes only if all three pairs, both protocols, exact-body success cases,
+bounded-memory/backpressure proof, latency/Main/RSS comparisons, fault matrix,
+cleanup and exit pass. Native full-body buffering, any semantic/security/user
+behavior regression, unbounded source or queue, 307/308 incompatibility,
+resource leak, invalid evidence or a required tracked product change is STOP.
+An INVALID run may be repeated only with a fresh profile; a valid failure stops
+the direction. G0 evidence must receive independent exact review and its status
+must enter HEAD before any `multi-thread-library/E1R-P1-scope-lock` is drafted.
+
+The performance stages called P1/P2 in the planning artifact are materialized
+here only as `E1R-P1` and `E1R-P2`. Unqualified `P1` continues to mean Permanent
+delete and remains blocked by G2R and M1.
+
+`E1R-P1`, `E1R-P2` and all E1/E1R product work remain conditional and
+non-executable. A later `multi-thread-library/E1R-P1-scope-lock` must freeze an
+exact inventory and preserve Main ownership, Session lease ownership, both
+public bridges, Renderer/OCaml boundaries and the text/document-only path.
+Persisted image length/SHA-256 may be added only from the exact bytes that passed
+full canonical validation, using the same rule for import and publication,
+atomically with the image row in one Worker mutation, and immutable thereafter.
+An outcome-unknown mutation must be canonically reread before any prepared
+sidecar rollback. `E1R-P1` must also rerun the sealed G0 transport matrix through
+the real product emitters for both protocols, including per-hop method/body,
+sensitive-header retention or removal, final URL, public error, stop-producing
+and exact-once cleanup. It does not add a Worker, queue, manager, upload path,
+Asset service, public IPC, migration/dual-read, redirect engine, provider state
+outside Main or any OCaml/runtime protocol.
 
 ### Global Stop conditions
 
