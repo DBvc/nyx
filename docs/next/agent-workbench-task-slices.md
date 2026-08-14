@@ -160,11 +160,11 @@ Use relative documentation links. Do not add local absolute paths.
   completed at `b647cde`. The title-identity amendment entered HEAD at
   `d099eec`; C1 then completed at `8b7150e` after independent final review
   `NYX-MTL-C1-FINAL-CODE-20260813-02`. E1 then stopped on its first valid cap-2
-  performance sample. The docs-only E1R amendment below self-completes when its
-  reviewed exact bytes enter HEAD; before that it is the only executable
-  tracked-file step. After completion only the OS-temp E1R/G0 direction gate may
-  run. E1/E1R product code remains blocked until a reviewed G0 PASS and a later
-  exact product scope lock both enter HEAD.
+  performance sample. The docs-only E1R amendment completed at `24e6c07`. Its
+  OS-temp G0 direction gate then reached independently reviewed `VALID_STOP` on
+  the first pair under `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. No E1R product
+  slice is executable; a new user decision and reviewed direction gate are
+  required before any further E1/E1R work.
 
 ## A0: Scope Gate Docs
 
@@ -3325,10 +3325,11 @@ after review `NYX-MTL-C1-SCOPE-20260813-01`. The title-identity amendment entere
 HEAD at `d099eec`; C1 completed at `8b7150e` after independent final review
 `NYX-MTL-C1-FINAL-CODE-20260813-02`. The E1 scope lock completed at `786cd50`,
 but its first valid cap-2 sample failed the existing Main/RSS lines and stopped
-that implementation attempt. The E1R amendment below now self-completes on
-exact review plus HEAD; before that it is the only executable tracked-file
-step. After completion only E1R/G0 is executable. Old E1 product bytes,
-E1R-P1/E1R-P2, resumed E1 and U1 remain blocked.
+that implementation attempt. The E1R amendment completed at `24e6c07` after
+review `NYX-MTL-E1R-S0-FINAL-20260814-03`. E1R/G0 then reached independently
+reviewed `VALID_STOP`. G0, old E1 product bytes, E1R-P1/E1R-P2, a new E1 scope,
+resumed E1 and U1 are not executable pending a new user decision and reviewed
+direction gate.
 
 The reviewed source is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3346,12 +3347,12 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP]
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
 
-G0 reviewed PASS ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
+G0 reviewed PASS [not achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
                       [conditional and not authorized by this amendment]
 ```
 
@@ -4785,13 +4786,39 @@ to this amendment for exact-byte review before another counted sample.
 
 Type: documentation-only corrective scope and direction gate.
 
-Status: this amendment self-completes without a follow-up status edit only when
-an independent strict review accepts these exact bytes and the same bytes enter
-HEAD. It is derived from accepted plan `E1R-PERF-PLAN-session-v9`, SHA-256
+Status: complete at `24e6c07` after independent strict review
+`NYX-MTL-E1R-S0-FINAL-20260814-03`. It is derived from accepted plan
+`E1R-PERF-PLAN-session-v9`, SHA-256
 `79627d88706f254fb50b28b1273679afb5a67a92e5cfe33690b4c299aaf46835`,
-review `NYX-E1R-PERF-V9-FINAL-01`. Until completion no E1R gate may run. After
-completion only the OS-temp G0 below is executable; no tracked product byte is
-authorized.
+review `NYX-E1R-PERF-V9-FINAL-01`. The OS-temp G0 below later reached
+independently reviewed `VALID_STOP`; G0 and every E1/E1R product slice are now
+non-executable pending a new user decision and reviewed direction gate.
+
+G0 status: independently reviewed `VALID_STOP` under
+`NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. Formal attempt 3 stopped after the first
+valid pair, so pairs 2/3 did not run. The primary result is 5296390 bytes at
+SHA-256
+`90c3482aa22c789d22f5a7b9f560d90d10f405f8b05871c63eda6bd5719bac72`;
+the summary, evidence manifest and accepted candidate-9 harness SHA-256 values
+are respectively
+`008a1c28f357012c58450f5a4c4d37252e528d48c40cbbffd9c7e20e77678913`,
+`85f15138b9d6adc2b83a66dba9e169f7d68945ddaa251dc46c1f72d966799503`,
+and `3d7b17b43c6a4dff05d69ee989bff004d48a62e90bfcaf36527b07d1eccf4ec3`.
+The reliable hard failures were:
+
+- both protocols failed all 301/302/307/308 redirects after a complete first
+  hop, while baseline completed all eight;
+- candidate success outstanding bytes were 5578982 and 4731813, above the
+  fixed 1048576-byte limit; and
+- abort, early-response and socket-close paths produced bytes after terminal;
+  socket-close continued by about 41 MiB.
+
+Early-response proxy prefix/status diagnostics are not independent failure
+evidence and do not contribute to this Stop. Fresh-profile, external delivery,
+exact success bodies, normal process exit, CONNECT cleanup and the evidence
+manifest all passed review. G0 did not achieve reviewed PASS. `E1R-P1`,
+`E1R-P2`, a new E1 scope and all E1/E1R product work remain non-executable
+pending a new user-approved direction and reviewed gate.
 
 This amendment changes only:
 
