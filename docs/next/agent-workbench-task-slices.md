@@ -4425,12 +4425,10 @@ this control step and the existing C1 code inventory after it completes.
 
 Type: documentation-only control step.
 
-Status: this one-file scope lock is the current and only executable tracked-file
-step. It completes without a follow-up status edit only when independent strict
-review `NYX-MTL-E1-SCOPE-20260814-05` accepts these exact bytes and the same
-bytes enter HEAD. Before both conditions hold, E1 product code and every later
-slice remain blocked. After both hold, only the exact E1 inventory below becomes
-executable; U1 and every later slice remain blocked.
+Status: complete at `786cd50`; independent strict review
+`NYX-MTL-E1-SCOPE-20260814-05` accepted the exact bytes that entered HEAD. Only
+the exact E1 inventory below is executable; U1 and every later slice remain
+blocked.
 
 Dependencies are satisfied only by C1 commit `8b7150e` and final review
 `NYX-MTL-C1-FINAL-CODE-20260813-02` in the ancestry of the scope-lock commit.
@@ -4677,6 +4675,99 @@ automated checks, the complete OS-temp and packaged evidence, allowed/forbidden
 surface scans and an independent strict code review bound to the final artifact
 must pass. E1 completion does not authorize U1 without U1's own reviewed scope
 lock.
+
+### multi-thread-library/E1-evidence-classification-amendment
+
+Type: documentation-only corrective control step.
+
+Status: this one-file amendment is the current and only executable tracked-file
+step. It completes without a follow-up status edit only when independent strict
+review `NYX-MTL-E1-EVIDENCE-AMEND-20260814-01` accepts these exact bytes and the
+same bytes enter HEAD. Until both conditions hold, the uncommitted E1 product
+candidate stays frozen, no candidate sample counts and no E1 product byte may
+enter HEAD.
+
+This amendment depends on scope-lock commit `786cd50` and changes only:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+It changes no product scope, file inventory, candidate cap, workload, fixture,
+threshold, Stop line or acceptance burden. It repairs only the evidence order
+and classification exposed by the first cap-2 attempt. That attempt and its raw
+result remain historical `INVALID` evidence and cannot count as PASS, FAIL or
+Stop evidence.
+
+The corrected harness must use one raw structured result as the primary truth,
+with two independent fields: `validity` is `VALID` or `INVALID`, and `outcome`
+is `PASS`, `FAIL` or `NOT_EVALUATED`. A summary may only copy or mechanically
+derive those fields; it cannot upgrade an `INVALID` raw result.
+
+For every fresh attempt, the harness must attempt and record all of these before
+classifying the outcome:
+
+- exact candidate index, source/archive, `app.asar`, static Worker, harness and
+  workload-manifest identity checks;
+- proof that the user-data root did not exist before launch, the exact launched
+  profile and application generation, and the complete measured process set;
+- every frozen workload byte/length/hash check and every required timing/RSS
+  metric that remains observable, or the exact recorded product failure that
+  made a later metric unavailable;
+- exact Provider request/chunk/terminal observations and the complete
+  cross-Thread event/terminal contamination audit; and
+- one compact canonical audit of both Threads, ordered Turns/items, terminal
+  states and resource identities, plus presence/open results and, for every
+  present Thread Library database and Thread-owned sidecar file used by the
+  sample after application exit, exact byte length and SHA-256.
+
+Running an audit and recording a product mismatch is complete evidence; it is
+not an evidence error. Once pre-Start artifact, fresh-profile and workload
+identity are proven and the external observer has proven that it delivered the
+sealed orchestration, any threshold, terminal, content, isolation or other
+product acceptance violation is `VALID` + `FAIL`. Product crash, deadlock,
+timeout, missing terminal, failure to exit, or a missing/corrupt database or
+sidecar is also `VALID` + `FAIL`, even when it prevents a later metric or normal
+post-exit read. The audit records the observed absence, corrupt bytes or open
+error; every present database/sidecar still records exact byte length and
+SHA-256.
+
+The corrected harness must collect every still-observable metric and audit
+instead of throwing or returning at the first product violation. If the product
+does not exit, the exact timeout already sealed in the reviewed harness,
+including E1's fixed 5,000 ms Worker-exit boundary where applicable, first
+records the product failure and full observed process state. The harness may
+then terminate only that exact application process tree for evidence cleanup,
+recording its PIDs, signal, time and resulting exits before the canonical/file
+audit. Forced evidence cleanup can never be reported as a normal product exit.
+
+`VALID` + `PASS` requires every product line and normal exit to pass. `INVALID`
+
+- `NOT_EVALUATED` is reserved for an unproven pre-Start identity,
+  non-fresh/contaminated profile, workload mismatch, an external observer that
+  cannot prove delivery or collect an otherwise observable metric/audit, failed
+  external cleanup, harness/auditor/hash exception, or missing/corrupt raw
+  evidence. A metric or audit made unavailable by an already-observed product
+  failure remains a product FAIL, not an evidence error. No other field or
+  after-the-fact summary may override this classification.
+
+The harness writes the final raw result only after normal application exit or
+recorded product failure plus exact external cleanup, and after every
+still-possible canonical/file audit. It then records the result's byte length
+and SHA-256 in the evidence manifest. Preflight and shakedown attempts never
+count. After this amendment enters HEAD, the corrected harness and its new
+workload manifest and candidate index must be sealed and independently reviewed
+before a fresh cap-2 attempt.
+The candidate packages may retain identical bytes only if their source,
+archive, `app.asar` and static Worker hashes are recomputed and still match;
+the new index must bind the corrected harness and workload-manifest hashes.
+
+The fresh run uses a new absent-before-launch profile. If cap 2 produces
+`VALID` + `FAIL`, the first-failure rule stops candidate expansion and E1; no
+second repetition is required. An `INVALID` attempt does not count and may be
+repeated only with another fresh profile. Any later change to the sealed
+harness, workload, fixtures, audit rules, manifest or candidate index returns
+to this amendment for exact-byte review before another counted sample.
 
 ### Global Stop conditions
 
