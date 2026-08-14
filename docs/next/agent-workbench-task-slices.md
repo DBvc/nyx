@@ -157,11 +157,11 @@ Use relative documentation links. Do not add local absolute paths.
   `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at `0e4f02e`, and D1 code
   completed at `8d4d73e` after independent review
   `NYX-MTL-D1-CODE-20260813-03`. D2 completed at `15c8b00`; the C1 scope lock
-  completed at `b647cde`. C1 implementation then found that the D1 SQLite CHECK
-  could not represent the reviewed pre-send fallback-title identity and stopped
-  before activation. Only the docs-only C1 title-identity amendment below is
-  executable; C1 product work resumes only after its exact reviews and HEAD
-  ratchet pass.
+  completed at `b647cde`. The title-identity amendment entered HEAD at
+  `d099eec`; C1 then completed at `8b7150e` after independent final review
+  `NYX-MTL-C1-FINAL-CODE-20260813-02`. The docs-only E1 scope lock below is the
+  current and only executable tracked-file step. E1 product code remains blocked
+  until that exact scope lock passes review and enters HEAD.
 
 ## A0: Scope Gate Docs
 
@@ -3318,13 +3318,12 @@ at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at
 D2 code completed at `15c8b00` after reviews
 `NYX-MTL-D2-CODE-20260813-04` and
 `NYX-MTL-D2-EVIDENCE-20260813-02`. The C1 scope lock completed at `b647cde`
-after review `NYX-MTL-C1-SCOPE-20260813-01`. C1 implementation then reached its
-reviewed Stop condition: the D1 title CHECK cannot represent a stable local
-creation second with a not-yet-allocated ordinal while the current auto title
-comes from text or a document. The C1 title-identity amendment below is now the
-only executable tracked-file step; C1 product code is paused.
+after review `NYX-MTL-C1-SCOPE-20260813-01`. The title-identity amendment entered
+HEAD at `d099eec`; C1 completed at `8b7150e` after independent final review
+`NYX-MTL-C1-FINAL-CODE-20260813-02`. The E1 scope lock below is now the only
+executable tracked-file step; E1 product code and U1 remain blocked.
 
-The reviewed source candidate is
+The reviewed source is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
 v5.4 at SHA-256
 `fb513b014c18717b18521b3000318fc7c96de51c028981e6bb9153dc0098c228`.
@@ -3338,7 +3337,7 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 → U1 → L1 → Q1 → A1 → M1
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 code → U1 → L1 → Q1 → A1 → M1
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
@@ -3570,7 +3569,7 @@ matching v5.3 sections:
   unavailable/Retry projection and only the C1 bridge methods, thread-scoped
   chat, Worker FIFO snapshot barrier and removal of Renderer-owned provider
   messages;
-- E1: per-Thread execution, exact cancellation, Stop-action ordering,
+- E1: per-Thread execution, exact cancellation and Stop/terminal ordering,
   concurrency evidence and Draft/process-wide-result save-before-fence
   shutdown, including stable affected-Thread identities, partial/new-failure
   dialog updates and settlement failure during drain;
@@ -3587,9 +3586,9 @@ matching v5.3 sections:
 - L1: reversible Rename/Pin/Archive/Unarchive/Trash/Restore only, with no
   transient Undo state and no Trash Rename, plus fixed lifecycle entries/Back
   to threads, Pin/Unpin loaded-row or cross-page Load-more focus,
-  settlement-failed gating, stable collection order and safe running-action
-  dialogs that decide Running intent before any Draft save/discard, plus the
-  shared manual-title validation/focus contract;
+  settlement-failed gating, stable collection order, one-shot Stop-and-move
+  intent and safe running-action dialogs that decide Running intent before any
+  Draft save/discard, plus the shared manual-title validation/focus contract;
 - Q1: one-command Worker literal Search over Main-acked Draft and committed
   Available/Archived content, with fixed Search/results region, explicit
   cancel/open/error/Retry/truncation state, latest-epoch VoiceOver feedback,
@@ -4036,12 +4035,9 @@ completion does not authorize C1 without C1's own reviewed scope lock.
 
 Type: documentation-only control step.
 
-Status: this one-file scope lock is the current and only executable tracked-file
-step. It completes without a follow-up status edit only when independent strict
-review `NYX-MTL-C1-SCOPE-20260813-01` accepts these exact bytes and the same
-bytes enter HEAD. Before both conditions hold, C1 product code and every later
-slice remain blocked. After both hold, only the exact C1 code inventory below
-becomes executable; E1 and every later slice remain blocked.
+Status: complete at `b647cde` after independent strict review
+`NYX-MTL-C1-SCOPE-20260813-01`. This subsection records the historical ratchet;
+it is no longer an executable control step and did not authorize E1.
 
 Dependencies are satisfied only by D1 commit `8d4d73e`, D1 review
 `NYX-MTL-D1-CODE-20260813-03`, D2 scope-lock commit `5efed87`, D2 code commit
@@ -4345,12 +4341,9 @@ completion does not authorize E1 without E1's own reviewed scope lock.
 
 Type: documentation-only Stop repair.
 
-Status: this two-file amendment is the current and only executable tracked-file
-step. C1 product implementation is paused with its uncommitted allowed-file
-worktree preserved. This amendment completes without a follow-up status edit
-only when independent exact-byte product, design and strict technical reviews
-accept the same two files and those bytes enter HEAD. Then the existing C1 code
-inventory above resumes; no later slice becomes executable.
+Status: complete at `d099eec` after the required independent exact-byte product,
+design and strict technical reviews. This subsection records the historical
+Stop repair; it is no longer executable and did not authorize E1.
 
 This amendment may change exactly:
 
@@ -4427,6 +4420,263 @@ Required regression coverage before C1 can return to its full acceptance gate:
 The amendment stops if these states require a third persisted field, a schema
 version/migration, a second title owner, or any file outside the two docs for
 this control step and the existing C1 code inventory after it completes.
+
+### multi-thread-library/E1-scope-lock: Per-Thread execution and safe shutdown
+
+Type: documentation-only control step.
+
+Status: this one-file scope lock is the current and only executable tracked-file
+step. It completes without a follow-up status edit only when independent strict
+review `NYX-MTL-E1-SCOPE-20260814-05` accepts these exact bytes and the same
+bytes enter HEAD. Before both conditions hold, E1 product code and every later
+slice remain blocked. After both hold, only the exact E1 inventory below becomes
+executable; U1 and every later slice remain blocked.
+
+Dependencies are satisfied only by C1 commit `8b7150e` and final review
+`NYX-MTL-C1-FINAL-CODE-20260813-02` in the ancestry of the scope-lock commit.
+E1 must preserve C1's one-Worker, Main-owned Provider/Runtime, canonical
+Thread-history, event epoch/cursor, unavailable/Retry, image authorization and
+settlement-retry boundaries.
+
+This scope-lock step may change exactly:
+
+```text
+docs/next/agent-workbench-task-slices.md
+```
+
+After this scope lock completes, E1 may change exactly these tracked files:
+
+```text
+apps/desktop/shared/threads/types.ts
+apps/desktop/shared/threads/events.ts
+apps/desktop/shared/threads/ipc.ts
+apps/desktop/electron/preload/index.ts
+apps/desktop/electron/preload/index.test.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/chat/session.test.ts
+apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts
+apps/desktop/electron/main/thread-library/coordinator.ts
+apps/desktop/electron/main/thread-library/coordinator.test.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/service.ts
+apps/desktop/electron/main/thread-library/service.test.ts
+apps/desktop/electron/main/thread-library/shutdown.ts
+apps/desktop/electron/main/thread-library/shutdown.test.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
+apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts
+apps/desktop/src/ui/chat/components/ChatThread.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.test.tsx
+```
+
+E1 changes execution and process shutdown only. It does not add the U1 Thread
+collection or selection UI, L1 lifecycle methods or menus, Q1 Search, P1 purge,
+durable Runs, a queue/daemon, another Worker/connection, a second Main queue,
+multi-window synchronization, Provider state outside Main, or any OCaml/runtime
+protocol change. SQLite schema, Worker protocol/implementation, sidecar format,
+chat request/event shapes and the public `window.nyx.chat` and
+`window.nyx.threads` method sets remain unchanged.
+
+The implementation contract is:
+
+- `ChatSessionManager` replaces the one global active session with the sole
+  Main-owned `Map<threadId, ActiveRun>`. One Thread may have at most one Run;
+  each accepted Run owns one AbortController and one Runtime client. Run
+  identity is always exact `threadId + requestId`; the initiating WebContents is
+  not a Run owner. Chat events remain clocked by the existing
+  `ThreadLibraryService` publisher and are broadcast to every live Nyx window;
+  Renderer destruction only removes its event sink and never aborts a Run.
+- `ThreadLibraryService` may keep only a rebuildable per-Thread live projection
+  needed by `get` and events; cancellation, capacity and terminal ownership stay
+  in the ActiveRun map. A background Thread event never overwrites the selected
+  Thread or forces repeated hydration. C1's one-row adapter may start New while
+  the old Thread runs, but E1 adds no list/switch UI; U1 owns that UI.
+- E1 implements only the exact user Stop-versus-Complete/Fail/Cancel terminal
+  race. It does not add a `postStopAction` slot, registration/consumption path,
+  lifecycle callback or no-op surface. The one-shot Stop-and-move intent and its
+  atomic lifecycle transaction are deferred together to L1, where the first
+  real Archive/Trash caller exists.
+- One Main-owned shutdown state machine handles ordinary window close and app
+  quit. Ordinary close runs only the current Draft navigation-save barrier,
+  destroys the Renderer projection after save/explicit Discard and leaves
+  background Runs and the Worker alive. App quit runs the same Draft barrier,
+  then the process-wide result barrier, then sets one shared shutdown fence in
+  a single no-`await` turn, rejects new public commands, aborts accepted Runs
+  with explicit `app_exit`, drains them, closes the one Worker and permits one
+  real quit. `app_exit` never writes a fake Cancelled terminal; an unsaved or
+  abandoned pending Turn restores as Interrupted.
+- The existing `threads.subscribe` method may carry a narrow typed lifecycle
+  request and return its typed reply over E1-only internal IPC channels. This
+  adds no public bridge method or namespace. Main validates request id, phase
+  and sender; a stale, duplicate, wrong-window or post-fence reply has no effect.
+  Renderer unresponsiveness, a lost reply or a failed Retry never implies
+  Discard or permission to close. With no live window, only the process-wide
+  result barrier uses an Electron native message box; there is no dirty
+  Renderer overlay to guess.
+- The Draft barrier reuses the existing Renderer mutation queue and exact
+  `materialize/saveDraft` operations. Save success proceeds; failure keeps the
+  selected detail and offers Stay, Retry and explicit Discard. Discard restores
+  the last Main-acked text, ordered attachments and safe target selection before
+  continuing. Copy lists only safe labels and never resolved targets, paths,
+  bytes, configs or credentials. Send remains Stay/Retry only.
+- The process-wide result barrier derives an ordered exact snapshot of every
+  in-memory `settlement_failed` `threadId + requestId` plus a monotonic revision.
+  Each row uses the full canonical Thread title and persisted `createdAt` local
+  millisecond time; only equal title+time appends the full Thread id. Retry runs
+  each retained terminal input once in displayed order, never calls Provider or
+  Runtime, and rebuilds the same dialog after partial success, failure or a new
+  settlement failure. Stay/Escape cancels pre-fence app quit. An explicit
+  Quit-without-saving applies only to the displayed exact set; a pre-fence
+  revision mismatch returns to the barrier.
+- During fenced drain, a newly failed terminal blocks Worker close and real
+  quit again. The same result barrier then offers only Retry saving or explicit
+  Quit without saving for the new exact set; it cannot pretend the stopped Runs
+  can resume. Repeated close/quit events focus the current prompt and cannot
+  duplicate a fence, abort, Worker close or real quit.
+- `ThreadLibraryClient.close()` is the one physical Worker-close owner. After
+  every accepted operation and settlement has resolved, it sends the existing
+  FIFO `close` command and still awaits that exact Worker generation's `exit`.
+  A valid close reply plus matching exit completes shutdown. If the close reply
+  is missing/invalid after all earlier acknowledgements, the existing transport
+  invalidation requests `terminate()` once; observing that same generation's
+  exit is sufficient proof that the physical owner is closed and permits quit.
+  Until exact exit, shutdown stays fenced and real quit is blocked. Repeated
+  quit/close calls join the same in-flight attempt and cannot start or close
+  another Worker. Termination rejection or a missing matching exit is an E1
+  Stop, not a promised Retry state. The missing-exit observation boundary is
+  the existing fixed 5,000 ms transport timeout after the terminate request;
+  crossing it never grants runtime quit. No Worker protocol operation is added.
+- One Workspace-owned native `<dialog>` remains the only top-level DOM modal.
+  The existing full-image view is lifted into that owner without changing image
+  URL, authorization or cache behavior. A close/quit confirmation reuses the
+  open dialog while retaining its image/src, then restores the last valid
+  in-dialog control on Stay; it never stacks a second modal. No image protocol,
+  byte transport, capacity or G2R/Permanent-delete behavior changes.
+
+The global concurrency cap is evidence-selected, not guessed or configurable.
+Before any candidate sample counts, one immutable OS-temp workload manifest and
+its SHA-256 are sealed. It records the Provider-harness SHA-256; exact UTF-8
+bytes, length and SHA-256 for every history/input/output text segment; media
+type, dimensions, exact byte length and SHA-256 for each source, canonical and
+preview image; and exact source/extracted byte length and SHA-256 for the
+document. Each candidate and final run verifies every value before Start;
+mismatch is INVALID. No length range or regenerated substitute is countable.
+
+That manifest describes the same workload for every Thread: two completed Turns
+with exact 4 KiB UTF-8 user and assistant messages, the first carrying two
+historical images and one plain-text document with exact 128 KiB extracted UTF-8
+text; then one exact 4 KiB pending text with two different images and a second
+plain-text document with exact 128 KiB extracted UTF-8 text. Every image is a
+valid 1410 x 1410 `image/png` canonical image individually within 8 MiB and has
+its derived preview. The Provider then returns exactly 64 KiB UTF-8 assistant
+output in 64 x 1 KiB chunks at 10 ms cadence after every Run is accepted.
+
+Image sources are the fixed high-entropy xorshift32 RGBA generator outputs for
+seeds `0x4e595831` through `0x4e595834`; the manifest binds the generator
+bytes/version and production canonicalizer outputs, including one fixed exact
+length and hash per file. The two historical canonical images must total at
+least 15 MiB and no more than the existing 16 MiB per-Turn limit; the two pending
+images must independently meet the same burden; and their fixed Thread-wide
+exact total must be at least 30 MiB and no more than the existing 32 MiB limit.
+All four images must also pass the existing per-image, pixel, preview and
+Thread-count limits. If the fixed generator cannot meet every burden, E1 returns
+to this scope lock before samples run. Each Run uses a real Runtime client and
+the same local deterministic streaming Provider. The workload manifest and
+generator are part of the independently reviewed E1 evidence; any change
+invalidates all samples and returns to this scope lock.
+
+Cap evidence has two ordered stages. First, candidate-specific packaged builds
+with fixed caps 2, 4 and 8 are built first and sealed with their source/archive
+SHA-256 values and the workload-manifest SHA-256 in a candidate index. They then
+run in ascending order, three isolated fresh-profile repetitions each. A higher
+candidate runs only if every lower candidate passed; the first failure stops
+candidate expansion, and candidate 2 failing stops E1. Every repetition retains
+its raw structured result and SHA-256 in the evidence manifest. Each pass
+requires no cross-Thread event or terminal contamination, exactly one terminal
+per Run, Main routine segments `<16.667 ms`, Renderer heartbeat/stream gap
+`<=50 ms`, Stop additional latency `<=50 ms`, and whole-process peak working-set
+delta `<=192 MiB`; invalid or missing samples are not PASS.
+
+Second, the largest contiguous passing candidate becomes the one fixed cap in
+the final source/archive. Before its runs, a final index seals its exact
+source/archive SHA-256 values and the same workload-manifest SHA-256. That exact
+final packaged artifact reruns three fresh repetitions at every legal level
+among 2, 4 and 8 up to the cap and must pass the same lines. It also verifies
+`cap + 1` rejection before the Draft-to-pending Worker command, preserving the
+complete Main-acked Draft and creating no Runtime, Provider call, pending Turn
+or hidden queue. Any final-artifact failure stops E1; pre-final candidate
+evidence cannot substitute for it. The product does not expose a tuning setting.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/preload/index.test.ts electron/main/index.test.ts electron/main/chat/session.test.ts electron/main/chat/session-runtime-chat-state.integration.test.ts electron/main/thread-library/coordinator.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/service.test.ts electron/main/thread-library/shutdown.test.ts src/ui/chat/use-chat-session.test.ts src/ui/chat/components/ChatWorkspace.test.ts src/ui/chat/components/ChatMessage.test.tsx
+pnpm --dir apps/desktop test
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run runtime:chat-state:check
+git diff --check
+```
+
+The automated matrix must cover same-Thread rejection; A/B independent
+prepare/stream/Stop/Retry/terminal ordering; exact cancel isolation; per-Run
+Runtime creation/close and Runtime/Provider/storage failure isolation; capacity
+rejection before pending commit; background events ignored until exact hydrate;
+Renderer teardown/reopen; no sender-owned Run; settlement Retry with zero
+second Provider/Runtime call; stable failure-set revision/order; and shutdown
+fence idempotence. Draft tests cover last-keystroke immediate Close/Cmd-Q,
+materialize/save conflict and failure, Stay, repeated Retry, explicit Discard of
+text/attachments/target, empty shell, no-window state and stale lifecycle
+replies. Result tests cover 1 and 3 failures, dirty Draft plus failures, same
+title/time disambiguation, partial Retry, new failure before/after fence,
+explicit exact-set loss, valid close reply plus exit, missing close reply plus
+matching terminated exit, injected terminate rejection, injected missing exit
+through the fixed 5,000 ms observation boundary, repeated quit and Interrupted
+restart. The two injected faults must prove the fence and real-quit prohibition;
+their expected fail-closed result is not itself an E1 Stop. DOM tests cover focus
+trap, initial focus, Escape, Retry focus, stable copy/VoiceOver order and reuse
+of an already-open full-image dialog.
+
+OS-temp and packaged acceptance must bind the versioned candidate evidence and
+one exact final source manifest/archive. Dev, production-build and packaged runs
+use temporary profiles and the frozen local deterministic Provider, never the
+real user root or credentials. The candidate packages and final packaged `.app`
+record `app.isPackaged=true`, exact `app.asar`, static Worker and harness
+identities. The final artifact executes every legal 2/4/8 level and `cap + 1`
+refusal, streams two targets concurrently, stops/retries one without changing
+the other, closes and reopens the Renderer while a Run continues, and exercises
+every Draft/result/fence/no-window/full-image path above. Failure injection may
+use existing dependency seams and OS-temp harness control only; no product test
+hook, raw-Electron archive hybrid, relaxed line or generated tracked fixture is
+allowed.
+
+E1 stops and returns to this scope lock if implementation needs a file outside
+the inventory; changes schema/Worker protocol/sidecar bytes or public bridge
+method sets; cannot keep one authoritative ActiveRun owner; needs a queue,
+daemon, durable Run, second Worker/connection/Main queue or sender-owned Run;
+cannot reject over-capacity before Draft consumption; cannot preserve a dirty
+Draft or exact complete result through close/quit failure; cannot identify every
+loss confirmation; allows a stale confirmation across a failure-set revision;
+writes Cancelled for `app_exit`; closes the Worker while an unconfirmed result
+exists; cannot observe exact Worker exit before quit; adds `postStopAction`
+before L1; observes terminate rejection or a missing matching Worker exit in a
+non-injected OS-temp or packaged acceptance run; stacks DOM modals; weakens
+image security/memory behavior; or changes OCaml/runtime protocol,
+U1/L1/Q1/P1 behavior or any existing stop line.
+
+Before E1 implementation may be committed, the exact allowed bytes, all
+automated checks, the complete OS-temp and packaged evidence, allowed/forbidden
+surface scans and an independent strict code review bound to the final artifact
+must pass. E1 completion does not authorize U1 without U1's own reviewed scope
+lock.
 
 ### Global Stop conditions
 
