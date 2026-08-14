@@ -4741,15 +4741,14 @@ then terminate only that exact application process tree for evidence cleanup,
 recording its PIDs, signal, time and resulting exits before the canonical/file
 audit. Forced evidence cleanup can never be reported as a normal product exit.
 
-`VALID` + `PASS` requires every product line and normal exit to pass. `INVALID`
-
-- `NOT_EVALUATED` is reserved for an unproven pre-Start identity,
-  non-fresh/contaminated profile, workload mismatch, an external observer that
-  cannot prove delivery or collect an otherwise observable metric/audit, failed
-  external cleanup, harness/auditor/hash exception, or missing/corrupt raw
-  evidence. A metric or audit made unavailable by an already-observed product
-  failure remains a product FAIL, not an evidence error. No other field or
-  after-the-fact summary may override this classification.
+`VALID` + `PASS` requires every product line and normal exit to pass. The pair
+`INVALID` + `NOT_EVALUATED` is reserved for an unproven pre-Start identity,
+non-fresh/contaminated profile, workload mismatch, an external observer that
+cannot prove delivery or collect an otherwise observable metric/audit, failed
+external cleanup, harness/auditor/hash exception, or missing/corrupt raw
+evidence. A metric or audit made unavailable by an already-observed product
+failure remains a product FAIL, not an evidence error. No other field or
+after-the-fact summary may override this classification.
 
 The harness writes the final raw result only after normal application exit or
 recorded product failure plus exact external cleanup, and after every
