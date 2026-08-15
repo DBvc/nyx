@@ -20,12 +20,12 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 - E1R incremental-performance amendment 已在 `24e6c07` 完成。
 - E1R/G0 formal attempt 3 已完成，并在 `NYX-MTL-E1R-G0-EVIDENCE-20260814-02` 下被独立复核为 `VALID + FAIL`；状态已由 `8b5b56f` 写入 source of truth。
 - G0 的 pre-run harness candidate-9 已通过 `NYX-MTL-E1R-G0-HARNESS-20260814-07`；正式证据不是由 harness/observer/profile/cleanup 故障造成。
+- 本机已有的 15 个已接受提交和本交接文档已在 2026-08-15 推送到远程 `main`；HTTPS push 的 pre-push desktop/runtime check PASS。
 - 旧 E1 产品候选已从 `main` 工作树移出，并只在本地隔离分支 `codex/e1-stopped-candidate-archive-20260815` 的 `0c2171d` 保存。它不是批准实现，不得合入 `main`。
 
 ### In progress
 
-- 把本文件和本机已有的已接受提交推送到远程 `main`。
-- 隔离分支的远程上传需要用户明确批准；在批准和实际推送前，新电脑无法从远端取回 `0c2171d`。
+- 仅剩隔离分支的远程上传需要用户明确批准；在批准和实际推送前，新电脑无法从远端取回 `0c2171d`。
 
 ### Not done
 
@@ -37,7 +37,7 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 ## Key Context
 
 - Workspace/repo：Nyx repository root；目标分支 `main`。
-- Git state：写本文档前，本地 `main` 在 `8b5b56f`，相对远程快照 `5a1aeae` ahead 14；停止候选位于本地隔离分支 `codex/e1-stopped-candidate-archive-20260815` 的 `0c2171d`。
+- Git state：远程 `main` 已包含全部已接受提交和本交接文档；用 `git log -1 -- docs/next/multi-thread-library-e1r-handoff.md` 获取最终交接锚点。停止候选仍只位于本地隔离分支 `codex/e1-stopped-candidate-archive-20260815` 的 `0c2171d`。
 - Relevant files：[agent-workbench-task-slices.md](./agent-workbench-task-slices.md)、[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)、`apps/desktop/electron/main/chat/session.ts`、`apps/desktop/electron/main/thread-library/service.ts`、`apps/desktop/electron/main/thread-library/coordinator.ts`。
 - Important commands：`git log --oneline origin/main..main` 查看尚未推送的已接受提交；`mise run desktop:typecheck`、`mise run desktop:typecheck:compat`、`mise run desktop:lint` 和 `mise run desktop:test` 验证 desktop。
 - Existing artifacts：正式 G0 结果、summary、manifest 和 harness identity 已固化在 source of truth；旧电脑的 OS-temp raw evidence 不需要复制或重跑。
@@ -148,7 +148,7 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 
 - 用户是否接受把严格 1 MiB 改为一个有证据、有限但更高的 native-buffer ceiling？这是 Option A/B 的分叉点。
 - archive branch 是否获准推送远端？在明确批准前，`0c2171d` 只存在当前电脑。
-- 当前 GitHub SSH 连接到 `ssh.github.com:443` 被拒绝；HTTPS 只读连通正常。若 HTTPS push 也需要重新认证，应先恢复 GitHub 凭据，不要改写历史或换未知远端。
+- 当前电脑的 GitHub SSH 连接到 `ssh.github.com:443` 被拒绝；GitHub HTTPS 登录已恢复并成功推送 `main`。新电脑优先使用文末的 HTTPS clone，不要为此改写历史或换未知远端。
 
 ## New Machine Bootstrap
 
