@@ -162,9 +162,15 @@ Use relative documentation links. Do not add local absolute paths.
   `NYX-MTL-C1-FINAL-CODE-20260813-02`. E1 then stopped on its first valid cap-2
   performance sample. The docs-only E1R amendment completed at `24e6c07`. Its
   OS-temp G0 direction gate then reached independently reviewed `VALID_STOP` on
-  the first pair under `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. No E1R product
-  slice is executable; a new user decision and reviewed direction gate are
-  required before any further E1/E1R work.
+  the first pair under `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. On 2026-08-16
+  the user approved the complete `NYX-E1R-NF1-DECISION-A-v1` native-fetch
+  recovery packet after its final full review found no remaining S0-S3 issue.
+  The documentation-only NF1 amendment below is bound to independent review
+  `NYX-MTL-E1R-NF1-SCOPE-20260816-01` and self-completes only when those exact
+  accepted bytes enter HEAD. That transition authorizes only the sealed OS-temp
+  `NYX-MTL-E1R-NF1-COMPAT` preflight and `NYX-MTL-E1R-NF1` direction gate. No
+  E1/E1R product slice is executable without a later reviewed product scope
+  lock.
 
 ## A0: Scope Gate Docs
 
@@ -3327,9 +3333,15 @@ HEAD at `d099eec`; C1 completed at `8b7150e` after independent final review
 but its first valid cap-2 sample failed the existing Main/RSS lines and stopped
 that implementation attempt. The E1R amendment completed at `24e6c07` after
 review `NYX-MTL-E1R-S0-FINAL-20260814-03`. E1R/G0 then reached independently
-reviewed `VALID_STOP`. G0, old E1 product bytes, E1R-P1/E1R-P2, a new E1 scope,
-resumed E1 and U1 are not executable pending a new user decision and reviewed
-direction gate.
+reviewed `VALID_STOP`. The user approved the complete
+`NYX-E1R-NF1-DECISION-A-v1` packet on 2026-08-16. The docs-only NF1 amendment
+below self-completes only after independent review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-01` accepts its exact bytes and those bytes
+enter HEAD. It does not revive G0 or the archived E1 candidate. Once complete,
+only the new OS-temp COMPAT preflight and NF1 direction gate are executable.
+Old E1 product bytes, E1R-P1/E1R-P2, a new E1 scope, resumed E1 and U1 remain
+non-executable unless NF1 later reaches independently reviewed PASS and a
+separate exact product scope lock enters HEAD.
 
 The reviewed source is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3347,13 +3359,13 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP]
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → NF1 direction amendment → NF1-COMPAT → NF1 [PASS | VALID_STOP]
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
 
-G0 reviewed PASS [not achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
-                      [conditional and not authorized by this amendment]
+NF1 reviewed PASS [not yet achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
+                         [conditional and not authorized by the NF1 amendment]
 ```
 
 No later slice may begin before every dependency passes its evidence and
@@ -4791,8 +4803,10 @@ Status: complete at `24e6c07` after independent strict review
 `E1R-PERF-PLAN-session-v9`, SHA-256
 `79627d88706f254fb50b28b1273679afb5a67a92e5cfe33690b4c299aaf46835`,
 review `NYX-E1R-PERF-V9-FINAL-01`. The OS-temp G0 below later reached
-independently reviewed `VALID_STOP`; G0 and every E1/E1R product slice are now
-non-executable pending a new user decision and reviewed direction gate.
+independently reviewed `VALID_STOP`; G0 remains stopped and every E1/E1R product
+slice remains non-executable. The later user-approved native-fetch direction
+does not reopen G0; it authorizes only the separately identified NF1 gates after
+the amendment below passes review and enters HEAD.
 
 G0 status: independently reviewed `VALID_STOP` under
 `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. Formal attempt 3 stopped after the first
@@ -4818,7 +4832,8 @@ evidence and do not contribute to this Stop. Fresh-profile, external delivery,
 exact success bodies, normal process exit, CONNECT cleanup and the evidence
 manifest all passed review. G0 did not achieve reviewed PASS. `E1R-P1`,
 `E1R-P2`, a new E1 scope and all E1/E1R product work remain non-executable
-pending a new user-approved direction and reviewed gate.
+unless the separately identified NF1 gate reaches independently reviewed PASS
+and a later exact product scope lock enters HEAD.
 
 This amendment changes only:
 
@@ -4917,6 +4932,595 @@ sensitive-header retention or removal, final URL, public error, stop-producing
 and exact-once cleanup. It does not add a Worker, queue, manager, upload path,
 Asset service, public IPC, migration/dual-read, redirect engine, provider state
 outside Main or any OCaml/runtime protocol.
+
+### multi-thread-library/E1R-native-fetch-recovery-amendment
+
+Type: documentation-only direction amendment and OS-temp gate scope lock.
+
+Status: the complete decision packet below was explicitly approved by the user
+on 2026-08-16 after the final full review reported no remaining S0-S3 finding.
+This amendment is derived from `Nyx Multi-Thread Library E1R Native-Fetch
+Recovery Plan` v20, SHA-256
+`b3509363c1ecc8b7bccfa4c6b3cdb8eaf29903e8ba740c3cafd6193176ed8ddd`,
+and plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R10`. These exact amendment
+bytes are bound to independent review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-01`. The amendment self-completes only when
+that review accepts the exact bytes and those bytes enter HEAD. Before then no
+harness or gate may start. Afterward, only the OS-temp preflight and direction
+gate defined here are executable; no product slice is authorized.
+
+The approval record is `NYX-E1R-NF1-DECISION-A-v1`. Immediately after receiving
+the complete six-item packet and the clean final-review result, the user
+instructed that if the plan had no problem execution should begin. The satisfied
+condition records approval of all six items as one decision:
+
+1. Option A uses native `fetch`, manual redirects and one immutable spool,
+   creating a fresh body producer for every replayable hop.
+2. `8,388,608` bytes is the empirical candidate measurement line. It is not
+   production backpressure enforcement or a final product guarantee.
+3. `faultPrefixBytes` is exactly `65,536`, and every counted request must satisfy
+   `65,536 < completeBodyBytes`.
+4. The five independent lifecycle lines below are each exactly `5,000 ms`.
+5. Candidate acknowledgement quanta are exactly `1,048,576` and `4,194,304`
+   bytes. They are evidence schedules and never product flow control.
+6. Primary evidence uses the exact `validity + outcome` contract below:
+   causal product failure remains `VALID + FAIL`; independent evidence failure
+   remains `INVALID + NOT_EVALUATED`; the first valid failure stops; only one
+   clean-process retry of a whole repetition is allowed for pre-Start INVALID;
+   post-Start INVALID has no same-gate retry.
+
+Approval of this packet does not waive any redirect, credential, ownership,
+consumer, settlement, cleanup, compatibility or final E1 performance rule. It
+does not approve `E1R-P1`, restore the archived product candidate, or permit a
+tracked product edit.
+
+#### Direction and immutable boundaries
+
+The new gate id is `NYX-MTL-E1R-NF1`; it is not a rerun or repair of G0. The
+candidate-only prerequisite is `NYX-MTL-E1R-NF1-COMPAT`. Old G0 remains
+immutable independently reviewed `VALID_STOP` evidence and neither its raw
+evidence nor its stopped pairs are rerun.
+
+NF1 answers one question: can the smallest native-fetch/manual-redirect
+candidate preserve exact current behavior and stay within the approved empirical
+line? It does not select a product inventory. The accepted Main `<16.667 ms`
+and whole-process RSS delta `<=192 MiB` final E1 targets remain unchanged. NF1
+also preserves the existing paired direction-gate limits: for each accepted
+latency interval, candidate median increase over matching baseline is at most
+`max(5 ms, 10%)`, each individual increase is at most
+`max(15 ms, 25%)`, and candidate Main-max median and RSS-delta median may not
+exceed their matching baseline medians.
+
+The prior amendment's Main-authorized source, mode-`0700` Run directory,
+exclusive mode-`0600` unlinked immutable spool, regular-file/size/hash/stable-
+`fstat` checks, `64 KiB` source chunks, exact EOF, abort checks, exact-once
+Session lease cleanup and prohibition on JS-owned full image/Base64/request
+body remain in force. A redirect only opens a fresh read handle over that one
+immutable spool; it never rereads the original source or reuses a consumed
+stream.
+
+NF1 may use only a fresh OS-temp directory, temporary profiles, a read-only
+exact-HEAD source mirror, manifest-listed temp overlay files, and the existing
+deterministic provider/proxy workload. It must not touch a tracked product file,
+real user root, real credential, old G0 evidence, cap 4/8, Renderer, shared/IPC
+contracts, OCaml, or full E1 UI/concurrency/shutdown. It must not introduce a
+general redirect/transport abstraction.
+
+#### Preparation, Run owner and terminal linearization
+
+The existing `activeSession` plus its `AbortSignal` owns preparation. The
+candidate must not invent a pending assistant identity:
+
+```text
+activeSessionInstalled
+  -> prepareTurnPending
+  -> optional preparationCancelLatched(existing signal only)
+
+prepareTurnFulfilled(PreparedThreadTurn exactIdentity)
+  -> preparedIdentityRecorded
+  -> RunControlInstalled(copy sticky abort)
+  -> unchanged accepted event
+  -> TerminalOwner(none, cancelled) if already aborted, otherwise pre-hop null
+
+prepareTurnRejected
+  -> no RunControl
+  -> no settlement or Runtime terminal
+  -> unchanged safe error
+```
+
+The successful prepare reaction above has no `await` or yield. `RunControl`
+exists only after exact `PreparedThreadTurn`; before that point cancel touches
+only the existing Session signal. After installation, its monotonic
+`runAbortRequested` latch and exactly one tagged current owner span the whole
+Run:
+
+```text
+HopOwner | FinalResponseOwner |
+AlreadyAbortedFulfillmentCleanupOwner |
+TerminalOwner(required | none) | legal pre-first-hop null
+```
+
+The pre-first-hop null is legal only until the same synchronous block installs
+the first `HopOwner` or `TerminalOwner(none)`. No producer, fetch, consumer,
+mapper, settlement, Runtime projection or public return may exist across an
+`await` or yield without the applicable owner. Fetch fulfillment keeps the old
+owner until one no-yield block checks generation and prior abort state, then
+installs the next owner. A late fulfillment after an already-issued pending-
+fetch abort installs `AlreadyAbortedFulfillmentCleanupOwner`, performs cleanup
+without a second abort/cancel/reader or ordinary classification, records
+`VALID + FAIL`, then hands off to `TerminalOwner(none, cancelled)`.
+
+An un-aborted final fulfillment installs `FinalResponseOwner` before response
+body action or yield. A Run abort while it waits records `finalAbortPending`
+without touching the fulfilled response. After product-only
+`localHopSettled`, one no-yield block classifies the unchanged consumer boundary,
+installs `TerminalOwner(required|none)`, rechecks the Run latch and, only for
+required mode, issues the sole `CONSUMER_RUN_ABORT` before the first read or
+against the active real consumer. None mode performs zero response read,
+reader, cancel, source or invented consumer action.
+
+Every no-response terminal installs `TerminalOwner(none)` before any terminal
+mapper or await. Both terminal modes remain installed across the real consumer
+when required, mapper awaits, settlement, canonical reread, rollback/failure-
+record decision, Runtime projection or containment, and the synchronous
+`publish()` call and return. Public publication has no synthetic async hook.
+
+After mapper preparation, one no-`await` block performs the final Run-latch
+recheck, records `publicTerminalFrozen(exactInput)`, and invokes
+`settleTurn(exactInput)` exactly once. Invocation freezes selection but is not
+durable proof. A post-freeze abort may set the latch but cannot alter the input,
+transport, consumer, settlement count, rollback, retained record, Retry
+availability, Runtime/public result or later command.
+
+The original Run has exactly three coordinator-final dispositions:
+
+```text
+direct accepted reply or complete exact canonical match
+  -> durableTerminalCommitted
+  -> matching Runtime terminal projection settled/contained/absent
+  -> intended public terminal
+
+non-durable and exact failure record retained
+  -> no Runtime or intended terminal
+  -> unchanged safe settlement-failure notice
+  -> owner release
+  -> later Retry(threadId, requestId)
+  -> retained lookup recovers exact input/ref
+  -> Worker settlement only; no Provider/Runtime rerun
+  -> same three-way disposition
+
+complete exact comparison finds a different non-pending terminal
+  -> final not_pending
+  -> required sidecar rollback fulfilled or absent
+  -> failure record cleared
+  -> no Runtime or intended terminal
+  -> unchanged safe settlement-failure notice
+  -> owner release
+  -> later Retry(threadId, requestId)
+  -> missing lookup rejected before Worker
+  -> zero Provider/Runtime/intended-terminal calls
+```
+
+A rejected required rollback leaves the exact record retained. Neither an
+outcome enum nor rollback alone decides retention. The later Retry command is
+outside the old Run and old owner and carries only `threadId`/`requestId`; exact
+input/ref exists only after retained lookup. The safe notice, its `retryable`
+field, UI behavior and ordinary Provider Retry remain unchanged. Complete exact
+canonical equality covers request id, terminal status, content, safe error,
+settled time and the complete provider-state-ref identity when present; raw
+`not_pending` is never durable proof.
+
+#### Manual redirect and per-hop request contract
+
+The feature-local loop owns one evolving state:
+
+```text
+RedirectState {
+  currentUrl,
+  method,
+  bodyMode: replayable | none,
+  sanitizedHeaders,
+  redirectCount
+}
+```
+
+Each hop resolves an HTTP(S) URL, installs its `HopOwner`, creates one hop
+`AbortController`, and calls native `fetch` with `redirect: 'manual'`. Run abort
+is routed through the owner; the outer Session signal is not passed directly to
+the hop. Each replayable hop receives a new stream over the immutable spool and
+exact `Content-Length` with `duplex: 'half'`. A none hop omits body, `duplex`,
+`Content-Length` and all Fetch request-body headers and records
+`producerAbsent` before fetch.
+
+| `bodyMode`   | Required                                                                                                                           | Forbidden                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `replayable` | retained method, fresh body, exact `Content-Length`, `duplex: 'half'`, `redirect: 'manual'`, hop signal, current sanitized headers | reused stream, automatic redirect, direct Run signal              |
+| `none`       | rewritten GET/HEAD, `redirect: 'manual'`, hop signal, current sanitized non-body headers                                           | body, `duplex`, `Content-Length`, every Fetch request-body header |
+
+Redirect behavior must match an exact-build automatic-follow baseline oracle:
+
+- resolve `Location` relative to the current response URL and inherit the
+  current fragment when `Location` omits one;
+- missing `Location` returns that response as final; invalid or non-HTTP(S)
+  location maps to the exact existing safe failure;
+- same-origin and cross-origin credentialed targets are separate controls. The
+  candidate never synthesizes Basic/`Authorization`, exposes URL credentials,
+  or applies one blanket result. If safe baseline parity cannot be represented,
+  the case is `VALID + FAIL`;
+- 301/302 after POST and 303 after any non-GET/HEAD rewrite to GET, set
+  `bodyMode: none`, and permanently remove explicit `Content-Length` plus
+  `Content-Encoding`, `Content-Language`, `Content-Location` and
+  `Content-Type`;
+- 307/308 retain method/body mode and create a fresh producer;
+- origin is scheme, host and effective port. The first cross-origin transition
+  permanently removes `Authorization`, including a later return to the original
+  origin;
+- at most 20 redirects are followed. A redirect after hop 20 maps to the exact
+  baseline safe failure without hop 21;
+- small controls cover relative/fragment-only, missing/invalid/non-HTTP(S),
+  same-/cross-origin credentialed, 301/302/303/307/308, body-header stripping,
+  20-hop success/next-hop failure and A-B-B/A-B-A transitions through direct
+  and existing proxy routes.
+
+An un-aborted redirect disposes its response exactly once:
+
+- none or completed upload: exact `body === null`, or sole awaited
+  `response.body.cancel(REDIRECT_DISCARD)`;
+- incomplete replayable upload: acquire one default reader without reading,
+  latch the request-source terminal, issue the sole hop abort, require
+  `reader.closed` rejection with exact `HOP_ABORT_STOP`, and release the lock in
+  `finally`. It must not also call response cancel.
+
+There is no unbounded drain, abort-then-cancel, second reader or quiet-time
+settlement. Redirect replay may begin only after product-only
+`localHopSettled`; receiver acknowledgement never controls replay.
+
+#### Producer terminal, twelve base rows and final overlay
+
+Only an incomplete replayable source uses the first-winner arbiter.
+`ownerTerminalObserved(reason)` or underlying-source
+`requestBodyCancelObserved(reason)` writes exactly one immutable
+`cancellationLatched(firstCause)` in the same no-yield turn. A later input is
+audit-only. The producer checks the latch and hop signal before and after each
+read and before enqueue. An in-flight read may finish only to discard bytes and
+close its handle.
+
+`producerStopped` means no later read/enqueue is possible, the winner is
+immutable and all hop read handles are closed. Complete order is exactly:
+
+```text
+lastEnqueue < requestBodyCloseIssued < upload_complete < producerStopped
+```
+
+Incomplete paths emit no close or upload-complete. `producerAbsent` is
+exclusive to none mode and forbids every producer/controller/source event.
+`requestBodyCloseIssued`, `requestBodyReadableToErrored`,
+`requestBodyCancelObserved`, `hopAbortIssued` and actual fetch fulfillment or
+rejection are exact once-only observations; controller close/error and abort
+must return `undefined`. `hopAbortIssued(reason)` is recorded only after
+`signal.aborted === true` and `signal.reason === reason`; an exact pending-fetch
+abort rejection means `error === HOP_ABORT_STOP`. Private reasons
+`HOP_ABORT_STOP`, `EARLY_FINAL_UPLOAD_STOP`, `CONSUMER_RUN_ABORT` and
+`REDIRECT_DISCARD` are distinct and never cross IPC or logs.
+
+For an incomplete final response, exact packaged preflight binds one branch:
+
+- owner-error wins only from a proven readable state with no earlier cancel.
+  It latches first, calls controller error exactly once, observes exact
+  `desiredSizeAfter === null` and records the readable-to-errored transition;
+- native cancel wins when callback entry latches first with the exact-build safe
+  reason. The later owner event cannot relatch or call controller error.
+
+Neither branch may close the source, abort/cancel the fulfilled response, add a
+reader or invalidate its current normalized consumer. Failure to bind one
+stable branch stops the direction.
+
+`localHopSettled` combines one mode fact—`producerStopped` or
+`producerAbsent`—with exactly one of these base rows, using only direct native
+Promise handlers and synchronous candidate state:
+
+| Body mode/result                              | Required candidate-local order/facts                                                                                                                                                                                                                                                                                                                                    | Native outcome                                                                                     |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| replayable complete redirect                  | complete order; `fetchFulfilled(redirect) < ownerTerminalObserved < cancellationLatched(owner_redirect)`; no source error or hop abort                                                                                                                                                                                                                                  | non-null body has one fulfilled `cancel(REDIRECT_DISCARD)`; otherwise exact null body              |
+| replayable incomplete redirect                | preflight binds owner-first (`fetchFulfilled < ownerTerminalObserved < latch`) or native-cancel-first (`requestBodyCancelObserved < latch`, later owner is audit-only); non-reading reader acquisition precedes sole abort; `hopAbortIssued` and `producerStopped` follow the latch without a false callback-return ordering; no close/error-transition/upload-complete | reader `closed` rejects with exact `HOP_ABORT_STOP`, then lock releases; response cancel forbidden |
+| replayable complete final                     | complete order; `fetchFulfilled(final) < FinalResponseOwnerInstalled`; no terminal/source-error/hop-abort event                                                                                                                                                                                                                                                         | response stays unread until terminal overlay                                                       |
+| replayable incomplete final                   | fulfillment installs final owner; preflight binds owner-error (`ownerTerminalObserved < latch(owner_error) < readable-to-errored < producerStopped`) or native-cancel-first (`requestBodyCancelObserved < latch(native_cancel)`, later owner audit-only, then producer stopped); no close/upload-complete/hop-abort                                                     | same fulfilled response stays unread until terminal overlay; response cancel forbidden             |
+| replayable incomplete pending-fetch Run abort | owner-first `ownerTerminalObserved(run_abort) < latch(owner_abort)`; sole abort begins after latch; callback is second cause; abort-issued, producer-stopped and fetch rejection all exist without false callback-return ordering; no close/error-transition/upload-complete                                                                                            | fetch rejects exactly once with `HOP_ABORT_STOP`                                                   |
+| replayable incomplete spontaneous fetch error | native rejection is handled by owner; preflight binds owner-first or native-cancel-first; sole latch precedes later owner abort; abort-issued and producer-stopped exist without false callback-return ordering; no close/error-transition/upload-complete                                                                                                              | rejection has exact baseline-safe classification                                                   |
+| replayable complete pending-fetch Run abort   | complete order; `ownerTerminalObserved < latch(owner_abort) < hopAbortIssued < fetchRejected`; no source terminal event                                                                                                                                                                                                                                                 | fetch rejects exactly once with `HOP_ABORT_STOP`                                                   |
+| replayable complete spontaneous fetch error   | complete order; `fetchRejected < ownerTerminalObserved < latch(owner_error) < hopAbortIssued`; no source terminal event                                                                                                                                                                                                                                                 | rejection has exact baseline-safe classification                                                   |
+| none redirect                                 | `producerAbsent < fetchFulfilled(redirect) < ownerTerminalObserved < latch(owner_redirect)`; no producer/controller event                                                                                                                                                                                                                                               | non-null body has one fulfilled `cancel(REDIRECT_DISCARD)`; otherwise exact null body              |
+| none final                                    | `producerAbsent < fetchFulfilled(final) < FinalResponseOwnerInstalled`; no terminal/producer/hop-abort event                                                                                                                                                                                                                                                            | response stays unread until terminal overlay                                                       |
+| none pending-fetch Run abort                  | `producerAbsent < ownerTerminalObserved < latch(owner_abort) < hopAbortIssued < fetchRejected`                                                                                                                                                                                                                                                                          | fetch rejects exactly once with `HOP_ABORT_STOP`                                                   |
+| none spontaneous fetch error                  | `producerAbsent`; `fetchRejected < ownerTerminalObserved < latch(owner_error) < hopAbortIssued`                                                                                                                                                                                                                                                                         | rejection has exact baseline-safe classification                                                   |
+
+Final response handling is a separate terminal-owner overlay and adds no native
+fetch or local-settlement fact:
+
+| Terminal source                               | Atomic owner handoff                                                                 | Mode/provisional result                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| successful final with body                    | final owner to terminal owner after local settlement and synchronous body check      | required/pending real SSE consumer                                                     |
+| non-attachment non-2xx                        | final owner to terminal owner after local settlement and status/attachment check     | required/pending real JSON consumer                                                    |
+| attachment-bearing non-2xx                    | final owner to terminal owner after local settlement and status/attachment check     | none/400, 413 or 415 maps `content_rejected`; other statuses keep current safe failure |
+| successful final without body                 | final owner to terminal owner after local settlement and body check                  | none/current safe no-body failure                                                      |
+| pending-fetch Run-abort rejection             | hop owner to terminal owner after rejection row and local settlement                 | none/cancelled                                                                         |
+| spontaneous fetch rejection                   | hop owner to terminal owner after rejection row and local settlement                 | none/current safe failure                                                              |
+| terminal redirect policy/classification error | hop owner to terminal owner after exact response disposition and local settlement    | none/baseline-safe failure                                                             |
+| post-prepare pre-hop validation error         | legal pre-hop null to terminal owner in the same validation block                    | none/baseline-safe failure                                                             |
+| post-prepare pre-fetch Run abort              | legal pre-hop null to terminal owner in the same command block                       | none/cancelled                                                                         |
+| redirect-handoff Run abort                    | old hop owner to terminal owner after old local settlement in the same handoff block | none/cancelled; no next hop                                                            |
+| late fulfilled already-aborted response       | cleanup owner to terminal owner after exact cleanup                                  | none/cancelled while the pending-fetch row remains `VALID + FAIL`                      |
+
+A pre-freeze Run abort selects cancelled. None mode invents no transport or
+consumer action and emits no consumer events. Required mode uses the sole
+consumer abort and requires the unchanged real Promise to settle before freeze.
+Attachment/no-body rows perform zero body read, reader or cancel and never use
+deadline 3.
+
+#### Real consumer and exact fixture boundaries
+
+The candidate may install an adapter seam around the exact unchanged current
+Chat and Responses consumers. It may not copy, edit or reimplement either
+consumer, coordinator, Worker, Runtime state machine or shared type. If that
+exact-HEAD seam cannot be installed in the temp overlay, T2 stops before
+COMPAT Start and produces no COMPAT `validity + outcome`.
+
+The early-final bodies are canonical UTF-8 strings with LF separators and the
+final two LF bytes included:
+
+- Chat Completions escaped bytes:
+  `data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n`;
+  length `143`; SHA-256
+  `36c10cc77a3b79a5bf98e5d797dc39cfd52f437c12231a07aa373c636597d99d`.
+- Responses escaped bytes:
+  `data: {"type":"response.output_text.delta","delta":"Hello"}\n\ndata: {"type":"response.completed","response":{"status":"completed","reasoning":{"context":null},"output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello","annotations":[]}]}}}\n\ndata: [DONE]\n\n`;
+  length `311`; SHA-256
+  `fe242f799675aa3f4449bf98c04013bef355d1931f311f0d3f5fcb558f3293c6`.
+
+Both normalize to visible text `Hello` and completed terminal. Chat's current
+consumer obligation ends at its first finish return; endpoint evidence may
+record the later `[DONE]`, but the gate must not claim Chat consumed it.
+Responses must observe one matching completed response, accept only `[DONE]`
+after terminal, reach endpoint EOF, match streamed and completed content, and
+return its bounded provider state. Endpoint send completion never substitutes
+for either normalized return.
+
+Candidate-only error controls bind:
+
+- non-attachment status `429`, exact body
+  `{"error":{"message":"sealed-rate-limit"}}`, length `41`, SHA-256
+  `5b3f0947f1848b7cb162aace0a15695cfb466402a4dd2f9a31b4d8fcf9518fe0`.
+  The real `response.json()` is paused after an incomplete fragment, then Run
+  abort must settle that Promise and freeze public cancelled without a second
+  reader/cancel;
+- attachment-bearing status `413`, exact body
+  `sealed-content-rejected-body`, length `28`, SHA-256
+  `e6d72579267a720074b6451613fa50a781451f4ab1948a1c06e1d7f3099e8f2c`.
+  The unchanged `content_rejected` mapping must read zero bytes, use no
+  reader/cancel or deadline 3, and still clean up response/socket/process.
+
+Exact source tracing binds other attachment non-2xx and successful no-body
+responses to none mode without adding fixtures. Required-mode controls cover
+completed/incomplete/no-body final hooks before consumer install, active Chat
+after one text delta, active Responses after one output-text delta, delayed JSON,
+and the post-consumer/pre-freeze hook. They require exact normalized abort
+outcomes, no later delta/finish/completed/continuation/public success and no
+harness reader or parser repair.
+
+#### Observer, deadlines and capacity evidence
+
+Each role has one OS-temp `ReceiverObserver` process owning the existing proxy,
+all origin listeners and one global monotonic `receiverSeq`. A transparent
+`Duplex` tap must observe HTTP/1.1 plaintext before the Node parser, feed the
+same bytes to a sealed shadow framer and then the real parser, and record
+connection id, plaintext offset, request-line start, header end and remaining
+`Content-Length`. Pre-Start controls prove plain/TLS, direct/proxy, no-body and
+same-callback connection reuse. CONNECT, TLS handshake, encrypted bytes, Node
+request/data callback time and cross-process clocks are not request-byte proof.
+
+Each hop has a unique opaque route token mapped in the workload manifest to
+`logicalRequestId + hopId`; no candidate-only correlation header is added.
+`receiverRequestStart` is the first request-line octet at the destination
+plaintext tap. `receiverRequestTerminal` is the complete positive-length body's
+last octet, the final header octet for zero/no body, or the first irreversible
+socket terminal for an incomplete request. For a followed redirect, the only
+required order is:
+
+```text
+receiverRequestTerminal(old).receiverSeq <
+receiverRequestStart(next).receiverSeq
+```
+
+It proves selected-tap processing order only, not NIC/kernel/send causality.
+Parser completion, acknowledgements, quiet intervals or incomparable clocks
+cannot substitute.
+
+The five independent `5,000 ms` lines are:
+
+1. fault actuation or Run-command receipt to the first
+   `cancellationLatched`;
+2. candidate response disposition/terminal selection to
+   `localHopSettled`;
+3. `consumerAbortAccepted` to
+   `publicTerminalFrozen(cancelled)`, with
+   `consumerAbortIssued` strictly after the start and the real consumer Promise
+   settled before the end; none mode has no deadline 3;
+4. observer-local actuation or completed-request marker to
+   `receiverRequestTerminal`;
+5. `terminalPacketEmitted(packetId)` to
+   `terminalFinalizationEvidenceReceived(packetId)` on the same
+   ReceiverObserver/evidence clock.
+
+Line 5 includes candidate receipt, count/hash reconciliation,
+`recorderFinalized`, `liveHopIds` removal and one fixed-size finalization proof
+in that order. Candidate control, replay, public return and resource lifetime
+must not await that evidence. Lines 4/5 have distinct starts; no deadline starts
+on packet receipt, and no line extends another.
+
+The shared incomplete-fault protocol reads exactly `65,536` request-body bytes,
+reports ready, pauses endpoint consumption and actuates exactly one early
+response, socket close or black-box role abort. Early response uses the exact
+non-empty protocol fixture and never resumes request consumption. Socket close
+closes that socket. Abort validity requires controller command, role receipt
+and prefix-ready/paused proof; early response/socket close require endpoint
+actuation acknowledgement. Upload completion after the incomplete fault is
+forbidden.
+
+Capacity is computed only by one candidate-local recorder and sequence:
+
+```text
+hopOutstanding = producedHop - ackSeenHop
+logicalOutstanding =
+  sum(max(0, producedHop - ackSeenHop)) over liveHopIds
+```
+
+Produced bytes are counted synchronously after every successful enqueue and
+include all fragments and Base64 bytes. `ackSeenHop` advances only when the
+candidate receives a cumulative endpoint watermark, so delayed telemetry can
+only preserve or inflate outstanding. The producer, redirect loop, owner,
+consumer, public result, local timeout and spool lifetime have no read/await/
+branch edge to acknowledgement or finalization evidence.
+
+Counted C1 emits the highest crossed cumulative watermark for each
+`1,048,576` bytes and one exact terminal packet; C4 changes only that manifest
+value to `4,194,304`. Cumulative nonterminal watermarks may coalesce, terminal
+packets may not. Endpoint and producer never wait for telemetry. The maximum
+hop and logical peak across all valid C1/C4 roles is at most `8,388,608`; a pass
+available only under one cadence, semantic/callback-cadence drift, full-body
+buffering, counter regression, negative value, sequence gap/duplicate or byte
+mismatch is a Stop.
+
+A hop enters `liveHopIds` before its first producer/fetch action and leaves only
+after its mode fact, endpoint request terminal and matching terminal packet are
+candidate-seen and reconciled. Delayed old-hop evidence therefore leaves its
+residual in the live sum across replay. A none hop records exact zero values but
+remains live through terminal reconciliation. A later evidence pass may verify
+but never repair historical membership or peaks.
+
+#### COMPAT and paired evidence separation
+
+`NYX-MTL-E1R-NF1-COMPAT` runs first with its own process, fresh profile,
+manifest and result. It binds exact HEAD commit/tree, overlay manifest and
+before/after path hashes; exact unchanged shared types, Chat/Responses
+consumers, Thread Library client/coordinator/Worker and Runtime client; packaged
+build; preparation transfer; every owner and first-winner branch; real consumer
+and no-read behavior; exact settlement dispositions and later Retry;
+Runtime/public source order; observer-independent cleanup; and its own
+`validity + outcome`. It must PASS before any paired role starts.
+
+The paired schema contains only common black-box command, endpoint, wire,
+redirect/auth/method/header/body, normalized consumer return, response/
+connection cleanup, process exit, latency/Main/RSS and observer facts. C1/C4
+add only produced/ack-seen capacity counters. It rejects every `chat:*` or
+public-terminal, settlement/`settleTurn`, Runtime, owner, producer-branch,
+pre-fetch/handoff or final-owner field. Candidate-only cleanup drift is COMPAT,
+not paired evidence. No COMPAT field, case or metric may enter a pair or
+aggregate.
+
+After COMPAT PASS, at most three paired repetitions run separate fresh normal-
+exit role processes:
+
+| Role | Transport                                               | Ack quantum | Pair membership                           |
+| ---- | ------------------------------------------------------- | ----------- | ----------------------------------------- |
+| `B`  | sealed exact current full-body baseline                 | none        | baseline for C1 and C4 in that repetition |
+| `C1` | exact reviewed native-fetch candidate                   | `1,048,576` | paired only with matching B               |
+| `C4` | byte-identical candidate; manifest cadence only differs | `4,194,304` | paired only with matching B               |
+
+Order is the fixed Latin square: `B -> C1 -> C4`,
+`C1 -> C4 -> B`, then `C4 -> B -> C1`. Each role occupies each process
+position once. Every role runs the exact shared case intersection and protocol
+order. C1 and C4 are never pooled into an easier median. Pair ids bind
+repetition, attempt, protocol and schedule against the matching B from one
+complete valid attempt. Candidate process work stays inside application
+latency/Main/RSS; observer process CPU/RSS is identity/leak evidence only.
+
+#### Primary classification, retry and Stop rules
+
+Every primary role result has independent fields:
+
+```text
+validity: VALID | INVALID
+outcome: PASS | FAIL | NOT_EVALUATED
+```
+
+Pre-Start identity binds gate/process/profile/attempt, exact candidate/source/
+archive/Electron/app/app.asar/harness/workload/fixture hashes, process set,
+observer/tap/framer/ALPN/channel self-test and applicable fault-delivery proof.
+After that identity and orchestration are proven, any semantic, security,
+capacity, deadline, owner, native Promise, consumer, settlement, Runtime/public,
+counter, selected-tap order, cleanup, crash, deadlock or abnormal-exit violation
+is `VALID + FAIL`. A product-caused loss of evidence remains product failure.
+A baseline semantic/fixture/cleanup/exit failure is also `VALID + FAIL` because
+no valid oracle pair exists. The first valid failure stops every later role and
+repetition.
+
+`INVALID + NOT_EVALUATED` is reserved for unproven identity, contaminated
+profile, workload mismatch, independent observer/tap/framer/channel/auditor/
+hash/evidence failure without already-proven product causality, or failed
+external cleanup. Ambiguous causality cannot be upgraded to product FAIL.
+
+INVALID handling is repetition-atomic. No role from that attempt enters a pair
+or aggregate. Only pre-Start INVALID may retry the whole repetition once after
+the external controller proves the prior process tree, sockets, ports, profiles
+and handles are clean; the retry uses three new profiles, a new attempt id and
+identical exact bytes/order. Post-Start INVALID, failed external cleanup or a
+second pre-Start INVALID ends NF1 without same-gate retry. Any harness, workload,
+fixture, overlay or candidate-byte fix returns to exact T2 review under a new
+gate identity.
+
+Forced evidence cleanup after timeout records process tree, signal, time and
+resulting exits. It never becomes normal product exit and never downgrades a
+valid failure.
+
+#### Executable slices and ratchet
+
+T1 is this file only. Its validation is:
+
+```sh
+git diff --check
+shasum -a 256 docs/next/agent-workbench-task-slices.md
+```
+
+The exact bytes require independent strict review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-01`. Review checks the user decision binding,
+8 MiB evidence-only meaning, fault prefix, five deadlines, both telemetry
+schedules, redirect/credential/body/duplex rules, preparation and gapless owner,
+twelve rows and final overlay, real consumers, plaintext tap, capacity/live-hop
+math, disjoint COMPAT/paired schemas, Latin square, settlement/rollback/Retry
+and exact validity/Stop rules. Entry into HEAD completes T1 without a later
+status-only edit.
+
+T2 may then build only two reviewed OS-temp artifacts:
+
+1. the common B/C1/C4 transport harness; and
+2. one candidate-only exact-HEAD COMPAT overlay.
+
+Before execution it seals exact source/archive/build/app.asar/workload/fixture/
+overlay hashes and the unchanged-module manifest, proves dev/build/app.asar/
+packaged identity, runs small streaming POST direct/proxy RequestInit controls,
+proves the pre-parser observer/channel topology and static no-control dependency,
+and reviews every preparation/owner/native/consumer/settlement trace. If the
+unchanged real-consumer seam cannot be installed, a tracked/product change is
+needed, an overlay path is unmanifested, or exact redirect behavior cannot be
+expressed, T2 stops. Exact T2 bytes need a new independent pre-run review id
+before Start.
+
+T3 first runs COMPAT. Only its PASS under the sealed classifier permits NF1
+paired roles; T4 later reviews both evidence sets independently. NF1
+records all raw B/C1/C4 results, superseded INVALID evidence, exact cleanup/
+retry proof and a mechanical pair/aggregate index. It follows first-valid-
+failure Stop and the INVALID rules above.
+
+T4 independently reviews COMPAT and paired evidence, exact identities,
+classification and aggregate membership, then updates only this source-of-truth
+status to reviewed PASS or `VALID_STOP`. It may not reinterpret INVALID, rerun
+after a valid failure or authorize product code on Stop.
+
+A reviewed NF1 PASS permits only drafting a separate
+`multi-thread-library/E1R-P1-scope-lock`. That later scope lock needs its own
+exact product inventory, checks and independent review in HEAD. It is not
+authorized by this amendment. Full E1 cross-Thread concurrency, shutdown barrier
+and UI remain outside NF1.
 
 ### Global Stop conditions
 
