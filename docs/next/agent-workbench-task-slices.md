@@ -169,12 +169,26 @@ Use relative documentation links. Do not add local absolute paths.
   independent review `NYX-MTL-E1R-NF1-SCOPE-20260816-02`. One uncounted
   pre-Start OS-temp seam shakedown then exposed its malformed Responses fixture;
   that shakedown is superseded and is not gate evidence. The docs-only T1R
-  fixture/correlation/pre-hop-owner/ratchet repair below is bound to
-  `NYX-MTL-E1R-NF1-REPAIR-20260817-10` and self-completes only when those
-  exact accepted bytes enter HEAD. Until then no T2 build, shakedown, Start, or
-  counted sample may resume. T1R completion authorizes only the newly sealed
-  OS-temp `NYX-MTL-E1R-NF1-COMPAT-11` preflight and
-  `NYX-MTL-E1R-NF1-11` direction gate. No E1/E1R product slice is executable
+  fixture/correlation/pre-hop-owner/ratchet repair completed at `197aaced`
+  after independent review `NYX-MTL-E1R-NF1-REPAIR-20260817-10`. Its first
+  post-T1R pre-run then stopped as `INVALID + NOT_EVALUATED` because the
+  transparent tap inherited paused-parser backpressure; the missing observer
+  terminal proves no product failure, full `NF1-11`/`COMPAT-11` never started,
+  and that temp derivation is permanently excluded. Plan v37 was rejected by
+  `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R24` F-001, prospective source review
+  `NYX-MTL-E1R-NF1-REPAIR-20260817-11` never ran, and the prospective `-12`
+  gate identities retired before execution. The docs-only
+  T1S terminal-observer/identity ratchet below is derived from accepted plan v38,
+  SHA-256
+  `5f28a1f7ea9cf7368c156353e207f610eefea2da529000e05ca7981dd6783b98`,
+  convergence receipt
+  `NYX-E1R-NATIVE-FETCH-CONVERGENCE-36-R36-SCOPED-01`, and strict review
+  `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R25`. It is bound to source review
+  `NYX-MTL-E1R-NF1-REPAIR-20260817-12` and self-completes only when those exact
+  accepted bytes enter HEAD. Until then no new T2 build, shakedown, Start, or
+  counted sample may begin. T1S completion authorizes only the newly sealed
+  OS-temp `NYX-MTL-E1R-NF1-COMPAT-13` preflight and
+  `NYX-MTL-E1R-NF1-13` direction gate. No E1/E1R product slice is executable
   without a later reviewed product scope lock.
 
 ## A0: Scope Gate Docs
@@ -3353,14 +3367,28 @@ source candidate at SHA-256
 `12fdf2f0ae788a6ded713879fa2ac535bfc5134466e1b3d450d0f924e9629025` was
 rejected under `NYX-MTL-E1R-NF1-REPAIR-20260817-06`. Prospective REPAIR `-07`,
 `-08`, and `-09` never ran because plans v33, v34, and v35 respectively failed
-convergence, full review, and convergence. The current T1R fixture/correlation/
-pre-hop-owner/ratchet repair below self-completes only after independent review
-`NYX-MTL-E1R-NF1-REPAIR-20260817-10` accepts its exact bytes and those bytes
-enter HEAD. It does not revive G0 or the archived E1 candidate. Once T1R
-completes, only the new OS-temp `NYX-MTL-E1R-NF1-COMPAT-11` preflight and
-`NYX-MTL-E1R-NF1-11` direction gate are executable. Old E1 product bytes,
+convergence, full review, and convergence. The T1R fixture/correlation/pre-hop-
+owner/ratchet repair completed at `197aaced` after independent review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-10`. The exact first post-T1R pre-run raw
+artifact at SHA-256
+`6fdaaf94b5f317cef4ad5a29ce3a2fef58bfa9addbdc6f2529455bd9b092ff40`
+is frozen as `INVALID + NOT_EVALUATED`: a paused parser blocked the transparent
+tap from observing a raw terminal, so it proves no product failure and none of
+its temp derivation may be reused. Full `NF1-11`/`COMPAT-11` never started.
+Plan v37 was rejected by `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R24` F-001;
+prospective source review `NYX-MTL-E1R-NF1-REPAIR-20260817-11` never ran, and
+unstarted `NF1-12`/`COMPAT-12` are retired. The current T1S terminal-observer/
+identity ratchet is derived from plan v38 at SHA-256
+`5f28a1f7ea9cf7368c156353e207f610eefea2da529000e05ca7981dd6783b98`,
+scoped convergence
+`NYX-E1R-NATIVE-FETCH-CONVERGENCE-36-R36-SCOPED-01`, and strict review
+`NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R25`; it self-completes only after independent
+source review `NYX-MTL-E1R-NF1-REPAIR-20260817-12` accepts its exact bytes and
+those bytes enter HEAD. It does not revive G0 or the archived E1 candidate. Once
+T1S completes, only the new OS-temp `NYX-MTL-E1R-NF1-COMPAT-13` preflight and
+`NYX-MTL-E1R-NF1-13` direction gate are executable. Old E1 product bytes,
 E1R-P1/E1R-P2, a new E1 scope, resumed E1 and U1 remain non-executable unless
-`NYX-MTL-E1R-NF1-11 reviewed PASS` is later recorded and a separate exact
+`NYX-MTL-E1R-NF1-13 reviewed PASS` is later recorded and a separate exact
 product scope lock enters HEAD.
 
 The reviewed source is
@@ -3379,12 +3407,12 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → T1 NF1 direction amendment [completed] → T1R fixture/correlation/pre-hop-owner/ratchet repair → NF1-COMPAT-11 → NF1-11 [PASS | VALID_STOP]
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → T1 NF1 direction amendment [completed] → T1R fixture/correlation/pre-hop-owner/ratchet repair [completed] → T1S terminal-observer/identity ratchet → NF1-COMPAT-13 → NF1-13 [PASS | VALID_STOP]
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
 
-NYX-MTL-E1R-NF1-11 reviewed PASS [not yet achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
+NYX-MTL-E1R-NF1-13 reviewed PASS [not yet achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
                                            [conditional and not authorized by the NF1 amendment]
 ```
 
@@ -4825,9 +4853,9 @@ Status: complete at `24e6c07` after independent strict review
 review `NYX-E1R-PERF-V9-FINAL-01`. The OS-temp G0 below later reached
 independently reviewed `VALID_STOP`; G0 remains stopped and every E1/E1R product
 slice remains non-executable. The later user-approved native-fetch direction
-does not reopen G0; it authorizes only `NYX-MTL-E1R-NF1-COMPAT-11` followed by
-`NYX-MTL-E1R-NF1-11` after the T1R amendment below passes review and enters
-HEAD.
+does not reopen G0; after the completed T1R history and the independently
+reviewed T1S amendment below enter HEAD, it authorizes only
+`NYX-MTL-E1R-NF1-COMPAT-13` followed by `NYX-MTL-E1R-NF1-13`.
 
 G0 status: independently reviewed `VALID_STOP` under
 `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. Formal attempt 3 stopped after the first
@@ -4853,7 +4881,7 @@ evidence and do not contribute to this Stop. Fresh-profile, external delivery,
 exact success bodies, normal process exit, CONNECT cleanup and the evidence
 manifest all passed review. G0 did not achieve reviewed PASS. `E1R-P1`,
 `E1R-P2`, a new E1 scope and all E1/E1R product work remain non-executable
-unless `NYX-MTL-E1R-NF1-11 reviewed PASS` is recorded and a later exact product
+unless `NYX-MTL-E1R-NF1-13 reviewed PASS` is recorded and a later exact product
 scope lock enters HEAD.
 
 This amendment changes only:
@@ -4975,16 +5003,46 @@ source candidate at SHA-256
 `12fdf2f0ae788a6ded713879fa2ac535bfc5134466e1b3d450d0f924e9629025` was
 rejected under `NYX-MTL-E1R-NF1-REPAIR-20260817-06`. Prospective REPAIR `-07`,
 `-08`, and `-09` never ran because plans v33, v34, and v35 respectively failed
-convergence, full review, and convergence. The current T1R repair is derived
-from `Nyx Multi-Thread Library E1R Native-Fetch Recovery Plan` v36, SHA-256
+convergence, full review, and convergence. T1R was derived from
+`Nyx Multi-Thread Library E1R Native-Fetch Recovery Plan` v36, SHA-256
 `e180e19cd1b507f04d16479b24ece139ccbedd072e8844cd50a2c6407382cdce`, and
-plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R23`. These exact repair bytes are
-bound to independent review `NYX-MTL-E1R-NF1-REPAIR-20260817-10`. T1R
-self-completes only when that
-review accepts the exact bytes and those bytes enter HEAD. Before then no T2
-build, shakedown, Start, or counted sample may resume. Afterward, only the
-OS-temp preflight and direction gate defined here are executable; no product
-slice is authorized.
+plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R23`. Its exact 5,807-line source
+bytes at SHA-256
+`5111e74876e1008a898707090334f67341144dfc22373f005abf355b759383a5`
+passed independent review `NYX-MTL-E1R-NF1-REPAIR-20260817-10` and entered HEAD
+at `197aaced`, completing T1R.
+
+The first post-T1R pre-run used only the baseline role before stopping. Its raw
+artifact is 1,173 lines at SHA-256
+`6fdaaf94b5f317cef4ad5a29ce3a2fef58bfa9addbdc6f2529455bd9b092ff40`
+and is permanently `INVALID + NOT_EVALUATED`: the endpoint consumed and paused
+at exactly `65,536` bytes, and the role returned its abort receipt and safe
+cancelled result, but the continuously transparent tap inherited paused-parser
+backpressure and could not observe a later raw terminal. The missing terminal
+proves no native-fetch product failure. Full `NF1-11` and `COMPAT-11` never
+started; no source, archive, observer, build, app, profile, trace, result, or
+partial baseline case from that temp root may be reused or enter evidence.
+
+Plan v37, 3,864 lines at SHA-256
+`0f5af771f706289222c4da7b6e39b1c08ee5f84095d7c57f21b96624182b3f96`,
+was rejected by full review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R24` F-001 because
+draining after role receipt but before product quiescence could change the
+measured connection. Prospective source review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-11` never ran, and prospective
+`NF1-12`/`COMPAT-12` retired unstarted with no source amendment, artifact,
+build, Start, raw result, pair, aggregate, or evidence.
+
+The current T1S terminal-observer/identity ratchet is derived from
+`Nyx Multi-Thread Library E1R Native-Fetch Recovery Plan` v38, SHA-256
+`5f28a1f7ea9cf7368c156353e207f610eefea2da529000e05ca7981dd6783b98`,
+revision contract `RC-NYX-E1R-NF-R36`, scoped convergence
+`NYX-E1R-NATIVE-FETCH-CONVERGENCE-36-R36-SCOPED-01`, and fresh full strict
+review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R25`. Its exact formatted source bytes
+are bound to independent review `NYX-MTL-E1R-NF1-REPAIR-20260817-12`. T1S
+self-completes only when that review accepts the exact bytes and those bytes
+enter HEAD. Before then no new T2 build, shakedown, Start, or counted sample may
+begin. Afterward, only the fresh OS-temp preflight and direction gate defined
+here are executable; no product slice is authorized.
 
 The approval record is `NYX-E1R-NF1-DECISION-A-v1`. Immediately after receiving
 the complete six-item packet and the clean final-review result, the user
@@ -5013,17 +5071,25 @@ tracked product edit.
 
 #### Direction and immutable boundaries
 
-The new gate id is `NYX-MTL-E1R-NF1-11`; it is not a rerun or repair of G0 and
-is not a continuation of the superseded shakedown. The planned but unstarted
+The new gate id is `NYX-MTL-E1R-NF1-13`; it is not a rerun or repair of G0 and
+is not a continuation of either earlier shakedown. The planned but unstarted
 `NYX-MTL-E1R-NF1-02` through `-10` and
 `NYX-MTL-E1R-NF1-COMPAT-02` through `-10` identities are retired and have no
-sealed artifact, Start, raw result, pair, aggregate or evidence. The candidate-
-only prerequisite is `NYX-MTL-E1R-NF1-COMPAT-11`. No source/archive/build,
-fixture, manifest, trace, result or evidence byte from
-`NYX-MTL-E1R-NF1-SHAKEDOWN-01-SUPERSEDED` may enter either new identity, a
-raw result, pair or aggregate. Old G0 remains immutable independently reviewed
-`VALID_STOP` evidence and neither its raw evidence nor its stopped pairs are
-rerun.
+sealed artifact, Start, raw result, pair, aggregate or evidence. Full `NF1-11`
+and `COMPAT-11` are retired unstarted. Their sole descendant,
+`NYX-MTL-E1R-NF1-11-PRE-RUN`, is the frozen post-Start
+`INVALID + NOT_EVALUATED` artifact above; none of its temp source, archive,
+observer, build, app, profile, trace, result, or partial baseline case may enter
+`-13`. Prospective `NF1-12`/`COMPAT-12` retired unstarted with rejected v37 and
+likewise have no source amendment, artifact, build, Start, raw result, pair,
+aggregate or evidence. The candidate-only prerequisite is
+`NYX-MTL-E1R-NF1-COMPAT-13`, with its own process, profile, manifest and result
+and no B/C membership. No source/archive/build, fixture, manifest, trace, result
+or evidence byte from `NYX-MTL-E1R-NF1-SHAKEDOWN-01-SUPERSEDED` may enter
+either `-13` identity, a raw result, pair or aggregate. Only after the exact
+reviewed T1S bytes enter HEAD may T2 create fresh source/archive/build
+identities. Old G0 remains immutable independently reviewed `VALID_STOP`
+evidence and neither its raw evidence nor its stopped pairs are rerun.
 
 NF1 answers one question: can the smallest native-fetch/manual-redirect
 candidate preserve exact current behavior and stay within the approved empirical
@@ -5460,13 +5526,45 @@ harness reader or parser repair.
 #### Observer, deadlines and capacity evidence
 
 Each role has one OS-temp `ReceiverObserver` process owning the existing proxy,
-all origin listeners and one global monotonic `receiverSeq`. A transparent
-`Duplex` tap must observe HTTP/1.1 plaintext before the Node parser, feed the
-same bytes to a sealed shadow framer and then the real parser, and record
-connection id, plaintext offset, request-line start, header end and remaining
-`Content-Length`. Pre-Start controls prove plain/TLS, direct/proxy, no-body and
-same-callback connection reuse. CONNECT, TLS handshake, encrypted bytes, Node
-request/data callback time and cross-process clocks are not request-byte proof.
+all origin listeners and one global monotonic `receiverSeq`. Its HTTP/1.1
+plaintext tap has exactly two one-way phases. In `parser_forwarding`, each raw
+plaintext segment is at most `65,536` bytes and reaches the sealed incremental
+shadow framer first and the real Node parser second with ordinary parser
+backpressure. It records connection id, plaintext offset, request-line start,
+header end and remaining `Content-Length`. Observer-owned retained JS state,
+including partial framing, counters and hash state, is at most `131,072` bytes;
+it never retains a complete body. Pre-Start controls prove plain/TLS,
+direct/proxy, no-body and same-callback connection reuse. CONNECT, TLS
+handshake, encrypted bytes, Node request/data callback time and cross-process
+clocks are not request-byte proof.
+
+The optional second phase is `terminal_drain`. It is observer-only and may begin
+only after the exact route prerequisites and one black-box
+`roleProductSettled(caseId, productSnapshotHash)` event. That barrier may be
+emitted only after the normalized result and every applicable public result are
+immutable; all source pull/read/enqueue, native request/fetch, redirect,
+response-consumer, owner, role-local client request-connection disposition,
+resource-lifetime and spool-close product actions are complete or explicitly
+absent; and paired latency, application Main/RSS, produced-final and capacity-
+peak snapshots are frozen. Paired roles record explicit absence for Session,
+public and spool fields outside paired scope; candidate-only COMPAT proves the
+real exact-HEAD Run/public/lease facts. Terminal packet/acknowledgement
+reconciliation, residual, recorder finalization, `liveHopIds` removal and
+ReceiverObserver endpoint/proxy cleanup are later evidence-only work and do not
+delay the barrier.
+
+No product promise, branch, owner, producer, fetch, consumer, redirect, public
+mapper, connection disposition, resource/spool lifetime, local timeout or
+paired performance/capacity peak may read, await or change because of the
+barrier, drain activation, drain bytes, terminal packet, acknowledgement or
+recorder finalization. The role emits the barrier without awaiting observer
+receipt. After it, only bounded recorder/finalization state may change; any
+product event or changed frozen snapshot is `VALID + FAIL`. A role that needs
+drain, parser EOF/destroy, observer acknowledgement or any observer wait to
+reach the barrier has an existing product timeout/deadlock/non-exit
+`VALID + FAIL`; deadline 4 cannot rescue it. Receipt, response commit/finish,
+fetch fulfillment, ordinary public return or quiet time alone cannot substitute
+for the barrier, and it adds no sixth deadline.
 
 The workload manifest assigns each expected hop exactly one
 `(logicalRequestId, hopId, destinationOrigin, opaquePathToken,
@@ -5482,7 +5580,7 @@ its destination-local occurrence and binds the earlier start to the one exact
 manifest hop. The real parser independently checks the same tuple. Missing,
 extra, duplicate, out-of-order or multiply matched tuples are not repaired by
 parser time or controller state; no candidate-only correlation header is added.
-The candidate-only `NYX-MTL-E1R-NF1-COMPAT-11` preflight runs the plain/TLS by
+The candidate-only `NYX-MTL-E1R-NF1-COMPAT-13` preflight runs the plain/TLS by
 direct/proxy same-request-target matrix. Two consecutive identical opaque
 request-targets must bind occurrences `1` and `2` to different expected hop
 ids, and the shadow framer and real parser must agree. Its events, result,
@@ -5507,6 +5605,42 @@ must remain unchanged while the next one-based occurrence binds the next
 expected hop. A changed target or tuple mismatch is `VALID + FAIL` under
 healthy evidence; independent observer inability is INVALID.
 
+`receiverFaultPrefixPaused` is recorded on the ReceiverObserver clock only
+after the endpoint application consumed exactly `65,536` request-body bytes,
+the shadow framer proved the request incomplete, and the business
+`IncomingMessage` was paused. It precedes an external-abort controller command
+and is the deadline-4 start only when a real raw terminal arrives naturally
+before drain activation; otherwise the later activation starts that line. A role
+receipt or other cross-process timestamp cannot replace either observer-clock
+start.
+
+`terminalDrainActivated(trigger)` is permitted exactly once only for
+`external_abort`, `incomplete_early_final`, or
+`incomplete_early_redirect`, and only while no real
+`receiverRequestTerminal` has already been recorded. External abort requires
+`receiverFaultPrefixPaused -> controller command -> role receipt ->
+roleProductSettled -> terminalDrainActivated`. An early final or redirect
+requires the exact prefix, endpoint actuation, complete response body/hash and
+real response writable `finish`, then `roleProductSettled`, then activation.
+Socket-close never drains and accepts only real raw FIN/RST. A natural raw
+terminal before the barrier forbids later activation. No post-settlement drain
+may be backdated or reordered to make an old-hop terminal precede an already-
+recorded next-hop start.
+
+Activation atomically freezes plaintext/raw/parser-forwarded/endpoint-consumed
+offsets and incremental hash state, changes the connection one way from
+`parser_forwarding` to `terminal_drain`, keeps endpoint consumption and the
+business `IncomingMessage` paused at exactly `65,536`, and resumes only the
+lower plaintext source. Each later `raw.read()` result is at most `65,536`
+bytes and reaches only the same shadow framer plus bounded counter/hash state;
+zero later bytes reach the Node parser. A complete-body final octet records the
+terminal and packet without synthesizing parser EOF, ending/destroying the
+socket, or ending/destroying the response writable. A real FIN/RST first records
+the terminal and packet in the same lower-source turn, then naturally propagates
+that same real terminal exactly once. Receipt, response commit/finish, barrier,
+quiet time, deadline expiry, process exit and tagged cleanup destroy are never
+terminal substitutes.
+
 The five independent `5,000 ms` lines are:
 
 1. fault actuation or Run-command receipt to the first
@@ -5517,8 +5651,11 @@ The five independent `5,000 ms` lines are:
    `publicTerminalFrozen(cancelled)`, with
    `consumerAbortIssued` strictly after the start and the real consumer Promise
    settled before the end; none mode has no deadline 3;
-4. observer-local actuation or completed-request marker to
-   `receiverRequestTerminal`;
+4. on a no-drain branch, observer-local endpoint actuation, completed-request
+   marker, or exact external-abort `receiverFaultPrefixPaused` to
+   `receiverRequestTerminal`; on an eligible still-terminal-missing drain branch,
+   exact `terminalDrainActivated` to `receiverRequestTerminal`, after the route
+   prerequisites and barrier above;
 5. `terminalPacketEmitted(packetId)` to
    `terminalFinalizationEvidenceReceived(packetId)` on the same
    ReceiverObserver/evidence clock.
@@ -5527,16 +5664,44 @@ Line 5 includes candidate receipt, count/hash reconciliation,
 `recorderFinalized`, `liveHopIds` removal and one fixed-size finalization proof
 in that order. Candidate control, replay, public return and resource lifetime
 must not await that evidence. Lines 4/5 have distinct starts; no deadline starts
-on packet receipt, and no line extends another.
+on packet receipt, and no line restarts, satisfies or extends another. A later
+barrier/drain cannot restart or extend lines 1-3. A healthy drain that observes
+no raw terminal by exactly `5,000 ms` freezes `VALID + FAIL`; drain has no
+active timeout action. An independent tap/framer/channel failure freezes
+`INVALID + NOT_EVALUATED` and stops this gate without same-gate retry.
+
+`receiverRequestTerminal` is only the exact positive-length body-final octet,
+the final header octet for zero/no body, or the first irreversible raw socket
+terminal after which an incomplete request can receive no later plaintext. In
+the same ReceiverObserver turn it emits exactly one non-coalescible immutable
+`terminalPacketEmitted(packetId)` bound to request/hop identity, terminal
+`receiverSeq`, cumulative bytes, counts and hash. The candidate handler records
+`terminalPacketReceived(packetId)` first, reconciles counts/residual, freezes the
+record, records `recorderFinalized(packetId)`, removes that hop from
+`liveHopIds`, and issues one fixed-size
+`terminalFinalizationEvidenceIssued(packetId)` without awaiting its return. The
+observer's matching `terminalFinalizationEvidenceReceived(packetId)` ends line
+5 and seals only evidence. Duplicate, malformed, wrong-hop/wrong-hash packets,
+later receiver bytes or candidate-caused channel closure are `VALID + FAIL`
+under a healthy observer; an independent channel fault follows the INVALID
+classifier.
 
 The shared incomplete-fault protocol reads exactly `65,536` request-body bytes,
 reports ready, pauses endpoint consumption and actuates exactly one early
 response, socket close or black-box role abort. Early response uses the exact
-non-empty protocol fixture and never resumes request consumption. Socket close
-closes that socket. Abort validity requires controller command, role receipt
-and prefix-ready/paused proof; early response/socket close require endpoint
-actuation acknowledgement. Upload completion after the incomplete fault is
-forbidden.
+non-empty protocol fixture, completes its real response writable, and never
+resumes request consumption. Socket close closes that socket and remains the
+no-drain real-terminal branch. Abort validity requires controller command, role
+receipt and prefix-ready/paused proof; early response/socket close require
+endpoint actuation acknowledgement. Upload completion after the incomplete
+fault is forbidden.
+
+Active evidence cleanup may destroy a socket only after
+`roleProductSettled`, the immutable line-4 verdict, and every applicable
+immutable line-5 verdict. It is separately tagged and cannot create
+`receiverRequestTerminal`, satisfy a deadline, synthesize parser EOF, alter
+normal connection cleanup evidence, or turn a failed product/observer result
+into PASS.
 
 Capacity is computed only by one candidate-local recorder and sequence:
 
@@ -5553,6 +5718,16 @@ only preserve or inflate outstanding. The producer, redirect loop, owner,
 consumer, public result, local timeout and spool lifetime have no read/await/
 branch edge to acknowledgement or finalization evidence.
 
+On an eligible drain branch, endpoint-accepted bytes include drain-only
+plaintext while `endpointConsumedBytes` remains exactly `65,536`. The barrier
+freezes produced-final and the candidate-local capacity peak before drain;
+later drain acknowledgements may reconcile only final residual and live-hop
+evidence. They cannot recompute or lower that peak or enter paired latency,
+application Main or application RSS. Any later producer pull/enqueue, candidate
+Promise, owner transition, replay, consumer/public event, connection-
+disposition change, resource/spool action or frozen-metric change is
+`VALID + FAIL`. No fault-tail acknowledgement may erase an earlier peak.
+
 Counted C1 emits the highest crossed cumulative watermark for each
 `1,048,576` bytes and one exact terminal packet; C4 changes only that manifest
 value to `4,194,304`. Cumulative nonterminal watermarks may coalesce, terminal
@@ -5567,11 +5742,15 @@ after its mode fact, endpoint request terminal and matching terminal packet are
 candidate-seen and reconciled. Delayed old-hop evidence therefore leaves its
 residual in the live sum across replay. A none hop records exact zero values but
 remains live through terminal reconciliation. A later evidence pass may verify
-but never repair historical membership or peaks.
+but never repair historical membership or peaks. Drain-branch finalization must
+match the capacity peak already frozen by `roleProductSettled`; a natural-
+terminal branch finalized earlier must be copied unchanged into that later
+snapshot. Residual is retained as measured and is never rewritten as
+acknowledged.
 
 #### COMPAT and paired evidence separation
 
-`NYX-MTL-E1R-NF1-COMPAT-11` runs first with its own process, fresh profile,
+`NYX-MTL-E1R-NF1-COMPAT-13` runs first with its own process, fresh profile,
 manifest and result. It binds exact HEAD commit/tree, overlay manifest and
 before/after path hashes; exact unchanged shared types, Chat/Responses
 consumers, Thread Library client/coordinator/Worker and Runtime client; packaged
@@ -5638,6 +5817,28 @@ A baseline semantic/fixture/cleanup/exit failure is also `VALID + FAIL` because
 no valid oracle pair exists. The first valid failure stops every later role and
 repetition.
 
+The frozen `NF1-11-PRE-RUN` raw result is the classifier example for an
+unhealthy selected tap: paused-parser backpressure prevented independent raw
+terminal evidence, so the result is `INVALID + NOT_EVALUATED`, never a product
+FAIL. Under `NF1-13`, a drain-branch terminal miss is `VALID + FAIL` only when
+healthy evidence proves route actuation, response writable `finish` where
+applicable, the complete product barrier, zero pre-barrier drain read, exact
+activation, unchanged product snapshots, uninterrupted lower-level collection,
+bounded retained state, zero parser forwarding, no framer/channel error and the
+full observer-clock `5,000 ms` expiry before cleanup. A no-drain branch instead
+requires its preflight-proven pause-independent raw-terminal watcher. Any
+independently missing evidence part is INVALID and stops without same-gate
+retry. A proven role that cannot reach `roleProductSettled` without drain or
+later moves product state is `VALID + FAIL`; observer drain cannot repair it.
+
+A pre-barrier drain read, response-path activation before writable `finish`,
+drain after an already-recorded terminal, any socket-close drain, any post-
+activation parser byte, body-sized retained buffer, synthesized parser EOF/
+destroy, duplicate propagation of a real terminal, post-barrier product event
+or snapshot change, early-redirect sequence backfill, or cleanup-created
+terminal/deadline/normal-cleanup evidence is also `VALID + FAIL` when the
+observer remains healthy.
+
 `INVALID + NOT_EVALUATED` is reserved for unproven identity, contaminated
 profile, workload mismatch, independent observer/tap/framer/channel/auditor/
 hash/evidence failure without already-proven product causality, or failed
@@ -5663,7 +5864,8 @@ Original T1 completed at `67bfb8e` after exact review
 decision, numeric, owner, classification and scope-lock history, but its
 malformed Responses fixture does not satisfy the current T2 dependency.
 
-T1R is this file only. Its allowed delta is limited to the corrected Responses
+T1R completed at `197aaced` and changed this file only. Its historical allowed
+delta was limited to the corrected Responses
 fixture bytes/length/SHA-256; the exact
 `(logicalRequestId, hopId, destinationOrigin, opaquePathToken,
 orderedOccurrence)` observer correlation contract and same-request-target
@@ -5675,22 +5877,24 @@ the common public-or-notice then fulfilled-or-absent close then owner-release
 tail; plan v36 at SHA-256
 `e180e19cd1b507f04d16479b24ece139ccbedd072e8844cd50a2c6407382cdce` and fresh
 `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R23` binding; the
-`NYX-MTL-E1R-NF1-11` / `NYX-MTL-E1R-NF1-COMPAT-11` operational identities;
+then-operational `NYX-MTL-E1R-NF1-11` /
+`NYX-MTL-E1R-NF1-COMPAT-11` identities;
 the `NYX-MTL-E1R-NF1-REPAIR-20260817-10` source review; separate FIXTURE and
 REPAIR histories, including rejected REPAIR `-01`/`-06` and never-run REPAIR
 `-02` through `-05` plus `-07` through `-09`; superseded-shakedown and retired
 gate `-02` through `-10` exclusions; static-only T1R validation; candidate-only
 COMPAT ownership of every dynamic owner/Runtime/call-count/lease-close control
 and the same-request-target network matrix; and directly affected status,
-dependency and ratchet text. The canonical graph is
-`T1 completed -> T1R -> NF1-COMPAT-11 -> NF1-11`; downstream authorization
-requires the full `NYX-MTL-E1R-NF1-11 reviewed PASS` identity. Every other
+dependency and ratchet text. Its historical graph was
+`T1 completed -> T1R -> NF1-COMPAT-11 -> NF1-11`. Those two gate identities are
+now retired unstarted, and this historical graph authorizes no new artifact,
+Start, evidence or product work. Every other
 direction, numeric line, fixture, owner outside this exact pre-hop/common-tail
 repair, redirect, credential, RequestInit, consumer, settlement/rollback/Retry,
 observer behavior outside this exact correlation repair, deadline, capacity,
 performance, validity/Stop and product boundary is unchanged.
 
-T1R validation is:
+T1R validation was:
 
 ```sh
 git diff --check
@@ -5708,17 +5912,17 @@ completed assistant message item. The malformed fixture SHA and unversioned
 operational NF1/COMPAT identities must be absent. Both repeated status blocks
 must keep FIXTURE and REPAIR identities separate, record REPAIR `-01` and `-06`
 as rejected, record REPAIR `-02` through `-05` plus `-07` through `-09` as never
-run, and bind only REPAIR `-10` as current. The superseded shakedown must be
+run, and bound REPAIR `-10` as that completed repair's authority. The superseded shakedown must be
 mechanically ineligible for every new source/archive/build identity, manifest,
 raw result, pair and aggregate. Retired gate identities `-02` through `-10`
 must have no sealed artifact, Start, raw result, pair, aggregate or evidence.
-Every downstream product unlock must name exactly
-`NYX-MTL-E1R-NF1-11 reviewed PASS`.
+Its former `NYX-MTL-E1R-NF1-11 reviewed PASS` downstream clause never fired and
+is superseded by the T1S exact `-13` clause below.
 
 T1R statically checks that every expected hop has one exact manifest tuple and
 that fragment-only redirects preserve the HTTP request-target token while
 `orderedOccurrence` advances. The source contract must assign the plain/TLS by
-direct/proxy same-request-target network matrix solely to candidate-only
+direct/proxy same-request-target network matrix solely to the then-candidate-only
 `NYX-MTL-E1R-NF1-COMPAT-11`, require shadow-framer/real-parser agreement there,
 and forbid that matrix's events, result, timing, capacity values and verdict from
 every B/C pair, result and aggregate. T1R does not execute the network matrix or
@@ -5734,10 +5938,10 @@ container, call-count or lease-close injection. The source contract assigns all
 of those dynamic cases and their unchanged outcomes solely to the later T2
 candidate-only COMPAT preflight.
 
-The exact formatted T1R bytes require independent strict review
+The exact formatted T1R bytes required independent strict review
 `NYX-MTL-E1R-NF1-REPAIR-20260817-10`. Review checks the fixture extraction,
 hash, JSON and unchanged consumer result; static route/occurrence contract and
-candidate-only same-target assignment; v36/R23 identity; `-11` gate identities;
+candidate-only same-target assignment; v36/R23 identity; historical `-11` gate identities;
 rejected/never-run source-review history; retired `-02` through `-10` and
 superseded-shakedown exclusion; static exact-HEAD pre-hop lineage/call-matrix/
 common-tail mapping and T2 ownership of every dynamic control; all direct
@@ -5749,7 +5953,80 @@ plaintext tap, capacity/live-hop math, disjoint COMPAT/paired schemas, Latin
 square, settlement/rollback/Retry and exact validity/Stop rules. Entry of those
 exact accepted bytes into HEAD completes T1R without a later status-only edit.
 
-Only after T1R completes may T2 build two newly sealed reviewed OS-temp
+T1S changes this file only. Its dependencies are completed T1R at `197aaced`
+and the exact accepted v38 plan identity above. Its delta is limited to:
+
+1. recording `NF1-11-PRE-RUN` as the exact frozen
+   `INVALID + NOT_EVALUATED` raw artifact and excluding its entire temp
+   derivation without inferring product failure;
+2. replacing the continuously transparent tap with the exact one-way
+   `parser_forwarding -> roleProductSettled -> terminal_drain` evidence
+   contract, route prerequisites, frozen product/measurement snapshot,
+   bounded-state/read rules, deadline-4 start, socket-close no-drain branch,
+   parser/writable terminal order, classifier and post-verdict cleanup above;
+3. binding v38, its exact SHA-256, convergence receipt and full strict review;
+4. preserving all earlier FIXTURE and REPAIR accepted/rejected/never-run
+   history, retaining REPAIR `-10` as completed T1R history, recording REPAIR
+   `-11` as never run, and binding the exact formatted T1S bytes only to
+   `NYX-MTL-E1R-NF1-REPAIR-20260817-12`;
+5. retiring full `NF1-11`/`COMPAT-11` and prospective
+   `NF1-12`/`COMPAT-12` as unstarted while making
+   `NYX-MTL-E1R-NF1-13` and `NYX-MTL-E1R-NF1-COMPAT-13` the sole operational
+   gate identities; and
+6. replacing the canonical graph with
+   `T1 completed -> T1R completed -> T1S -> NF1-COMPAT-13 -> NF1-13` and every
+   downstream product unlock with exact
+   `NYX-MTL-E1R-NF1-13 reviewed PASS`.
+
+T1S changes no fixture, redirect, credential, RequestInit, owner, consumer,
+settlement, rollback, Retry, Runtime, capacity/performance line or membership,
+numeric deadline, acknowledgement schedule, paired/COMPAT membership, product
+inventory or authorization. Its validation is:
+
+```sh
+git diff --check
+shasum -a 256 docs/next/agent-workbench-task-slices.md
+pnpm exec oxfmt --check --config apps/desktop/.oxfmtrc.json docs/next/agent-workbench-task-slices.md
+```
+
+Validation also reconstructs the unchanged Chat fixture to 143 bytes and
+SHA-256
+`36c10cc77a3b79a5bf98e5d797dc39cfd52f437c12231a07aa373c636597d99d`,
+and the unchanged Responses fixture to 312 bytes and SHA-256
+`910035adf9450f9f245c2cb1384ff49a9349022d57c1d100704ea084e177b9ce`.
+The Responses completed JSON must retain its one complete `output` array, and
+the exact-HEAD unchanged consumer must still return content `Hello`, provider
+state version `1`, protocol `openai-responses`, null reasoning context and the
+one exact completed assistant item. Static scans require both repeated status
+blocks to bind v38/R25/REPAIR-12, preserve every earlier identity disposition,
+and classify every `-11`/`-12` occurrence as completed, rejected, never-run,
+invalid or retired history that cannot enter a new manifest, raw result, pair,
+aggregate or unlock. Every operational gate, dependency and downstream unlock
+must name only `-13`.
+
+The source contract must also state zero pre-barrier drain and zero post-
+activation parser forwarding; exact `65,536` endpoint consumption; every raw
+read at most `65,536`; observer-owned retained state at most `131,072`; route-
+specific receipt/actuation and response writable `finish`; a complete black-box
+product/connection/resource/spool/performance/capacity freeze before drain;
+socket-close no-drain and real terminal only; complete-body no synthetic parser
+EOF/destroy; real FIN/RST single propagation; deadline-4/5 separation; no
+observer-to-product edge; early-redirect no backfill; and active cleanup only
+after all applicable immutable verdicts. Static exact-HEAD owner/call/
+settlement/consumer mappings remain unchanged outside this observer/identity
+delta.
+
+The exact formatted T1S bytes require independent strict review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-12`. Entry of those exact accepted bytes into
+HEAD completes T1S without a later status-only edit. Stop before T2 if any role
+needs drain/parser EOF/destroy/observer acknowledgement to reach the product
+barrier; a response writable cannot finish while request parsing stays paused;
+early redirect needs post-settlement drain to invent the selected-tap order;
+cleanup cannot be mechanically separated from terminal/deadline/normal-cleanup
+evidence; a frozen non-observer contract changes; or any tracked product/harness
+file is required.
+
+Only after T1S completes may T2 build two newly sealed reviewed OS-temp
 artifacts:
 
 1. the common B/C1/C4 transport harness; and
@@ -5758,8 +6035,11 @@ artifacts:
 Before execution it seals exact source/archive/build/app.asar/workload/fixture/
 overlay hashes and the unchanged-module manifest, proves dev/build/app.asar/
 packaged identity, runs small streaming POST direct/proxy RequestInit controls,
-proves the pre-parser observer/channel topology and static no-control dependency,
-and executes every frozen dynamic preparation/pre-hop owner/Runtime generation,
+proves the two-phase pre-parser observer/channel topology and static no-control
+dependency, including plain/TLS by direct/proxy external-abort, incomplete-
+early-final and incomplete-early-redirect phase/order/bounds controls plus a
+separate socket-close no-drain control before any role Start, and executes every
+frozen dynamic preparation/pre-hop owner/Runtime generation,
 rejection/abort/race, lineage/call-count, native/consumer/settlement/common-close
 control. Candidate-only COMPAT also executes the plain/TLS by direct/proxy
 same-request-target matrix; none of its evidence may enter B/C. If the
@@ -5768,19 +6048,29 @@ needed, an overlay path is unmanifested, or exact redirect behavior cannot be
 expressed, T2 stops. Exact T2 bytes need a new independent pre-run review id
 before Start.
 
-T3 first runs `NYX-MTL-E1R-NF1-COMPAT-11`. Only its PASS under the sealed
-classifier permits `NYX-MTL-E1R-NF1-11` paired roles; T4 later reviews both
-evidence sets independently. NF1-11
-records all raw B/C1/C4 results, superseded INVALID evidence, exact cleanup/
+T3 first runs `NYX-MTL-E1R-NF1-COMPAT-13`. Only its PASS under the sealed
+classifier permits `NYX-MTL-E1R-NF1-13` paired roles; T4 later reviews both
+evidence sets independently. NF1-13 records all raw B/C1/C4 results, the frozen
+`NF1-11-PRE-RUN` INVALID artifact only as excluded history, every superseded
+INVALID attempt under the new identity, exact cleanup/
 retry proof and a mechanical pair/aggregate index. It follows first-valid-
 failure Stop and the INVALID rules above.
 
 T4 independently reviews COMPAT and paired evidence, exact identities,
-classification and aggregate membership, then updates only this source-of-truth
-status to reviewed PASS or `VALID_STOP`. It may not reinterpret INVALID, rerun
-after a valid failure or authorize product code on Stop.
+classification and aggregate membership. Paired review binds every black-box
+product-settled snapshot and frozen latency/Main/RSS/capacity peak; every
+eligible parser-forwarding-to-terminal-drain transition and response writable
+`finish`; endpoint/parser/drain/raw-byte reconciliation; the natural-terminal
+no-activation branch; socket-close no-drain/real-FIN-RST evidence; retained-
+state bounds; complete-body no-EOF/destroy and real-terminal single propagation;
+unchanged post-barrier product snapshots; line-4/line-5 results; post-verdict-
+only cleanup; and early-redirect no-backfill order. It separately proves no role
+used drain/parser EOF/destroy/observer acknowledgement to reach the barrier and
+that the frozen pre-run artifact contributed nothing. It then updates only this
+source-of-truth status to reviewed PASS or `VALID_STOP`. It may not reinterpret
+INVALID, rerun after a valid failure or authorize product code on Stop.
 
-A recorded `NYX-MTL-E1R-NF1-11 reviewed PASS` permits only drafting a separate
+A recorded `NYX-MTL-E1R-NF1-13 reviewed PASS` permits only drafting a separate
 `multi-thread-library/E1R-P1-scope-lock`. That later scope lock needs its own
 exact product inventory, checks and independent review in HEAD. It is not
 authorized by this amendment. Full E1 cross-Thread concurrency, shutdown barrier
