@@ -165,12 +165,17 @@ Use relative documentation links. Do not add local absolute paths.
   the first pair under `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. On 2026-08-16
   the user approved the complete `NYX-E1R-NF1-DECISION-A-v1` native-fetch
   recovery packet after its final full review found no remaining S0-S3 issue.
-  The documentation-only NF1 amendment below is bound to independent review
-  `NYX-MTL-E1R-NF1-SCOPE-20260816-02` and self-completes only when those exact
-  accepted bytes enter HEAD. That transition authorizes only the sealed OS-temp
-  `NYX-MTL-E1R-NF1-COMPAT` preflight and `NYX-MTL-E1R-NF1` direction gate. No
-  E1/E1R product slice is executable without a later reviewed product scope
-  lock.
+  The original documentation-only NF1 amendment completed at `67bfb8e` after
+  independent review `NYX-MTL-E1R-NF1-SCOPE-20260816-02`. One uncounted
+  pre-Start OS-temp seam shakedown then exposed its malformed Responses fixture;
+  that shakedown is superseded and is not gate evidence. The docs-only T1R
+  fixture/correlation/pre-hop-owner/ratchet repair below is bound to
+  `NYX-MTL-E1R-NF1-REPAIR-20260817-10` and self-completes only when those
+  exact accepted bytes enter HEAD. Until then no T2 build, shakedown, Start, or
+  counted sample may resume. T1R completion authorizes only the newly sealed
+  OS-temp `NYX-MTL-E1R-NF1-COMPAT-11` preflight and
+  `NYX-MTL-E1R-NF1-11` direction gate. No E1/E1R product slice is executable
+  without a later reviewed product scope lock.
 
 ## A0: Scope Gate Docs
 
@@ -3334,14 +3339,29 @@ but its first valid cap-2 sample failed the existing Main/RSS lines and stopped
 that implementation attempt. The E1R amendment completed at `24e6c07` after
 review `NYX-MTL-E1R-S0-FINAL-20260814-03`. E1R/G0 then reached independently
 reviewed `VALID_STOP`. The user approved the complete
-`NYX-E1R-NF1-DECISION-A-v1` packet on 2026-08-16. The docs-only NF1 amendment
-below self-completes only after independent review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-02` accepts its exact bytes and those bytes
-enter HEAD. It does not revive G0 or the archived E1 candidate. Once complete,
-only the new OS-temp COMPAT preflight and NF1 direction gate are executable.
-Old E1 product bytes, E1R-P1/E1R-P2, a new E1 scope, resumed E1 and U1 remain
-non-executable unless NF1 later reaches independently reviewed PASS and a
-separate exact product scope lock enters HEAD.
+`NYX-E1R-NF1-DECISION-A-v1` packet on 2026-08-16. The original docs-only NF1
+amendment completed at `67bfb8e` after review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. Its one uncounted pre-Start seam
+shakedown is superseded after exposing the malformed Responses fixture and
+cannot enter new evidence. The first T1R fixture source candidate was rejected
+before landing under `NYX-MTL-E1R-NF1-FIXTURE-20260816-01`; its planned
+`NYX-MTL-E1R-NF1-FIXTURE-20260816-02` review never ran because plan v25 failed
+full review. A later repair source candidate was rejected under
+`NYX-MTL-E1R-NF1-REPAIR-20260817-01`; prospective REPAIR reviews `-02` through
+`-05` never ran because plans v28 through v31 failed review. The 5787-line
+source candidate at SHA-256
+`12fdf2f0ae788a6ded713879fa2ac535bfc5134466e1b3d450d0f924e9629025` was
+rejected under `NYX-MTL-E1R-NF1-REPAIR-20260817-06`. Prospective REPAIR `-07`,
+`-08`, and `-09` never ran because plans v33, v34, and v35 respectively failed
+convergence, full review, and convergence. The current T1R fixture/correlation/
+pre-hop-owner/ratchet repair below self-completes only after independent review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-10` accepts its exact bytes and those bytes
+enter HEAD. It does not revive G0 or the archived E1 candidate. Once T1R
+completes, only the new OS-temp `NYX-MTL-E1R-NF1-COMPAT-11` preflight and
+`NYX-MTL-E1R-NF1-11` direction gate are executable. Old E1 product bytes,
+E1R-P1/E1R-P2, a new E1 scope, resumed E1 and U1 remain non-executable unless
+`NYX-MTL-E1R-NF1-11 reviewed PASS` is later recorded and a separate exact
+product scope lock enters HEAD.
 
 The reviewed source is
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
@@ -3359,13 +3379,13 @@ The only allowed dependency order is:
 
 ```text
 S0
-├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → NF1 direction amendment → NF1-COMPAT → NF1 [PASS | VALID_STOP]
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → T1 NF1 direction amendment [completed] → T1R fixture/correlation/pre-hop-owner/ratchet repair → NF1-COMPAT-11 → NF1-11 [PASS | VALID_STOP]
 └─ G2 [VALID_STOP] → v5.3 → G2R
 
 G2R + M1 → P1
 
-NF1 reviewed PASS [not yet achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
-                         [conditional and not authorized by the NF1 amendment]
+NYX-MTL-E1R-NF1-11 reviewed PASS [not yet achieved] ⇢ E1R-P1 scope → E1R-P1 → E1R-P2 → new E1 scope → resumed E1 → U1 → L1 → Q1 → A1 → M1
+                                           [conditional and not authorized by the NF1 amendment]
 ```
 
 No later slice may begin before every dependency passes its evidence and
@@ -4805,8 +4825,9 @@ Status: complete at `24e6c07` after independent strict review
 review `NYX-E1R-PERF-V9-FINAL-01`. The OS-temp G0 below later reached
 independently reviewed `VALID_STOP`; G0 remains stopped and every E1/E1R product
 slice remains non-executable. The later user-approved native-fetch direction
-does not reopen G0; it authorizes only the separately identified NF1 gates after
-the amendment below passes review and enters HEAD.
+does not reopen G0; it authorizes only `NYX-MTL-E1R-NF1-COMPAT-11` followed by
+`NYX-MTL-E1R-NF1-11` after the T1R amendment below passes review and enters
+HEAD.
 
 G0 status: independently reviewed `VALID_STOP` under
 `NYX-MTL-E1R-G0-EVIDENCE-20260814-02`. Formal attempt 3 stopped after the first
@@ -4832,8 +4853,8 @@ evidence and do not contribute to this Stop. Fresh-profile, external delivery,
 exact success bodies, normal process exit, CONNECT cleanup and the evidence
 manifest all passed review. G0 did not achieve reviewed PASS. `E1R-P1`,
 `E1R-P2`, a new E1 scope and all E1/E1R product work remain non-executable
-unless the separately identified NF1 gate reaches independently reviewed PASS
-and a later exact product scope lock enters HEAD.
+unless `NYX-MTL-E1R-NF1-11 reviewed PASS` is recorded and a later exact product
+scope lock enters HEAD.
 
 This amendment changes only:
 
@@ -4939,15 +4960,31 @@ Type: documentation-only direction amendment and OS-temp gate scope lock.
 
 Status: the complete decision packet below was explicitly approved by the user
 on 2026-08-16 after the final full review reported no remaining S0-S3 finding.
-This amendment is derived from `Nyx Multi-Thread Library E1R Native-Fetch
-Recovery Plan` v20, SHA-256
-`b3509363c1ecc8b7bccfa4c6b3cdb8eaf29903e8ba740c3cafd6193176ed8ddd`,
-and plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R10`. These exact amendment
-bytes are bound to independent review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. The amendment self-completes only when
-that review accepts the exact bytes and those bytes enter HEAD. Before then no
-harness or gate may start. Afterward, only the OS-temp preflight and direction
-gate defined here are executable; no product slice is authorized.
+The original T1 amendment entered HEAD at `67bfb8e` after review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. One uncounted OS-temp seam shakedown
+before COMPAT Start proved that amendment's Responses fixture malformed; it
+produced no gate result and is now
+`NYX-MTL-E1R-NF1-SHAKEDOWN-01-SUPERSEDED`. The first T1R fixture source
+candidate was rejected before landing under
+`NYX-MTL-E1R-NF1-FIXTURE-20260816-01`; the planned
+`NYX-MTL-E1R-NF1-FIXTURE-20260816-02` review never ran because plan v25 failed
+full review. A later repair source candidate was rejected under
+`NYX-MTL-E1R-NF1-REPAIR-20260817-01`; prospective REPAIR reviews `-02` through
+`-05` never ran because plans v28 through v31 failed review. The 5787-line
+source candidate at SHA-256
+`12fdf2f0ae788a6ded713879fa2ac535bfc5134466e1b3d450d0f924e9629025` was
+rejected under `NYX-MTL-E1R-NF1-REPAIR-20260817-06`. Prospective REPAIR `-07`,
+`-08`, and `-09` never ran because plans v33, v34, and v35 respectively failed
+convergence, full review, and convergence. The current T1R repair is derived
+from `Nyx Multi-Thread Library E1R Native-Fetch Recovery Plan` v36, SHA-256
+`e180e19cd1b507f04d16479b24ece139ccbedd072e8844cd50a2c6407382cdce`, and
+plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R23`. These exact repair bytes are
+bound to independent review `NYX-MTL-E1R-NF1-REPAIR-20260817-10`. T1R
+self-completes only when that
+review accepts the exact bytes and those bytes enter HEAD. Before then no T2
+build, shakedown, Start, or counted sample may resume. Afterward, only the
+OS-temp preflight and direction gate defined here are executable; no product
+slice is authorized.
 
 The approval record is `NYX-E1R-NF1-DECISION-A-v1`. Immediately after receiving
 the complete six-item packet and the clean final-review result, the user
@@ -4976,10 +5013,17 @@ tracked product edit.
 
 #### Direction and immutable boundaries
 
-The new gate id is `NYX-MTL-E1R-NF1`; it is not a rerun or repair of G0. The
-candidate-only prerequisite is `NYX-MTL-E1R-NF1-COMPAT`. Old G0 remains
-immutable independently reviewed `VALID_STOP` evidence and neither its raw
-evidence nor its stopped pairs are rerun.
+The new gate id is `NYX-MTL-E1R-NF1-11`; it is not a rerun or repair of G0 and
+is not a continuation of the superseded shakedown. The planned but unstarted
+`NYX-MTL-E1R-NF1-02` through `-10` and
+`NYX-MTL-E1R-NF1-COMPAT-02` through `-10` identities are retired and have no
+sealed artifact, Start, raw result, pair, aggregate or evidence. The candidate-
+only prerequisite is `NYX-MTL-E1R-NF1-COMPAT-11`. No source/archive/build,
+fixture, manifest, trace, result or evidence byte from
+`NYX-MTL-E1R-NF1-SHAKEDOWN-01-SUPERSEDED` may enter either new identity, a
+raw result, pair or aggregate. Old G0 remains immutable independently reviewed
+`VALID_STOP` evidence and neither its raw evidence nor its stopped pairs are
+rerun.
 
 NF1 answers one question: can the smallest native-fetch/manual-redirect
 candidate preserve exact current behavior and stay within the approved empirical
@@ -5019,8 +5063,10 @@ activeSessionInstalled
 prepareTurnFulfilled(PreparedThreadTurn exactIdentity)
   -> preparedIdentityRecorded
   -> RunControlInstalled(copy sticky abort)
+  -> PreHopOwner(accepted_event)
   -> unchanged accepted event
-  -> TerminalOwner(none, cancelled) if already aborted, otherwise pre-hop null
+  -> TerminalOwner(none, cancelled) if already aborted
+     or PreHopOwner(resolve_target) -> resolveTarget
 
 prepareTurnRejected
   -> no RunControl
@@ -5032,18 +5078,103 @@ The successful prepare reaction above has no `await` or yield. `RunControl`
 exists only after exact `PreparedThreadTurn`; before that point cancel touches
 only the existing Session signal. After installation, its monotonic
 `runAbortRequested` latch and exactly one tagged current owner span the whole
-Run:
+Run. `currentOwner === null` before the intended public terminal or existing
+safe notice returns, the conditional spool close finishes, and the owner is
+released is `VALID + FAIL`:
 
 ```text
+PreHopOwner(stage, generation, containerLineageId?) |
 HopOwner | FinalResponseOwner |
 AlreadyAbortedFulfillmentCleanupOwner |
-TerminalOwner(required | none) | legal pre-first-hop null
+TerminalOwner(required | none)
 ```
 
-The pre-first-hop null is legal only until the same synchronous block installs
-the first `HopOwner` or `TerminalOwner(none)`. No producer, fetch, consumer,
-mapper, settlement, Runtime projection or public return may exist across an
-`await` or yield without the applicable owner. Fetch fulfillment keeps the old
+The candidate-only pre-hop state is exactly:
+
+```text
+PreHopOwner {
+  stage: accepted_event | resolve_target | bind_target |
+    materialize_spool_sources | materialize_provider_history |
+    runtime_factory | runtime_replay_container |
+    runtime_replay_command(commandIndex) | runtime_submit_or_retry |
+    runtime_start_assistant | post_runtime_checkpoint | start_event,
+  abortCheckpoint: observe_after_stage | carry_to_exact_next_stage,
+  phase: before_invoke | pending | reaction,
+  outcome: pending | fulfilled | rejected,
+  stageResources: exact manifest-bound handles created by this stage,
+  generation: integer,
+  containerLineageId: string | null
+}
+```
+
+The exact pre-hop order is:
+
+```text
+accepted_event -> resolve_target -> bind_target ->
+materialize_spool_sources -> materialize_provider_history ->
+runtime_factory -> runtime_replay_container {
+  runtime_replay_command(commandIndex)*
+} -> runtime_submit_or_retry -> runtime_start_assistant ->
+post_runtime_checkpoint -> start_event -> first HopOwner
+```
+
+Runtime-disabled mode skips the Runtime stages and reaches the existing post-
+materialization abort checkpoint. A `PreHopOwner` is installed before each
+synchronous action or Promise invocation and records its phase, exact outcome,
+created/adopted resources, strictly increasing generation and optional stable
+`containerLineageId`. An ordinary Promise keeps the same owner/generation while
+pending or internally settled until its product reaction runs. A Run abort only
+sets the sticky latch and records the current-owner abort fact; it does not
+retire that owner, start a later stage or freeze a terminal ahead of the
+reaction. The reaction first records the exact outcome and adopts every side
+effect/handle, then performs one no-`await` next-owner handoff. A stale ordinary
+generation may record evidence only and must make zero ownership, terminal or
+later-call mutation.
+
+Runtime replay has separate nested rules. `runtimeReplayContainerInvoked`
+allocates one immutable `containerLineageId` for the unchanged coordinator
+Promise. Before every real Runtime command, the temporary Runtime proxy replaces
+the latest container generation with one indexed child owner in that lineage.
+Child fulfillment, rejection or synchronous throw keeps the child generation
+through its reaction, records the exact command outcome, restores a fresh
+container generation in the same lineage and returns or rethrows unchanged. A
+child never inspects abort to choose a terminal and never installs
+`TerminalOwner`, current submit/retry, `startAssistant` or Provider work. Only
+the outer replay reaction, under the latest container generation in the same
+lineage, may continue to current-turn Runtime calls or map an outer rejection to
+the sole `TerminalOwner`. Wrong lineage, non-latest outer generation or stale
+child generation is `VALID + FAIL` and mutates nothing. The unique rejection
+chain is:
+
+```text
+child reject/throw -> latest same-lineage container restored ->
+outer replay reject -> sole TerminalOwner
+```
+
+No current submit/retry, `startAssistant` or Provider call follows that outer
+rejection, and this overlay invents no Runtime cancellation.
+
+The exact HEAD abort checkpoints remain after target resolution, target
+binding, Runtime-disabled provider-history materialization, and the complete
+Runtime replay/current-turn start block. At other fulfilled stages the sticky
+latch is carried into the exact next owner before its real call. The only call-
+order exception is the approved candidate spool-source preparation before
+Provider-history materialization. It checks abort every `65,536` source bytes
+and registers every full or partial lease before a yield/rejection; only a
+genuinely pending copy may stop early. If that Promise already fulfilled, its
+full lease is adopted or absence recorded and Provider-history materialization
+still runs. With Runtime enabled, fulfilled Provider-history materialization
+under a sticky abort still runs the synchronous Runtime factory, full replay,
+current submit/retry and `startAssistant` before the post-Runtime cancelled
+checkpoint. Runtime-disabled mode cancels at its existing checkpoint. No
+resolver, binder, materializer, Worker, sidecar or Runtime cancellation is
+invented. A synchronous Runtime factory or accepted/start publication throw
+uses the exact existing abort/error catch precedence.
+
+`PreHopOwner(start_event)` rechecks the latch. If set, it installs
+`TerminalOwner(none, cancelled)` and emits no start. Otherwise it emits the
+unchanged synchronous start event and installs the first `HopOwner` in the same
+turn before producer creation or native `fetch`. Fetch fulfillment keeps the old
 owner until one no-yield block checks generation and prior abort state, then
 installs the next owner. A late fulfillment after an already-issued pending-
 fetch abort installs `AlreadyAbortedFulfillmentCleanupOwner`, performs cleanup
@@ -5059,11 +5190,14 @@ required mode, issues the sole `CONSUMER_RUN_ABORT` before the first read or
 against the active real consumer. None mode performs zero response read,
 reader, cancel, source or invented consumer action.
 
-Every no-response terminal installs `TerminalOwner(none)` before any terminal
-mapper or await. Both terminal modes remain installed across the real consumer
-when required, mapper awaits, settlement, canonical reread, rollback/failure-
-record decision, Runtime projection or containment, and the synchronous
-`publish()` call and return. Public publication has no synthetic async hook.
+Every ordinary pre-hop or outer replay-container rejection/cancellation and
+every no-response terminal installs `TerminalOwner(none)` before any terminal
+mapper or await. `runtime_replay_command` is explicitly excluded: it only
+restores its container and propagates unchanged. Both terminal modes remain
+installed across the real consumer when required, mapper awaits, settlement,
+canonical reread, rollback/failure-record decision, Runtime projection or
+containment, and the synchronous `publish()` call and return. Public publication
+has no synthetic async hook.
 
 After mapper preparation, one no-`await` block performs the final Run-latch
 recheck, records `publicTerminalFrozen(exactInput)`, and invokes
@@ -5079,10 +5213,15 @@ direct accepted reply or complete exact canonical match
   -> durableTerminalCommitted
   -> matching Runtime terminal projection settled/contained/absent
   -> intended public terminal
+  -> adopted full/partial spool lease close fulfilled exactly once
+     or explicit absence with zero close calls
+  -> owner release
 
 non-durable and exact failure record retained
   -> no Runtime or intended terminal
   -> unchanged safe settlement-failure notice
+  -> adopted full/partial spool lease close fulfilled exactly once
+     or explicit absence with zero close calls
   -> owner release
   -> later Retry(threadId, requestId)
   -> retained lookup recovers exact input/ref
@@ -5095,6 +5234,8 @@ complete exact comparison finds a different non-pending terminal
   -> failure record cleared
   -> no Runtime or intended terminal
   -> unchanged safe settlement-failure notice
+  -> adopted full/partial spool lease close fulfilled exactly once
+     or explicit absence with zero close calls
   -> owner release
   -> later Retry(threadId, requestId)
   -> missing lookup rejected before Worker
@@ -5102,13 +5243,22 @@ complete exact comparison finds a different non-pending terminal
 ```
 
 A rejected required rollback leaves the exact record retained. Neither an
-outcome enum nor rollback alone decides retention. The later Retry command is
-outside the old Run and old owner and carries only `threadId`/`requestId`; exact
-input/ref exists only after retained lookup. The safe notice, its `retryable`
-field, UI behavior and ordinary Provider Retry remain unchanged. Complete exact
-canonical equality covers request id, terminal status, content, safe error,
-settled time and the complete provider-state-ref identity when present; raw
-`not_pending` is never durable proof.
+outcome enum nor rollback alone decides retention. Every original Run returns
+its intended public terminal or existing safe notice before the sole outer
+lease close. `TerminalOwner` remains installed through that close and releases
+only after exact fulfillment or explicit absence. A close rejection is
+`VALID + FAIL`: it retains the owner, cannot PASS and permits no later Retry
+command. The original no-retained Run contains no Retry request or rejection.
+Only after the old owner releases may a separate Retry command run. It carries
+only `threadId`/`requestId`; exact input/ref exists only after retained lookup.
+A missing lookup rejects before Worker with zero Worker/Provider/Runtime/
+intended-terminal calls. A retained lookup reaches Worker settlement, reruns no
+Provider/Runtime work and re-enters the same three dispositions under the new
+command, never the old owner. The safe notice, its `retryable` field, UI behavior
+and ordinary Provider Retry remain unchanged. Complete exact canonical equality
+covers request id, terminal status, content, safe error, settled time and the
+complete provider-state-ref identity when present; raw `not_pending` is never
+durable proof.
 
 #### Manual redirect and per-hop request contract
 
@@ -5237,19 +5387,19 @@ Promise handlers and synchronous candidate state:
 Final response handling is a separate terminal-owner overlay and adds no native
 fetch or local-settlement fact:
 
-| Terminal source                               | Atomic owner handoff                                                                 | Mode/provisional result                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| successful final with body                    | final owner to terminal owner after local settlement and synchronous body check      | required/pending real SSE consumer                                                     |
-| non-attachment non-2xx                        | final owner to terminal owner after local settlement and status/attachment check     | required/pending real JSON consumer                                                    |
-| attachment-bearing non-2xx                    | final owner to terminal owner after local settlement and status/attachment check     | none/400, 413 or 415 maps `content_rejected`; other statuses keep current safe failure |
-| successful final without body                 | final owner to terminal owner after local settlement and body check                  | none/current safe no-body failure                                                      |
-| pending-fetch Run-abort rejection             | hop owner to terminal owner after rejection row and local settlement                 | none/cancelled                                                                         |
-| spontaneous fetch rejection                   | hop owner to terminal owner after rejection row and local settlement                 | none/current safe failure                                                              |
-| terminal redirect policy/classification error | hop owner to terminal owner after exact response disposition and local settlement    | none/baseline-safe failure                                                             |
-| post-prepare pre-hop validation error         | legal pre-hop null to terminal owner in the same validation block                    | none/baseline-safe failure                                                             |
-| post-prepare pre-fetch Run abort              | legal pre-hop null to terminal owner in the same command block                       | none/cancelled                                                                         |
-| redirect-handoff Run abort                    | old hop owner to terminal owner after old local settlement in the same handoff block | none/cancelled; no next hop                                                            |
-| late fulfilled already-aborted response       | cleanup owner to terminal owner after exact cleanup                                  | none/cancelled while the pending-fetch row remains `VALID + FAIL`                      |
+| Terminal source                               | Atomic owner handoff                                                                        | Mode/provisional result                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| successful final with body                    | final owner to terminal owner after local settlement and synchronous body check             | required/pending real SSE consumer                                                     |
+| non-attachment non-2xx                        | final owner to terminal owner after local settlement and status/attachment check            | required/pending real JSON consumer                                                    |
+| attachment-bearing non-2xx                    | final owner to terminal owner after local settlement and status/attachment check            | none/400, 413 or 415 maps `content_rejected`; other statuses keep current safe failure |
+| successful final without body                 | final owner to terminal owner after local settlement and body check                         | none/current safe no-body failure                                                      |
+| pending-fetch Run-abort rejection             | hop owner to terminal owner after rejection row and local settlement                        | none/cancelled                                                                         |
+| spontaneous fetch rejection                   | hop owner to terminal owner after rejection row and local settlement                        | none/current safe failure                                                              |
+| terminal redirect policy/classification error | hop owner to terminal owner after exact response disposition and local settlement           | none/baseline-safe failure                                                             |
+| ordinary pre-hop or outer replay rejection    | named pre-hop owner to terminal owner after exact outcome/effects; replay child is excluded | none/baseline-safe failure                                                             |
+| pre-hop or pre-fetch Run abort                | named pre-hop owner to terminal owner only at the frozen checkpoint; no later action/hop    | none/cancelled                                                                         |
+| redirect-handoff Run abort                    | old hop owner to terminal owner after old local settlement in the same handoff block        | none/cancelled; no next hop                                                            |
+| late fulfilled already-aborted response       | cleanup owner to terminal owner after exact cleanup                                         | none/cancelled while the pending-fetch row remains `VALID + FAIL`                      |
 
 A pre-freeze Run abort selects cancelled. None mode invents no transport or
 consumer action and emits no consumer events. Required mode uses the sole
@@ -5273,9 +5423,9 @@ final two LF bytes included:
   length `143`; SHA-256
   `36c10cc77a3b79a5bf98e5d797dc39cfd52f437c12231a07aa373c636597d99d`.
 - Responses escaped bytes:
-  `data: {"type":"response.output_text.delta","delta":"Hello"}\n\ndata: {"type":"response.completed","response":{"status":"completed","reasoning":{"context":null},"output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello","annotations":[]}]}}}\n\ndata: [DONE]\n\n`;
-  length `311`; SHA-256
-  `fe242f799675aa3f4449bf98c04013bef355d1931f311f0d3f5fcb558f3293c6`.
+  `data: {"type":"response.output_text.delta","delta":"Hello"}\n\ndata: {"type":"response.completed","response":{"status":"completed","reasoning":{"context":null},"output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello","annotations":[]}]}]}}\n\ndata: [DONE]\n\n`;
+  length `312`; SHA-256
+  `910035adf9450f9f245c2cb1384ff49a9349022d57c1d100704ea084e177b9ce`.
 
 Both normalize to visible text `Hello` and completed terminal. Chat's current
 consumer obligation ends at its first finish return; endpoint evidence may
@@ -5318,8 +5468,27 @@ connection id, plaintext offset, request-line start, header end and remaining
 same-callback connection reuse. CONNECT, TLS handshake, encrypted bytes, Node
 request/data callback time and cross-process clocks are not request-byte proof.
 
-Each hop has a unique opaque route token mapped in the workload manifest to
-`logicalRequestId + hopId`; no candidate-only correlation header is added.
+The workload manifest assigns each expected hop exactly one
+`(logicalRequestId, hopId, destinationOrigin, opaquePathToken,
+orderedOccurrence)` entry. `orderedOccurrence` is the one-based count in
+global `receiverSeq` request-line-completion order for that exact destination
+and token; it never resets on connection reuse. Each token maps to one logical
+request. Ordinary redirects use a new token when the HTTP request-target changes; fragment-only `Location` preserves
+the current token because no fragment is transmitted and advances only the
+occurrence. Baseline, C1 and C4 use identical route bytes and occurrence tables.
+
+After request-line completion, the shadow framer extracts the token, increments
+its destination-local occurrence and binds the earlier start to the one exact
+manifest hop. The real parser independently checks the same tuple. Missing,
+extra, duplicate, out-of-order or multiply matched tuples are not repaired by
+parser time or controller state; no candidate-only correlation header is added.
+The candidate-only `NYX-MTL-E1R-NF1-COMPAT-11` preflight runs the plain/TLS by
+direct/proxy same-request-target matrix. Two consecutive identical opaque
+request-targets must bind occurrences `1` and `2` to different expected hop
+ids, and the shadow framer and real parser must agree. Its events, result,
+timing, capacity values and verdict cannot enter a B/C pair, result or aggregate.
+The shared paired topology controls use only their actual request tuples.
+
 `receiverRequestStart` is the first request-line octet at the destination
 plaintext tap. `receiverRequestTerminal` is the complete positive-length body's
 last octet, the final header octet for zero/no body, or the first irreversible
@@ -5333,7 +5502,10 @@ receiverRequestStart(next).receiverSeq
 
 It proves selected-tap processing order only, not NIC/kernel/send causality.
 Parser completion, acknowledgements, quiet intervals or incomparable clocks
-cannot substitute.
+cannot substitute. In the fragment-only case, the exact request-target token
+must remain unchanged while the next one-based occurrence binds the next
+expected hop. A changed target or tuple mismatch is `VALID + FAIL` under
+healthy evidence; independent observer inability is INVALID.
 
 The five independent `5,000 ms` lines are:
 
@@ -5399,14 +5571,18 @@ but never repair historical membership or peaks.
 
 #### COMPAT and paired evidence separation
 
-`NYX-MTL-E1R-NF1-COMPAT` runs first with its own process, fresh profile,
+`NYX-MTL-E1R-NF1-COMPAT-11` runs first with its own process, fresh profile,
 manifest and result. It binds exact HEAD commit/tree, overlay manifest and
 before/after path hashes; exact unchanged shared types, Chat/Responses
 consumers, Thread Library client/coordinator/Worker and Runtime client; packaged
-build; preparation transfer; every owner and first-winner branch; real consumer
-and no-read behavior; exact settlement dispositions and later Retry;
-Runtime/public source order; observer-independent cleanup; and its own
-`validity + outcome`. It must PASS before any paired role starts.
+build; preparation transfer; every pre-hop stage/generation and exact HEAD call
+matrix; spool-before-history exception; Runtime factory, stable replay-container
+lineage, indexed non-terminal child return/rethrow and sole outer terminal;
+every later owner and first-winner branch; real consumer and no-read behavior;
+exact settlement dispositions, common public/notice-then-close-then-release tail
+and later Retry; Runtime/public source order; observer-independent cleanup; and
+its own `validity + outcome`; and the candidate-only same-request-target matrix
+defined above. It must PASS before any paired role starts.
 
 The paired schema contains only common black-box command, endpoint, wire,
 redirect/auth/method/header/body, normalized consumer return, response/
@@ -5416,6 +5592,14 @@ public-terminal, settlement/`settleTurn`, Runtime, owner, producer-branch,
 pre-fetch/handoff or final-owner field. Candidate-only cleanup drift is COMPAT,
 not paired evidence. No COMPAT field, case or metric may enter a pair or
 aggregate.
+
+The fragment-only paired row requires the identical exact HTTP request-target
+before and after the redirect and binds the next one-based occurrence to the
+next expected hop id using only that real request's tuple/correlation evidence;
+it does not run or consume the synthetic same-request-target COMPAT matrix. A
+changed target, missing/extra/duplicate/out-of-order
+occurrence or parser/framer disagreement is `VALID + FAIL` under healthy
+evidence; controller state cannot repair it.
 
 After COMPAT PASS, at most three paired repetitions run separate fresh normal-
 exit role processes:
@@ -5474,23 +5658,99 @@ valid failure.
 
 #### Executable slices and ratchet
 
-T1 is this file only. Its validation is:
+Original T1 completed at `67bfb8e` after exact review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. It remains the completed direction,
+decision, numeric, owner, classification and scope-lock history, but its
+malformed Responses fixture does not satisfy the current T2 dependency.
+
+T1R is this file only. Its allowed delta is limited to the corrected Responses
+fixture bytes/length/SHA-256; the exact
+`(logicalRequestId, hopId, destinationOrigin, opaquePathToken,
+orderedOccurrence)` observer correlation contract and same-request-target
+pre-Start matrix; replacement of the active-Run pre-hop `null` interval with the
+exact `PreHopOwner` stages/generations, sticky-abort checkpoint/carry matrix,
+spool-before-history exception, Runtime factory/stable replay-container lineage/
+non-terminal indexed child/sole outer terminal, stage resources and call counts;
+the common public-or-notice then fulfilled-or-absent close then owner-release
+tail; plan v36 at SHA-256
+`e180e19cd1b507f04d16479b24ece139ccbedd072e8844cd50a2c6407382cdce` and fresh
+`NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R23` binding; the
+`NYX-MTL-E1R-NF1-11` / `NYX-MTL-E1R-NF1-COMPAT-11` operational identities;
+the `NYX-MTL-E1R-NF1-REPAIR-20260817-10` source review; separate FIXTURE and
+REPAIR histories, including rejected REPAIR `-01`/`-06` and never-run REPAIR
+`-02` through `-05` plus `-07` through `-09`; superseded-shakedown and retired
+gate `-02` through `-10` exclusions; static-only T1R validation; candidate-only
+COMPAT ownership of every dynamic owner/Runtime/call-count/lease-close control
+and the same-request-target network matrix; and directly affected status,
+dependency and ratchet text. The canonical graph is
+`T1 completed -> T1R -> NF1-COMPAT-11 -> NF1-11`; downstream authorization
+requires the full `NYX-MTL-E1R-NF1-11 reviewed PASS` identity. Every other
+direction, numeric line, fixture, owner outside this exact pre-hop/common-tail
+repair, redirect, credential, RequestInit, consumer, settlement/rollback/Retry,
+observer behavior outside this exact correlation repair, deadline, capacity,
+performance, validity/Stop and product boundary is unchanged.
+
+T1R validation is:
 
 ```sh
 git diff --check
 shasum -a 256 docs/next/agent-workbench-task-slices.md
+pnpm exec oxfmt --check --config apps/desktop/.oxfmtrc.json docs/next/agent-workbench-task-slices.md
 ```
 
-The exact bytes require independent strict review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. Review checks the user decision binding,
-8 MiB evidence-only meaning, fault prefix, five deadlines, both telemetry
-schedules, redirect/credential/body/duplex rules, preparation and gapless owner,
-twelve rows and final overlay, real consumers, plaintext tap, capacity/live-hop
-math, disjoint COMPAT/paired schemas, Latin square, settlement/rollback/Retry
-and exact validity/Stop rules. Entry into HEAD completes T1 without a later
-status-only edit.
+Validation also mechanically extracts both escaped fixtures, reconstructs their
+LF bytes and verifies each declared length/SHA-256; parses the Responses
+`response.completed` JSON with one complete `output` array; and runs the
+Responses bytes through the unchanged exact-HEAD consumer. That consumer must
+return final content `Hello`, provider state version `1`, protocol
+`openai-responses`, null effective reasoning context and the exact one
+completed assistant message item. The malformed fixture SHA and unversioned
+operational NF1/COMPAT identities must be absent. Both repeated status blocks
+must keep FIXTURE and REPAIR identities separate, record REPAIR `-01` and `-06`
+as rejected, record REPAIR `-02` through `-05` plus `-07` through `-09` as never
+run, and bind only REPAIR `-10` as current. The superseded shakedown must be
+mechanically ineligible for every new source/archive/build identity, manifest,
+raw result, pair and aggregate. Retired gate identities `-02` through `-10`
+must have no sealed artifact, Start, raw result, pair, aggregate or evidence.
+Every downstream product unlock must name exactly
+`NYX-MTL-E1R-NF1-11 reviewed PASS`.
 
-T2 may then build only two reviewed OS-temp artifacts:
+T1R statically checks that every expected hop has one exact manifest tuple and
+that fragment-only redirects preserve the HTTP request-target token while
+`orderedOccurrence` advances. The source contract must assign the plain/TLS by
+direct/proxy same-request-target network matrix solely to candidate-only
+`NYX-MTL-E1R-NF1-COMPAT-11`, require shadow-framer/real-parser agreement there,
+and forbid that matrix's events, result, timing, capacity values and verdict from
+every B/C pair, result and aggregate. T1R does not execute the network matrix or
+record a dynamic PASS.
+
+T1R also statically maps every documented Runtime-enabled and disabled pre-hop
+stage and exact HEAD next-call edge to exact HEAD source. It checks that the
+ordinary-Promise, replay-child, latest same-lineage container, sole outer
+terminal, three-way settlement and common public-or-notice/conditional-close/
+owner-release contracts are complete and internally consistent. It performs no
+rejection, abort, settled-before-reaction, wrong-generation, Runtime child/
+container, call-count or lease-close injection. The source contract assigns all
+of those dynamic cases and their unchanged outcomes solely to the later T2
+candidate-only COMPAT preflight.
+
+The exact formatted T1R bytes require independent strict review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-10`. Review checks the fixture extraction,
+hash, JSON and unchanged consumer result; static route/occurrence contract and
+candidate-only same-target assignment; v36/R23 identity; `-11` gate identities;
+rejected/never-run source-review history; retired `-02` through `-10` and
+superseded-shakedown exclusion; static exact-HEAD pre-hop lineage/call-matrix/
+common-tail mapping and T2 ownership of every dynamic control; all direct
+regressions; and the
+unchanged user decision, 8 MiB evidence-only meaning, fault prefix, five
+deadlines, both telemetry schedules, redirect/credential/body/duplex rules,
+preparation and gapless owner, twelve rows and final overlay, real consumers,
+plaintext tap, capacity/live-hop math, disjoint COMPAT/paired schemas, Latin
+square, settlement/rollback/Retry and exact validity/Stop rules. Entry of those
+exact accepted bytes into HEAD completes T1R without a later status-only edit.
+
+Only after T1R completes may T2 build two newly sealed reviewed OS-temp
+artifacts:
 
 1. the common B/C1/C4 transport harness; and
 2. one candidate-only exact-HEAD COMPAT overlay.
@@ -5499,14 +5759,18 @@ Before execution it seals exact source/archive/build/app.asar/workload/fixture/
 overlay hashes and the unchanged-module manifest, proves dev/build/app.asar/
 packaged identity, runs small streaming POST direct/proxy RequestInit controls,
 proves the pre-parser observer/channel topology and static no-control dependency,
-and reviews every preparation/owner/native/consumer/settlement trace. If the
+and executes every frozen dynamic preparation/pre-hop owner/Runtime generation,
+rejection/abort/race, lineage/call-count, native/consumer/settlement/common-close
+control. Candidate-only COMPAT also executes the plain/TLS by direct/proxy
+same-request-target matrix; none of its evidence may enter B/C. If the
 unchanged real-consumer seam cannot be installed, a tracked/product change is
 needed, an overlay path is unmanifested, or exact redirect behavior cannot be
 expressed, T2 stops. Exact T2 bytes need a new independent pre-run review id
 before Start.
 
-T3 first runs COMPAT. Only its PASS under the sealed classifier permits NF1
-paired roles; T4 later reviews both evidence sets independently. NF1
+T3 first runs `NYX-MTL-E1R-NF1-COMPAT-11`. Only its PASS under the sealed
+classifier permits `NYX-MTL-E1R-NF1-11` paired roles; T4 later reviews both
+evidence sets independently. NF1-11
 records all raw B/C1/C4 results, superseded INVALID evidence, exact cleanup/
 retry proof and a mechanical pair/aggregate index. It follows first-valid-
 failure Stop and the INVALID rules above.
@@ -5516,7 +5780,7 @@ classification and aggregate membership, then updates only this source-of-truth
 status to reviewed PASS or `VALID_STOP`. It may not reinterpret INVALID, rerun
 after a valid failure or authorize product code on Stop.
 
-A reviewed NF1 PASS permits only drafting a separate
+A recorded `NYX-MTL-E1R-NF1-11 reviewed PASS` permits only drafting a separate
 `multi-thread-library/E1R-P1-scope-lock`. That later scope lock needs its own
 exact product inventory, checks and independent review in HEAD. It is not
 authorized by this amendment. Full E1 cross-Thread concurrency, shutdown barrier
