@@ -166,7 +166,7 @@ Use relative documentation links. Do not add local absolute paths.
   the user approved the complete `NYX-E1R-NF1-DECISION-A-v1` native-fetch
   recovery packet after its final full review found no remaining S0-S3 issue.
   The documentation-only NF1 amendment below is bound to independent review
-  `NYX-MTL-E1R-NF1-SCOPE-20260816-01` and self-completes only when those exact
+  `NYX-MTL-E1R-NF1-SCOPE-20260816-02` and self-completes only when those exact
   accepted bytes enter HEAD. That transition authorizes only the sealed OS-temp
   `NYX-MTL-E1R-NF1-COMPAT` preflight and `NYX-MTL-E1R-NF1` direction gate. No
   E1/E1R product slice is executable without a later reviewed product scope
@@ -3336,7 +3336,7 @@ review `NYX-MTL-E1R-S0-FINAL-20260814-03`. E1R/G0 then reached independently
 reviewed `VALID_STOP`. The user approved the complete
 `NYX-E1R-NF1-DECISION-A-v1` packet on 2026-08-16. The docs-only NF1 amendment
 below self-completes only after independent review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-01` accepts its exact bytes and those bytes
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02` accepts its exact bytes and those bytes
 enter HEAD. It does not revive G0 or the archived E1 candidate. Once complete,
 only the new OS-temp COMPAT preflight and NF1 direction gate are executable.
 Old E1 product bytes, E1R-P1/E1R-P2, a new E1 scope, resumed E1 and U1 remain
@@ -4944,7 +4944,7 @@ Recovery Plan` v20, SHA-256
 `b3509363c1ecc8b7bccfa4c6b3cdb8eaf29903e8ba740c3cafd6193176ed8ddd`,
 and plan review `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R10`. These exact amendment
 bytes are bound to independent review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-01`. The amendment self-completes only when
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. The amendment self-completes only when
 that review accepts the exact bytes and those bytes enter HEAD. Before then no
 harness or gate may start. Afterward, only the OS-temp preflight and direction
 gate defined here are executable; no product slice is authorized.
@@ -5482,7 +5482,7 @@ shasum -a 256 docs/next/agent-workbench-task-slices.md
 ```
 
 The exact bytes require independent strict review
-`NYX-MTL-E1R-NF1-SCOPE-20260816-01`. Review checks the user decision binding,
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. Review checks the user decision binding,
 8 MiB evidence-only meaning, fault prefix, five deadlines, both telemetry
 schedules, redirect/credential/body/duplex rules, preparation and gapless owner,
 twelve rows and final overlay, real consumers, plaintext tap, capacity/live-hop
