@@ -315,6 +315,14 @@ describe('ChatSessionManager canonical execution', () => {
       'chat:done',
     ])
     expect(events.every((event) => event.threadId === threadId)).toBe(true)
+    expect(events.at(-1)).toStrictEqual({
+      type: 'chat:done',
+      threadId,
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      status: 'completed',
+      finalContent: 'Answer',
+    })
   })
 
   it('streams normally while the Runtime projection is explicitly disabled', async () => {

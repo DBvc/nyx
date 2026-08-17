@@ -559,7 +559,9 @@ export class ChatSessionManager {
   ) {
     this.publish(sender, {
       type: 'chat:done',
-      ...request,
+      threadId: request.threadId,
+      requestId: request.requestId,
+      assistantMessageId: request.assistantMessageId,
       status,
       finalContent,
     })

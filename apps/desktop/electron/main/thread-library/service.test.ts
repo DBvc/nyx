@@ -324,6 +324,32 @@ describe('ThreadLibraryService', () => {
     )
   })
 
+  it('publishes only the shared chat:done contract and event clock', async () => {
+    const { service } = harness()
+    await expect(service.initialize()).resolves.toBe(true)
+    const sender = { send: vi.fn() }
+
+    service.publishChatEvent(sender as never, {
+      type: 'chat:done',
+      threadId,
+      requestId: 'request',
+      assistantMessageId: 'assistant',
+      status: 'completed',
+      finalContent: 'Answer',
+    })
+
+    expect(sender.send).toHaveBeenCalledWith('nyx:chat:event', {
+      type: 'chat:done',
+      threadId,
+      requestId: 'request',
+      assistantMessageId: 'assistant',
+      status: 'completed',
+      finalContent: 'Answer',
+      eventEpoch: generation,
+      cursor: 1,
+    })
+  })
+
   it('authorizes only images from the selected canonical detail and revokes on epoch change', async () => {
     const { client, getObserver, service, sidecars } = harness()
     await service.initialize()
