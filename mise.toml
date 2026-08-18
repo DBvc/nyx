@@ -88,6 +88,10 @@ pnpm --dir apps/desktop lint
 pnpm --dir apps/desktop build
 """
 
+[tasks."docs:check"]
+description = "Validate agent instruction routing and workstream documentation ownership"
+run = "node scripts/check-agent-docs.mjs"
+
 [tasks."runtime:setup"]
 description = "Create the OCaml local switch and install runtime dependencies"
 run = """
@@ -173,6 +177,7 @@ mise run runtime:format-check
 [tasks.check]
 description = "Run all workspace checks"
 run = """
+mise run docs:check
 mise run desktop:typecheck
 mise run desktop:typecheck:compat
 mise run desktop:lint

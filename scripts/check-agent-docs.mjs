@@ -1,0 +1,450 @@
+#!/usr/bin/env node
+
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const routerPath = 'docs/next/agent-workbench-task-slices.md'
+const manifestPath = 'docs/next/agent-workbench-contract-migration.json'
+const splitMarker = '<!-- nyx-contract-layout: split-v1 -->'
+
+const workstreams = [
+  'foundation',
+  'current-thread-durability',
+  'provider-compatibility-core',
+  'composer-target-selection',
+  'context-composer-experiment',
+  'responses-protocol',
+  'document-attachments',
+  'multi-thread-library',
+]
+
+const splitFiles = [
+  'docs/next/agent-workbench-foundation-task-slices.md',
+  'docs/next/current-thread-durability-task-slices.md',
+  'docs/next/provider-compatibility-core-task-slices.md',
+  'docs/next/composer-target-selection-task-slices.md',
+  'docs/next/context-composer-experiment-task-slices.md',
+  'docs/next/responses-protocol-task-slices.md',
+  'docs/next/document-attachments-task-slices.md',
+  'docs/next/multi-thread-library-task-slices.md',
+  'docs/next/multi-thread-library-e1r-contracts.md',
+]
+
+const legacyHeadings = [
+  '## A0: Scope Gate Docs',
+  '## B0: Current Thread Durability Scope Gate',
+  '## C Workstream: Provider Compatibility Core',
+  '## D Workstream: Composer Target Selection',
+  '## E Workstream: Context Composer Experiment',
+  '## R Workstream: Responses Protocol And Native Continuation',
+  '## F Workstream: Document Attachments Local Baseline',
+  '## MTL Workstream: Multi-Thread Library',
+]
+
+function read(relativePath) {
+  return readFileSync(resolve(repoRoot, relativePath), 'utf8')
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function markdownFiles(directory) {
+  const result = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name)
+    if (entry.isDirectory()) {
+      result.push(...markdownFiles(path))
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      result.push(path)
+    }
+  }
+  return result
+}
+
+function checkInstructionFile(relativePath, limits, requiredText, errors) {
+  const content = read(relativePath)
+  const lines = content.split('\n').length - 1
+  const bytes = Buffer.byteLength(content)
+
+  if (lines > limits.lines) {
+    errors.push(`${relativePath}: ${lines} lines exceeds ${limits.lines}`)
+  }
+  if (bytes > limits.bytes) {
+    errors.push(`${relativePath}: ${bytes} bytes exceeds ${limits.bytes}`)
+  }
+
+  const dynamicPatterns = [
+    ['review contract id', /\bRC-[A-Z0-9-]+\b/],
+    ['gate result history', /\bVALID_STOP\b/],
+    ['dated history', /\b20\d{2}-\d{2}-\d{2}\b/],
+    ['commit or exact-byte hash', /\b(?:[0-9a-f]{40}|[0-9a-f]{64})\b/],
+    ['abbreviated commit hash', /`[0-9a-f]{7,39}`/],
+  ]
+
+  for (const [label, pattern] of dynamicPatterns) {
+    if (pattern.test(content)) {
+      errors.push(`${relativePath}: contains ${label}`)
+    }
+  }
+
+  if (/^## Workstream Status$/m.test(content)) {
+    errors.push(`${relativePath}: must not own dynamic workstream status`)
+  }
+
+  for (const text of requiredText) {
+    if (!content.includes(text)) {
+      errors.push(`${relativePath}: missing required guard: ${text}`)
+    }
+  }
+}
+
+function normalizedLinkTarget(rawTarget) {
+  const target = rawTarget.trim()
+  if (target.startsWith('<')) {
+    const closing = target.indexOf('>')
+    return closing === -1 ? target : target.slice(1, closing)
+  }
+  return target.split(/\s+["']/u, 1)[0]
+}
+
+function missingRouterTargets(router, paths) {
+  return paths.filter((path) => !router.includes(`./${path.replace('docs/next/', '')}`))
+}
+
+function markdownLinkFailure(file, rawTarget, pathExists = existsSync) {
+  const target = normalizedLinkTarget(rawTarget)
+  if (target.startsWith('/')) {
+    return `absolute documentation link ${target}`
+  }
+  if (target.startsWith('#') || /^[a-z][a-z0-9+.-]*:/iu.test(target)) {
+    return null
+  }
+
+  const pathPart = target.split(/[?#]/u, 1)[0]
+  if (!pathPart) {
+    return null
+  }
+
+  let decodedPath
+  try {
+    decodedPath = decodeURIComponent(pathPart)
+  } catch {
+    return `invalid encoded link ${target}`
+  }
+
+  return pathExists(resolve(dirname(file), decodedPath)) ? null : `broken link ${target}`
+}
+
+function checkMarkdownLinks(files, errors) {
+  const linkPattern = /!?\[[^\]]*\]\(([^)\n]+)\)/gu
+
+  for (const file of files) {
+    const content = readFileSync(file, 'utf8')
+    for (const match of content.matchAll(linkPattern)) {
+      const failure = markdownLinkFailure(file, match[1])
+      if (failure) {
+        errors.push(`${relative(repoRoot, file)}: ${failure}`)
+      }
+    }
+  }
+}
+
+function checkMachineLocalPaths(files, errors) {
+  for (const file of files) {
+    if (hasMachineLocalPath(readFileSync(file, 'utf8'))) {
+      errors.push(`${relative(repoRoot, file)}: contains a machine-local path`)
+    }
+  }
+}
+
+function hasMachineLocalPath(content) {
+  return /\/(?:Users|home)\/[A-Za-z0-9._-]+\//u.test(content)
+}
+
+function collectStatusOwners(files) {
+  const owners = new Map()
+  const pattern = /<!-- nyx-workstream-status-owner: ([a-z0-9-]+) -->/gu
+  for (const [path, content] of files) {
+    for (const match of content.matchAll(pattern)) {
+      const locations = owners.get(match[1]) ?? []
+      locations.push(path)
+      owners.set(match[1], locations)
+    }
+  }
+  return owners
+}
+
+function collectContractBlocks(files) {
+  const blocks = new Map()
+  const pattern =
+    /<!-- nyx-contract-start: ([A-Za-z0-9._/-]+) sha256:([0-9a-f]{64}) -->\n([\s\S]*?)<!-- nyx-contract-end: \1 -->/gu
+
+  for (const [path, content] of files) {
+    for (const match of content.matchAll(pattern)) {
+      const locations = blocks.get(match[1]) ?? []
+      locations.push({ path, declaredHash: match[2], bodyHash: sha256(match[3]) })
+      blocks.set(match[1], locations)
+    }
+  }
+  return blocks
+}
+
+function validateSplitOwnership(files, manifest, errors) {
+  const owners = collectStatusOwners(files)
+  for (const workstream of workstreams) {
+    const locations = owners.get(workstream) ?? []
+    if (locations.length !== 1) {
+      errors.push(`split layout: ${workstream} has ${locations.length} status owners`)
+      continue
+    }
+    if (manifest.workstreamOwners?.[workstream] !== locations[0]) {
+      errors.push(`split layout: ${workstream} owner does not match manifest`)
+    }
+  }
+  for (const name of owners.keys()) {
+    if (!workstreams.includes(name)) {
+      errors.push(`split layout: unexpected workstream status owner ${name}`)
+    }
+  }
+
+  if (
+    manifest.workstreamOwners?.['multi-thread-library'] !==
+    'docs/next/multi-thread-library-task-slices.md'
+  ) {
+    errors.push('split layout: Multi-Thread Library must have one main status owner')
+  }
+
+  const blocks = collectContractBlocks(files)
+  const expectedIds = new Set()
+  for (const contract of manifest.contracts ?? []) {
+    expectedIds.add(contract.id)
+    const locations = blocks.get(contract.id) ?? []
+    if (locations.length !== 1) {
+      errors.push(`split layout: ${contract.id} has ${locations.length} definitions`)
+      continue
+    }
+    const [block] = locations
+    if (block.path !== contract.file) {
+      errors.push(`split layout: ${contract.id} is in the wrong file`)
+    }
+    if (block.declaredHash !== contract.sha256 || block.bodyHash !== contract.sha256) {
+      errors.push(`split layout: ${contract.id} content hash mismatch`)
+    }
+  }
+  for (const id of blocks.keys()) {
+    if (!expectedIds.has(id)) {
+      errors.push(`split layout: unlisted contract definition ${id}`)
+    }
+  }
+}
+
+function checkLegacyLayout(router, errors) {
+  for (const heading of legacyHeadings) {
+    if (!router.includes(heading)) {
+      errors.push(`${routerPath}: missing legacy workstream heading ${heading}`)
+    }
+  }
+
+  for (const path of splitFiles) {
+    if (existsSync(resolve(repoRoot, path))) {
+      errors.push(`legacy layout: partial split file exists: ${path}`)
+    }
+  }
+  if (existsSync(resolve(repoRoot, manifestPath))) {
+    errors.push(`legacy layout: migration manifest exists before atomic split`)
+  }
+}
+
+function checkSplitLayout(router, errors) {
+  if (!existsSync(resolve(repoRoot, manifestPath))) {
+    errors.push(`split layout: missing ${manifestPath}`)
+    return
+  }
+
+  let manifest
+  try {
+    manifest = JSON.parse(read(manifestPath))
+  } catch (error) {
+    errors.push(`${manifestPath}: invalid JSON: ${error.message}`)
+    return
+  }
+
+  if (manifest.version !== 1) {
+    errors.push(`${manifestPath}: unsupported manifest version`)
+  }
+  if (!/^[0-9a-f]{64}$/u.test(manifest.source?.sha256 ?? '')) {
+    errors.push(`${manifestPath}: invalid source SHA-256`)
+  }
+  if (!['reviewed_pass', 'valid_stop', 'retired'].includes(manifest.prerequisite?.nf1)) {
+    errors.push(`${manifestPath}: NF1 terminal prerequisite is missing`)
+  }
+  if (!manifest.prerequisite?.evidenceRef) {
+    errors.push(`${manifestPath}: NF1 terminal evidence reference is missing`)
+  }
+
+  const files = new Map()
+  for (const path of splitFiles) {
+    const absolutePath = resolve(repoRoot, path)
+    if (!existsSync(absolutePath)) {
+      errors.push(`split layout: missing ${path}`)
+      continue
+    }
+    files.set(path, read(path))
+  }
+  for (const path of missingRouterTargets(router, splitFiles)) {
+    errors.push(`${routerPath}: missing route to ${path}`)
+  }
+
+  validateSplitOwnership(files, manifest, errors)
+}
+
+function runSelfTests(errors) {
+  const body = 'contract body\n'
+  const hash = sha256(body)
+  const validFiles = new Map([
+    [
+      'docs/next/multi-thread-library-task-slices.md',
+      `<!-- nyx-workstream-status-owner: multi-thread-library -->\n<!-- nyx-contract-start: MTL/S0 sha256:${hash} -->\n${body}<!-- nyx-contract-end: MTL/S0 -->`,
+    ],
+  ])
+  const validManifest = {
+    workstreamOwners: {
+      'multi-thread-library': 'docs/next/multi-thread-library-task-slices.md',
+    },
+    contracts: [
+      {
+        id: 'MTL/S0',
+        file: 'docs/next/multi-thread-library-task-slices.md',
+        sha256: hash,
+      },
+    ],
+  }
+
+  const owners = collectStatusOwners(validFiles)
+  const blocks = collectContractBlocks(validFiles)
+  if (owners.get('multi-thread-library')?.length !== 1) {
+    errors.push('self-test: valid status owner was not detected')
+  }
+  if (blocks.get('MTL/S0')?.[0]?.bodyHash !== hash) {
+    errors.push('self-test: valid contract block hash was not detected')
+  }
+
+  const duplicateFiles = new Map(validFiles)
+  duplicateFiles.set(
+    'docs/next/multi-thread-library-e1r-contracts.md',
+    '<!-- nyx-workstream-status-owner: multi-thread-library -->',
+  )
+  if (collectStatusOwners(duplicateFiles).get('multi-thread-library')?.length !== 2) {
+    errors.push('self-test: duplicate status owner was not detected')
+  }
+
+  const historicalReferenceFiles = new Map(validFiles)
+  historicalReferenceFiles.set(
+    'fixture/history.md',
+    'Historical mention of MTL/S0 is evidence, not a canonical definition.\n',
+  )
+  if (collectContractBlocks(historicalReferenceFiles).get('MTL/S0')?.length !== 1) {
+    errors.push('self-test: historical contract mention was treated as an owner')
+  }
+
+  const wrongHashManifest = structuredClone(validManifest)
+  wrongHashManifest.contracts[0].sha256 = '0'.repeat(64)
+  const focusedErrors = []
+  const focusedWorkstreams = workstreams.filter(
+    (workstream) => workstream !== 'multi-thread-library',
+  )
+  for (const workstream of focusedWorkstreams) {
+    validFiles.set(
+      `fixture/${workstream}.md`,
+      `<!-- nyx-workstream-status-owner: ${workstream} -->`,
+    )
+    wrongHashManifest.workstreamOwners[workstream] = `fixture/${workstream}.md`
+  }
+  validateSplitOwnership(validFiles, wrongHashManifest, focusedErrors)
+  if (!focusedErrors.some((error) => error.includes('content hash mismatch'))) {
+    errors.push('self-test: contract hash mismatch was not detected')
+  }
+
+  const missingBlockManifest = structuredClone(wrongHashManifest)
+  missingBlockManifest.contracts.push({
+    id: 'MTL/MISSING',
+    file: 'docs/next/multi-thread-library-task-slices.md',
+    sha256: hash,
+  })
+  const missingBlockErrors = []
+  validateSplitOwnership(validFiles, missingBlockManifest, missingBlockErrors)
+  if (!missingBlockErrors.some((error) => error.includes('MTL/MISSING has 0 definitions'))) {
+    errors.push('self-test: missing contract definition was not detected')
+  }
+
+  if (!hasMachineLocalPath('/Users/example/project/file.md')) {
+    errors.push('self-test: machine-local path was not detected')
+  }
+  const fixtureDocument = resolve(repoRoot, 'docs/next/fixture.md')
+  if (!markdownLinkFailure(fixtureDocument, './missing.md', () => false)) {
+    errors.push('self-test: broken relative link was not detected')
+  }
+  if (markdownLinkFailure(fixtureDocument, './present.md', () => true)) {
+    errors.push('self-test: valid relative link was rejected')
+  }
+  if (missingRouterTargets('route to ./one.md', ['docs/next/one.md']).length !== 0) {
+    errors.push('self-test: valid router target was not detected')
+  }
+  if (missingRouterTargets('route to ./one.md', ['docs/next/two.md']).length !== 1) {
+    errors.push('self-test: missing router target was not detected')
+  }
+}
+
+const errors = []
+runSelfTests(errors)
+
+checkInstructionFile(
+  'AGENTS.md',
+  { lines: 240, bytes: 12_000 },
+  [
+    'Reading a workstream contract to protect landed behavior does not authorize new',
+    routerPath,
+    'Already-landed workstream behavior is part of the compatibility baseline',
+  ],
+  errors,
+)
+checkInstructionFile(
+  'apps/desktop/AGENTS.md',
+  { lines: 220, bytes: 11_000 },
+  [
+    'compatibility protection is not new implementation',
+    '../../docs/next/agent-workbench-task-slices.md',
+    'Implemented Behavior Guards',
+  ],
+  errors,
+)
+
+const router = read(routerPath)
+if (router.includes(splitMarker)) {
+  checkSplitLayout(router, errors)
+} else {
+  checkLegacyLayout(router, errors)
+}
+
+const docs = [
+  resolve(repoRoot, 'AGENTS.md'),
+  resolve(repoRoot, 'README.md'),
+  resolve(repoRoot, 'apps/desktop/AGENTS.md'),
+  ...markdownFiles(resolve(repoRoot, 'docs/next')),
+]
+checkMarkdownLinks(docs, errors)
+checkMachineLocalPaths(docs, errors)
+
+if (errors.length > 0) {
+  console.error('Agent documentation check failed:')
+  for (const error of errors) {
+    console.error(`- ${error}`)
+  }
+  process.exitCode = 1
+} else {
+  console.log('Agent documentation check passed.')
+}

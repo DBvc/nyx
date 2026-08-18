@@ -82,7 +82,7 @@ Electron main runtime boundary:
 Renderer chat UI:
 
 - [apps/desktop/src/ui/chat/use-chat-session.ts](../../apps/desktop/src/ui/chat/use-chat-session.ts)
-- [apps/desktop/src/ui/chat/use-provider-status.ts](../../apps/desktop/src/ui/chat/use-provider-status.ts)
+- [apps/desktop/src/ui/chat/use-connection-status.ts](../../apps/desktop/src/ui/chat/use-connection-status.ts)
 - [apps/desktop/src/ui/chat/use-auto-scroll.ts](../../apps/desktop/src/ui/chat/use-auto-scroll.ts)
 - [apps/desktop/src/ui/chat/components](../../apps/desktop/src/ui/chat/components)
 
