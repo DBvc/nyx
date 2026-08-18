@@ -9,11 +9,12 @@ The prospective `NYX-MTL-E1R-NF1-COMPAT-14` and
 2026-08-18 to unblock the documentation ownership migration. They did not
 run and do not have PASS or `VALID_STOP` results.
 
-The user's explicit 2026-08-18 request opens the new bounded `E1S` direction
-defined below. `E1S` is the only prospective product slice: product code may
-start only after the exact `NYX-MTL-E1S-SCOPE-20260818-01` contract receives
-independent review and its docs-only commit is in HEAD. The current user request
-then authorizes only those exact bytes and checks.
+The new bounded `E1S` direction completed at product commit `19c90ef` under
+contract `NYX-MTL-E1S-SCOPE-20260818-01`. Its independently reviewed scope lock
+entered HEAD at `4433dc8`; the product commit stayed within the locked file
+inventory and passed every required check. E1S permits at most two process-wide
+Runs and at most one attachment-bearing Run, while Thread switching and New
+detach the selected projection without cancelling background work.
 
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old

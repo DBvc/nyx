@@ -16,6 +16,37 @@ The pre-retirement contracts and evidence remain available in
 Any future native-fetch work requires a new explicitly requested and
 independently reviewed scope contract.
 
+## E1S — Bounded Multi-Thread Runs
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-E1S-SCOPE-20260818-01`, independently accepted and
+  committed at `4433dc8`.
+- Product commit: `19c90ef`.
+- Electron Main now owns one exact per-Thread Run map. It admits no more than
+  two Runs process-wide and no more than one attachment-bearing Run. Both
+  limits are checked before Draft-to-Turn mutation.
+- Thread selection and New save the departing Draft and detach the Renderer
+  projection without cancelling accepted background work. The bounded sidebar
+  page exposes `Running` and `Saving failed` state and rebuilds selected detail
+  from Main-owned state.
+- Exact Stop affects only its `threadId + requestId`. Terminal completion,
+  failure, cancellation and explicit settlement Retry keep the existing
+  Thread Library ownership and transaction path.
+- Focused coverage proves two concurrent text Runs, third-Run rejection and
+  later admission, attachment serialization, exact cancellation, preflight
+  Stop without Draft mutation, background switching without per-delta Library
+  hydration, and reachable settlement failure.
+- Required checks passed: desktop TypeScript checks with both compilers, lint,
+  format check, all 50 desktop test files (`573` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, and
+  `git diff --check`.
+
+E1S does not revive or extend E1, E1R, NF1, COMPAT, v40 or R2. It changes no
+fetch transport, redirect behavior, backpressure, Base64 attachment mapping,
+SQLite schema, Worker count or OCaml protocol. The accepted baseline still
+allows one attachment-bearing Provider history materialization at a time.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
