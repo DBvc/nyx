@@ -36,7 +36,17 @@ export interface NyxThreadAvailableSummary {
   lastUserActivityAt: string
   createdAt: string
   updatedAt: string
+  activity?: NyxThreadActivity
 }
+
+export type NyxThreadActivity =
+  | { status: 'idle' }
+  | {
+      status: 'submitting' | 'streaming'
+      requestId: string
+      attachmentBearing: boolean
+    }
+  | { status: 'saving_failed'; requestId: string }
 
 export interface NyxThreadUnavailableSummary {
   availability: 'unavailable'
@@ -81,6 +91,7 @@ export interface NyxThreadActiveRun {
   requestId: string
   assistantMessageId: string
   turnIntent: NyxChatTurnIntent
+  attachmentBearing?: boolean
 }
 
 export interface NyxThreadDetail {

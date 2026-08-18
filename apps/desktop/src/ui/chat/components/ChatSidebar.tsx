@@ -1,13 +1,17 @@
 import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
 import type { RefObject } from 'react'
 
+import type { NyxThreadSummary } from '../../../../shared/threads/types'
+
 interface ChatSidebarProps {
   title: string
   preview: string
   activeView: 'chat' | 'connections'
+  threads: ReadonlyArray<NyxThreadSummary>
+  selectedThreadId: string | null
   newThreadDisabled: boolean
   onNewThread: () => void
-  onOpenChat: () => void
+  onSelectThread: (threadId: string) => void
   onOpenConnectionsSettings: () => void
   settingsPopoverRef: RefObject<HTMLDivElement | null>
 }
@@ -16,9 +20,11 @@ export function ChatSidebar({
   title,
   preview,
   activeView,
+  threads,
+  selectedThreadId,
   newThreadDisabled,
   onNewThread,
-  onOpenChat,
+  onSelectThread,
   onOpenConnectionsSettings,
   settingsPopoverRef,
 }: ChatSidebarProps) {
@@ -38,20 +44,58 @@ export function ChatSidebar({
         New thread
       </button>
 
-      <div className='mt-4 flex-1 overflow-hidden'>
-        <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Current thread</div>
-        <button
-          className={`w-full rounded-lg px-3 py-2.5 text-left ${
-            activeView === 'chat' ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
-          }`}
-          onClick={onOpenChat}
-          type='button'
-        >
-          <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
-            {title}
-          </span>
-          <span className='mt-1 block min-w-0 truncate text-[12px] text-nyx-muted'>{preview}</span>
-        </button>
+      <div className='mt-4 min-h-0 flex-1 overflow-y-auto'>
+        <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Threads</div>
+        {selectedThreadId === null && activeView === 'chat' ? (
+          <div className='w-full rounded-lg bg-nyx-canvas px-3 py-2.5 text-left'>
+            <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+              {title}
+            </span>
+            {preview ? (
+              <span className='mt-1 block min-w-0 truncate text-[12px] text-nyx-muted'>
+                {preview}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {threads.map((thread) => {
+          const selected = activeView === 'chat' && thread.id === selectedThreadId
+          const activity = thread.availability === 'available' ? thread.activity : null
+          const subtitle =
+            activity?.status === 'submitting' || activity?.status === 'streaming'
+              ? 'Running…'
+              : activity?.status === 'saving_failed'
+                ? 'Saving failed'
+                : thread.id === selectedThreadId
+                  ? preview
+                  : thread.availability === 'unavailable'
+                    ? 'Unavailable'
+                    : ''
+          return (
+            <button
+              aria-current={selected ? 'page' : undefined}
+              className={`w-full rounded-lg px-3 py-2.5 text-left ${
+                selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
+              }`}
+              key={thread.id}
+              onClick={() => onSelectThread(thread.id)}
+              type='button'
+            >
+              <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+                {thread.title}
+              </span>
+              {subtitle ? (
+                <span
+                  className={`mt-1 block min-w-0 truncate text-[12px] ${
+                    activity?.status === 'saving_failed' ? 'text-nyx-danger' : 'text-nyx-muted'
+                  }`}
+                >
+                  {subtitle}
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
       </div>
 
       <div className='relative mt-3 border-t border-nyx-line pt-2'>

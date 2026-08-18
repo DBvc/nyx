@@ -17,6 +17,7 @@ import {
   canSubmitChat,
   deriveTargetCatalogAction,
   revokeDraftPreviewUrls,
+  runCapacityBlock,
   useChatSession,
 } from './use-chat-session'
 
@@ -24,6 +25,8 @@ const harness = vi.hoisted(() => ({
   state: undefined as unknown,
   refs: [] as Array<{ current: unknown }>,
   refIndex: 0,
+  states: [] as unknown[],
+  stateIndex: 0,
   runEffects: false,
   cleanups: [] as Array<() => void>,
 }))
@@ -45,6 +48,19 @@ vi.mock('react', async (importOriginal) => {
       const index = harness.refIndex++
       harness.refs[index] ??= { current: initialValue }
       return harness.refs[index]
+    },
+    useState(initialValue: unknown) {
+      const index = harness.stateIndex++
+      if (!(index in harness.states)) harness.states[index] = initialValue
+      return [
+        harness.states[index],
+        (value: unknown | ((current: unknown) => unknown)) => {
+          harness.states[index] =
+            typeof value === 'function'
+              ? (value as (current: unknown) => unknown)(harness.states[index])
+              : value
+        },
+      ]
     },
     useEffect(effect: () => void | (() => void)) {
       if (!harness.runEffects) return
@@ -199,6 +215,8 @@ function reset(state: ChatState = initialChatState) {
   harness.state = state
   harness.refs = []
   harness.refIndex = 0
+  harness.states = []
+  harness.stateIndex = 0
   harness.runEffects = false
   TestWorker.instances = []
   TestWorker.constructorError = null
@@ -214,6 +232,7 @@ function render(
   } = {},
 ) {
   harness.refIndex = 0
+  harness.stateIndex = 0
   harness.runEffects = runEffects
   const session = useChatSession({
     connectionStatus: options.connectionStatus ?? readyStatus(),
@@ -233,7 +252,7 @@ function installBridge(options?: {
       includedThroughCursor: number
     }>
   >
-  get?: () => Promise<
+  get?: (input: { threadId: string | null }) => Promise<
     NyxThreadResult<{
       detail: NyxThreadDetail | null
       eventEpoch: string
@@ -300,7 +319,13 @@ function installBridge(options?: {
   const retryOpen = vi.fn(
     async () => options?.retryOpenResult ?? { ok: true as const, value: null },
   )
-  const localStorage = { getItem: vi.fn(() => options?.selectedId ?? null), setItem: vi.fn() }
+  let storedSelectedId = options?.selectedId ?? null
+  const localStorage = {
+    getItem: vi.fn(() => storedSelectedId),
+    setItem: vi.fn((_key: string, value: string) => {
+      storedSelectedId = value
+    }),
+  }
   vi.stubGlobal('window', {
     ...globalThis,
     clearTimeout,
@@ -743,6 +768,105 @@ describe('C1 hydration', () => {
     expect(harness.state).toMatchObject({ selectedThreadId: 'thread-b', input: 'selected B' })
   })
 
+  it('switches Threads without cancelling a background Run or hydrating each delta', async () => {
+    const threadA = detail('draft A', 'thread-a')
+    const threadB = detail('draft B', 'thread-b')
+    let cursor = 0
+    let aRunning = false
+    const requestId = 'request-a'
+    const bridge = installBridge({
+      selectedId: 'thread-a',
+      list: async () => ({
+        ok: true,
+        value: {
+          rows: [
+            {
+              ...threadA.summary,
+              activity: aRunning
+                ? {
+                    status: 'streaming' as const,
+                    requestId,
+                    attachmentBearing: false,
+                  }
+                : { status: 'idle' as const },
+            },
+            threadB.summary,
+          ],
+          nextCursor: null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: cursor,
+        },
+      }),
+      get: async ({ threadId }) => {
+        const selected = threadId === 'thread-b' ? threadB : threadA
+        return {
+          ok: true,
+          value: {
+            detail:
+              threadId === 'thread-a' && aRunning
+                ? {
+                    ...selected,
+                    runStatus: 'streaming' as const,
+                    activeRun: {
+                      requestId,
+                      assistantMessageId: 'assistant-a',
+                      turnIntent: 'new_user_message' as const,
+                      attachmentBearing: false,
+                    },
+                  }
+                : selected,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: cursor,
+          },
+        }
+      },
+    })
+    const session = await settleSelectedHydration(bridge, threadA)
+    cursor = 1
+    aRunning = true
+    bridge.emitChat({
+      type: 'chat:accepted',
+      threadId: 'thread-a',
+      requestId,
+      userMessageId: 'user-a',
+      assistantMessageId: 'assistant-a',
+      turnIntent: 'new_user_message',
+      attachmentBearing: false,
+      eventEpoch: 'epoch-1',
+      cursor,
+    })
+
+    expect(await session.selectThread('thread-b')).toBe(true)
+    expect(bridge.cancel).not.toHaveBeenCalled()
+    expect(harness.state).toMatchObject({ selectedThreadId: 'thread-b', input: 'draft B' })
+    const listCallsAfterSwitch = bridge.listPage.mock.calls.length
+
+    cursor = 2
+    bridge.emitChat({
+      type: 'chat:delta',
+      threadId: 'thread-a',
+      requestId,
+      assistantMessageId: 'assistant-a',
+      delta: 'Live',
+      snapshot: 'Live answer',
+      eventEpoch: 'epoch-1',
+      cursor,
+    })
+    expect(bridge.listPage).toHaveBeenCalledTimes(listCallsAfterSwitch)
+    expect((harness.state as ChatState).selectedThreadId).toBe('thread-b')
+    expect(render().threadSummaries).toMatchObject([
+      { id: 'thread-a', activity: { status: 'streaming', requestId } },
+      { id: 'thread-b' },
+    ])
+
+    expect(await render().selectThread('thread-a')).toBe(true)
+    expect(harness.state).toMatchObject({
+      selectedThreadId: 'thread-a',
+      activeRequestId: requestId,
+      runStatus: 'streaming',
+    })
+  })
+
   it('does not let a late Thread A snapshot replace a newer Thread B hydration', async () => {
     const staleA = deferred<
       NyxThreadResult<{
@@ -921,6 +1045,42 @@ describe('C1 hydration', () => {
 })
 
 describe('target and attachment readiness', () => {
+  it('blocks the third Run and only serializes attachment-bearing Runs', () => {
+    const textState = readyThreadState(detail('Hello'))
+    const first = {
+      ...detail().summary,
+      id: 'thread-a',
+      activity: {
+        status: 'streaming' as const,
+        requestId: 'request-a',
+        attachmentBearing: true,
+      },
+    }
+    const second = {
+      ...detail().summary,
+      id: 'thread-b',
+      activity: {
+        status: 'streaming' as const,
+        requestId: 'request-b',
+        attachmentBearing: false,
+      },
+    }
+
+    expect(runCapacityBlock(textState, [first])).toBeNull()
+    expect(runCapacityBlock(textState, [first, second])).toBe('Two responses are already running.')
+    expect(
+      runCapacityBlock(
+        {
+          ...textState,
+          draftImages: [
+            { id: 'image', name: 'image.png', status: 'preparing', source: new Blob() },
+          ],
+        },
+        [first],
+      ),
+    ).toBe('Another attachment response is already running.')
+  })
+
   it('keeps a committed unavailable target blocked until an available draft is chosen', () => {
     const status = readyStatus()
     const unavailableOverview = {
@@ -1254,6 +1414,7 @@ describe('C1 save and execution boundary', () => {
       userMessageId: 'user-main',
       assistantMessageId: 'assistant-main',
       turnIntent: 'new_user_message',
+      attachmentBearing: false,
       eventEpoch: 'epoch-1',
       cursor: 1,
     })
@@ -1760,16 +1921,19 @@ describe('C1 save and execution boundary', () => {
     expect((harness.state as ChatState).input).toBe('')
   })
 
-  it('does not hide a complete result that is still waiting to be saved', async () => {
-    const bridge = installBridge()
+  it('keeps a background save failure reachable after New detaches', async () => {
     const value = detail()
     value.settlementFailure = { requestId: 'request-1', assistantMessageId: 'assistant-1' }
-    reset(readyThreadState(value))
+    value.summary.activity = { status: 'saving_failed', requestId: 'request-1' }
+    const bridge = installBridge(selectedSnapshot(value))
+    const session = await settleSelectedHydration(bridge, value)
 
-    expect(await render().startNewChat()).toBe(false)
-    expect(bridge.saveDraft).not.toHaveBeenCalled()
-    expect(bridge.get).not.toHaveBeenCalled()
-    expect((harness.state as ChatState).selectedThreadId).toBe('thread-a')
+    expect(await session.startNewChat()).toBe(true)
+    expect(bridge.get).toHaveBeenLastCalledWith({ threadId: null })
+    expect((harness.state as ChatState).selectedThreadId).toBeNull()
+    expect(render().threadSummaries).toMatchObject([
+      { id: 'thread-a', activity: { status: 'saving_failed', requestId: 'request-1' } },
+    ])
   })
 
   it('stays on the current Thread while an attachment is still preparing', async () => {
@@ -1832,7 +1996,7 @@ describe('C1 save and execution boundary', () => {
     expect((harness.state as ChatState).selectedThreadId).toBeNull()
   })
 
-  it('stops an active Run and waits for terminal settlement before New', async () => {
+  it('detaches New without cancelling an active Run', async () => {
     const value = detail('Hello')
     const bridge = installBridge(selectedSnapshot(value))
     const session = await settleSelectedHydration(bridge, value)
@@ -1846,27 +2010,20 @@ describe('C1 save and execution boundary', () => {
       userMessageId: 'user-main',
       assistantMessageId: 'assistant-main',
       turnIntent: 'new_user_message',
+      attachmentBearing: false,
       eventEpoch: 'epoch-1',
       cursor: 1,
     })
-    const newThread = render().startNewChat()
-    await vi.waitFor(() => expect(bridge.cancel).toHaveBeenCalledOnce())
-    expect(bridge.saveDraft).toHaveBeenCalledTimes(1)
-
-    bridge.emitChat({
-      type: 'chat:done',
-      threadId: 'thread-a',
-      requestId: request.requestId,
-      assistantMessageId: 'assistant-main',
-      status: 'cancelled',
-      finalContent: '',
-      eventEpoch: 'epoch-1',
-      cursor: 2,
-    })
-
-    expect(await newThread).toBe(true)
+    expect(await render().startNewChat()).toBe(true)
+    expect(bridge.cancel).not.toHaveBeenCalled()
     expect(bridge.saveDraft).toHaveBeenCalledTimes(2)
     expect((harness.state as ChatState).selectedThreadId).toBeNull()
+    expect(render().threadSummaries).toMatchObject([
+      {
+        id: 'thread-a',
+        activity: { status: 'submitting', requestId: request.requestId },
+      },
+    ])
   })
 
   it('reuses an untouched placeholder without creating or saving a Thread', async () => {

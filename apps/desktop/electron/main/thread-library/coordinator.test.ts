@@ -140,6 +140,74 @@ function createCoordinator() {
 }
 
 describe('ThreadLibraryCoordinator', () => {
+  it('classifies the exact Provider history before Draft mutation', async () => {
+    const { client, coordinator, sidecars } = createCoordinator()
+    const canonical = detail()
+    canonical.images.push({
+      threadId,
+      owner: 'draft',
+      turnOrdinal: null,
+      position: 0,
+      imageId,
+      mediaType: 'image/png',
+      width: 2,
+      height: 1,
+      available: true,
+    })
+    client.readThread.mockResolvedValue({ id: 'read', ok: true, value: canonical })
+    sidecars.inspect.mockResolvedValue({
+      images: [],
+      documents: [],
+      corruptProviderStateRefs: [],
+    })
+
+    await expect(
+      coordinator.classifyTurn({
+        threadId,
+        requestId: 'request-new',
+        turnIntent: 'new_user_message',
+        expectedDraftRevision: 0,
+      }),
+    ).resolves.toBe(true)
+    await expect(
+      coordinator.classifyTurn({
+        threadId,
+        requestId: 'request-retry',
+        turnIntent: 'retry_failed_response',
+        turnOrdinal: 0,
+        expectedAttemptRequestId: 'request-old',
+        expectedDraftRevision: 0,
+      }),
+    ).resolves.toBe(false)
+    expect(client.startTurn).not.toHaveBeenCalled()
+    expect(client.retryTurn).not.toHaveBeenCalled()
+  })
+
+  it('checks preflight Stop immediately before Draft-to-pending mutation', async () => {
+    const { client, coordinator, sidecars } = createCoordinator()
+    client.readThread.mockResolvedValue({ id: 'read', ok: true, value: detail() })
+    sidecars.inspect.mockResolvedValue({
+      images: [],
+      documents: [],
+      corruptProviderStateRefs: [],
+    })
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      coordinator.prepareTurn(
+        {
+          threadId,
+          requestId: 'request-new',
+          turnIntent: 'new_user_message',
+          expectedDraftRevision: 0,
+        },
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ code: 'cancelled' })
+    expect(client.startTurn).not.toHaveBeenCalled()
+  })
+
   it('keeps an exact settlement failure when storage is replaced', async () => {
     const { client, coordinator, response, sidecars } = createCoordinator()
     client.settleTurn.mockRejectedValueOnce(new Error('Worker exited'))

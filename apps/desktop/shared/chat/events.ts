@@ -27,6 +27,7 @@ export interface NyxChatAcceptedEvent extends NyxChatEventBase {
   userMessageId: string
   assistantMessageId: string
   turnIntent: NyxChatTurnIntent
+  attachmentBearing: boolean
 }
 
 export interface NyxChatStartEvent extends NyxChatEventBase {

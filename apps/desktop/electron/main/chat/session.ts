@@ -46,6 +46,7 @@ interface ActiveChatSession {
   runtime: RuntimeChatStateClient | undefined
   targetAttribution?: NyxChatTargetAttribution
   operation?: Promise<void>
+  kind: 'classifying' | 'text' | 'attachment'
 }
 
 interface ChatSessionEnv {
@@ -179,7 +180,7 @@ function toNonRetryableChatError(error: unknown): NyxChatError {
 }
 
 export class ChatSessionManager {
-  private activeSession: ActiveChatSession | undefined
+  private readonly activeSessions = new Map<string, ActiveChatSession>()
   private readonly coordinator: () => ThreadLibraryCoordinator
   private readonly publish: ChatSessionManagerOptions['publishChatEvent']
   private readonly runtimeChatStateEnabled: boolean
@@ -209,10 +210,18 @@ export class ChatSessionManager {
       if (parsed.correlation) this.emitError(sender, parsed.correlation, parsed.error)
       return
     }
-    if (this.activeSession) {
+    if (this.activeSessions.has(parsed.request.threadId)) {
       this.emitError(sender, parsed.request, {
         code: 'invalid_request',
-        message: 'Nyx only supports one active assistant response at a time right now.',
+        message: 'This thread already has an active assistant response.',
+        retryable: false,
+      })
+      return
+    }
+    if (this.activeSessions.size >= 2) {
+      this.emitError(sender, parsed.request, {
+        code: 'invalid_request',
+        message: 'Two assistant responses are already running.',
         retryable: false,
       })
       return
@@ -227,20 +236,18 @@ export class ChatSessionManager {
       abortController: new AbortController(),
       finalContent: '',
       runtime: undefined,
+      kind: 'classifying',
     }
-    this.activeSession = session
+    this.activeSessions.set(session.threadId, session)
     session.operation = this.run(session)
     void session.operation
   }
 
   cancel(value: NyxThreadChatCancellationRequest | unknown) {
     const request = parseIdentityRequest(value)
-    if (
-      request &&
-      this.activeSession?.threadId === request.threadId &&
-      this.activeSession.requestId === request.requestId
-    ) {
-      this.activeSession.abortController.abort()
+    if (request) {
+      const session = this.activeSessions.get(request.threadId)
+      if (session?.requestId === request.requestId) session.abortController.abort()
     }
   }
 
@@ -294,8 +301,31 @@ export class ChatSessionManager {
 
   private async run(session: ActiveChatSession) {
     try {
-      session.prepared = await this.coordinator().prepareTurn(session.request)
-      if (this.activeSession !== session) return
+      const attachmentBearing = await this.coordinator().classifyTurn(session.request)
+      if (!this.isCurrent(session)) return
+      if (session.abortController.signal.aborted) {
+        this.emitPreAcceptanceCancellation(session)
+        return
+      }
+      if (
+        attachmentBearing &&
+        [...this.activeSessions.values()].some(
+          (candidate) => candidate !== session && candidate.kind === 'attachment',
+        )
+      ) {
+        this.emitError(session.sender, session, {
+          code: 'invalid_request',
+          message: 'Another attachment response is already running.',
+          retryable: false,
+        })
+        return
+      }
+      session.kind = attachmentBearing ? 'attachment' : 'text'
+      session.prepared = await this.coordinator().prepareTurn(
+        session.request,
+        session.abortController.signal,
+      )
+      if (!this.isCurrent(session)) return
       this.emitAccepted(session)
 
       if (session.abortController.signal.aborted) {
@@ -304,7 +334,7 @@ export class ChatSessionManager {
       }
 
       const target = await this.resolveChatTarget(session.prepared.targetSelection)
-      if (this.activeSession !== session) return
+      if (!this.isCurrent(session)) return
       if (session.abortController.signal.aborted) {
         await this.finishCancelled(session)
         return
@@ -312,7 +342,7 @@ export class ChatSessionManager {
 
       await this.coordinator().bindPreparedTarget(session.prepared, target.targetAttribution)
       session.targetAttribution = target.targetAttribution
-      if (this.activeSession !== session) return
+      if (!this.isCurrent(session)) return
       if (session.abortController.signal.aborted) {
         await this.finishCancelled(session)
         return
@@ -322,7 +352,7 @@ export class ChatSessionManager {
         session.prepared.detail,
         target,
       )
-      if (this.activeSession !== session) return
+      if (!this.isCurrent(session)) return
 
       if (this.runtimeChatStateEnabled) {
         session.runtime = this.createRuntimeChatStateClient()
@@ -332,7 +362,7 @@ export class ChatSessionManager {
         )
         await this.startRuntimeTurn(session.runtime, session)
       }
-      if (this.activeSession !== session) return
+      if (!this.isCurrent(session)) return
       if (session.abortController.signal.aborted) {
         await this.finishCancelled(session)
         return
@@ -341,7 +371,7 @@ export class ChatSessionManager {
       this.emitStart(session)
       await this.runProvider(session, target, providerMessages)
     } catch (error) {
-      if (this.activeSession !== session) return
+      if (!this.isCurrent(session)) return
       if (session.prepared) {
         if (session.abortController.signal.aborted || isAbortError(error)) {
           await this.finishCancelled(session)
@@ -355,6 +385,13 @@ export class ChatSessionManager {
           await this.finishFailed(session, chatError)
         }
       } else {
+        if (
+          session.abortController.signal.aborted ||
+          (error instanceof ThreadLibraryCoordinatorError && error.code === 'cancelled')
+        ) {
+          this.emitPreAcceptanceCancellation(session)
+          return
+        }
         const chatError =
           error instanceof ThreadLibraryCoordinatorError && error.code === 'invalid_request'
             ? invalidRequest(error.message)
@@ -362,7 +399,7 @@ export class ChatSessionManager {
         this.emitError(session.sender, session, chatError)
       }
     } finally {
-      if (this.activeSession === session) this.activeSession = undefined
+      if (this.isCurrent(session)) this.activeSessions.delete(session.threadId)
       session.runtime?.close()
     }
   }
@@ -379,14 +416,14 @@ export class ChatSessionManager {
       documentBearing: session.prepared!.documentBearing,
       signal: session.abortController.signal,
       onDelta: async (delta, snapshot) => {
-        if (this.activeSession !== session) return
+        if (!this.isCurrent(session)) return
         session.finalContent = snapshot
         await session.runtime?.appendDelta({
           turnRequestId: session.requestId,
           assistantMessageId: session.prepared!.assistantMessageId,
           snapshot,
         })
-        if (this.activeSession === session) {
+        if (this.isCurrent(session)) {
           this.publish(session.sender, {
             type: 'chat:delta',
             threadId: session.threadId,
@@ -428,7 +465,7 @@ export class ChatSessionManager {
       session.runtime?.close()
       session.runtime = undefined
     }
-    if (this.activeSession === session) {
+    if (this.isCurrent(session)) {
       this.emitDone(session.sender, session.prepared!, 'completed', session.finalContent)
     }
   }
@@ -537,6 +574,19 @@ export class ChatSessionManager {
       userMessageId: session.prepared!.userMessageId,
       assistantMessageId: session.prepared!.assistantMessageId,
       turnIntent: session.turnIntent,
+      attachmentBearing: session.kind === 'attachment',
+    })
+  }
+
+  private isCurrent(session: ActiveChatSession) {
+    return this.activeSessions.get(session.threadId) === session
+  }
+
+  private emitPreAcceptanceCancellation(session: ActiveChatSession) {
+    this.emitError(session.sender, session, {
+      code: 'cancelled',
+      message: 'The request was cancelled.',
+      retryable: false,
     })
   }
 

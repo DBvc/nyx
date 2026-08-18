@@ -95,6 +95,7 @@ function prepared(): PreparedThreadTurn {
     assistantMessageId: 'assistant-1',
     targetSelection: selection,
     documentBearing: false,
+    attachmentBearing: false,
   }
 }
 
@@ -139,6 +140,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
     const runtimeClients: RuntimeChatStateClient[] = []
     const pending = prepared()
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => pending),
       bindPreparedTarget: vi.fn(async () => pending.detail),
       materializeProviderMessages: vi.fn(async () => [
@@ -208,6 +210,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       },
     ]
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => pending),
       bindPreparedTarget: vi.fn(async () => pending.detail),
       materializeProviderMessages: vi.fn(async () => providerMessages),
@@ -243,6 +246,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
     const events: UnclockedNyxChatEvent[] = []
     const pending = prepared()
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => pending),
       bindPreparedTarget: vi.fn(async () => pending.detail),
       materializeProviderMessages: vi.fn(async () => [
@@ -289,6 +293,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
     const events: UnclockedNyxChatEvent[] = []
     const pending = prepared()
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => pending),
       bindPreparedTarget: vi.fn(async () => pending.detail),
       materializeProviderMessages: vi.fn(async () => [
@@ -353,6 +358,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       assistantMessageId: 'assistant-2',
     }
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => nextPrepared),
       bindPreparedTarget: vi.fn(async () => pending),
       materializeProviderMessages: vi.fn(async () => [
@@ -414,6 +420,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       runtimeReplayDetail: beforeRetry,
     }
     const coordinator = {
+      classifyTurn: vi.fn(async () => false),
       prepareTurn: vi.fn(async () => retryPrepared),
       bindPreparedTarget: vi.fn(async () => pending),
       materializeProviderMessages: vi.fn(async () => [

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxThreadEvent } from '../../../shared/threads/events'
@@ -6,6 +6,8 @@ import type {
   NyxThreadDetail,
   NyxThreadSafeError,
   NyxThreadSaveDraftInput,
+  NyxThreadSummary,
+  NyxThreadActivity,
 } from '../../../shared/threads/types'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
@@ -169,7 +171,45 @@ export function deriveTargetCatalogAction(
   }
 }
 
-export function canSubmitChat(state: ChatState, connectionStatus: ConnectionStatusState) {
+export function threadIsAttachmentBearing(state: ChatState) {
+  return (
+    state.draftImages.length > 0 ||
+    state.draftDocuments.length > 0 ||
+    state.messages.some(
+      (message) => (message.images?.length ?? 0) > 0 || (message.documents?.length ?? 0) > 0,
+    )
+  )
+}
+
+export function runCapacityBlock(
+  state: ChatState,
+  summaries: ReadonlyArray<NyxThreadSummary>,
+): string | null {
+  const activities = summaries
+    .filter((summary) => summary.availability === 'available')
+    .map((summary) => summary.activity ?? ({ status: 'idle' } as const))
+  const active = activities.filter(
+    (activity) => activity.status === 'submitting' || activity.status === 'streaming',
+  )
+  if (active.length >= 2) return 'Two responses are already running.'
+  if (
+    threadIsAttachmentBearing(state) &&
+    active.some(
+      (activity) =>
+        (activity.status === 'submitting' || activity.status === 'streaming') &&
+        activity.attachmentBearing,
+    )
+  ) {
+    return 'Another attachment response is already running.'
+  }
+  return null
+}
+
+export function canSubmitChat(
+  state: ChatState,
+  connectionStatus: ConnectionStatusState,
+  capacityAvailable = true,
+) {
   const hasContent =
     state.input.trim().length > 0 || state.draftImages.length > 0 || state.draftDocuments.length > 0
   const imagesReady = state.draftImages.every((image) => image.status === 'ready')
@@ -182,6 +222,8 @@ export function canSubmitChat(state: ChatState, connectionStatus: ConnectionStat
     imagesReady &&
     documentsReady &&
     !state.activeRequestId &&
+    !state.settlementFailure &&
+    capacityAvailable &&
     connectionStatus.kind === 'ready' &&
     state.targetInitialized &&
     state.targetAvailable &&
@@ -207,8 +249,11 @@ export function useChatSession({
   getLatestConnectionRequestEpoch,
 }: UseChatSessionOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState)
+  const [threadSummaries, setThreadSummaries] = useState<ReadonlyArray<NyxThreadSummary>>([])
+  const [navigating, setNavigating] = useState(false)
   const projectionGeneration = useRef(initialChatState.projectionGeneration)
   const stateRef = useRef(state)
+  const threadSummariesRef = useRef(threadSummaries)
   const workerRef = useRef<Worker | null>(null)
   const documentWorkerRef = useRef<DocumentPreparationOperation | null>(null)
   const liveDraftsRef = useRef(new Set<string>())
@@ -224,10 +269,35 @@ export function useChatSession({
   )
   const hydrationRef = useRef(0)
   const retryHydrationRef = useRef<(() => Promise<void>) | null>(null)
-  const terminalWaitersRef = useRef(new Map<string, (settled: boolean) => void>())
+  const navigationRef = useRef(false)
   stateRef.current = state
+  threadSummariesRef.current = threadSummaries
   selectedThreadIdRef.current = state.selectedThreadId
   activeRequestIdRef.current = state.activeRequestId ?? null
+
+  function replaceThreadSummaries(rows: ReadonlyArray<NyxThreadSummary>) {
+    threadSummariesRef.current = rows
+    setThreadSummaries(rows)
+  }
+
+  function upsertThreadSummary(summary: NyxThreadSummary) {
+    const rows = threadSummariesRef.current
+    const existing = rows.findIndex((candidate) => candidate.id === summary.id)
+    replaceThreadSummaries(
+      existing === -1
+        ? [summary, ...rows]
+        : rows.map((candidate, index) => (index === existing ? summary : candidate)),
+    )
+  }
+
+  function updateThreadActivity(threadId: string, activity: NyxThreadActivity) {
+    const fallback =
+      stateRef.current.threadSummary?.id === threadId ? stateRef.current.threadSummary : null
+    const rows = threadSummariesRef.current
+    const existing = rows.find((candidate) => candidate.id === threadId) ?? fallback
+    if (!existing || existing.availability !== 'available') return
+    upsertThreadSummary({ ...existing, activity })
+  }
 
   function failDraft(imageId: string, error = 'Nyx could not prepare this image.') {
     workerDraftsRef.current.delete(imageId)
@@ -592,31 +662,54 @@ export function useChatSession({
     function handleChatEvent(event: NyxChatEvent) {
       const accepted = acceptClock(event.eventEpoch, event.cursor)
       if (!accepted || !accepted.detailAdvanced) return
-      if (
-        event.threadId !== selectedThreadIdRef.current ||
-        event.requestId !== activeRequestIdRef.current
-      ) {
-        void hydrateThreadLibrary()
+      if (event.type === 'chat:accepted') {
+        updateThreadActivity(event.threadId, {
+          status: 'submitting',
+          requestId: event.requestId,
+          attachmentBearing: event.attachmentBearing,
+        })
+        const capturedDraftIds = pendingDraftsRef.current.get(event.requestId)
+        if (capturedDraftIds) {
+          releaseDrafts(new Set(capturedDraftIds))
+          pendingDraftsRef.current.delete(event.requestId)
+        }
+        const capturedDocumentDraftIds = pendingDocumentDraftsRef.current.get(event.requestId)
+        if (capturedDocumentDraftIds) {
+          releaseDocumentDrafts(new Set(capturedDocumentDraftIds))
+          pendingDocumentDraftsRef.current.delete(event.requestId)
+        }
+      } else if (event.type === 'chat:start' || event.type === 'chat:delta') {
+        const current = threadSummariesRef.current.find((summary) => summary.id === event.threadId)
+        const activity = current?.availability === 'available' ? current.activity : null
+        updateThreadActivity(event.threadId, {
+          status: 'streaming',
+          requestId: event.requestId,
+          attachmentBearing:
+            activity?.status === 'submitting' || activity?.status === 'streaming'
+              ? activity.attachmentBearing
+              : false,
+        })
+      } else if (event.type === 'chat:done') {
+        updateThreadActivity(event.threadId, { status: 'idle' })
+      } else if (event.type === 'chat:error') {
+        pendingDraftsRef.current.delete(event.requestId)
+        pendingDocumentDraftsRef.current.delete(event.requestId)
+        updateThreadActivity(
+          event.threadId,
+          event.error.message === "Couldn't save result"
+            ? { status: 'saving_failed', requestId: event.requestId }
+            : { status: 'idle' },
+        )
+      }
+      if (event.threadId !== selectedThreadIdRef.current) return
+      if (event.requestId !== activeRequestIdRef.current) {
+        if (event.type === 'chat:accepted') void hydrateThreadLibrary()
         return
       }
 
       switch (event.type) {
         case 'chat:accepted': {
           submittingRef.current = false
-          const capturedDraftIds = pendingDraftsRef.current.get(event.requestId)
-
-          if (capturedDraftIds) {
-            releaseDrafts(new Set(capturedDraftIds))
-            pendingDraftsRef.current.delete(event.requestId)
-          }
-
-          const capturedDocumentDraftIds = pendingDocumentDraftsRef.current.get(event.requestId)
-
-          if (capturedDocumentDraftIds) {
-            releaseDocumentDrafts(new Set(capturedDocumentDraftIds))
-            pendingDocumentDraftsRef.current.delete(event.requestId)
-          }
-
           dispatch({
             type: 'request-accepted',
             threadId: event.threadId,
@@ -650,7 +743,6 @@ export function useChatSession({
 
         case 'chat:done':
           activeRequestIdRef.current = null
-          terminalWaitersRef.current.get(event.requestId)?.(true)
           dispatch({
             type: 'request-completed',
             threadId: event.threadId,
@@ -667,12 +759,7 @@ export function useChatSession({
             stateRef.current.settlementFailure?.requestId === event.requestId &&
             stateRef.current.settlementFailure.assistantMessageId === event.assistantMessageId
           activeRequestIdRef.current = null
-          terminalWaitersRef.current.get(event.requestId)?.(
-            event.error.message !== "Couldn't save result",
-          )
           submittingRef.current = false
-          pendingDraftsRef.current.delete(event.requestId)
-          pendingDocumentDraftsRef.current.delete(event.requestId)
           dispatch({
             type: 'request-failed',
             threadId: event.threadId,
@@ -699,12 +786,17 @@ export function useChatSession({
       const accepted = acceptClock(event.eventEpoch, cursor)
       if (!accepted) return
       if (accepted.listAdvanced) {
+        if (event.type === 'threads:changed') upsertThreadSummary(event.detail.summary)
+        if (event.type === 'threads:removed') {
+          replaceThreadSummaries(
+            threadSummariesRef.current.filter((summary) => summary.id !== event.threadId),
+          )
+        }
         if (
           event.type === 'threads:changed' &&
           event.detail.summary.id === selectedThreadIdRef.current
-        ) {
+        )
           dispatch({ type: 'thread-summary-changed', summary: event.detail.summary, cursor })
-        }
       }
 
       if (!accepted.detailAdvanced) return
@@ -777,6 +869,7 @@ export function useChatSession({
           dispatch({ type: 'thread-library-hydration-failed', generation, error: pageResult.error })
           return
         }
+        replaceThreadSummaries(pageResult.value.rows)
 
         const firstSummary = pageResult.value.rows[0] ?? null
         let storedId: string | null = null
@@ -910,6 +1003,7 @@ export function useChatSession({
     if (
       state.hydrationStatus !== 'ready' ||
       stateRef.current.newThreadPending ||
+      navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
       return
@@ -952,6 +1046,7 @@ export function useChatSession({
     if (
       state.hydrationStatus !== 'ready' ||
       stateRef.current.newThreadPending ||
+      navigationRef.current ||
       state.saveStatus === 'saving' ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -998,7 +1093,11 @@ export function useChatSession({
   }
 
   function removeDraftImage(imageId: string) {
-    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (
+      stateRef.current.newThreadPending ||
+      navigationRef.current ||
+      (state.activeTurn && !state.activeTurn.accepted)
+    ) {
       return
     }
 
@@ -1015,7 +1114,11 @@ export function useChatSession({
   }
 
   function retryDraftImage(imageId: string) {
-    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (
+      stateRef.current.newThreadPending ||
+      navigationRef.current ||
+      (state.activeTurn && !state.activeTurn.accepted)
+    ) {
       return
     }
 
@@ -1032,7 +1135,11 @@ export function useChatSession({
   }
 
   function removeDraftDocument(documentId: string) {
-    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (
+      stateRef.current.newThreadPending ||
+      navigationRef.current ||
+      (state.activeTurn && !state.activeTurn.accepted)
+    ) {
       return
     }
 
@@ -1047,7 +1154,11 @@ export function useChatSession({
   }
 
   function retryDraftDocument(documentId: string) {
-    if (stateRef.current.newThreadPending || (state.activeTurn && !state.activeTurn.accepted)) {
+    if (
+      stateRef.current.newThreadPending ||
+      navigationRef.current ||
+      (state.activeTurn && !state.activeTurn.accepted)
+    ) {
       return
     }
 
@@ -1254,7 +1365,12 @@ export function useChatSession({
     if (
       submittingRef.current ||
       stateRef.current.newThreadPending ||
-      !canSubmitChat(state, connectionStatus) ||
+      navigationRef.current ||
+      !canSubmitChat(
+        stateRef.current,
+        connectionStatus,
+        runCapacityBlock(stateRef.current, threadSummariesRef.current) === null,
+      ) ||
       !window.nyx
     )
       return
@@ -1270,6 +1386,11 @@ export function useChatSession({
 
     const requestId = crypto.randomUUID()
     activeRequestIdRef.current = requestId
+    updateThreadActivity(threadId, {
+      status: 'submitting',
+      requestId,
+      attachmentBearing: threadIsAttachmentBearing(stateRef.current),
+    })
     pendingDraftsRef.current.set(
       requestId,
       state.draftImages.filter((image) => image.status === 'ready').map((image) => image.id),
@@ -1297,13 +1418,15 @@ export function useChatSession({
       })
     } catch (error) {
       activeRequestIdRef.current = null
-      submittingRef.current = false
+      updateThreadActivity(threadId, { status: 'idle' })
       dispatch({
         type: 'request-failed',
         threadId,
         requestId,
         error: normalizeBridgeError(error),
       })
+    } finally {
+      submittingRef.current = false
     }
   }
 
@@ -1311,6 +1434,7 @@ export function useChatSession({
     const threadId = state.selectedThreadId
     if (
       stateRef.current.newThreadPending ||
+      navigationRef.current ||
       state.activeRequestId ||
       state.hydrationStatus !== 'ready' ||
       !window.nyx ||
@@ -1344,9 +1468,19 @@ export function useChatSession({
     }
 
     const retryableTurn = state.retryableTurn
-    if (!retryableTurn || retryableTurn.assistantMessageId !== messageId) return
+    if (
+      !retryableTurn ||
+      retryableTurn.assistantMessageId !== messageId ||
+      runCapacityBlock(stateRef.current, threadSummariesRef.current) !== null
+    )
+      return
     const requestId = crypto.randomUUID()
     activeRequestIdRef.current = requestId
+    updateThreadActivity(threadId, {
+      status: 'submitting',
+      requestId,
+      attachmentBearing: threadIsAttachmentBearing(stateRef.current),
+    })
     dispatch({
       type: 'request-submitted',
       threadId,
@@ -1367,6 +1501,7 @@ export function useChatSession({
       })
     } catch (error) {
       activeRequestIdRef.current = null
+      updateThreadActivity(threadId, { status: 'idle' })
       dispatch({
         type: 'request-failed',
         threadId,
@@ -1378,41 +1513,51 @@ export function useChatSession({
   }
 
   async function stopActiveResponse() {
-    if (!state.activeRequestId || !state.selectedThreadId || !window.nyx) return
+    if (navigationRef.current || !state.activeRequestId || !state.selectedThreadId || !window.nyx)
+      return
     await window.nyx.chat.cancel({
       threadId: state.selectedThreadId,
       requestId: state.activeRequestId,
     })
   }
 
+  async function selectThread(threadId: string) {
+    if (
+      !window.nyx ||
+      stateRef.current.hydrationStatus !== 'ready' ||
+      stateRef.current.newThreadPending ||
+      navigationRef.current ||
+      selectedThreadIdRef.current === threadId ||
+      !threadSummariesRef.current.some((summary) => summary.id === threadId)
+    )
+      return false
+
+    navigationRef.current = true
+    setNavigating(true)
+    try {
+      const saved = await queueSaveDraft(false, true)
+      if (!saved.ok) return false
+      try {
+        window.localStorage.setItem('nyx.thread.selected.v1', threadId)
+      } catch {
+        // A blocked UI preference does not block canonical selection.
+      }
+      await retryHydrationRef.current?.()
+      return selectedThreadIdRef.current === threadId
+    } finally {
+      navigationRef.current = false
+      setNavigating(false)
+    }
+  }
+
   async function startNewChat() {
     if (
       state.hydrationStatus !== 'ready' ||
       stateRef.current.newThreadPending ||
-      stateRef.current.settlementFailure ||
+      navigationRef.current ||
       !window.nyx
     )
       return false
-
-    const activeRequestId = activeRequestIdRef.current
-    const selectedThreadId = selectedThreadIdRef.current
-    if (activeRequestId && selectedThreadId) {
-      const requestId = activeRequestId
-      const terminal = new Promise<boolean>((resolve) =>
-        terminalWaitersRef.current.set(requestId, resolve),
-      )
-      try {
-        await window.nyx.chat.cancel({ threadId: selectedThreadId, requestId })
-      } catch {
-        terminalWaitersRef.current.delete(requestId)
-        return false
-      }
-      const settled = await terminal
-      terminalWaitersRef.current.delete(requestId)
-      if (!settled) return false
-    }
-
-    if (stateRef.current.settlementFailure) return false
 
     const started = { type: 'new-thread-started' as const }
     stateRef.current = chatReducer(stateRef.current, started)
@@ -1493,21 +1638,26 @@ export function useChatSession({
     }
   }
 
+  const capacityNotice = runCapacityBlock(state, threadSummaries)
+
   return {
     state,
+    threadSummaries,
     isBusy: Boolean(state.activeRequestId),
     isAccepting: Boolean(state.activeTurn && !state.activeTurn.accepted),
-    isResetting: state.newThreadPending,
-    canSend: canSubmitChat(state, connectionStatus),
+    isResetting: state.newThreadPending || navigating,
+    canStartRun: !state.activeRequestId && !state.settlementFailure && capacityNotice === null,
+    canSend: canSubmitChat(state, connectionStatus, capacityNotice === null),
+    capacityNotice,
     setInput(value: string) {
-      if (stateRef.current.newThreadPending) return
+      if (stateRef.current.newThreadPending || navigationRef.current) return
       dispatch({
         type: 'set-input',
         value,
       })
     },
     setTargetSelection(selection: NyxChatTargetSelection) {
-      if (stateRef.current.newThreadPending) return
+      if (stateRef.current.newThreadPending || navigationRef.current) return
       dispatch({
         type: 'target-draft-changed',
         selection,
@@ -1525,6 +1675,7 @@ export function useChatSession({
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,
+    selectThread,
     startNewChat,
     retryOpen,
   }

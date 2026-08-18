@@ -21,7 +21,7 @@ import {
 export class ThreadLibraryCoordinatorError extends Error {
   constructor(
     message: string,
-    readonly code: 'invalid_request' | 'storage_error' = 'storage_error',
+    readonly code: 'invalid_request' | 'storage_error' | 'cancelled' = 'storage_error',
   ) {
     super(message)
     this.name = 'ThreadLibraryCoordinatorError'
@@ -69,6 +69,7 @@ export interface PreparedThreadTurn {
   assistantMessageId: string
   targetSelection: ThreadLibraryThreadDetail['draft']['targetSelection']
   documentBearing: boolean
+  attachmentBearing: boolean
 }
 
 type ThreadHistoryTarget = Pick<ResolvedChatTarget, 'protocolConfig' | 'executionIdentity'>
@@ -192,11 +193,31 @@ export class ThreadLibraryCoordinator {
     return this.client.startTurn(input)
   }
 
-  async prepareTurn(request: NyxThreadChatRequest): Promise<PreparedThreadTurn> {
+  async classifyTurn(request: NyxThreadChatRequest): Promise<boolean> {
+    const detail = await this.reconcileThread(request.threadId, this.now())
+    if (!detail) {
+      throw new ThreadLibraryCoordinatorError('This thread was not found.', 'invalid_request')
+    }
+
+    const includesDraft = request.turnIntent === 'new_user_message'
+    return (
+      detail.images.some((image) => image.owner === 'turn' || includesDraft) ||
+      detail.documents.some((document) => document.owner === 'turn' || includesDraft)
+    )
+  }
+
+  async prepareTurn(
+    request: NyxThreadChatRequest,
+    signal?: AbortSignal,
+  ): Promise<PreparedThreadTurn> {
     const checkedAt = this.now()
     const reconciled = await this.reconcileThread(request.threadId, checkedAt)
     if (!reconciled) {
       throw new ThreadLibraryCoordinatorError('This thread was not found.', 'invalid_request')
+    }
+
+    if (signal?.aborted) {
+      throw new ThreadLibraryCoordinatorError('The request was cancelled.', 'cancelled')
     }
 
     const reply =
@@ -245,6 +266,9 @@ export class ThreadLibraryCoordinator {
       documentBearing: detail.documents.some(
         (document) => document.owner === 'turn' && document.turnOrdinal === pending.ordinal,
       ),
+      attachmentBearing:
+        detail.images.some((image) => image.owner === 'turn') ||
+        detail.documents.some((document) => document.owner === 'turn'),
     }
   }
 

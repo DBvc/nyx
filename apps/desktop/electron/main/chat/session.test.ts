@@ -23,6 +23,7 @@ import { ChatSessionManager, type UnclockedNyxChatEvent, validateChatRequest } f
 
 const threadId = '00000000-0000-4000-8000-000000000001'
 const otherThreadId = '00000000-0000-4000-8000-000000000002'
+const thirdThreadId = '00000000-0000-4000-8000-000000000005'
 const imageId = '00000000-0000-4000-8000-000000000003'
 const documentId = '00000000-0000-4000-8000-000000000004'
 const timestamp = '2026-08-13T00:00:00.000Z'
@@ -107,7 +108,28 @@ function prepared(): PreparedThreadTurn {
     assistantMessageId: 'assistant-1',
     targetSelection: selection,
     documentBearing: false,
+    attachmentBearing: false,
   }
+}
+
+function preparedFor(input: NyxThreadChatRequest) {
+  const next = prepared()
+  next.threadId = input.threadId
+  next.requestId = input.requestId
+  next.detail.summary.id = input.threadId
+  next.detail.draft.threadId = input.threadId
+  const pending = next.detail.turns[0]!
+  pending.threadId = input.threadId
+  pending.attemptRequestId = input.requestId
+  if (input.requestId !== 'request-1') {
+    pending.userMessageId = `user-${input.requestId}`
+    pending.assistantMessageId = `assistant-${input.requestId}`
+    next.userMessageId = pending.userMessageId
+    next.assistantMessageId = pending.assistantMessageId
+  }
+  next.runtimeReplayDetail.summary.id = input.threadId
+  next.runtimeReplayDetail.draft.threadId = input.threadId
+  return next
 }
 
 function resolvedTarget(): ResolvedChatTarget {
@@ -156,7 +178,10 @@ function setup() {
   const runtimeClient = runtime()
   const canonicalMessages: ChatProviderMessage[] = [{ role: 'user', content: 'Canonical prompt' }]
   const coordinator = {
-    prepareTurn: vi.fn(async () => prepared()),
+    classifyTurn: vi.fn(async (_request: NyxThreadChatRequest) => false),
+    prepareTurn: vi.fn(async (input: NyxThreadChatRequest, _signal?: AbortSignal) =>
+      preparedFor(input),
+    ),
     bindPreparedTarget: vi.fn(async (turn: PreparedThreadTurn) => turn.detail),
     materializeProviderMessages: vi.fn(async () => canonicalMessages),
     replayRuntimeHistory: vi.fn(async () => undefined),
@@ -299,7 +324,7 @@ describe('ChatSessionManager canonical execution', () => {
     manager.start(sender, request())
     await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    expect(coordinator.prepareTurn).toHaveBeenCalledWith(request())
+    expect(coordinator.prepareTurn).toHaveBeenCalledWith(request(), expect.any(AbortSignal))
     expect(coordinator.bindPreparedTarget).toHaveBeenCalledWith(
       expect.objectContaining({ threadId, requestId: 'request-1' }),
       attribution,
@@ -389,7 +414,7 @@ describe('ChatSessionManager canonical execution', () => {
     manager.start(sender, retryRequest)
     await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
 
-    expect(coordinator.prepareTurn).toHaveBeenCalledWith(retryRequest)
+    expect(coordinator.prepareTurn).toHaveBeenCalledWith(retryRequest, expect.any(AbortSignal))
     expect(runtimeClient.submitUserMessage).not.toHaveBeenCalled()
     expect(runtimeClient.retryFailed).toHaveBeenCalledWith({
       turnRequestId: 'request-retry',
@@ -563,28 +588,115 @@ describe('ChatSessionManager canonical execution', () => {
     expect(events.map((event) => event.type)).toEqual(['chat:accepted', 'chat:done'])
   })
 
-  it('retains the single global active Run while checking thread identity on cancel', async () => {
-    const provider = deferred<{ finalContent: string }>()
-    const { events, manager, sender } = setup()
-    streamChatCompletion.mockReturnValueOnce(provider.promise)
+  it('runs two Threads concurrently, rejects a third, and cancels only exact identity', async () => {
+    const first = deferred<{ finalContent: string }>()
+    const second = deferred<{ finalContent: string }>()
+    const { coordinator, events, manager, sender } = setup()
+    streamChatCompletion
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValueOnce({ finalContent: 'third answer' })
+
     manager.start(sender, request())
     await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
-
     manager.start(sender, request({ threadId: otherThreadId, requestId: 'request-2' }))
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(2))
+
+    manager.start(sender, request({ threadId: thirdThreadId, requestId: 'request-3' }))
     expect(events.at(-1)).toMatchObject({
       type: 'chat:error',
-      threadId: otherThreadId,
-      requestId: 'request-2',
-      error: { code: 'invalid_request' },
+      threadId: thirdThreadId,
+      requestId: 'request-3',
+      error: { code: 'invalid_request', message: 'Two assistant responses are already running.' },
     })
+    expect(coordinator.classifyTurn).toHaveBeenCalledTimes(2)
+    expect(coordinator.prepareTurn).toHaveBeenCalledTimes(2)
 
     manager.cancel({ threadId: otherThreadId, requestId: 'request-1' })
     expect(streamChatCompletion.mock.calls[0]![0].signal.aborted).toBe(false)
+    expect(streamChatCompletion.mock.calls[1]![0].signal.aborted).toBe(false)
     manager.cancel({ threadId, requestId: 'request-1' })
     expect(streamChatCompletion.mock.calls[0]![0].signal.aborted).toBe(true)
-    provider.resolve({ finalContent: 'ignored' })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
-    expect(events.at(-1)).toMatchObject({ status: 'cancelled' })
+    expect(streamChatCompletion.mock.calls[1]![0].signal.aborted).toBe(false)
+
+    first.resolve({ finalContent: 'ignored' })
+    await waitFor(() =>
+      expect(
+        events.find((event) => event.type === 'chat:done' && event.threadId === threadId),
+      ).toMatchObject({ status: 'cancelled' }),
+    )
+    manager.start(sender, request({ threadId: thirdThreadId, requestId: 'request-3b' }))
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(3))
+    second.resolve({ finalContent: 'second answer' })
+    await waitFor(() =>
+      expect(events.filter((event) => event.type === 'chat:done')).toHaveLength(3),
+    )
+    expect(
+      events.find((event) => event.type === 'chat:done' && event.threadId === threadId),
+    ).toMatchObject({
+      status: 'cancelled',
+    })
+    expect(
+      events.find((event) => event.type === 'chat:done' && event.threadId === otherThreadId),
+    ).toMatchObject({ status: 'completed', finalContent: 'second answer' })
+    expect(
+      events.find((event) => event.type === 'chat:done' && event.threadId === thirdThreadId),
+    ).toMatchObject({ status: 'completed', finalContent: 'third answer' })
+  })
+
+  it('rejects a second attachment Run before Draft mutation and still admits text', async () => {
+    const first = deferred<{ finalContent: string }>()
+    const text = deferred<{ finalContent: string }>()
+    const { coordinator, events, manager, sender } = setup()
+    coordinator.classifyTurn.mockImplementation(async (input) => input.threadId !== otherThreadId)
+    coordinator.prepareTurn.mockImplementation(async (input) => {
+      const next = preparedFor(input)
+      next.attachmentBearing = input.threadId !== otherThreadId
+      return next
+    })
+    streamChatCompletion.mockReturnValueOnce(first.promise).mockReturnValueOnce(text.promise)
+
+    manager.start(sender, request())
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(1))
+    manager.start(sender, request({ threadId: thirdThreadId, requestId: 'request-3' }))
+    await waitFor(() =>
+      expect(events.at(-1)).toMatchObject({
+        type: 'chat:error',
+        threadId: thirdThreadId,
+        error: { message: 'Another attachment response is already running.' },
+      }),
+    )
+    expect(coordinator.prepareTurn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: thirdThreadId }),
+      expect.anything(),
+    )
+
+    manager.start(sender, request({ threadId: otherThreadId, requestId: 'request-2' }))
+    await waitFor(() => expect(streamChatCompletion).toHaveBeenCalledTimes(2))
+    first.resolve({ finalContent: 'attachment answer' })
+    text.resolve({ finalContent: 'text answer' })
+    await waitFor(() =>
+      expect(events.filter((event) => event.type === 'chat:done')).toHaveLength(2),
+    )
+  })
+
+  it('preserves the Draft when Stop wins during preflight classification', async () => {
+    const classification = deferred<boolean>()
+    const { coordinator, events, manager, sender } = setup()
+    coordinator.classifyTurn.mockReturnValueOnce(classification.promise)
+
+    manager.start(sender, request())
+    manager.cancel({ threadId, requestId: 'request-1' })
+    classification.resolve(false)
+    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+
+    expect(events.at(-1)).toMatchObject({
+      threadId,
+      requestId: 'request-1',
+      error: { code: 'cancelled', retryable: false },
+    })
+    expect(coordinator.prepareTurn).not.toHaveBeenCalled()
+    expect(streamChatCompletion).not.toHaveBeenCalled()
   })
 
   it('settles a target-resolution failure before exposing its safe error', async () => {

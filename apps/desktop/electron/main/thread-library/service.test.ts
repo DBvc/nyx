@@ -5,6 +5,7 @@ import type { ThreadLibraryThreadDetail } from './protocol'
 import { ThreadLibraryService } from './service'
 
 const threadId = '00000000-0000-4000-8000-000000000001'
+const otherThreadId = '00000000-0000-4000-8000-000000000004'
 const imageId = '00000000-0000-4000-8000-000000000002'
 const generation = '00000000-0000-4000-8000-000000000003'
 const createdAt = '2026-08-13T00:00:00.000Z'
@@ -142,6 +143,85 @@ function harness() {
 }
 
 describe('ThreadLibraryService', () => {
+  it('keeps independent live activity for two Threads', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+    client.listPage.mockResolvedValueOnce({
+      id: 'list-two',
+      ok: true,
+      value: {
+        rows: [
+          {
+            availability: 'available',
+            id: threadId,
+            location: 'available',
+            title: 'Thread A',
+            pinPosition: null,
+            lastUserActivityAt: createdAt,
+            createdAt,
+            updatedAt: createdAt,
+            threadRevision: 1,
+            resultRevision: 0,
+            seenResultRevision: 0,
+          },
+          {
+            availability: 'available',
+            id: otherThreadId,
+            location: 'available',
+            title: 'Thread B',
+            pinPosition: null,
+            lastUserActivityAt: createdAt,
+            createdAt,
+            updatedAt: createdAt,
+            threadRevision: 1,
+            resultRevision: 0,
+            seenResultRevision: 0,
+          },
+        ],
+        nextCursor: null,
+        includedThroughCursor: 0,
+      },
+      clock: { generation, watermark: 0, actualMutation: false },
+    } as never)
+    const sender = { send: vi.fn() }
+    service.publishChatEvent(sender as never, {
+      type: 'chat:accepted',
+      threadId,
+      requestId: 'request-a',
+      userMessageId: 'user-a',
+      assistantMessageId: 'assistant-a',
+      turnIntent: 'new_user_message',
+      attachmentBearing: true,
+    })
+    service.publishChatEvent(sender as never, {
+      type: 'chat:accepted',
+      threadId: otherThreadId,
+      requestId: 'request-b',
+      userMessageId: 'user-b',
+      assistantMessageId: 'assistant-b',
+      turnIntent: 'new_user_message',
+      attachmentBearing: false,
+    })
+
+    await expect(
+      service.listPage({ location: 'available', cursor: null, limit: 50 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        rows: [
+          {
+            id: threadId,
+            activity: { status: 'submitting', requestId: 'request-a', attachmentBearing: true },
+          },
+          {
+            id: otherThreadId,
+            activity: { status: 'submitting', requestId: 'request-b', attachmentBearing: false },
+          },
+        ],
+      },
+    })
+  })
+
   it('preserves Retry on a canonical failed turn', async () => {
     const { client, service } = harness()
     const failed = detail()
@@ -220,6 +300,7 @@ describe('ThreadLibraryService', () => {
       ok: true,
       value: {
         detail: {
+          summary: { activity: { status: 'saving_failed', requestId: 'request' } },
           messages: [
             { id: 'user' },
             {
@@ -611,6 +692,7 @@ describe('ThreadLibraryService', () => {
       userMessageId: pending.turns[0]!.userMessageId,
       assistantMessageId: pending.turns[0]!.assistantMessageId,
       turnIntent: 'new_user_message',
+      attachmentBearing: true,
     })
     service.publishChatEvent(sender as never, {
       type: 'chat:delta',
@@ -631,9 +713,27 @@ describe('ThreadLibraryService', () => {
             requestId: 'request',
             assistantMessageId: pending.turns[0]!.assistantMessageId,
             turnIntent: 'new_user_message',
+            attachmentBearing: true,
           },
           messages: [{ content: 'Hello' }, { content: 'Live answer', status: 'streaming' }],
         },
+      },
+    })
+    await expect(
+      service.listPage({ location: 'available', cursor: null, limit: 50 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        rows: [
+          {
+            id: threadId,
+            activity: {
+              status: 'streaming',
+              requestId: 'request',
+              attachmentBearing: true,
+            },
+          },
+        ],
       },
     })
   })
@@ -666,6 +766,7 @@ describe('ThreadLibraryService', () => {
           userMessageId: 'user',
           assistantMessageId: 'assistant',
           turnIntent: 'new_user_message',
+          attachmentBearing: false,
         },
       ),
     ).not.toThrow()

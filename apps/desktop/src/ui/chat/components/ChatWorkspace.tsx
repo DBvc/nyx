@@ -213,10 +213,13 @@ export function ChatWorkspace() {
   const connectionSetup = useConnectionStatus()
   const {
     state,
+    threadSummaries,
     isBusy,
     isAccepting,
     isResetting,
+    canStartRun,
     canSend,
+    capacityNotice,
     setInput,
     setTargetSelection,
     addDraftImages,
@@ -228,6 +231,7 @@ export function ChatWorkspace() {
     sendCurrentInput,
     retryMessage,
     stopActiveResponse,
+    selectThread,
     startNewChat,
     retryOpen,
   } = useChatSession({
@@ -321,12 +325,13 @@ export function ChatWorkspace() {
   }
 
   function handleRetry(messageId: string) {
+    const settlementRetry = state.settlementFailure?.assistantMessageId === messageId
     if (
       state.hydrationStatus !== 'ready' ||
       isBusy ||
       isResetting ||
-      (state.retryableTurn?.assistantMessageId !== messageId &&
-        state.settlementFailure?.assistantMessageId !== messageId)
+      (!settlementRetry && !canStartRun) ||
+      (state.retryableTurn?.assistantMessageId !== messageId && !settlementRetry)
     ) {
       return
     }
@@ -368,7 +373,8 @@ export function ChatWorkspace() {
               void startNewChat()
               setActiveView('chat')
             }}
-            onOpenChat={() => {
+            onSelectThread={(threadId) => {
+              void selectThread(threadId)
               setActiveView('chat')
             }}
             onOpenConnectionsSettings={() => {
@@ -376,7 +382,9 @@ export function ChatWorkspace() {
               setActiveView('connections')
             }}
             preview={currentThreadPreview}
+            selectedThreadId={state.selectedThreadId}
             settingsPopoverRef={settingsPopoverRef}
+            threads={threadSummaries}
             title={currentThreadTitle}
           />
         </div>
@@ -438,7 +446,7 @@ export function ChatWorkspace() {
                 <ChatComposer
                   canSend={canSend}
                   composerError={state.composerError}
-                  composerNotice={state.composerNotice}
+                  composerNotice={state.composerNotice ?? capacityNotice}
                   disabled={state.hydrationStatus !== 'ready' || isResetting}
                   draftDocuments={state.draftDocuments}
                   draftImages={state.draftImages}

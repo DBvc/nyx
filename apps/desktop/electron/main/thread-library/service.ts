@@ -18,6 +18,7 @@ import { nyxChatImageLimits } from '../../../shared/chat/image-file'
 import type { NyxThreadEvent } from '../../../shared/threads/events'
 import type {
   NyxThreadAvailableSummary,
+  NyxThreadActivity,
   NyxThreadDetail,
   NyxThreadListPage,
   NyxThreadResult,
@@ -145,7 +146,10 @@ function localSecond(date: Date) {
   return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
 }
 
-function availableSummary(detail: ThreadLibraryThreadDetail['summary']): NyxThreadAvailableSummary {
+function availableSummary(
+  detail: ThreadLibraryThreadDetail['summary'],
+  activity: NyxThreadActivity,
+): NyxThreadAvailableSummary {
   return {
     availability: 'available',
     id: detail.id,
@@ -157,10 +161,11 @@ function availableSummary(detail: ThreadLibraryThreadDetail['summary']): NyxThre
     lastUserActivityAt: detail.lastUserActivityAt,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
+    activity,
   }
 }
 
-function listSummary(row: ThreadLibraryListRow): NyxThreadSummary {
+function listSummary(row: ThreadLibraryListRow, activity: NyxThreadActivity): NyxThreadSummary {
   return row.availability === 'available'
     ? {
         availability: 'available',
@@ -173,6 +178,7 @@ function listSummary(row: ThreadLibraryListRow): NyxThreadSummary {
         lastUserActivityAt: row.lastUserActivityAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        activity,
       }
     : {
         availability: 'unavailable',
@@ -197,16 +203,20 @@ export class ThreadLibraryService {
     string,
     { threadId: string; ref: ThreadLibraryThreadDetail['images'][number] }
   >()
-  private liveChat: {
-    threadId: string
-    requestId: string
-    assistantMessageId?: string
-    turnIntent: 'new_user_message' | 'retry_failed_response'
-    content: string
-    status: 'streaming' | 'failed'
-    error?: NyxChatError
-    targetAttribution?: NyxChatTargetAttribution
-  } | null = null
+  private readonly liveChats = new Map<
+    string,
+    {
+      threadId: string
+      requestId: string
+      assistantMessageId?: string
+      turnIntent: 'new_user_message' | 'retry_failed_response'
+      content: string
+      status: 'submitting' | 'streaming' | 'saving_failed'
+      attachmentBearing: boolean
+      error?: NyxChatError
+      targetAttribution?: NyxChatTargetAttribution
+    }
+  >()
   private pendingRecoveryAt: string | null = null
   private startupRecovered = false
   private pendingMaterialize: {
@@ -243,33 +253,38 @@ export class ThreadLibraryService {
   publishChatEvent(sender: WebContents, event: UnclockedChatEvent) {
     if (!this.eventEpoch) return
     if (event.type === 'chat:accepted') {
-      this.liveChat = {
+      this.liveChats.set(event.threadId, {
         threadId: event.threadId,
         requestId: event.requestId,
         assistantMessageId: event.assistantMessageId,
         turnIntent: event.turnIntent,
         content: '',
-        status: 'streaming',
+        status: 'submitting',
+        attachmentBearing: event.attachmentBearing,
+      })
+    } else {
+      const liveChat = this.liveChats.get(event.threadId)
+      if (liveChat?.requestId === event.requestId) {
+        if (event.assistantMessageId) liveChat.assistantMessageId = event.assistantMessageId
+        if (event.type === 'chat:start') {
+          liveChat.status = 'streaming'
+          liveChat.targetAttribution = event.targetAttribution
+        }
+        if (event.type === 'chat:delta') {
+          liveChat.status = 'streaming'
+          liveChat.content = event.snapshot
+        }
+        if (event.type === 'chat:error') {
+          if (this.coordinator?.settlementFailureRequestId(event.threadId) === event.requestId) {
+            liveChat.status = 'saving_failed'
+            liveChat.error = event.error
+            if (event.targetAttribution) liveChat.targetAttribution = event.targetAttribution
+          } else {
+            this.liveChats.delete(event.threadId)
+          }
+        }
+        if (event.type === 'chat:done') this.liveChats.delete(event.threadId)
       }
-    } else if (
-      (event.type === 'chat:start' || event.type === 'chat:delta' || event.type === 'chat:error') &&
-      this.liveChat?.threadId === event.threadId &&
-      this.liveChat.requestId === event.requestId
-    ) {
-      if (event.assistantMessageId) this.liveChat.assistantMessageId = event.assistantMessageId
-      if (event.type === 'chat:start') this.liveChat.targetAttribution = event.targetAttribution
-      if (event.type === 'chat:delta') this.liveChat.content = event.snapshot
-      if (event.type === 'chat:error') {
-        this.liveChat.status = 'failed'
-        this.liveChat.error = event.error
-        if (event.targetAttribution) this.liveChat.targetAttribution = event.targetAttribution
-      }
-    } else if (
-      event.type === 'chat:done' &&
-      this.liveChat?.threadId === event.threadId &&
-      this.liveChat.requestId === event.requestId
-    ) {
-      this.liveChat = null
     }
     this.cursor += 1
     try {
@@ -294,7 +309,7 @@ export class ThreadLibraryService {
     })
     if (!reply.ok) return fail(this.publicError(reply.safeError.code))
     return ok({
-      rows: reply.value.rows.map(listSummary),
+      rows: reply.value.rows.map((row) => listSummary(row, this.activity(row.id))),
       nextCursor: reply.value.nextCursor,
       ...boundary,
     })
@@ -306,7 +321,8 @@ export class ThreadLibraryService {
       return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
     const selectionRequest = ++this.selectionRequest
     const boundary = { eventEpoch: this.eventEpoch, includedThroughCursor: this.cursor }
-    const liveChat = this.liveChat ? { ...this.liveChat } : null
+    const live = input.data.threadId ? this.liveChats.get(input.data.threadId) : null
+    const liveChat = live ? { ...live } : null
     const reply = await this.active.client.snapshot(input.data)
     if (!reply.ok) {
       if (
@@ -602,7 +618,7 @@ export class ThreadLibraryService {
 
   private toSharedDetail(
     detail: ThreadLibraryThreadDetail,
-    liveChat = this.liveChat,
+    liveChat = this.liveChats.get(detail.summary.id) ?? null,
   ): NyxThreadDetail {
     const messages: NyxChatMessage[] = []
     for (const turn of detail.turns) {
@@ -652,18 +668,14 @@ export class ThreadLibraryService {
       (!liveChat.assistantMessageId || liveChat.assistantMessageId === last.assistantMessageId)
         ? liveChat
         : null
-    if (
-      last &&
-      last.assistantStatus !== 'pending' &&
-      this.liveChat?.threadId === detail.summary.id
-    ) {
-      this.liveChat = null
+    if (last && last.assistantStatus !== 'pending' && this.liveChats.has(detail.summary.id)) {
+      this.liveChats.delete(detail.summary.id)
     }
     if (live) {
       const assistant = messages.find((message) => message.id === last!.assistantMessageId)
       if (assistant) {
         assistant.content = live.content
-        assistant.status = live.status
+        assistant.status = live.status === 'saving_failed' ? 'failed' : 'streaming'
         if (live.error) assistant.error = live.error
         if (live.targetAttribution) assistant.targetAttribution = live.targetAttribution
       }
@@ -690,7 +702,7 @@ export class ThreadLibraryService {
       }
     }
     return {
-      summary: availableSummary(detail.summary),
+      summary: availableSummary(detail.summary, this.activity(detail.summary.id)),
       draft: {
         revision: detail.draft.draftRevision,
         text: detail.draft.text,
@@ -718,16 +730,20 @@ export class ThreadLibraryService {
           })),
       },
       messages,
-      runStatus: settlement
-        ? 'failed'
-        : (live?.status ??
-          (last?.assistantStatus === 'pending' ? 'streaming' : (last?.assistantStatus ?? 'idle'))),
+      runStatus:
+        settlement || live?.status === 'saving_failed'
+          ? 'failed'
+          : (live?.status ??
+            (last?.assistantStatus === 'pending'
+              ? 'streaming'
+              : (last?.assistantStatus ?? 'idle'))),
       activeRun:
-        live?.status === 'streaming' && !settlement
+        (live?.status === 'submitting' || live?.status === 'streaming') && !settlement
           ? {
               requestId: live.requestId,
               assistantMessageId: last!.assistantMessageId,
               turnIntent: live.turnIntent,
+              attachmentBearing: live.attachmentBearing,
             }
           : null,
       retryableTurn: retryable
@@ -746,6 +762,20 @@ export class ThreadLibraryService {
           }
         : null,
     }
+  }
+
+  private activity(threadId: string): NyxThreadActivity {
+    const live = this.liveChats.get(threadId)
+    const settlementRequestId = this.coordinator?.settlementFailureRequestId(threadId) ?? null
+    if (settlementRequestId) return { status: 'saving_failed', requestId: settlementRequestId }
+    if (live?.status === 'submitting' || live?.status === 'streaming') {
+      return {
+        status: live.status,
+        requestId: live.requestId,
+        attachmentBearing: live.attachmentBearing,
+      }
+    }
+    return { status: 'idle' }
   }
 
   private materializeCoordinatorInput(
