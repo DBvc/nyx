@@ -2,519 +2,211 @@
 
 Nyx is a workspace for a personal AI client and a planned typed runtime core.
 
-Current default product scope is still `v1 min chat`. Do not expand the
-product into a general AI workbench during structural or runtime migration
-work.
-
-There is one explicit exception: when the user asks to execute the
-agent-workbench workstream or a named slice from
-`docs/next/agent-workbench-task-slices.md`, follow that gated workstream for the
-requested slice only. Do not use the agent-workbench documents as permission to
-broaden unrelated tasks.
+Default product scope remains `v1 min chat`. Structural, maintenance, and
+runtime work must not turn it into a general AI workbench. A broader workstream
+is allowed only when the user explicitly names that workstream or one of its
+currently executable slices.
 
 ## Project Layout
 
-- `apps/desktop`: Electron desktop app.
-- `runtime/ocaml`: OCaml runtime core skeleton. Electron main uses a default-on runtime-backed chat state path while provider integration and UI remain in the desktop app.
-- `docs/architecture`: architecture notes and runtime boundary documents.
-- `docs/v1-min-chat-implementation-plan.md`: current product scope source of truth.
-- `docs/next/agent-workbench-task-slices.md`: explicit workstream gate for
-  thread-first Agent Workbench foundation, current-thread durability, and
-  provider compatibility core tasks, plus the bounded Composer target-selection,
-  Context Composer experiment, document-attachments, Responses protocol, and
-  Multi-Thread Library workstreams.
-- `docs/next/multi-thread-library-technical-plan.md`: reviewed architecture,
-  migration, lifecycle, UI, and validation plan for the named
-  `multi-thread-library` workstream only.
-- `docs/next/multi-thread-library-runthrough.md`: durable feasibility evidence
-  for that workstream; it does not grant implementation scope.
+- `apps/desktop`: Electron desktop app and the only user-facing product.
+- `runtime/ocaml`: typed runtime core and replayable chat-state projection.
+- `docs/architecture`: stable architecture and boundary notes.
+- `docs/v1-min-chat-implementation-plan.md`: ordinary product baseline.
+- `docs/next/agent-workbench-task-slices.md`: canonical execution gate and
+  current status owner for named workstreams until its reviewed split lands.
+- `docs/next/*-technical-plan.md`: reviewed design for its named workstream.
+- `docs/next/*-runthrough.md`: evidence and history; never implementation
+  permission by itself.
 
 ## Source of Truth
 
-For ordinary work, when product scope conflicts appear, follow this order:
+For ordinary work, resolve conflicts in this order:
 
 1. `docs/v1-min-chat-implementation-plan.md`
-2. `docs/architecture/*.md` when present
+2. `docs/architecture/*.md`
 3. `README.md`
 4. `PRD.md`
 5. `DESIGN.md`
 
-For explicit agent-workbench workstream tasks only, follow this order:
+For a named agent-workbench workstream:
 
 1. `docs/next/agent-workbench-task-slices.md`
-2. `docs/next/multi-thread-library-technical-plan.md` for the named
-   `multi-thread-library` workstream only
-3. `docs/next/responses-protocol-technical-plan.md` for the named
-   `responses-protocol` workstream only
-4. `docs/next/agent-workbench-direction.md`
-5. `docs/next/provider-adapter-direction.md`
-6. `docs/next/provider-connections-implementation.md`
-7. `docs/v1-min-chat-implementation-plan.md` as the completed baseline whose
-   existing behavior must be preserved
+2. the named workstream technical plan, when present
+3. direction and implementation notes linked by that workstream
+4. the ordinary baseline, whose unaffected behavior must be preserved
 
-The agent-workbench task slices in this repository supersede earlier external
-draft task ordering. Do not follow older AGW-00..13 draft ordering unless a
-current repository document reintroduces it.
+Repository task slices supersede older external draft ordering. Technical plans
+describe a design; runthroughs preserve evidence. Neither grants execution
+scope. Only the canonical task contract may identify an executable slice.
 
-`docs/v1-min-chat-implementation-plan.md` is the completed baseline. The
-implemented additions recorded in this file and in
-`docs/next/agent-workbench-task-slices.md` supersede conflicting baseline lines
-only for those exact additions. Ordinary work must preserve the implemented
-Connections, thread-first, current-thread durability, and provider compatibility
-core behavior, plus the bounded Composer target-selection behavior, without
-using them as permission to broaden product scope.
+Reading a workstream contract to protect landed behavior does not authorize new
+work from that contract. New work still requires an explicit user request and a
+currently executable exact slice.
 
-The current desktop product remains a minimal single-page chat client:
+## Required Workstream Routing
 
-- plain text messages
-- real streaming
-- one Electron-main-owned durable current thread
-- renderer-local in-memory projection of that current thread
-- stop
-- retry
-- new thread
+Before changing an area below, read `Global Rules`, `Workstream Status`, and the
+matching section in `docs/next/agent-workbench-task-slices.md`. Read only the
+relevant section and its linked plan/evidence unless the task requires more.
 
-Still out of scope:
+- Connections, secret storage, provider resolution, or thread-first shell:
+  foundation `A` sections.
+- Durable current thread, hydration, recovery, reset, or runtime replay: `B`
+  sections.
+- Provider request mapping or semantic stream normalization: `C` sections.
+- Composer target selection or assistant target attribution: `D` sections.
+- Image input, image storage, authorized image URLs, or image lifecycle: `E`
+  sections and the Context Composer plan.
+- OpenAI Responses protocol or continuation sidecars: `R` sections and the
+  Responses technical plan.
+- Text/PDF document attachment handling: `F` sections and the document
+  attachments plan.
+- Thread Library, SQLite, Thread IPC, multi-thread lifecycle, or native-fetch
+  gates: `MTL` sections and the Multi-Thread Library plan.
 
-- Recent, thread switching, or persistent multi-thread history
-- settings UI
-- model routing or picker UI beyond the bounded Composer target selector
-- markdown rendering
-- tools
-- agents
-- plugins
-- artifacts
-- cloud sync
-- multimodal features
+If the relevant section has no executable slice, preserve existing behavior and
+stop before adding broader behavior.
 
-Those exclusions remain the ordinary-task default. The explicitly requested
-`multi-thread-library` workstream is the sole exception for real persistent
-Thread history, switching, a typed Thread Library IPC, and SQLite, and only
-inside its currently executable qualified slice. It does not authorize a
-general workbench, Projects, Folders, Tags, tools, agents, cloud sync, or a new
-OCaml Thread domain.
+## Ordinary Product Boundary
 
-Multimodal behavior remains out of scope for ordinary work. Context Composer
-E0 stopped on main-thread encoding; E0B then stopped because Chromium's native
-JPEG output violated the failed v1.8 candidate's sealed metadata allowlist.
-The user approved only the bounded E0C exact-ICC feasibility gate. E0C then
-stopped because visible 12×1080p and 8×1080p DOM grids exceeded the fixed
-whole-process memory stop line. E0D later proved the preview-only message grid
-but stopped because its temporary fresh-byte/Blob/object-URL full-open path
-exceeded the same memory line. Neither result is product implementation
-permission or proof that derived previews are generally infeasible. E1-E5
-remained blocked at the E0D stop. The user approved only E0E: an OS-temp
-feasibility gate for one stable, main-authorized, opaque local image URL that
-streams a canonical file without sending JS-owned full bytes or paths through
-preload/IPC. E0E then
-stopped because Chromium removed a non-default explicit port before the standard
-custom-protocol handler, so the sealed exact-route authorization rule could not
-reject it. E0F then passed its reviewed OS-temp gate: Chromium's canonical
-request identity gave canonical/alias native-cache reuse, main revocation still
-invalidated the warmed URL, Renderer byte-read paths stayed blocked, three
-isolated preview/full-view runs stayed below the fixed memory line, and the same
-build loaded from `app.asar`. This is feasibility evidence, not product
-implementation permission by itself. The later v3.0 stable-image-URL plan passed
-independent review as `RC-V3-PLAN-03`. E1 completed at `1bf91cf` and passed
-`RC-E1-CODE-02`; E2 completed at `36e32e6` and passed `RC-E2-CODE-03`. E3 is
-complete at `7677868` and passed `RC-E3-CODE-02`; E4 completed at `b13d3b8` and
-passed `RC-E4-CODE-02`. E5 stopped at `RC-E5-EVIDENCE-01` when Chromium erased
-credentials before the handler. The user approved policy A and the v3.1
-canonical-identity amendment passed `RC-E5-PLAN-A-02`; E5 then stopped at the
-fresh-process 4K
-memory gate. `RC-E5-4K-MEMORY-01` returned `VALID_STOP`. The user approved only
-bounded option A: one E4M Worker live-set repair candidate. Its v3.2 amendment
-passed `RC-E4M-PLAN-02`, then E4M stopped at `RC-E4M-EVIDENCE-01` when its first
-valid 4K repetition still measured +299.828 MiB. The uncommitted Worker change
-was reversed. The user then approved one bounded E4R review candidate:
-decoder-time proportional resize of new images above a 2048-pixel long edge,
-without cropping or changing historical-image reads. The revised plan passed
-`RC-E4R-PLAN-03`, but E4R stopped at its oversized EXIF-orientation gate: the
-source decoded as portrait while the product persisted landscape full and
-preview output. The ordinary matrix was not run and the uncommitted E4R product
-diff was reversed. The user then approved one bounded E4L fallback: reject new
-imports above 4,194,304 pixels before Worker decode, enforce the same limit on
-new main-owned writes, and preserve historical reads. E4L completed at
-`5ed2b06` and passed `RC-E4L-CODE-02`; packaged picker, paste, drop, and
-oversized preflight acceptance passed. E4R, E4M, and E5 remain stopped, and no
-E slice is executable pending a new user decision.
+The ordinary desktop product remains a minimal single-page chat client with:
 
-For the explicit first agent-workbench workstream, only the following additions
-are allowed:
+- plain text chat and real streaming
+- stop, retry, and new thread
+- Electron-main-owned durable state
+- renderer-local projections
+- already-landed Connections, provider compatibility, Responses, target
+  selection, image, and document behavior within their accepted boundaries
 
-- Connections settings for OpenAI-compatible provider profiles
-- encrypted local API key storage owned by Electron main
-- default provider/model target resolution with `.env` fallback
-- redacted connection status
-- real provider test and model refresh
-- thread-first copy and renderer-local thread item adapter
+Unless an exact named slice says otherwise, do not add:
 
-Still out of scope for that first workstream:
+- new persistent history, Recent, or Thread switching behavior
+- settings or routing UI beyond already-landed Connections and target selection
+- Markdown or rich assistant output
+- tools, agents, MCP, plugins, artifacts, terminal, or browser automation
+- cloud sync, Projects, Folders, or Tags
+- new media/document types or a general Asset service
+- a new OCaml Thread domain or provider protocol
 
-- tools
-- MCP
-- terminal or browser automation
-- permission approval cards
-- artifacts
-- persistent thread history
-- projects or file context
-- details drawer
-- thread IPC replacing chat IPC
-- OCaml thread runtime domain or Electron wiring
-
-The completed second `current-thread-durability` workstream added only:
-
-- one Electron-main-owned durable current thread record
-- a narrow typed current-thread snapshot on the existing chat bridge
-- renderer hydration from that safe snapshot while renderer state remains an
-  in-memory projection
-- main-derived provider messages with compatibility validation against the
-  existing renderer request payload
-- lazy replay into the existing runtime chat reducer before the next real turn
-- interrupted-turn recovery and explicit New thread/Start fresh reset
-
-This second workstream is not persistent thread history. Still out of scope:
-
-- Recent, thread lists, thread switching, search, archive, or hidden history
-- full thread IPC replacing chat IPC
-- OCaml thread runtime domain or new runtime protocol messages
-- activity, approvals, artifacts, tools, MCP, terminal, or browser automation
-- SQLite, JSONL, conversation encryption, or multi-window synchronization
-
-The explicitly requested `multi-thread-library` workstream supersedes those
-single-current-thread prohibitions only inside its active named slice. Its
-reviewed source is `docs/next/multi-thread-library-technical-plan.md`, bound by
-`docs/next/agent-workbench-task-slices.md`. It authorizes, in dependency order:
-
-- one Electron-main-authorized local Thread Library with SQLite metadata/content
-  executed only by one application Node Worker and Thread-owned sidecars, only
-  after the whole-DB Worker gate passes, with an Electron-native single-instance
-  lock acquired before any data owner starts;
-- real Thread creation, switching, Pinned/Recent, Rename, Archive, Unarchive,
-  Trash, Restore, bounded Search, and gated Permanent delete;
-- one typed `window.nyx.threads` library bridge while retaining and
-  thread-scoping `window.nyx.chat` for execution;
-- a persisted safe target selection id for each materialized Thread Draft,
-  without persisting credentials/resolved targets or changing the global
-  Connections default;
-- at most one active Run per Thread and bounded cross-Thread concurrency while
-  Renderer and OCaml remain rebuildable projections.
-
-`multi-thread-library/S0` is complete. G1/G2 both reached independently reviewed
-`VALID_STOP`: synchronous Main SQLite crossed its frame line, and the tested
-image-cache candidates could not preserve both immediate revocation and memory
-lines. The v5.3 landing candidate self-completes when its recorded exact-byte
-reviews pass and those bytes enter HEAD; no follow-up status edit is required.
-After that, only G1W/G2R OS-temp gates may run.
-Product implementation remains blocked by G1W and each exact slice inventory.
-The reversible Thread Library through A1 does not depend on Permanent delete;
-old-root cleanup M1 follows A1, and P1 additionally requires G2R and M1. Before
-then purge schema/IPC/UI must not exist. A Thread Library open/validation failure
-must preserve every database/sidecar/root and offer Retry only, never Start
-fresh/reset. App quit must first save or explicitly discard the current Draft,
-then exact-retry or explicitly confirm loss of every process-wide
-`settlement_failed` complete result before the shutdown fence stops Runs and
-closes the Worker; a new settlement failure during drain blocks exit again. An identifiable
-Thread whose canonical content cannot be rebuilt stays visible and Retry-only
-while other Threads remain usable; image/document failures stay resource-local
-and a corrupt Responses ref uses exact controlled repair first. An
-outcome-unknown Worker mutation must be canonically reread before any prepared
-sidecar is rolled back.
-
-The completed third `provider-compatibility-core` workstream added only:
-
-- one Electron-main-only resolved chat target that preserves provider identity
-- one pure OpenAI-compatible request mapping with current generic request parity
-- one small normalized text/reasoning-activity/finish/error stream
-- provider stream fixtures and explicit terminal-response semantics
-
-This completed third workstream does not authorize provider-specific request
-parameters, an adapter registry, capability profiles, Connections schema
-changes, Settings or model-picker UI, new shared/IPC contracts, raw reasoning
-exposure or persistence, renderer/OCaml provider integration, tools, or
-structured output.
-
-The explicitly requested `responses-protocol` workstream supersedes those
-completed C-workstream prohibitions only for the named active slice. Its source
-of truth is `docs/next/responses-protocol-technical-plan.md`. It authorizes:
-
-- strict Connections v2 and secret-store v2 development cutovers with explicit
-  per-model Chat Completions or Responses protocol configuration
-- one Electron-main-only Responses request/semantic-stream path using
-  `store: false`
-- one strict current-thread v5 development cutover with completed-turn
-  references to bounded, integrity-checked, main-only Responses continuation
-  sidecars
-- replay of complete validated Responses output items only to the exact
-  matching main-owned execution identity
-- durable-current-thread settlement before OCaml runtime projection update
-
-This workstream intentionally adds no v1/v4 readers, migrations, fallbacks, or
-compatibility aliases. It still does not authorize tools, structured output,
-raw reasoning display, a general adapter/capability registry, new chat/thread
-IPC, multi-thread history, renderer/OCaml provider state, or unrelated model
-tuning. S0, G0, C1+P1, D1, I1, and A1 are complete; the sole A1 parser defect
-was repaired at `89e012e`, and the real-provider plus packaged-product matrix
-passed. No `responses-protocol` slice is executable.
-
-The implemented D1-D4 slices of the explicit fourth
-`composer-target-selection` workstream added only:
-
-- one redacted catalog of configured selectable targets on the existing
-  Connections overview bridge
-- one renderer-local Composer target draft that never owns credentials or raw
-  provider configuration
-- one required safe target selection on each chat request, validated and
-  resolved by Electron main
-- one version-2 current-thread record that preserves the latest committed
-  selection and safe per-turn target attribution
-- one compact Composer target selector and compact assistant-response
-  attribution
-- deterministic restart, New thread, Retry, unavailable-target, and `.env`
-  fallback behavior defined by the D slices
-
-The required automated D5 acceptance passes. Interactive two-target provider,
-streaming-switch, failure/recovery, and restart acceptance remains pending and
-is recorded in `docs/next/composer-target-selection-runthrough.md`.
-
-This fourth workstream does not authorize changing the Connections persisted
-schema or global default when the Composer selection changes. It also does not
-authorize provider-specific parameters, capability profiles, an adapter
-registry, attempt history, persistent multi-thread history, a new IPC channel,
-or provider identity in OCaml. Safe provider/model selection ids and display
-labels may cross the existing typed desktop bridge; resolved base URLs,
-credentials, protocols, and provider execution remain Electron-main-only.
-
-The E0 scope gate for the explicit fifth `context-composer-experiment`
-workstream did not pass. A high-entropy image at the minimum supported size
-blocked Electron main for about one second, so the synchronous main-owned
-canonicalization direction is rejected.
-
-E0B also did not pass. In the recorded environment, the OS-temp
-production-shape Vite Worker harness loaded its static Worker in dev, build,
-and `app.asar`; this was not production Renderer integration. Chromium's JPEG
-encoder emitted an ICC APP2 segment that the failed v1.8 candidate's sealed
-main allowlist correctly rejected. The old v1.8 Worker/JPEG/allowlist design,
-every numeric limit, and its E1-E5 slice and file lists are historical candidate
-material only: they are non-operative and are not implementation permission.
-The candidate-limit table in
-`docs/next/context-composer-experiment-runthrough.md` is the status reference;
-no capacity limit of any kind is frozen.
-
-E0F passed its bounded feasibility gate and independent review. The later v3.0
-stable-image-URL plan passed `RC-V3-PLAN-03`; E1 completed at `1bf91cf` and
-passed `RC-E1-CODE-02`; E2 completed at `36e32e6` and passed
-`RC-E2-CODE-03`; E3 completed at `7677868` and passed `RC-E3-CODE-02`. E4 is
-complete at `b13d3b8` and passed `RC-E4-CODE-02`. The v3.1 amendment passed
-`RC-E5-PLAN-A-02`, then E5 stopped at `RC-E5-4K-MEMORY-01`. The user-approved
-E4M candidate passed plan review as `RC-E4M-PLAN-02`, then stopped at
-`RC-E4M-EVIDENCE-01`. The user-approved E4R 2048-edge proportional-resize plan
-passed `RC-E4R-PLAN-03`, then stopped at the oversized EXIF-orientation gate;
-its uncommitted product diff was reversed. The user-approved E4L 4-MiPixel
-new-import limit completed at `5ed2b06` and passed `RC-E4L-CODE-02`. E4R, E4M,
-and E5 remain stopped; no E slice is executable pending a new user decision.
-Electron main remains
-authoritative for validation, metadata policy, file IO, durable ownership,
-target resolution, Provider mapping, and safe errors. Product changes are
-authorized only inside the named active slice; no scope expansion is allowed.
-
-E0 through E0F evidence is recorded in
-`docs/next/context-composer-experiment-runthrough.md`.
-
-This fifth workstream does not authorize PDF/doc/audio/video input, remote file
-upload, a general Asset service, arbitrary content parts, capability inference
-or registry, assistant rich output, Markdown/HTML/Artifact/Generative UI
-rendering, multi-thread history, a new IPC namespace, or new OCaml protocol
-messages. Provider credentials, resolved targets, file IO, and any future
-accepted image bytes remain Electron-main-owned.
-
-The explicit `document-attachments` workstream is separate from Context
-Composer. Its v2.5 amendment records the user-approved option A after the
-reviewed v2.4 baseline and is bound at SHA-256
-`38714f5888a17438848e37ca27be629114a7e2fe9f2c08a05e9b5b3006c50f4c`.
-The docs-only `document-attachments/S0` scope lock is bound to review contract
-`RC-DOC-S0-RATCHET-01` and landed at `43a2020`. The OS-temp
-`document-attachments/G1` extractor feasibility gate then stopped under
-`RC-DOC-G1-EVIDENCE-01`: the reviewed candidate accepted a valid ZIP64 DOCX,
-contrary to the sealed fail-closed rule. At that point G1 was incomplete and no
-document-attachments slice was executable until the reduced strict-text/PDF
-v2.5 amendment passed independent review. It passed
-`RC-DOC-V25-PLAN-01`. The reduced OS-temp G1 gate then passed
-`RC-DOC-G1-REDUCED-EVIDENCE-01`. `document-attachments/D1` completed at
-`42e4ade` and passed `RC-DOC-D1-CODE-03`; it added only the fail-closed v4
-durability foundation and did not enable product document input.
-`document-attachments/D2` completed at `bde0021`. The D3 real-target and
-packaged-product acceptance matrix passed. `RC-DOC-D3-F001-R1` repaired the
-sole final-review finding, and scoped `RC-DOC-D3-FINAL-CODE-01` passed. The
-local baseline is complete; no document-attachments slice is executable. DOCX
-is deferred, and native PDF `N0/N1` remains non-executable. This status does not
-reopen any stopped Context Composer E slice.
+Already-landed workstream behavior is part of the compatibility baseline. Do
+not remove or reinterpret it merely because an older baseline document excludes
+it. Use the required routing above to identify the exact preserved boundary.
 
 ## Workspace Boundary
 
 `apps/desktop` owns:
 
-- Electron main, preload, renderer
-- desktop UI
-- current provider integration
-- environment variables
-- provider credentials
-- OS side effects
-- current v1 min chat behavior
-- the current-thread durable record, recovery, and explicit reset lifecycle
+- Electron main, preload, renderer, and desktop UI
+- provider integration, environment variables, and credentials
+- OS side effects, file IO, and durable desktop state
+- the current typed bridges and already-landed local attachment behavior
 
 `runtime/ocaml` owns:
 
-- typed runtime domain model
-- runtime event model
-- future agent state machine
-- future tool scheduling semantics
-- future policy and capability model
-- replayable runtime tests
+- typed runtime domain and event models
+- replayable runtime tests and local protocol verification
+- future agent, tool scheduling, policy, and capability semantics
 
-Current runtime scope includes a Dune/opam project, library modules, a CLI entrypoint, runtime tests, a local protocol scaffold for runtime verification, and a default-on Electron-main-only runtime-backed chat state path. `NYX_RUNTIME_CHAT_STATE=0` exists only as a diagnostic disable. Provider calls, credentials, renderer state, preload contracts, and UI remain outside the runtime.
+The runtime-backed chat-state path is default-on and Electron-main-only.
+`NYX_RUNTIME_CHAT_STATE=0` is a diagnostic disable. Provider calls, credentials,
+preload contracts, renderer state, Thread Library ownership, and UI stay outside
+the runtime unless an exact slice explicitly changes that boundary.
+
+## Stable Safety Rules
+
+- Do not change product behavior during a structural migration.
+- Renderer must not read environment variables, credentials, raw provider
+  configs, resolved targets, unrestricted file paths, or main-owned bytes.
+- Renderer must not call providers or spawn child processes.
+- Preload exposes only narrow typed APIs; shared contracts define cross-process
+  payloads.
+- Electron main owns provider calls, cancellation, credentials, validation,
+  persistence, file IO, and OS side effects.
+- Renderer state remains a rebuildable projection, never a second durable
+  owner.
+- Provider identity, protocol selection, continuation state, and raw reasoning
+  remain Electron-main-only.
+- Composer selection may cross the bridge only as safe ids and labels. It must
+  not mutate the global Connections default.
+- Existing image/document input remains main-authorized and fail-closed. Do not
+  infer support for new formats or remote upload from landed local behavior.
+- Thread Library work must follow its canonical section. Never add synchronous
+  Main SQLite fallback, raw-SQL IPC, another database owner, or an OCaml Thread
+  reducer.
+- Do not introduce FFI, Rust, Swift, Tauri, mobile, or server projects here.
+- Do not commit generated directories such as `node_modules`, `out`, `dist`,
+  `_build`, or `_opam`.
+- Use relative documentation links. Do not add machine-local absolute paths.
 
 ## Naming Boundary
 
-Follow `docs/architecture/naming-boundary.md` for TypeScript naming in the desktop app.
+Follow `docs/architecture/naming-boundary.md` for desktop TypeScript naming.
 
-`Nyx` is a product and boundary marker, not a general implementation ownership prefix. Keep `Nyx` on product-level shared contracts, preload/window contracts, IPC constants, environment variable names, and user/product-facing brand text. Do not add `Nyx` to Electron main or renderer implementation-local helpers, state, reducers, or tests when the file path and module already provide ownership.
-
-Before naming, renaming, or planning runtime-boundary work, check the naming boundary document. If a candidate name appears to cross shared, preload, IPC, environment, or product-facing boundaries, treat it as a boundary decision and re-plan instead of mechanically renaming it.
-
-## Hard Rules
-
-- Do not change product behavior while doing structural migration.
-- Do not implement new or broader Electron <-> OCaml communication unless the task explicitly asks for it.
-- Do not introduce FFI.
-- Do not let renderer read environment variables.
-- Do not let renderer access provider credentials.
-- Do not move provider tokens into OCaml.
-- Do not add Rust, Swift, Tauri, mobile, or server projects in this phase.
-- Do not treat current-thread durability as permission to add multi-thread
-  history, thread switching, or a parallel Thread reducer. Only the active
-  qualified `multi-thread-library` slice may supersede the first two
-  prohibitions; it still may not add an OCaml Thread reducer or protocol.
-- Do not commit generated directories such as `node_modules`, `out`, `dist`, `_build`, or `_opam`.
-- Prefer `git mv` for file moves.
-- Use relative documentation links. Do not write local absolute paths such as `/Users/...`.
+Keep `Nyx` on product-level shared contracts, preload/window contracts, IPC
+constants, environment variables, and user-facing brand text. Do not add it to
+main- or renderer-local helpers when the module path already establishes
+ownership. Treat any rename across shared, preload, IPC, environment, or
+product-facing boundaries as a boundary decision, not a mechanical cleanup.
 
 ## Tooling
 
-Root tooling is managed by `mise`.
-
-Use:
+Root tooling is managed by `mise`:
 
 ```bash
 mise install
 pnpm install
 ```
 
-OCaml compiler, opam setup, and runtime tasks are available for `runtime/ocaml`.
+Prefer explicit `mise run desktop:*` and `mise run runtime:*` commands in new
+documentation.
 
-## Common Commands
-
-Desktop:
+Desktop checks:
 
 ```bash
-mise run desktop:dev
-mise run desktop:build
 mise run desktop:typecheck
 mise run desktop:typecheck:compat
 mise run desktop:lint
-mise run desktop:format
 mise run desktop:format-check
+mise run desktop:build
 ```
 
-Root npm scripts are compatibility aliases for workspace checks. Prefer explicit `mise run desktop:*` and `mise run runtime:*` commands in new docs.
-
-Runtime:
-
-```bash
-mise run runtime:setup
-mise run runtime:build
-mise run runtime:test
-mise run runtime:format
-mise run runtime:format-check
-mise run runtime:ping
-mise run runtime:check
-mise run runtime:chat-state:check
-```
-
-Root runtime harness scripts:
-
-```bash
-./scripts/audit-ocaml-runtime.sh
-./scripts/check-runtime.sh
-```
-
-## Verification Rules
-
-For desktop-only changes, run:
-
-```bash
-mise run desktop:typecheck
-mise run desktop:typecheck:compat
-mise run desktop:lint
-```
-
-For runtime-only changes, run:
+Runtime checks:
 
 ```bash
 mise run runtime:build
 mise run runtime:test
 mise run runtime:format-check
-```
-
-For runtime CLI or protocol changes, also run:
-
-```bash
 mise run runtime:ping
-```
-
-For runtime-backed chat state or Electron-main/runtime boundary changes, also run:
-
-```bash
 mise run runtime:chat-state:check
 ```
 
-When the root runtime harness scripts exist and apply to the change, prefer:
+For desktop-only changes, run typecheck, compatibility typecheck, and lint. For
+runtime-only changes, run build, test, and format-check. Runtime CLI/protocol
+changes also require `runtime:ping`; runtime-backed chat-state or Electron/runtime
+boundary changes also require `runtime:chat-state:check`. Use the root runtime
+harness scripts when they apply.
+
+Documentation-only structural changes require:
 
 ```bash
-./scripts/audit-ocaml-runtime.sh
-./scripts/check-runtime.sh
+git diff --check
+mise run docs:check
+mise run format-check
 ```
-
-For future cross-boundary changes, first confirm the relevant `runtime:*`, `desktop:*`, or workspace-level `mise` tasks exist. `mise run check` includes the runtime-backed chat state integration check.
 
 ## Subproject Instructions
 
-Before editing `apps/desktop`, read:
+Before editing `apps/desktop`, read `apps/desktop/AGENTS.md`.
 
-```text
-apps/desktop/AGENTS.md
-```
+Before editing `runtime/ocaml`, read `runtime/ocaml/AGENTS.md`.
 
-Before editing `runtime/ocaml`, read:
-
-```text
-runtime/ocaml/AGENTS.md
-```
+Before editing `docs/next`, read `docs/next/AGENTS.md` when it exists.
 
 ## Commit Discipline
 
-Each commit should do one thing:
-
-- move project structure
-- add tooling
-- add runtime skeleton
-- update docs
-- add protocol
-- wire communication
-
-Do not mix structural moves with behavior changes.
-
-After every meaningful step:
+Each commit should do one thing. Do not mix structural moves with behavior
+changes. After every meaningful step:
 
 1. run the relevant verification commands
 2. inspect `git diff`
