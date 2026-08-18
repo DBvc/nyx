@@ -9,9 +9,16 @@ The prospective `NYX-MTL-E1R-NF1-COMPAT-14` and
 2026-08-18 to unblock the documentation ownership migration. They did not
 run and do not have PASS or `VALID_STOP` results.
 
-No E1/E1R product slice is executable. Reopening native-fetch work requires
-a new explicitly requested, independently reviewed scope contract; this
-retirement does not authorize product code or revive any old candidate.
+The user's explicit 2026-08-18 request opens the new bounded `E1S` direction
+defined below. `E1S` is the only prospective product slice: product code may
+start only after the exact `NYX-MTL-E1S-SCOPE-20260818-01` contract receives
+independent review and its docs-only commit is in HEAD. The current user request
+then authorizes only those exact bytes and checks.
+
+Old E1/E1R product slices and native-fetch gates remain non-executable.
+`E1S` does not revive an old candidate, restore an old gate, or inherit an old
+PASS, `VALID_STOP`, plan version, artifact, reviewer conclusion, or execution
+permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
@@ -1537,6 +1544,129 @@ harness, workload, fixtures, audit rules, manifest or candidate index returns
 to this amendment for exact-byte review before another counted sample.
 
 <!-- nyx-contract-end: multi-thread-library/contracts-core -->
+
+### multi-thread-library/E1S-scope-lock: Bounded multi-Thread Runs
+
+Contract id: `NYX-MTL-E1S-SCOPE-20260818-01`.
+
+This is a new solution to the original multi-Thread execution problem. It is
+not a continuation of E1, E1R, NF1, COMPAT, v40, R2, or any temporary candidate.
+Those materials are historical evidence only. If the exact bytes of this
+subsection receive independent scope review and the docs-only commit enters
+HEAD, the user's current explicit request authorizes E1S product work within
+this subsection and nothing else.
+
+E1S makes ordinary multi-Thread use work with a deliberately small resource
+policy:
+
+- switching Thread or starting New thread saves the current Draft, detaches the
+  selected Renderer projection, and never cancels another Thread's accepted
+  Run;
+- a background Run continues receiving Provider output and settles its exact
+  terminal result through the existing Thread Library transaction;
+- Electron Main owns one `Map<threadId, ActiveRun>`, with at most one Run per
+  Thread, at most two Runs process-wide, and at most one attachment-bearing Run;
+- an attachment-bearing Run is any Run whose canonical Provider history or
+  pending/retried Turn contains an image or document, because old attachments
+  are materialized again as part of that history;
+- classification and both capacity checks happen before Draft-to-pending
+  mutation. A rejected request preserves the Draft and creates no Turn,
+  Provider call, Runtime client, queue entry, or hidden retry;
+- every classifying, preparing, or streaming request occupies one of the two
+  process-wide slots. Once classification identifies an attachment-bearing
+  request, it occupies the sole attachment slot until exact terminal handling
+  finishes. Exact `finally` cleanup releases only the matching Run;
+- Stop addresses exact `threadId + requestId`. Before Draft-to-pending mutation
+  it preserves the Draft and creates no Turn; after acceptance it settles the
+  exact Turn as Cancelled without changing another Run;
+- the sidebar lists the existing bounded Available page, supports selecting a
+  Thread, and shows `Running` or `Saving failed` for background work. Selecting
+  a row rebuilds the projection from Main-owned canonical state; the Renderer
+  never becomes the durable owner;
+- the send button is disabled when two Runs are active, or when the selected
+  Thread is attachment-bearing while another attachment-bearing Run is active.
+  The UI explains the applicable limit, and Main enforces the same rules so
+  quick clicks cannot bypass them;
+- ordinary terminal completion/failure/cancellation remains automatically
+  saved. The existing exact settlement Retry performs no second Provider or
+  Runtime call. A background settlement failure remains reachable through its
+  `Saving failed` Thread row and selected detail;
+- the existing ordinary JSON `fetch`, automatic redirect behavior, Provider
+  mapping, semantic stream normalization, attachment limits, Base64 image
+  materialization, SQLite schema, single Worker, and OCaml protocol remain
+  unchanged.
+
+This scope accepts the current single attachment-Run performance as the product
+baseline. It removes the rejected old absolute Main/RSS gates. Its performance
+claim is only structural: no more than one attachment-bearing Run can
+materialize Provider history at a time, text concurrency is capped at two, and
+background deltas do not trigger full Library hydration. Existing responsiveness
+checks must remain green; E1S does not claim that Base64 is cheap or eliminate
+future Provider file-upload work.
+
+The E1S product step may change exactly:
+
+- `apps/desktop/shared/chat/events.ts`;
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/electron/main/chat/session.ts`;
+- `apps/desktop/electron/main/chat/session.test.ts`;
+- `apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts`;
+- `apps/desktop/electron/main/thread-library/coordinator.ts`;
+- `apps/desktop/electron/main/thread-library/coordinator.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.ts`;
+- `apps/desktop/electron/main/thread-library/service.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final reviewed completion record only.
+
+No other file is allowed. In particular E1S does not add request-body streaming,
+manual redirect handling, custom backpressure, native fetch bindings, Provider
+uploads/file ids, a queue, daemon, durable Run/journal, new SQLite table or
+column, another Worker/connection, synchronous Main fallback, a general Asset
+service, process-quit redesign, Archive/Trash/Pin/Search, pagination UI, or an
+OCaml Thread/Run domain.
+
+Required focused evidence:
+
+- two text Runs stream and settle concurrently; a third request is rejected
+  before Draft mutation and can be sent after one slot releases;
+- one attachment-bearing Run and one text Run may overlap; a second
+  attachment-bearing request is rejected before Draft mutation with its Draft
+  unchanged, and no test observes two concurrent attachment materializations;
+- stopping, completing, failing, or encountering storage failure in one Thread
+  does not cancel, overwrite, or mis-settle the other Thread;
+- New/select while A runs leaves A running, saves the departing Draft, allows B
+  to run when capacity permits, keeps A's row current without per-delta full
+  hydration, and reconstructs A correctly when selected again;
+- the disabled send states and their explanations match Main enforcement;
+- a background settlement failure is visible, selectable, and Retry saving
+  settles the retained result without a second Provider or Runtime call; and
+- existing single-Run, image, document, Responses, Runtime replay, Thread
+  recovery, and compatibility tests remain green.
+
+Before the product commit, run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+git diff --check
+```
+
+E1S stops and returns to this scope lock if implementation needs another file,
+cannot reject capacity before Draft mutation, cannot keep a single exact Main
+Run owner, makes background navigation cancel a Run, loses reachability of a
+settlement failure, changes transport/redirect/backpressure behavior, requires
+schema/protocol expansion, or makes one attachment-bearing Provider history
+materialization overlap another.
 
 ## Migrated Source Block: multi-thread-library/contracts-global-stop
 
