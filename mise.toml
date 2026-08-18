@@ -92,6 +92,10 @@ pnpm --dir apps/desktop build
 description = "Validate agent instruction routing and workstream documentation ownership"
 run = "node scripts/check-agent-docs.mjs"
 
+[tasks."docs:migration-check"]
+description = "Audit the one-time agent documentation split against its source commit"
+run = "node scripts/check-agent-docs.mjs --migration"
+
 [tasks."runtime:setup"]
 description = "Create the OCaml local switch and install runtime dependencies"
 run = """

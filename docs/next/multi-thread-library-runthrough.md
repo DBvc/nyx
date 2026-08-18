@@ -2,7 +2,19 @@
 
 This file records durable evidence for the gated Multi-Thread Library workstream.
 It does not authorize product implementation; executable status remains in
-[agent-workbench-task-slices.md](./agent-workbench-task-slices.md).
+[multi-thread-library-task-slices.md](./multi-thread-library-task-slices.md).
+
+## NF1 Retirement Decision
+
+The prospective `NYX-MTL-E1R-NF1-COMPAT-14` and
+`NYX-MTL-E1R-NF1-14` gates were retired by explicit user decision on
+2026-08-18. Neither gate ran, so this decision records no PASS or `VALID_STOP`
+result and unlocks no product slice.
+
+The pre-retirement contracts and evidence remain available in
+[multi-thread-library-e1r-contracts.md](./multi-thread-library-e1r-contracts.md).
+Any future native-fetch work requires a new explicitly requested and
+independently reviewed scope contract.
 
 ## G1 — SQLite on Electron Main
 

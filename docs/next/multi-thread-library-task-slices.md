@@ -1,0 +1,1565 @@
+# Multi-Thread Library Task Slices
+
+<!-- nyx-workstream-status-owner: multi-thread-library -->
+
+## Current Status
+
+The prospective `NYX-MTL-E1R-NF1-COMPAT-14` and
+`NYX-MTL-E1R-NF1-14` gates were retired by explicit user decision on
+2026-08-18 to unblock the documentation ownership migration. They did not
+run and do not have PASS or `VALID_STOP` results.
+
+No E1/E1R product slice is executable. Reopening native-fetch work requires
+a new explicitly requested, independently reviewed scope contract; this
+retirement does not authorize product code or revive any old candidate.
+
+The migrated source blocks below preserve the pre-retirement contract and
+status history for traceability. This Current Status section is authoritative.
+
+## Migrated Source Block: multi-thread-library/contracts-core
+
+<!-- nyx-contract-start: multi-thread-library/contracts-core sha256:187a1dce9391ff956ed3ec5be7b383d9bf0bb7b725a89b31d85588da237002cf -->
+
+## MTL Workstream: Multi-Thread Library
+
+Status: S0 is complete. G1 and G2 both reached independently reviewed
+`VALID_STOP`. The v5.3 landing candidate passed its recorded exact-byte reviews
+and entered HEAD at `5a1aeae`, so its self-ratchet is complete. G2R then reached
+independently reviewed `VALID_STOP`; Permanent delete remains absent. G1W's
+release-shape contract correction entered HEAD at `2196ea6`, and corrected
+evidence then passed independent review. The docs-only D1 scope lock completed
+at `0e3b2ef` after review `NYX-MTL-D1-SCOPE-20260812-03`; D1-R completed at
+`0e4f02e`, and D1 code completed at `8d4d73e` after review
+`NYX-MTL-D1-CODE-20260813-03`. The D2 scope lock completed at `5efed87`, and
+D2 code completed at `15c8b00` after reviews
+`NYX-MTL-D2-CODE-20260813-04` and
+`NYX-MTL-D2-EVIDENCE-20260813-02`. The C1 scope lock completed at `b647cde`
+after review `NYX-MTL-C1-SCOPE-20260813-01`. The title-identity amendment entered
+HEAD at `d099eec`; C1 completed at `8b7150e` after independent final review
+`NYX-MTL-C1-FINAL-CODE-20260813-02`. The E1 scope lock completed at `786cd50`,
+but its first valid cap-2 sample failed the existing Main/RSS lines and stopped
+that implementation attempt. The E1R amendment completed at `24e6c07` after
+review `NYX-MTL-E1R-S0-FINAL-20260814-03`. E1R/G0 then reached independently
+reviewed `VALID_STOP`. The user approved the complete
+`NYX-E1R-NF1-DECISION-A-v1` packet on 2026-08-16. The original docs-only NF1
+amendment completed at `67bfb8e` after review
+`NYX-MTL-E1R-NF1-SCOPE-20260816-02`. Its one uncounted pre-Start seam
+shakedown is superseded after exposing the malformed Responses fixture and
+cannot enter new evidence. The first T1R fixture source candidate was rejected
+before landing under `NYX-MTL-E1R-NF1-FIXTURE-20260816-01`; its planned
+`NYX-MTL-E1R-NF1-FIXTURE-20260816-02` review never ran because plan v25 failed
+full review. A later repair source candidate was rejected under
+`NYX-MTL-E1R-NF1-REPAIR-20260817-01`; prospective REPAIR reviews `-02` through
+`-05` never ran because plans v28 through v31 failed review. The 5787-line
+source candidate at SHA-256
+`12fdf2f0ae788a6ded713879fa2ac535bfc5134466e1b3d450d0f924e9629025` was
+rejected under `NYX-MTL-E1R-NF1-REPAIR-20260817-06`. Prospective REPAIR `-07`,
+`-08`, and `-09` never ran because plans v33, v34, and v35 respectively failed
+convergence, full review, and convergence. The T1R fixture/correlation/pre-hop-
+owner/ratchet repair completed at `197aaced` after independent review
+`NYX-MTL-E1R-NF1-REPAIR-20260817-10`. The exact first post-T1R pre-run raw
+artifact at SHA-256
+`6fdaaf94b5f317cef4ad5a29ce3a2fef58bfa9addbdc6f2529455bd9b092ff40`
+is frozen as `INVALID + NOT_EVALUATED`: a paused parser blocked the transparent
+tap from observing a raw terminal, so it proves no product failure and none of
+its temp derivation may be reused. Full `NF1-11`/`COMPAT-11` never started.
+Plan v37 was rejected by `NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R24` F-001;
+prospective source review `NYX-MTL-E1R-NF1-REPAIR-20260817-11` never ran, and
+unstarted `NF1-12`/`COMPAT-12` are retired. The T1S terminal-observer/identity
+ratchet was derived from plan v38 at SHA-256
+`5f28a1f7ea9cf7368c156353e207f610eefea2da529000e05ca7981dd6783b98`,
+scoped convergence
+`NYX-E1R-NATIVE-FETCH-CONVERGENCE-36-R36-SCOPED-01`, and strict review
+`NYX-E1R-NATIVE-FETCH-PLAN-FINAL-R25`. Its exact 6,097-line source bytes at
+SHA-256 `ba4ec63d1fe11e01797eebab3f8a6547405912bd33aec59a2bbb0b9e921546e6`
+passed `NYX-MTL-E1R-NF1-REPAIR-20260817-12` and entered HEAD at
+`2de9d415066823a8fa335badb3ba9846ed1eb73a`. A focused S1 review then stopped
+T2 before sealed Start because `chat:done` projected private prepared-turn
+fields. Full `NF1-13`/`COMPAT-13` never started and are retired without a gate
+result; every pre-Start derivative is excluded. The user-authorized narrow
+repair completed at `d1a15356c1990b6fec831d4fc3ff98ab7695051b`, tree
+`0e5967782cb36e636ae4f7916ad88993feea0a5a`, and passed review
+`NYX-E1R-DONE-IPC-REPAIR-CODE-01`. The subsequent T1P documentation ratchet
+entered HEAD at `1464fc3`. Before either prospective native-fetch gate ran, the
+user explicitly retired both gates on 2026-08-18. Neither gate has a result,
+and neither authorizes later work. No E1/E1R product slice or native-fetch gate
+is executable. Reopening that direction requires a new explicit user request
+and an independently reviewed scope contract.
+
+The reviewed source is
+[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
+v5.4 at SHA-256
+`fb513b014c18717b18521b3000318fc7c96de51c028981e6bb9153dc0098c228`.
+Durable gate evidence is in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+
+Inside this section, unqualified S0, G1, G2, G1W, G2R, D1, D2, C1, E1, E1R,
+U1, L1, Q1, A1, M1, and P1 refer only to this workstream. `E1R-P1` and
+`E1R-P2` are qualified performance-stage names; unqualified P1 remains
+Permanent delete.
+
+The only allowed dependency order is:
+
+```text
+S0
+├─ G1 [VALID_STOP] → v5.3 → G1W → D1 → D2 → C1 scope → v5.4 title amendment → C1 code → E1 scope → E1 cap-2 [VALID+FAIL → STOP] → E1R amendment → G0 [VALID+FAIL → STOP] → T1 NF1 direction amendment [completed] → T1R fixture/correlation/pre-hop-owner/ratchet repair [completed] → T1S terminal-observer/identity ratchet [completed] → T1P public-event/identity ratchet [completed] → native-fetch continuation [retired before execution]
+└─ G2 [VALID_STOP] → v5.3 → G2R
+
+G2R + M1 → P1
+```
+
+This graph preserves dependency history; it does not grant current execution
+permission. The retired continuation unlocks no later slice. Every arrow into
+a tracked product slice also requires
+`multi-thread-library/<slice>-scope-lock`: a one-file update to this document
+that freezes exact allowed files, checks, review binding, and status. The
+product slice begins only after that independent scope review is in HEAD and an
+explicit user request names it. G1/G2/G1W/G2R must leave the tracked worktree
+clean.
+
+### Locked scope and supersessions
+
+Only this named workstream may:
+
+- replace the one durable v5 current-thread record with one Main-authorized
+  Thread Library whose single SQLite connection runs only in one application
+  Node Worker and whose canonical bytes remain in Thread-owned sidecars;
+- add persistent history, switching, Pinned/Recent, Rename, Archive, Unarchive,
+  Trash, Restore and bounded Search;
+- add `window.nyx.threads`, retain and thread-scope `window.nyx.chat`, and
+  persist only a materialized Draft's safe target selection id;
+- replace global execution with at most one Run per Thread and bounded
+  cross-Thread concurrency without changing the OCaml protocol;
+- add Permanent delete only after G2R, complete reversible-library A1 and
+  post-acceptance legacy cleanup M1 pass. Through M1, no purge table, IPC, menu
+  item, or disabled affordance may exist.
+
+Resolved targets, raw provider configuration, base URLs, protocols and
+credentials stay Main-only. Ordinary work remains on min-chat. Projects,
+Folders, Tags, full manual ordering, multi-window/cloud sync, auto-empty Trash,
+tools, MCP, agents, artifacts, a general Asset service, ORM/repository, Worker
+pool, queue/daemon and a new OCaml Thread domain remain out of scope.
+
+### multi-thread-library/S0: Canonical scope lock
+
+Status: complete. Exact-byte reviews:
+`NYX-MTL-S0-PRODUCT-20260812-03`, `NYX-MTL-S0-DESIGN-20260812-03`, and
+`NYX-MTL-S0-SCOPE-20260812-03`.
+
+### multi-thread-library/G1: SQLite on Electron Main
+
+Status: `VALID_STOP`. Evidence SHA-256
+`08344163b01574bf1327e33151d982d55871151dd382dca15a82868996d62f0a`.
+Production build observed one synchronous Draft commit at `19.623 ms`, above
+the fixed `16.667 ms` line. SQLite correctness passed; Main-event-loop
+`DatabaseSync` did not. Independent evidence review:
+`NYX-MTL-GATES-EVIDENCE-20260812-01`.
+
+### multi-thread-library/G2: Same-process image revocation
+
+Status: `VALID_STOP`. Evidence SHA-256
+`86143ad9ebf80ffb6957b354e509633432c5b7c8b71df87b27bb5f44dd5ec8ae`.
+`no-cache` and `session.clearCache()` failed warmed-resource revocation;
+`no-store` passed revocation/security but crossed fixed repeated-open memory
+plateau lines. Permanent delete remains absent. Independent evidence review:
+`NYX-MTL-GATES-EVIDENCE-20260812-01`.
+
+### multi-thread-library/V5.3: Stop-driven docs amendment
+
+Type: documentation only.
+
+Status: complete at `5a1aeae` through its no-follow-up self-ratchet. The
+following exact reviews passed for the same six-file bytes before they entered
+HEAD.
+
+The required final full-review bindings are
+`NYX-MTL-V53-PRODUCT-FULL-20260812-07`,
+`NYX-MTL-V53-DESIGN-FULL-20260812-07`, and
+`NYX-MTL-V53-LINUS-FULL-20260812-07`. This amendment passes only when all three
+return PASS/accept for this exact six-file artifact and the reviewed bytes enter
+HEAD.
+
+Allowed tracked files are exactly:
+
+```text
+AGENTS.md
+apps/desktop/AGENTS.md
+DESIGN.md
+docs/next/multi-thread-library-task-slices.md
+docs/next/multi-thread-library-runthrough.md
+docs/next/multi-thread-library-technical-plan.md
+```
+
+Required: preserve the two valid Stops; move all SQLite execution to one
+feature-local Node Worker behind an Electron-native single-instance lock; give
+materialize a Main-generated stable Thread id and unknown-commit recovery; add
+Draft then process-wide unsaved-result app-quit barriers before the shutdown
+fence and a non-destructive Library unavailable Retry-only state plus a stable
+Thread-scoped unavailable row; preserve
+outcome-unknown Responses sidecars until exact canonical reconciliation; add
+native close/full-image focus, settlement-failed lifecycle, latest-Search
+announcements/failure/truncation, 50-row collection paging with one common
+out-of-loaded selection rule, unavailable focus, collision-free generic title,
+bridge method ratchets, resource-level degradation and Pin/Unpin remount focus;
+make deep-page title hits retain Thread-heading focus, keep generic survivor
+ordinals stable and allocate max + 1 until that second has no identity, use only legal document
+capacity in Search evidence, order Running intent before the Draft barrier, and
+list exact affected Thread identities in every unsaved-result quit barrier;
+freeze one Main-authoritative 1–48-code-point manual Rename validator with
+explicit errors and no silent truncation;
+add G1W/G2R without product wiring; define
+Unarchive/Restore and remove undefined transient Undo; bind image-bearing
+Thread/mode/Search teardown and distinct-image memory checks to U1/L1/Q1/A1;
+add fixed Sidebar regions, Back to threads, Search cancel/open state, bounded
+Search coalescing and performance lines, deterministic pre-send titles,
+Available/Archived-only Rename, stable lifecycle ordering, safe
+running/navigation dialogs, Main-acked Draft Search and one-command Worker
+consistency; make C1 the atomic
+import/activation cutover, A1 the full reversible-library acceptance and M1 the
+only post-acceptance legacy cleanup; remove unsupported power-loss claims; keep
+P1 absent until G2R+M1;
+record exact plan hash and independent product/design/strict review ids. No
+code, test, dependency, schema, IPC, persisted data or runtime behavior may
+change.
+
+V5.3 required format-check, `git diff --check`, exact allowed-file and plan-hash
+checks, all three independent reviews, and the same bytes entering HEAD. Those
+conditions were satisfied at `5a1aeae`; this subsection now records the
+historical ratchet and does not authorize another V5.3 edit.
+
+### multi-thread-library/G1W: Whole-DB Node Worker gate
+
+Type: OS-temp production-shape feasibility only.
+
+Status: executed after the V5.3 self-ratchet. The product-relevant matrix
+and corrected release-shape evidence passed independent review
+`NYX-MTL-G1W-EVIDENCE-V3-20260812-03`; G1W is complete. Evidence SHA-256:
+`5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`.
+The standalone raw-Electron `app.asar` wording in this historical paragraph is
+superseded by G1W-A. The gate otherwise used one Worker, one `DatabaseSync`
+connection and one static Main build entry. No
+tracked file, product schema/IPC, raw-SQL RPC, Main fallback, pool,
+`utilityProcess`, ORM/repository or dependency change is allowed. It must prove
+dev/build/final-packaged-archive loading, G1 correctness/crash fixtures, bounded
+Main reply/clone/publication latency, FIFO snapshot ordering, CAS conflicts,
+stable-id materialize recovery without automatic replay, other unknown-commit
+reconciliation including terminal providerStateRef retention after reply loss,
+generation invalidation and window/app lifecycle. The same
+profile must also launch two packaged processes and prove the secondary touches
+no DB, Worker, staging, sidecar, image authorization, or legacy root while the
+primary retains one event domain.
+
+Failure leaves D1 blocked and returns to planning.
+
+### multi-thread-library/G1W-A: Release-shape archive evidence correction
+
+Type: documentation-only correction to the G1W evidence contract.
+
+Status: complete at `2196ea6`. Scoped review
+`NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` accepted the exact bytes before they
+entered HEAD. Review `NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-01` required only
+the historical-status alignment present in that accepted revision.
+
+This subsection narrowly supersedes the standalone `app.asar` launch wording
+in v5.3 and the G1W subsection above. A raw Electron executable directly
+targeting an archive copied from a packaged application creates a hybrid state:
+`app.isPackaged` is false while `app.getAppPath()` points inside release
+artifacts. That state changes application identity and Renderer/resource
+lifecycle semantics, is not a Nyx release path, and duplicates the archive-load
+proof already exercised by the packaged application. Such a run is neither a
+required G1W sample nor decision-eligible PASS/Stop evidence. Existing failed
+attempts remain disclosed as invalid orchestration; they are not erased or
+reclassified.
+
+For G1W, final-archive validation instead requires one fresh-profile FULL run
+of the final packaged `.app` that records all of the following:
+
+- `app.isPackaged=true`;
+- `app.getAppPath()` equals that package's exact
+  `Contents/Resources/app.asar` path;
+- the exact SHA-256 of that frozen archive and an auditable archive inventory;
+- the static Worker URL resolves inside that exact archive;
+- the Main, Worker, preload, and Renderer bytes in the archive match the final
+  packaged candidate;
+- complete raw results for the frozen correctness, workload, latency,
+  heartbeat, FIFO/CAS, unknown-commit, sidecar, generation, window teardown,
+  clean-close, and no-skipped-check matrix.
+
+Development and production-build samples remain separately required. The same
+final packaged candidate must still pass the same-profile dual-process native
+single-instance matrix, and the real SIGKILL/restart fixtures remain required.
+No latency, memory, security, correctness, workload, lifecycle, or ownership
+line is removed or relaxed. This correction does not change the one-Worker
+architecture, authorize a Main SQLite fallback, or authorize D1 by itself.
+
+After this correction enters HEAD, G1W evidence may pass only when an
+independent strict review verifies the deterministic source manifest, exact
+final archive/result/raw hashes, every retained required sample, every invalid
+or superseded sample, and the clean tracked worktree. D1 remains blocked until
+that evidence review passes and D1's own one-file scope lock is independently
+reviewed and present in HEAD.
+
+Allowed tracked files are exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+This correction may not change product code, tests, dependencies, schema, IPC,
+persisted data, runtime behavior, the v5.3 product model, G2R's result, or P1's
+absence.
+
+### multi-thread-library/G2R: Renderer resource-cache repair gate
+
+Type: OS-temp production-shape feasibility only.
+
+Status: independently reviewed `VALID_STOP`. Evidence SHA-256
+`099e87ce83f679fb887ae7054f2429f6cab52a8bc4936215119f29210e606e7e`;
+review `NYX-MTL-G2R-EVIDENCE-20260812-01`. Both ordered native candidates
+crossed the fixed repeated-close memory plateau line. P1 and Permanent delete
+remain absent; D1 through M1 remain unaffected. G2R is not executable again
+under this workstream.
+
+### Product implementation slices
+
+D1 through M1 are blocked on G1W and their qualified scope locks. P1 is
+separately blocked on G2R+M1 and its scope lock. Exact responsibilities are the
+matching v5.3 sections:
+
+- D1: native single-instance startup, one DB Worker/client, stable-id
+  materialize recovery, 50-row keyset paging, strict SQLite domain, read-only v5
+  importer with resource-level degradation and non-destructive Main-only
+  Library/Thread unavailable states; no Renderer wiring and no purge schema;
+- D2: Thread-owned resources, unified Draft CAS, Draft-to-Turn transaction and
+  exact three-outcome terminal settlement/sidecar reconciliation/retry;
+- C1: atomic v5 import/activation, Thread Library API including redacted
+  unavailable/Retry projection and only the C1 bridge methods, thread-scoped
+  chat, Worker FIFO snapshot barrier and removal of Renderer-owned provider
+  messages;
+- E1: per-Thread execution, exact cancellation and Stop/terminal ordering,
+  concurrency evidence and Draft/process-wide-result save-before-fence
+  shutdown, including stable affected-Thread identities, partial/new-failure
+  dialog updates and settlement failure during drain;
+- U1: New/list/select/Draft/Pinned/Recent UI, deterministic pre-send titles,
+  fixed then-present Sidebar regions, Library/Thread unavailable surfaces,
+  collection paging/failure/end and common deep-selection restore, stable
+  collision-resolved image-time fallback whose survivors never renumber and
+  whose next ordinal is max + 1, minimum-width visible creation-label
+  disambiguation for same-second/cross-year/DST-equal/manual duplicates and
+  pagination-set changes, unavailable focus/announcements
+  without interrupting Connections, attention, safe save/discard and
+  native-close/full-image focus barrier, image-detail teardown/distinct-image
+  memory gate and keyboard/accessibility;
+- L1: reversible Rename/Pin/Archive/Unarchive/Trash/Restore only, with no
+  transient Undo state and no Trash Rename, plus fixed lifecycle entries/Back
+  to threads, Pin/Unpin loaded-row or cross-page Load-more focus,
+  settlement-failed gating, stable collection order, one-shot Stop-and-move
+  intent and safe running-action dialogs that decide Running intent before any
+  Draft save/discard, plus the shared manual-title validation/focus contract;
+- Q1: one-command Worker literal Search over Main-acked Draft and committed
+  Available/Archived content, with fixed Search/results region, explicit
+  cancel/open/error/Retry/truncation state, latest-epoch VoiceOver feedback,
+  Q1-only bridge method, one-in-flight/one-latest-pending backpressure and fixed
+  performance lines over legal document-capacity fixtures, with deep title
+  matches retaining Thread-heading focus; no FTS unless a measured failure
+  produces a reviewed amendment;
+- A1: full reversible-library, dual-process, unavailable-state, complete
+  Draft/result quit barriers,
+  resource degradation/Responses repair, unknown-commit sidecar,
+  settlement-failed, bridge ratchets, fixed focus/Search/paging/Sidebar/title
+  and packaged distinct-image navigation acceptance,
+  including the Running-before-Draft lifecycle order and exact result-loss
+  identity list and all manual-title input boundaries,
+  plus removal of old current-thread code while the old data root remains
+  byte-identical, with transient Undo and Permanent delete/Purge schema/IPC/UI
+  proven absent;
+- M1: only after A1, separately confirmed legacy-root cleanup and authorization
+  scan, with no product behavior change;
+- P1: optional final Trash-only Permanent delete, its purge schema/bridge/UI and
+  complete packaged regression.
+
+### multi-thread-library/D1-R: SQLite crash-recovery contract correction
+
+Type: documentation-only correction to the D1 open/validation contract.
+
+Status: complete at `0e4f02e` after independent strict review
+`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02`. D1 product code subsequently
+completed at `8d4d73e`; this subsection remains the governing recovery
+contract.
+
+This subsection narrowly supersedes v5.3 and D1-scope-lock wording that requires
+the original database and DELETE journal to remain byte-identical after every
+open or physical-validation failure. SQLite must recover a hot rollback journal
+before it can expose one authoritative, transactionally consistent view; that
+native recovery can write restored pages and remove the journal before schema,
+foreign-key and `quick_check` validation can finish. A read-only connection
+cannot perform that recovery, and `immutable=1` ignores the journal rather than
+validating the authoritative state. Treating either as canonical would weaken
+crash recovery.
+
+D1 therefore keeps at most one live Worker and one live `DatabaseSync`
+connection. Each Worker generation constructs its sole connection once and
+opens the canonical path once; a replacement generation may start only after
+the old generation has confirmed exit and its connection no longer exists. The
+connection lets SQLite perform native DELETE-journal recovery before accepting
+any semantic command. Native recovery of a pre-existing hot journal is the only
+allowed pre-validation physical mutation to a pre-existing canonical database.
+After recovery, D1 must validate the exact schema fingerprint, required pragmas,
+`PRAGMA foreign_key_check` with zero rows and `PRAGMA quick_check = 'ok'` before
+accepting commands.
+
+If the canonical path is absent, the sole connection may exclusively create the
+database and initialize the reviewed schema. If that first initialization or
+validation fails, D1 removes only the database and journal created by that
+attempt; it never removes or replaces a file that predated the call.
+
+If open, recovery or any later validation fails, D1 enters Library unavailable
+and closes the connection. It leaves the files exactly as SQLite left them and
+must not create or substitute an empty database, copy/rename/restore a backup,
+re-import v5, repair rows, retry a mutation, or introduce a recovery manager,
+second connection, second Worker or second durable truth. Clean invalid inputs
+with no hot journal must remain byte-identical. For a hot or corrupt journal,
+the test must not promise byte identity after SQLite's recovery attempt; it must
+instead prove fail-closed behavior, no replacement/re-import, and no accepted
+command against an unvalidated database.
+
+D1 tests must add: a real spilled uncommitted DELETE-journal SIGKILL fixture
+that reopens to the pre-transaction state; a corrupt hot-journal fixture that
+becomes Library unavailable without an empty replacement; and an FK-disabled
+orphan fixture rejected by `foreign_key_check`, byte-identical because it has no
+hot journal. Existing clean header, permission, schema, pragma and quick-check
+failure preservation remains required. Product source must contain only one
+`new DatabaseSync` construction site and no immutable validation path.
+
+Allowed tracked files are exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+This correction changes no product behavior, schema, operation, file inventory,
+IPC, dependency, UI or later-slice boundary. It does not relax old-root or
+sidecar byte identity, and it does not authorize destructive recovery.
+
+### multi-thread-library/D1-scope-lock: SQLite domain and importer foundation
+
+Type: documentation-only control step.
+
+Status: scope lock complete at `0e3b2ef` after independent review
+`NYX-MTL-D1-SCOPE-20260812-03`. Its open/validation byte-preservation wording is
+narrowly superseded by D1-R above. D1 code completed at `8d4d73e` after
+independent review `NYX-MTL-D1-CODE-20260813-03`; D2 remains blocked until its
+own scope lock below completes.
+
+Dependencies are satisfied only by G1W evidence
+`5051863dc6cc81dd88b0524f8a08f44e167712528ddae28058bffba7efaa2e3d`,
+independent review `NYX-MTL-G1W-EVIDENCE-V3-20260812-03`, and G1W-A contract
+review `NYX-MTL-G1W-ARCHIVE-CONTRACT-20260812-02` in HEAD `2196ea6`.
+
+D1 may change exactly these tracked files:
+
+```text
+apps/desktop/electron.vite.config.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+apps/desktop/electron/main/thread-library/protocol.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/worker.ts
+apps/desktop/electron/main/thread-library/worker.test.ts
+apps/desktop/electron/main/thread-library/v5-importer.ts
+apps/desktop/electron/main/thread-library/v5-importer.test.ts
+```
+
+Responsibilities are fixed as follows:
+
+- `index.ts` acquires Electron's native single-instance lock before privileged
+  scheme registration or any data owner can initialize. A rejected secondary
+  exits without touching current-thread, Thread Library, staging, sidecar,
+  image-authorization, Connections, Runtime, IPC or window state. The primary's
+  `second-instance` handler only restores/shows/focuses its existing window.
+- `electron.vite.config.ts` adds one fixed Main build entry named
+  `thread-library-worker`; it does not add a dependency or a dynamic Worker
+  loader.
+- `protocol.ts` is the implementation-local typed semantic Worker contract.
+  Its D1 operations are limited to open/close, stable-id materialize, exact
+  Thread read, 50-row keyset list page and one-record v5 import. It is not a
+  shared/preload contract and exposes no raw SQL.
+- `client.ts` owns one Worker generation and one pending-request map. It
+  validates replies, invalidates a failed generation, waits for old Worker exit
+  before one replacement, classifies mutation outcomes as
+  `definitely_not_committed | committed | outcome_unknown`, and performs only
+  exact canonical reread reconciliation. It never auto-replays a mutation and
+  has no second queue, pool or Main SQLite fallback.
+- `worker.ts` is the only non-test product source allowed to import
+  `node:sqlite` or construct `DatabaseSync`. It owns the sole connection,
+  prepared statements and complete transactions; uses bound parameters,
+  STRICT tables, foreign keys, DELETE journal, defensive/trusted-schema and
+  secure-delete settings; enforces 0700/0600; and runs required physical,
+  schema, pragma and `quick_check` validation before accepting commands.
+- `v5-importer.ts` strict-parses the old v5 record directly with the existing
+  parser and reads the old root without mutating it. It must not call
+  `CurrentThreadStore.read()`, because that read repairs pending state. The
+  importer converts abandoned pending to Interrupted, preserves safe target and
+  Responses identity, validates resources through the existing Main-owned
+  image/document/provider-state validators and degrades only bad resources. It
+  sends the Worker only semantic SQLite row values plus validated extracted
+  document text under existing resource limits; raw image, document-source and
+  Responses continuation bytes never cross. D1 adds no v5 file, Turn or message
+  text cap; needing one is a Stop/replan rather than rejection of an otherwise
+  valid v5 record. The importer neither copies sidecars nor activates a new
+  library.
+- The three new test files and existing `index.test.ts` are the only D1 test
+  surfaces. Fixtures are generated inside those tests; D1 adds no fixture tree,
+  test-only IPC, production fault flag, helper framework or generic filesystem
+  abstraction.
+
+The D1 schema includes only the v5.3 `threads`, one-row-per-Thread `drafts`,
+`turns`, `images`, `documents`, and `provider_state_refs` domain needed by this
+foundation. It enforces location/trash-origin/Pin/title/revision invariants,
+one pending final Turn per Thread, Draft tombstones and stable identities. It
+does not create FTS, `purge_jobs`, durable Runs, a global catalog, generic event
+log, migration journal or later-slice columns without a D1 invariant.
+
+D1 builds and tests this foundation but does not construct a Thread Library
+client from normal app startup, open or create a user's real library, write the
+old root, register Thread IPC, change `window.nyx`, cut chat over, or change any
+Renderer/Provider/Runtime behavior. C1 remains the sole import-and-activation
+cutover; D2 remains the owner of new thread-owned sidecar staging, unified Draft
+CAS, Draft-to-Turn and terminal settlement.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/main/index.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/worker.test.ts electron/main/thread-library/v5-importer.test.ts
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
+The tests must cover single-instance owner ordering and focus-only handoff;
+STATIC Worker output; STRICT/FK/DELETE/0700/0600/rollback/reopen/quick-check;
+137 ordered rows with 50-row pages, end and invalid/stale cursors; stable-id
+materialize rollback, commit-before-reply-loss reread and same-id explicit
+Retry; malformed/unknown/timeout/crash/late-generation replies, CAS conflict
+and no automatic replay; safe Library versus Thread unavailable classification;
+and v5 text/image/document/Responses/pending, corrupt-resource, corrupt-ref,
+repeat and disk-full cases with the entire old root hash unchanged.
+
+OS-temp acceptance must also load the exact static Worker from the final D1
+packaged `.app`, bind the frozen archive hash/inventory as in G1W-A, and launch
+two fresh-profile packaged processes to prove the rejected secondary touches no
+protected root while the primary receives one focus event and retains one event
+domain. No raw-Electron packaged-archive hybrid is required.
+
+The implementation stops and returns to this scope lock if any required change
+falls outside the ten-file inventory; a real published upgrade population is
+found; canonical Thread identity/location cannot be distinguished from a
+whole-library failure; old-root bytes change; or correctness requires
+dual-read/write, a second durable truth, raw-SQL RPC, another connection/Worker,
+automatic mutation replay, Main `DatabaseSync`, an ORM/repository, D2/C1/Q1/P1
+behavior, or a product-only test hook.
+
+Before implementation could be marked complete, exact allowed-file and
+forbidden-surface scans, all checks above, packaged acceptance, and an
+independent code review had to pass for the same implementation bytes entering
+HEAD. Those conditions passed under `NYX-MTL-D1-CODE-20260813-03`; D1
+completion does not authorize D2 without D2's own reviewed scope lock.
+
+### multi-thread-library/D2-scope-lock: Thread resources and settlement domain
+
+Type: documentation-only control step.
+
+Status: scope lock complete at `5efed87` after independent strict review
+`NYX-MTL-D2-SCOPE-20260813-01`. D2 product code subsequently completed at
+`15c8b00` after reviews `NYX-MTL-D2-CODE-20260813-04` and
+`NYX-MTL-D2-EVIDENCE-20260813-02`. This subsection remains the governing D2
+contract and no longer authorizes another D2 edit.
+
+Dependencies are satisfied only by D1 commit `8d4d73e`, D1 code review
+`NYX-MTL-D1-CODE-20260813-03`, D1-R commit `0e4f02e`, and D1-R review
+`NYX-MTL-D1-RECOVERY-CONTRACT-20260812-02` in the ancestry of the scope-lock
+commit. D2 must preserve D1's one application Worker/connection, semantic-only
+protocol, exact three-outcome mutation handling and non-destructive unavailable
+states.
+
+This scope-lock step may change exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+After this scope lock completes, D2 may change exactly these tracked files:
+
+```text
+apps/desktop/electron/main/thread-library/protocol.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/worker.ts
+apps/desktop/electron/main/thread-library/worker.test.ts
+apps/desktop/electron/main/thread-library/sidecars.ts
+apps/desktop/electron/main/thread-library/sidecars.test.ts
+apps/desktop/electron/main/thread-library/coordinator.ts
+apps/desktop/electron/main/thread-library/coordinator.test.ts
+```
+
+D2 is a dormant Main/Worker domain foundation. It does not construct the
+Thread Library client during normal startup, open or create the user's real
+library, import or activate data, register IPC, change `window.nyx`, call a
+Provider or Runtime, or change Renderer behavior. C1 remains the only import,
+activation and bridge/chat cutover.
+
+Responsibilities are fixed as follows:
+
+- `protocol.ts` extends the implementation-local semantic Worker contract only
+  with `saveDraft`, `startTurn`, `retryTurn`, `bindTurnTarget`, `settleTurn`,
+  `recoverPending`, `setResourceAvailability` and
+  `repairProviderStateRef`. It represents Draft- and Turn-owned ordered image
+  and document rows without raw bytes or paths. It adds no shared/preload type,
+  raw-SQL message, generic mutation id or later-slice operation.
+- `worker.ts` implements every D2 database transition as one complete short
+  transaction on the existing connection. It does not add a table, column,
+  FTS index, durable Run, settlement journal or second queue. D2 may replace
+  only the existing `documents.available/extracted_text` CHECK so an unavailable
+  source sidecar may retain already validated SQLite extracted text, and may add
+  or tighten an existing-table CHECK/trigger/index required by the frozen D2
+  transitions. Any table, column or schema-version change is a Stop/replan.
+- `client.ts` adds typed wrappers and exact canonical reread for D2 mutations.
+  It never auto-replays a mutation. One call may consume at most the existing
+  single replacement generation; an inconclusive reread remains
+  `outcome_unknown`, and no sidecar may be removed on that outcome. The sole
+  set-based exception is `recoverPending`: it has no external sidecar and cannot
+  reconstruct the affected set after reply loss, so unknown stays unknown until
+  an explicit caller Retry of the same idempotent input.
+- `sidecars.ts` is the sole new Thread Library file owner. Under a caller-owned
+  library root it derives paths only from validated UUIDs and uses the fixed
+  layout `threads/<threadId>/{images,documents,responses,.staging}`. Image full
+  and preview bytes and document source bytes remain files; validated document
+  extracted text exists only in SQLite; Responses continuation remains an
+  integrity-checked JSON sidecar. Directories are 0700 and files 0600. A narrow
+  file-operation seam may exist in this file only for failure tests; D2 adds no
+  filesystem framework or generic Asset service.
+- `coordinator.ts` is the one Main-side D2 coordinator over the existing
+  `ThreadLibraryClient` and `sidecars.ts`. It stages, verifies and atomically
+  publishes new files before asking the Worker to reference them; owns the
+  process-local exact `settlement_failed` inputs, including bounded Responses
+  continuation bytes and one Main-generated stable state id; and exposes Retry
+  of the same terminal input/ref without Provider or Runtime contact. It is not
+  wired into startup and does not add an ActiveRun manager, event bus, service
+  registry or durable failure state.
+- The four listed test files are the only D2 test surfaces. Tests use OS-temp
+  roots and existing image/document/Responses fixtures and limits. D2 adds no
+  fixture tree, production fault flag, product-only hook or dependency.
+
+The Draft contract is one CAS over text, safe target selection and the complete
+ordered image/document ownership set. Main validates and publishes only new
+sidecars; the Worker verifies `threadId + expectedDraftRevision`, replaces the
+Draft-owned metadata set and increments the Draft revision exactly once. A CAS
+conflict returns the canonical revision without overwriting Main/Renderer dirty
+input. Non-empty text or an attachment-set change updates
+`last_user_activity_at`; target-only and empty-text-only saves do not. Resource
+ids remain globally stable and cannot be reparented across Threads.
+
+`startTurn` uses `threadId + requestId + expectedDraftRevision` and Main-owned
+message ids. In one transaction it requires Available or Archived, requires no
+pending Turn, inserts the final pending Turn, moves every ordered Draft resource
+row to that Turn, clears the Draft to a tombstone while preserving its accepted
+safe target selection, increments the Draft revision, restores Archived to
+Available and increments `thread_revision` for that location change, freezes
+the existing auto title, and updates user activity. An Available start does not
+change `thread_revision`. No Provider/Runtime side effect may begin before the
+committed ack. On reply loss, the client rereads the exact request id; it never
+starts Provider work from an unknown result.
+
+`retryTurn` identifies one exact retryable failed Turn by Thread, ordinal and
+previous attempt request id, and that Turn must be the final Turn. It rejects
+Trash, accepts Available, and atomically restores Archived to Available while
+incrementing `thread_revision`; an Available retry does not change that
+revision. It also CAS-checks the current Draft revision, uses that Draft's safe
+target selection, preserves message/content/resource identity, installs the new
+request id, clears the old terminal fields and updates user activity.
+`bindTurnTarget` may bind safe attribution only to the exact still-pending
+request and matching selection before Provider contact. Neither operation
+consumes Draft text or attachments.
+
+All terminal states use one `settleTurn` conditional transaction keyed by
+`threadId + requestId` and requiring exactly one pending row. Exactly one of
+Complete/Fail/Cancel wins; all losers reread canonical terminal state and emit
+no second terminal result. A winning terminal increments `result_revision`
+once, never changes `last_user_activity_at`, and preserves
+`seen_result_revision`. Failed attachment rejection remains legal only for an
+attachment-bearing Turn. Before the Worker call, Main must prove that a
+Responses continuation's visible text equals the durable assistant text. The
+ref is then inserted in the same terminal transaction and must match the exact
+request, safe target attribution, execution identity, byte length and hash.
+
+Responses bytes are prepared, verified and atomically published before
+`settleTurn`. Any prepare or database failure stores the exact terminal input
+in the process-local `settlement_failed` map. `definitely_not_committed` permits
+best-effort removal of the unreferenced file, but Retry must recreate the same
+stable ref from the retained bounded bytes; `committed` retains the referenced
+file;
+`outcome_unknown` retains it and rereads `threadId + requestId + exact ref/hash`.
+A matching terminal is accepted as committed; the same exact pending Turn is
+stored in the process-local map and Retry reuses the same input/ref without
+calling Provider; a different canonical terminal makes the prepared file an
+orphan. No conclusive read means the file and failure input remain. D2 never
+writes a durable settlement journal or marks a failed save as Cancelled.
+
+`recoverPending({ recoveredAt })` is an explicit startup/exit semantic command,
+not an implicit read mutation. It atomically changes every still-pending Turn
+to the existing Interrupted safe failure once and increments each affected
+Thread's result revision once; it does not change user activity. Because the
+affected set is not durably known outside SQLite, reply loss remains
+`outcome_unknown`: the client does not invent a canonical reread and does not
+auto-replay. C1/E1 may offer an explicit Retry with the same `recoveredAt`;
+repeating the command is idempotent because it updates only rows still pending,
+so already recovered Turns and revisions do not change again. D2 proves reply
+loss, explicit Retry and restart idempotence; C1/E1 own when it is called.
+
+Reconciliation is reference-led and fail closed. It first obtains a canonical
+Worker read, then verifies only that Thread's fixed sidecar paths. Missing or
+corrupt image files update only those exact image availability rows. For a
+document, `available` describes the source sidecar only: a missing/corrupt
+source becomes unavailable without clearing already validated
+`extracted_text`; an imported document that never had valid extracted text may
+remain unavailable with `extracted_text = NULL`. Provider materialization and
+Search may continue using non-null validated SQLite text while source-only
+actions show the resource unavailable. Healthy content stays usable. A corrupt
+Responses continuation first uses
+`threadId + requestId + stateId + executionIdentity + byteLength + sha256` to
+delete only the exact ref and fall back to durable visible assistant text. A
+failed/mismatched repair makes only that identifiable Thread unavailable.
+Unreferenced staging/canonical files are best-effort orphans; no file is removed
+while a mutation is `outcome_unknown` or canonical read is unavailable.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/main/index.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/worker.test.ts electron/main/thread-library/v5-importer.test.ts electron/main/thread-library/sidecars.test.ts electron/main/thread-library/coordinator.test.ts
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+git diff --check
+```
+
+The D2 test matrix must cover:
+
+- Draft text/target/existing/new image/document saves, ordered ownership,
+  target-only and clear-to-empty activity behavior, stale CAS with canonical
+  revision, autosave-versus-Send and two-Send races, and sidecar write/verify/
+  rename/database failures without losing dirty input;
+- Available and Archived Draft-to-Turn, tombstone revision, attachment owner
+  move, Archived/Available `thread_revision`, provider-before-ack canary, exact
+  final retryable failed Turn, Archived/Available/Trash Retry behavior, target
+  binding, duplicate request/message/resource identities and no-pending
+  invariant;
+- Complete/Fail/Cancel concurrency; explicit rollback, commit ack and
+  commit-after-reply-loss outcomes; canonical terminal/ref acceptance; exact
+  pending settlement Retry; mismatched terminal/orphan reconcile; result/seen/
+  activity revisions; and Retry proving zero Provider calls;
+- valid, missing and corrupt image/document parity; valid Responses fixture,
+  visible-text mismatch, corrupt exact-ref repair to durable text, repair CAS
+  failure to Thread unavailable, orphan cleanup failure and a second healthy
+  Thread remaining usable;
+- real process restart with pending-to-Interrupted idempotence, recover reply
+  loss staying unknown, and explicit same-input Retry with no double result
+  revision; Worker crash, timeout, malformed/late reply and replacement-read
+  failure with at most one replacement and no automatic mutation replay;
+  existing v5 importer/read/list/materialize and D1 open/recovery regressions.
+
+OS-temp acceptance has two honest boundaries. A production-shape temporary
+bundle built from the exact D2 `sidecars.ts`/`coordinator.ts` bytes must exercise
+a real thread-owned root, 0700/0600 modes, reply-loss retention/reconciliation
+and pending restart recovery. Separately, the final packaged `.app` and frozen
+`app.asar` inventory must prove the existing static Worker loads and executes
+the D2 semantic commands and must rerun D1's same-profile secondary-process
+protected-root canary. The dormant coordinator is not claimed to be in the app
+archive before C1 wires it. Neither path may use Main `DatabaseSync`, raw
+paths/bytes in Worker messages, a production test hook or a raw-Electron
+packaged-archive hybrid.
+
+D2 stops and returns to planning if implementation needs a file outside the
+nine-file inventory; a schema table/column/version change; shared/preload/IPC,
+Renderer, current-thread, Provider, Runtime, startup/activation or C1+ behavior;
+new or changed attachment/Responses limits; a second durable truth, settlement
+journal, automatic mutation replay, additional Worker/connection/queue, Main
+SQLite, generic repository/Asset service; sidecar deletion without conclusive
+canonical ownership; or a terminal/resource failure cannot be isolated to its
+exact Thread/resource.
+
+Before D2 implementation may be committed, the exact nine-file bytes, all
+required checks, packaged acceptance, allowed/forbidden-surface scans and an
+independent strict code review bound to the final artifact must pass. D2
+completion does not authorize C1 without C1's own reviewed scope lock.
+
+### multi-thread-library/C1-scope-lock: Import activation and Thread API/chat cutover
+
+Type: documentation-only control step.
+
+Status: complete at `b647cde` after independent strict review
+`NYX-MTL-C1-SCOPE-20260813-01`. This subsection records the historical ratchet;
+it is no longer an executable control step and did not authorize E1.
+
+Dependencies are satisfied only by D1 commit `8d4d73e`, D1 review
+`NYX-MTL-D1-CODE-20260813-03`, D2 scope-lock commit `5efed87`, D2 code commit
+`15c8b00`, D2 code review `NYX-MTL-D2-CODE-20260813-04`, and D2 evidence review
+`NYX-MTL-D2-EVIDENCE-20260813-02` in the ancestry of the scope-lock commit. C1
+must preserve the D1/D1-R single-owner and crash-recovery contracts and D2's
+Draft/sidecar/settlement three-outcome contracts.
+
+This scope-lock step may change exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+After this scope lock completes, C1 may change exactly these tracked files:
+
+```text
+apps/desktop/shared/chat/events.ts
+apps/desktop/shared/chat/ipc.ts
+apps/desktop/shared/chat/types.ts
+apps/desktop/shared/contracts/desktop.ts
+apps/desktop/shared/threads/events.ts
+apps/desktop/shared/threads/ipc.ts
+apps/desktop/shared/threads/types.ts
+apps/desktop/electron/preload/index.ts
+apps/desktop/electron/preload/index.test.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+apps/desktop/electron/main/current-thread/image-protocol.ts
+apps/desktop/electron/main/current-thread/image-protocol.test.ts
+apps/desktop/electron/main/thread-library/protocol.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/worker.ts
+apps/desktop/electron/main/thread-library/worker.test.ts
+apps/desktop/electron/main/thread-library/v5-importer.ts
+apps/desktop/electron/main/thread-library/v5-importer.test.ts
+apps/desktop/electron/main/thread-library/sidecars.ts
+apps/desktop/electron/main/thread-library/sidecars.test.ts
+apps/desktop/electron/main/thread-library/coordinator.ts
+apps/desktop/electron/main/thread-library/coordinator.test.ts
+apps/desktop/electron/main/thread-library/activation.ts
+apps/desktop/electron/main/thread-library/activation.test.ts
+apps/desktop/electron/main/thread-library/service.ts
+apps/desktop/electron/main/thread-library/service.test.ts
+apps/desktop/electron/main/chat/client.ts
+apps/desktop/electron/main/chat/client.test.ts
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/chat/session.test.ts
+apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts
+apps/desktop/src/ui/chat/chat-types.ts
+apps/desktop/src/ui/chat/chat-reducer.ts
+apps/desktop/src/ui/chat/chat-reducer.test.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
+apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts
+```
+
+C1 is one atomic authority cutover, not the complete Thread Library UI. Its
+minimum product shape is the existing two-column chat with one selected Thread
+detail and an untouched New-thread placeholder. It persists and can list more
+than one Thread, but it does not add the U1 collection browser, switching UI,
+Pinned/Recent interaction, background cross-Thread Runs, lifecycle actions or
+Search. Keeping the existing one-row Sidebar adapter during C1 must not be
+misrepresented as a one-Thread durable model.
+
+Responsibilities are fixed as follows:
+
+- `activation.ts` is the sole one-time cutover owner. After the existing native
+  single-instance lock and before operational Thread/chat IPC or image
+  authorization, it chooses exactly one path: validate/open an already
+  activated `thread-library/` target without touching legacy data; build a
+  fully verified empty staging library when the target is absent and the legacy
+  v5 record plus every known legacy sidecar directory are absent or empty (the
+  legacy parent directory may remain after the old explicit Start fresh); or
+  build an absent target under
+  `thread-library.importing/`, strict-read the one v5 current Thread with the
+  existing importer, publish only validated resources, import semantic rows,
+  close that Worker generation, reopen the same staging database through one
+  replacement generation, verify every canonical row/ref/hash and required
+  pragma, close it with no live journal, then atomically rename the whole staging
+  root. At most one Worker/connection is live throughout. A canonical target
+  directory whose database is missing or invalid is an open failure, never the
+  empty-library case. A legacy sidecar without its v5 record is an ambiguous
+  canonical-content failure and must not be ignored or deleted. The empty case
+  still hashes and preserves the complete legacy parent. An interrupted
+  unactivated staging root may be discarded and rebuilt; an existing activated
+  target is never imported into, merged, overwritten or silently replaced.
+  Activation adds no migration framework, version graph, backup manager or
+  second database.
+- The legacy `userData/threads` root is read-only from the first import read and
+  remains byte-identical. Successful activation makes the new library the only
+  runtime truth; the running product never reads or writes the legacy root
+  again and never falls back to old current-thread chat/snapshot/reset. Before
+  activation, no new-library product write or Provider/Runtime side effect is
+  allowed. A canonical identity/content failure stops activation without
+  renaming; an invalid image/document degrades only that resource, and an
+  invalid Responses continuation clears only its exact ref while preserving
+  durable visible assistant text.
+- `service.ts` is the single Main product boundary for C1 Thread permission,
+  safe shared projections, IPC validation, Library/Thread unavailable state,
+  exact Retry and Renderer subscriptions. It owns no SQL, filesystem bytes,
+  Provider call or second mutation queue. It delegates every database command
+  to the existing client and every resource/Draft action to the existing
+  sidecars/coordinator. Library failure exposes only `Couldn't open Thread
+Library` plus exact Retry; safely identifiable canonical Thread failure keeps
+  that row visible and Retry-only while other Threads remain usable. Neither
+  path creates an empty library, deletes/renames a canonical root, invokes old
+  `Start fresh`, or authorizes chat/detail/image for unavailable content.
+- The shared/preload boundary adds exactly `window.nyx.threads` with
+  `listPage/get/materialize/saveDraft/retryOpen/markSeen/subscribe`. Its runtime
+  object and `NyxDesktopApi` type contain no Rename/Pin/Archive/Unarchive/Trash/
+  Restore, Search or Purge method. `window.nyx.chat` is retained but contains
+  exactly `start/cancel/retrySettlement/subscribe`; each command and event uses
+  `threadId + requestId`, and every event also carries the current process
+  `eventEpoch + cursor`. Shared projections may contain safe Thread summary,
+  Draft, messages, attachment refs/availability, target selection/attribution,
+  revisions, run/settlement state and safe errors. They must not contain file
+  paths, sidecar bytes/hashes, Responses output, resolved targets, Provider
+  configuration/protocol/base URL, credentials or Worker-internal rows.
+- The shared chat module keeps the old `NyxChatRequest` only as a dormant
+  compile-time input for unchanged legacy current-thread modules until A1. C1
+  adds a distinct public thread-scoped start/retry union and makes
+  `NyxDesktopChatApi`, preload and the live Main parser accept only that union;
+  the public/runtime contract has no `messages`, Renderer message ids,
+  attachment bytes or target selection. This compatibility type is not a
+  second IPC path and cannot be invoked by the C1 runtime object.
+- `protocol.ts`, `worker.ts` and `client.ts` add only C1's `snapshot` FIFO
+  barrier, `markSeen` and exact empty-shell discard semantic operations plus an
+  internal generation/watermark and actual-mutation flag on successful replies.
+  `snapshot({threadId})`
+  returns one canonical detail (or absence) and a Worker-generation epoch plus
+  committed cursor; `listPage` returns its own FIFO boundary. The Worker clock
+  is metadata, not a second publisher: `service.ts` is the sole public
+  `eventEpoch + cursor` publisher and synchronously maps the acknowledged
+  Worker boundary to a safe event before resolving that Main continuation.
+  Worker replacement rotates the public epoch and forces rehydration. There is
+  no durable event log, Renderer-owned cursor truth, second Main queue or
+  synthetic cursor; canonical Thread/Draft/result revisions remain the
+  cross-restart truth.
+- Renderer hydration always subscribes and buffers before calling `listPage`
+  and `get`. The list projection and selected-detail projection each replay the
+  buffer against their own `includedThroughCursor`; a later detail watermark
+  must never discard summary events newer than the earlier list watermark. Each
+  applies only matching-epoch later events; a gap, epoch change or stale/
+  mismatched Thread/request identity discards that affected projection and
+  rehydrates. A late A snapshot/event can never replace selected B. Main derives
+  the Sidebar title from the safe canonical summary; Renderer messages stop
+  being a second title or durable-history truth.
+- `materialize` is lazy. Repeated New on an untouched placeholder only focuses
+  Composer and creates no row. First non-empty text or first Main-accepted ready
+  attachment reserves one Main-generated stable Thread id; target-only changes
+  and attachment preparation that is removed or fails do not materialize.
+  Unknown commit reuses that id and follows D1 canonical reread. The Renderer
+  keeps one dirty overlay/preparing-byte set and one mutation queue for the
+  current placeholder/Thread. Save ack is the only durability boundary: failure
+  keeps the overlay and current detail in place. C1 Send and New reuse this
+  queue, but C1 adds no U1 discard dialog: Send offers only Retry/Stay, and New
+  remains on the current Thread until save succeeds. After an acknowledged
+  empty save, New may discard only a canonical zero-Turn, auto-title, empty
+  Draft, attachment-free shell through the exact Draft revision; any mismatch
+  preserves it. If the sole C1 Run is active, New first uses current exact Stop
+  and terminal settlement behavior; background continuation waits for E1.
+- `saveDraft` remains the one D2 CAS over text, target and the complete ordered
+  image/document ownership set. Renderer sends only the dirty overlay and new
+  prepared attachment bytes, never message history. Send first awaits the
+  latest save/materialize ack, then `window.nyx.chat.start` carries only the
+  exact Thread/request/Draft/Retry identity required by section 6. Main creates
+  canonical message ids, commits D2 Draft-to-pending, and only after that ack
+  resolves the target, replays Runtime and starts Provider work. Retry identifies
+  the exact final failed Turn; cancel and settlement Retry identify the exact
+  Thread/request. No command accepts Renderer `messages`, target attribution,
+  Provider history, extracted text or continuation state.
+- `coordinator.ts`, `sidecars.ts`, `chat/session.ts` and `chat/client.ts` reuse
+  the existing D2 transactions and current Provider/Runtime path. They add only
+  the read/materialization needed to build exact Provider history and Runtime
+  replay from the selected canonical Thread: available image bytes, validated
+  SQLite document text and an exact validated Responses continuation. The
+  Provider client has no fallback to `request.messages`. The current single
+  global active chat limitation remains until E1; C1 only makes its identity
+  thread-scoped and preserves Send/stream/Stop/Retry/current target, attachment
+  and Responses behavior for that one active Run.
+- `chat/session.ts` stops importing the legacy current-thread coordinator,
+  Provider-message type and runtime replay helper. The general provider-message
+  input belongs to `chat/client.ts`; exact Thread history materialization and
+  Runtime replay use the already allowed `thread-library/coordinator.ts` and
+  `chat/session.ts`. All other unchanged current-thread modules remain dormant
+  and compilable only until A1 removes them.
+- A terminal save failure is distinct from Provider failure. C1 projects
+  `Couldn't save result` and routes its existing message Retry action to
+  `retrySettlement(threadId, requestId)`, which reuses D2's retained exact
+  terminal input/ref and performs zero Provider/Runtime calls. Ordinary failed
+  Provider Retry remains the exact final-Turn retry. C1 does not implement E1
+  quit fencing, post-stop lifecycle actions, background Runs or a durable
+  settlement journal.
+- `current-thread/image-protocol.ts` keeps the already reviewed opaque URL
+  parser, streaming response, immutable cache behavior and blocked Renderer
+  byte/path routes, but replaces the current-record resolver with the exact
+  safe Thread-library authorization supplied by `service.ts` and the verified
+  sidecar path supplied by `sidecars.ts`. Because the URL intentionally contains
+  only image id and variant, `service.ts` registers an image-id-to-Thread/ref
+  authorization only from a canonical selected snapshot and revokes it on
+  epoch change, Thread unavailability, resource unavailability or projection
+  teardown; the protocol never performs an unscoped resource scan or adds a
+  Worker lookup. It does not change the URL shape, cache policy, image limits or
+  G2R/Permanent-delete behavior. Other legacy current-thread modules remain
+  unchanged and dormant after activation until A1 removes them.
+- Renderer changes are limited to the selected safe detail, one dirty overlay,
+  placeholder, clocked hydration/event buffer, canonical title and thread-scoped
+  chat identity. They remove `submittedMessages`, `toRequestMessages`, current
+  snapshot/reset calls and Renderer-generated Provider history. C1 keeps the
+  existing Composer/chat visual design and keyboard/accessibility behavior; it
+  adds no thread collection, collection paging UI, lifecycle menu, Search UI,
+  attention region, manual ordering, new window or Settings surface.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/preload/index.test.ts electron/main/index.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/worker.test.ts electron/main/thread-library/v5-importer.test.ts electron/main/thread-library/sidecars.test.ts electron/main/thread-library/coordinator.test.ts electron/main/thread-library/activation.test.ts electron/main/thread-library/service.test.ts electron/main/current-thread/image-protocol.test.ts electron/main/chat/client.test.ts electron/main/chat/session.test.ts src/ui/chat/chat-reducer.test.ts src/ui/chat/use-chat-session.test.ts src/ui/chat/components/ChatWorkspace.test.ts
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run runtime:chat-state:check
+git diff --check
+```
+
+The C1 test matrix must cover:
+
+- absent and empty-retained legacy parent, orphan legacy sidecar rejection,
+  text-only, image/document/Responses and pending v5 import;
+  valid sidecar byte parity; resource-local unavailable degradation; exact
+  corrupt Responses ref clearing with visible text retained; canonical content
+  rejection; disk-full at every publication/DB/rename boundary; interrupted
+  staging rebuild; post-close row/ref/hash/journal validation; atomic target
+  rename; target-exists no-import/no-merge; and the complete old root hash
+  unchanged before, during and after activation and restart;
+- startup ordering from single-instance lock through activation, operational
+  IPC/image authorization/window creation; activation failure and Worker
+  open/crash/epoch replacement; whole-Library versus exact Thread unavailable
+  projections and Retry; no empty replacement/reset/legacy fallback; one
+  Worker/event domain; and a second healthy Thread remaining readable when one
+  Thread or one resource is unavailable;
+- exact bridge runtime methods and shared redaction; invalid/unknown/stale
+  Thread/request/revision/clock inputs; `snapshot` FIFO ordering under repeated
+  unawaited mutation A -> snapshot S -> mutation B; matching event before reply,
+  later event after the watermark, independent list/detail watermarks without
+  summary loss, cursor gap and epoch restart; subscribe-buffer-snapshot; A-to-B
+  late snapshot/event rejection; and listener/window teardown without Worker
+  termination;
+- untouched New reuse, first edit/attachment materialization, target-only no
+  materialization, removed/failed preparing attachment no materialization,
+  stable-id commit/reply-loss Retry, one dirty overlay, save conflict/failure
+  retention, acknowledged empty-shell discard conditions/race, active-Run New,
+  New/Send save barrier and immediate Send race; canonical title and restart
+  selection; no Renderer `messages` or full-library cache; and current Composer/
+  target/image/document behavior parity;
+- Main-derived text/image/document/Responses Provider history, exact Runtime
+  replay, no Provider effect before pending ack, Send/stream/Stop/ordinary Retry,
+  attachment rejection, Responses continuation, current target attribution,
+  terminal race and thread-scoped event isolation; settlement failure and Retry
+  proving zero second Provider/Runtime call; and old chat snapshot/reset plus
+  Renderer-message request paths proven absent from the preload runtime object;
+  dormant legacy request type proven unreachable at every C1 IPC/parser entry;
+  opaque image authorization add/revoke across selection, resource failure,
+  Thread failure and epoch replacement without an unscoped lookup.
+
+OS-temp and packaged acceptance must bind one exact final source manifest and
+archive. A fresh-profile temporary product-shape run must seed each accepted v5
+shape, force every activation interruption/failure above, hash the entire old
+root before and after, and prove only a fully verified staging root can become
+canonical. The final packaged `.app` must record `app.isPackaged=true`, exact
+`app.asar`/static Worker identity, one activated DB/root, exact preload method
+sets, real selected-detail hydration, New/materialize/save/Send/stream/Stop/
+Retry/restart, image/document/Responses and Runtime parity, settlement Retry
+without a second Provider call, unavailable Retry and late-event isolation. The
+same final package must rerun the native same-profile secondary-process focus
+and protected-root canary. No product test hook, raw-Electron archive hybrid,
+real user root, Provider credential, generated tracked fixture or relaxed
+latency/security/memory line is allowed.
+
+C1 stops and returns to this scope lock if implementation needs a file outside
+the listed inventory; cannot close/verify/atomically activate staging before
+runtime use; touches legacy data after activation or needs dual-read/dual-write,
+old snapshot/chat fallback or a second durable truth; cannot derive exact
+Provider/Runtime history without Renderer messages; cannot establish one real
+Worker FIFO watermark/epoch for snapshot and events; creates an empty/reset
+path on failure; or requires a new schema table/column/version, ActiveRun map,
+background Run/window lifecycle, L1/Q1/P1 method/schema/UI, collection browser,
+multi-window sync, OCaml change, ORM/repository, event log/bus, second queue,
+Worker/connection or generic migration/Asset service.
+
+Before C1 implementation may be committed, the exact allowed bytes, all checks,
+OS-temp and packaged acceptance, old-root/bridge/forbidden-surface scans and an
+independent strict code review bound to the final artifact must pass. C1
+completion does not authorize E1 without E1's own reviewed scope lock.
+
+### multi-thread-library/C1-title-identity-amendment: Existing-field constraint repair
+
+Type: documentation-only Stop repair.
+
+Status: complete at `d099eec` after the required independent exact-byte product,
+design and strict technical reviews. This subsection records the historical
+Stop repair; it is no longer executable and did not authorize E1.
+
+This amendment may change exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+docs/next/multi-thread-library-technical-plan.md
+```
+
+The plan-killer is concrete: D1's CHECK requires `fallback_local_second` and
+`fallback_ordinal` to be simultaneously null/non-null and, when non-null,
+requires the current title itself to be Image/Untitled generic. The reviewed C1
+product rule instead persists one local creation second at materialize, delays
+ordinal allocation until the first generic title, and retains an allocated
+identity while a pre-send Draft temporarily has a text/document title. The old
+schema cannot store either required intermediate state.
+
+The only accepted repair is:
+
+- materialize carries the complete Main-accepted initial Draft semantic payload.
+  Main publishes new sidecars first; one Worker transaction creates the Thread,
+  revision-0 Draft, ordered resource rows, title and fallback identity. Its ack
+  is the first Draft durability boundary; only edits made while it is in flight
+  use a later save CAS;
+- every new auto materialize persists its stable local creation second. Imported
+  already-sent text/document v5 Threads may keep both fields null; imported
+  Image/Untitled generic v5 Threads retain the D1 importer's deterministic
+  second + ordinal 1. Neither is recomputed after activation;
+- `fallback_ordinal` stays null until the first Image/Untitled title, then the
+  same Draft transaction assigns 1 when no identity for that second survives,
+  otherwise `max(existing ordinal) + 1`; it remains stable across pre-send
+  text/document/generic changes and never fills a survivor's lower-numbered
+  hole;
+- the SQLite CHECK permits non-null second + null ordinal, rejects ordinal
+  without second, and requires manual title rows to have both null. The partial
+  unique index covers only non-null ordinal pairs. Typed Worker commands remain
+  the sole title derivation owner; Renderer overlay never becomes title truth;
+- first Send freezes the current auto title. A generic freeze retains its
+  identity; a text/document freeze clears it. Rename clears it. Existing generic
+  survivors never renumber; numbering restarts at 1 only after every identity
+  for that second is gone;
+- document-derived auto titles use the first ordered ready document's
+  Main-validated display name, trim/collapse whitespace, cap at 48 Unicode code
+  points and preserve a valid final extension exactly as section 3.4 specifies;
+  there is no second filename/title rule in Renderer;
+- U1, not this C1 amendment, owns the multi-row visible disambiguation and its
+  mouse/keyboard/VoiceOver acceptance. C1 keeps its reviewed one-row adapter and
+  has no creation-label or rendered-collision implementation;
+- update the exact schema fingerprint and typed protocol in the already allowed
+  C1 Worker/protocol/test files. This is still the unreleased development schema
+  version 1: no new field, table, schema version, migration reader, fallback
+  open, second database or activated-target rewrite is allowed. An existing
+  target with mismatched bytes remains Library unavailable and Retry-only.
+
+Required regression coverage before C1 can return to its full acceptance gate:
+
+- full initial text/target/ordered resource materialize commits in one
+  transaction, and reply loss reconciles the exact Draft/refs/title without a
+  generic ghost title or duplicate row;
+- text/document first materialize stores second + null ordinal;
+- text → empty/image → text → generic reuses one second and, once assigned, one
+  ordinal; same-second concurrent generic Threads receive unique max + 1
+  ordinals with stable unknown-commit reread;
+- generic Send retains identity; non-generic Send and Rename release it; restart,
+  timezone change, `1/2/3 → delete 2 → 4`, `delete 1 while 3 survives → 4`,
+  all-gone → 1 and survivor-no-renumber behavior remain exact;
+- imported generic plus a future same-second generic remain uniquely titled;
+- 255-byte legal document names, whitespace, CJK/emoji, long extensions,
+  reorder/removal before Send, first Send and restart follow one exact title;
+- direct invalid SQL states and malformed protocol rows fail closed; schema
+  fingerprint/open/activation tests use the revised exact version-1 schema;
+- no Renderer messages, Main title cache, extra column/version or migration path
+  appears in the final C1 diff.
+
+The amendment stops if these states require a third persisted field, a schema
+version/migration, a second title owner, or any file outside the two docs for
+this control step and the existing C1 code inventory after it completes.
+
+### multi-thread-library/E1-scope-lock: Per-Thread execution and safe shutdown
+
+Type: documentation-only control step.
+
+Status: complete at `786cd50`; independent strict review
+`NYX-MTL-E1-SCOPE-20260814-05` accepted the exact bytes that entered HEAD. Its
+implementation authorization ended when the first valid cap-2 sample failed the
+existing performance lines. The inventory below is historical and no longer
+executable; none of its uncommitted product bytes may enter HEAD. U1 and every
+later product slice remain blocked.
+
+Dependencies are satisfied only by C1 commit `8b7150e` and final review
+`NYX-MTL-C1-FINAL-CODE-20260813-02` in the ancestry of the scope-lock commit.
+E1 must preserve C1's one-Worker, Main-owned Provider/Runtime, canonical
+Thread-history, event epoch/cursor, unavailable/Retry, image authorization and
+settlement-retry boundaries.
+
+This scope-lock step may change exactly:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+The stopped attempt's historical inventory was exactly these tracked files:
+
+```text
+apps/desktop/shared/threads/types.ts
+apps/desktop/shared/threads/events.ts
+apps/desktop/shared/threads/ipc.ts
+apps/desktop/electron/preload/index.ts
+apps/desktop/electron/preload/index.test.ts
+apps/desktop/electron/main/index.ts
+apps/desktop/electron/main/index.test.ts
+apps/desktop/electron/main/chat/session.ts
+apps/desktop/electron/main/chat/session.test.ts
+apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts
+apps/desktop/electron/main/thread-library/coordinator.ts
+apps/desktop/electron/main/thread-library/coordinator.test.ts
+apps/desktop/electron/main/thread-library/client.ts
+apps/desktop/electron/main/thread-library/client.test.ts
+apps/desktop/electron/main/thread-library/service.ts
+apps/desktop/electron/main/thread-library/service.test.ts
+apps/desktop/electron/main/thread-library/shutdown.ts
+apps/desktop/electron/main/thread-library/shutdown.test.ts
+apps/desktop/src/ui/chat/use-chat-session.ts
+apps/desktop/src/ui/chat/use-chat-session.test.ts
+apps/desktop/src/ui/chat/components/ChatWorkspace.tsx
+apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts
+apps/desktop/src/ui/chat/components/ChatThread.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.tsx
+apps/desktop/src/ui/chat/components/ChatMessage.test.tsx
+```
+
+E1 changes execution and process shutdown only. It does not add the U1 Thread
+collection or selection UI, L1 lifecycle methods or menus, Q1 Search, P1 purge,
+durable Runs, a queue/daemon, another Worker/connection, a second Main queue,
+multi-window synchronization, Provider state outside Main, or any OCaml/runtime
+protocol change. SQLite schema, Worker protocol/implementation, sidecar format,
+chat request/event shapes and the public `window.nyx.chat` and
+`window.nyx.threads` method sets remain unchanged.
+
+The implementation contract is:
+
+- `ChatSessionManager` replaces the one global active session with the sole
+  Main-owned `Map<threadId, ActiveRun>`. One Thread may have at most one Run;
+  each accepted Run owns one AbortController and one Runtime client. Run
+  identity is always exact `threadId + requestId`; the initiating WebContents is
+  not a Run owner. Chat events remain clocked by the existing
+  `ThreadLibraryService` publisher and are broadcast to every live Nyx window;
+  Renderer destruction only removes its event sink and never aborts a Run.
+- `ThreadLibraryService` may keep only a rebuildable per-Thread live projection
+  needed by `get` and events; cancellation, capacity and terminal ownership stay
+  in the ActiveRun map. A background Thread event never overwrites the selected
+  Thread or forces repeated hydration. C1's one-row adapter may start New while
+  the old Thread runs, but E1 adds no list/switch UI; U1 owns that UI.
+- E1 implements only the exact user Stop-versus-Complete/Fail/Cancel terminal
+  race. It does not add a `postStopAction` slot, registration/consumption path,
+  lifecycle callback or no-op surface. The one-shot Stop-and-move intent and its
+  atomic lifecycle transaction are deferred together to L1, where the first
+  real Archive/Trash caller exists.
+- One Main-owned shutdown state machine handles ordinary window close and app
+  quit. Ordinary close runs only the current Draft navigation-save barrier,
+  destroys the Renderer projection after save/explicit Discard and leaves
+  background Runs and the Worker alive. App quit runs the same Draft barrier,
+  then the process-wide result barrier, then sets one shared shutdown fence in
+  a single no-`await` turn, rejects new public commands, aborts accepted Runs
+  with explicit `app_exit`, drains them, closes the one Worker and permits one
+  real quit. `app_exit` never writes a fake Cancelled terminal; an unsaved or
+  abandoned pending Turn restores as Interrupted.
+- The existing `threads.subscribe` method may carry a narrow typed lifecycle
+  request and return its typed reply over E1-only internal IPC channels. This
+  adds no public bridge method or namespace. Main validates request id, phase
+  and sender; a stale, duplicate, wrong-window or post-fence reply has no effect.
+  Renderer unresponsiveness, a lost reply or a failed Retry never implies
+  Discard or permission to close. With no live window, only the process-wide
+  result barrier uses an Electron native message box; there is no dirty
+  Renderer overlay to guess.
+- The Draft barrier reuses the existing Renderer mutation queue and exact
+  `materialize/saveDraft` operations. Save success proceeds; failure keeps the
+  selected detail and offers Stay, Retry and explicit Discard. Discard restores
+  the last Main-acked text, ordered attachments and safe target selection before
+  continuing. Copy lists only safe labels and never resolved targets, paths,
+  bytes, configs or credentials. Send remains Stay/Retry only.
+- The process-wide result barrier derives an ordered exact snapshot of every
+  in-memory `settlement_failed` `threadId + requestId` plus a monotonic revision.
+  Each row uses the full canonical Thread title and persisted `createdAt` local
+  millisecond time; only equal title+time appends the full Thread id. Retry runs
+  each retained terminal input once in displayed order, never calls Provider or
+  Runtime, and rebuilds the same dialog after partial success, failure or a new
+  settlement failure. Stay/Escape cancels pre-fence app quit. An explicit
+  Quit-without-saving applies only to the displayed exact set; a pre-fence
+  revision mismatch returns to the barrier.
+- During fenced drain, a newly failed terminal blocks Worker close and real
+  quit again. The same result barrier then offers only Retry saving or explicit
+  Quit without saving for the new exact set; it cannot pretend the stopped Runs
+  can resume. Repeated close/quit events focus the current prompt and cannot
+  duplicate a fence, abort, Worker close or real quit.
+- `ThreadLibraryClient.close()` is the one physical Worker-close owner. After
+  every accepted operation and settlement has resolved, it sends the existing
+  FIFO `close` command and still awaits that exact Worker generation's `exit`.
+  A valid close reply plus matching exit completes shutdown. If the close reply
+  is missing/invalid after all earlier acknowledgements, the existing transport
+  invalidation requests `terminate()` once; observing that same generation's
+  exit is sufficient proof that the physical owner is closed and permits quit.
+  Until exact exit, shutdown stays fenced and real quit is blocked. Repeated
+  quit/close calls join the same in-flight attempt and cannot start or close
+  another Worker. Termination rejection or a missing matching exit is an E1
+  Stop, not a promised Retry state. The missing-exit observation boundary is
+  the existing fixed 5,000 ms transport timeout after the terminate request;
+  crossing it never grants runtime quit. No Worker protocol operation is added.
+- One Workspace-owned native `<dialog>` remains the only top-level DOM modal.
+  The existing full-image view is lifted into that owner without changing image
+  URL, authorization or cache behavior. A close/quit confirmation reuses the
+  open dialog while retaining its image/src, then restores the last valid
+  in-dialog control on Stay; it never stacks a second modal. No image protocol,
+  byte transport, capacity or G2R/Permanent-delete behavior changes.
+
+The global concurrency cap is evidence-selected, not guessed or configurable.
+Before any candidate sample counts, one immutable OS-temp workload manifest and
+its SHA-256 are sealed. It records the Provider-harness SHA-256; exact UTF-8
+bytes, length and SHA-256 for every history/input/output text segment; media
+type, dimensions, exact byte length and SHA-256 for each source, canonical and
+preview image; and exact source/extracted byte length and SHA-256 for the
+document. Each candidate and final run verifies every value before Start;
+mismatch is INVALID. No length range or regenerated substitute is countable.
+
+That manifest describes the same workload for every Thread: two completed Turns
+with exact 4 KiB UTF-8 user and assistant messages, the first carrying two
+historical images and one plain-text document with exact 128 KiB extracted UTF-8
+text; then one exact 4 KiB pending text with two different images and a second
+plain-text document with exact 128 KiB extracted UTF-8 text. Every image is a
+valid 1410 x 1410 `image/png` canonical image individually within 8 MiB and has
+its derived preview. The Provider then returns exactly 64 KiB UTF-8 assistant
+output in 64 x 1 KiB chunks at 10 ms cadence after every Run is accepted.
+
+Image sources are the fixed high-entropy xorshift32 RGBA generator outputs for
+seeds `0x4e595831` through `0x4e595834`; the manifest binds the generator
+bytes/version and production canonicalizer outputs, including one fixed exact
+length and hash per file. The two historical canonical images must total at
+least 15 MiB and no more than the existing 16 MiB per-Turn limit; the two pending
+images must independently meet the same burden; and their fixed Thread-wide
+exact total must be at least 30 MiB and no more than the existing 32 MiB limit.
+All four images must also pass the existing per-image, pixel, preview and
+Thread-count limits. If the fixed generator cannot meet every burden, E1 returns
+to this scope lock before samples run. Each Run uses a real Runtime client and
+the same local deterministic streaming Provider. The workload manifest and
+generator are part of the independently reviewed E1 evidence; any change
+invalidates all samples and returns to this scope lock.
+
+Cap evidence has two ordered stages. First, candidate-specific packaged builds
+with fixed caps 2, 4 and 8 are built first and sealed with their source/archive
+SHA-256 values and the workload-manifest SHA-256 in a candidate index. They then
+run in ascending order, three isolated fresh-profile repetitions each. A higher
+candidate runs only if every lower candidate passed; the first failure stops
+candidate expansion, and candidate 2 failing stops E1. Every repetition retains
+its raw structured result and SHA-256 in the evidence manifest. Each pass
+requires no cross-Thread event or terminal contamination, exactly one terminal
+per Run, Main routine segments `<16.667 ms`, Renderer heartbeat/stream gap
+`<=50 ms`, Stop additional latency `<=50 ms`, and whole-process peak working-set
+delta `<=192 MiB`; invalid or missing samples are not PASS.
+
+Second, the largest contiguous passing candidate becomes the one fixed cap in
+the final source/archive. Before its runs, a final index seals its exact
+source/archive SHA-256 values and the same workload-manifest SHA-256. That exact
+final packaged artifact reruns three fresh repetitions at every legal level
+among 2, 4 and 8 up to the cap and must pass the same lines. It also verifies
+`cap + 1` rejection before the Draft-to-pending Worker command, preserving the
+complete Main-acked Draft and creating no Runtime, Provider call, pending Turn
+or hidden queue. Any final-artifact failure stops E1; pre-final candidate
+evidence cannot substitute for it. The product does not expose a tuning setting.
+
+Required automated checks are:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/preload/index.test.ts electron/main/index.test.ts electron/main/chat/session.test.ts electron/main/chat/session-runtime-chat-state.integration.test.ts electron/main/thread-library/coordinator.test.ts electron/main/thread-library/client.test.ts electron/main/thread-library/service.test.ts electron/main/thread-library/shutdown.test.ts src/ui/chat/use-chat-session.test.ts src/ui/chat/components/ChatWorkspace.test.ts src/ui/chat/components/ChatMessage.test.tsx
+pnpm --dir apps/desktop test
+mise run desktop:build
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run runtime:chat-state:check
+git diff --check
+```
+
+The automated matrix must cover same-Thread rejection; A/B independent
+prepare/stream/Stop/Retry/terminal ordering; exact cancel isolation; per-Run
+Runtime creation/close and Runtime/Provider/storage failure isolation; capacity
+rejection before pending commit; background events ignored until exact hydrate;
+Renderer teardown/reopen; no sender-owned Run; settlement Retry with zero
+second Provider/Runtime call; stable failure-set revision/order; and shutdown
+fence idempotence. Draft tests cover last-keystroke immediate Close/Cmd-Q,
+materialize/save conflict and failure, Stay, repeated Retry, explicit Discard of
+text/attachments/target, empty shell, no-window state and stale lifecycle
+replies. Result tests cover 1 and 3 failures, dirty Draft plus failures, same
+title/time disambiguation, partial Retry, new failure before/after fence,
+explicit exact-set loss, valid close reply plus exit, missing close reply plus
+matching terminated exit, injected terminate rejection, injected missing exit
+through the fixed 5,000 ms observation boundary, repeated quit and Interrupted
+restart. The two injected faults must prove the fence and real-quit prohibition;
+their expected fail-closed result is not itself an E1 Stop. DOM tests cover focus
+trap, initial focus, Escape, Retry focus, stable copy/VoiceOver order and reuse
+of an already-open full-image dialog.
+
+OS-temp and packaged acceptance must bind the versioned candidate evidence and
+one exact final source manifest/archive. Dev, production-build and packaged runs
+use temporary profiles and the frozen local deterministic Provider, never the
+real user root or credentials. The candidate packages and final packaged `.app`
+record `app.isPackaged=true`, exact `app.asar`, static Worker and harness
+identities. The final artifact executes every legal 2/4/8 level and `cap + 1`
+refusal, streams two targets concurrently, stops/retries one without changing
+the other, closes and reopens the Renderer while a Run continues, and exercises
+every Draft/result/fence/no-window/full-image path above. Failure injection may
+use existing dependency seams and OS-temp harness control only; no product test
+hook, raw-Electron archive hybrid, relaxed line or generated tracked fixture is
+allowed.
+
+E1 stops and returns to this scope lock if implementation needs a file outside
+the inventory; changes schema/Worker protocol/sidecar bytes or public bridge
+method sets; cannot keep one authoritative ActiveRun owner; needs a queue,
+daemon, durable Run, second Worker/connection/Main queue or sender-owned Run;
+cannot reject over-capacity before Draft consumption; cannot preserve a dirty
+Draft or exact complete result through close/quit failure; cannot identify every
+loss confirmation; allows a stale confirmation across a failure-set revision;
+writes Cancelled for `app_exit`; closes the Worker while an unconfirmed result
+exists; cannot observe exact Worker exit before quit; adds `postStopAction`
+before L1; observes terminate rejection or a missing matching Worker exit in a
+non-injected OS-temp or packaged acceptance run; stacks DOM modals; weakens
+image security/memory behavior; or changes OCaml/runtime protocol,
+U1/L1/Q1/P1 behavior or any existing stop line.
+
+Before E1 implementation may be committed, the exact allowed bytes, all
+automated checks, the complete OS-temp and packaged evidence, allowed/forbidden
+surface scans and an independent strict code review bound to the final artifact
+must pass. E1 completion does not authorize U1 without U1's own reviewed scope
+lock.
+
+### multi-thread-library/E1-evidence-classification-amendment
+
+Type: documentation-only corrective control step.
+
+Status: complete at `12930fb` after independent strict review
+`NYX-MTL-E1-EVIDENCE-AMEND-20260814-01`; `3b3c83a` repaired only the rendered
+verdict wording. The later sealed cap-2 `candidate-v4-cap-2-rep-1` was valid and
+failed the existing performance lines: Main `265.765833 ms` and whole-process
+RSS delta `318064 KiB`. The first-failure rule stopped E1 before cap 4/8.
+
+This amendment depends on scope-lock commit `786cd50` and changes only:
+
+```text
+docs/next/multi-thread-library-task-slices.md
+```
+
+It changes no product scope, file inventory, candidate cap, workload, fixture,
+threshold, Stop line or acceptance burden. It repairs only the evidence order
+and classification exposed by the first cap-2 attempt. That attempt and its raw
+result remain historical `INVALID` evidence and cannot count as PASS, FAIL or
+Stop evidence.
+
+The corrected harness must use one raw structured result as the primary truth,
+with two independent fields: `validity` is `VALID` or `INVALID`, and `outcome`
+is `PASS`, `FAIL` or `NOT_EVALUATED`. A summary may only copy or mechanically
+derive those fields; it cannot upgrade an `INVALID` raw result.
+
+For every fresh attempt, the harness must attempt and record all of these before
+classifying the outcome:
+
+- exact candidate index, source/archive, `app.asar`, static Worker, harness and
+  workload-manifest identity checks;
+- proof that the user-data root did not exist before launch, the exact launched
+  profile and application generation, and the complete measured process set;
+- every frozen workload byte/length/hash check and every required timing/RSS
+  metric that remains observable, or the exact recorded product failure that
+  made a later metric unavailable;
+- exact Provider request/chunk/terminal observations and the complete
+  cross-Thread event/terminal contamination audit; and
+- one compact canonical audit of both Threads, ordered Turns/items, terminal
+  states and resource identities, plus presence/open results and, for every
+  present Thread Library database and Thread-owned sidecar file used by the
+  sample after application exit, exact byte length and SHA-256.
+
+Running an audit and recording a product mismatch is complete evidence; it is
+not an evidence error. Once pre-Start artifact, fresh-profile and workload
+identity are proven and the external observer has proven that it delivered the
+sealed orchestration, any threshold, terminal, content, isolation or other
+product acceptance violation is `VALID` + `FAIL`. Product crash, deadlock,
+timeout, missing terminal, failure to exit, or a missing/corrupt database or
+sidecar is also `VALID` + `FAIL`, even when it prevents a later metric or normal
+post-exit read. The audit records the observed absence, corrupt bytes or open
+error; every present database/sidecar still records exact byte length and
+SHA-256.
+
+The corrected harness must collect every still-observable metric and audit
+instead of throwing or returning at the first product violation. If the product
+does not exit, the exact timeout already sealed in the reviewed harness,
+including E1's fixed 5,000 ms Worker-exit boundary where applicable, first
+records the product failure and full observed process state. The harness may
+then terminate only that exact application process tree for evidence cleanup,
+recording its PIDs, signal, time and resulting exits before the canonical/file
+audit. Forced evidence cleanup can never be reported as a normal product exit.
+
+`VALID` + `PASS` requires every product line and normal exit to pass. The pair
+`INVALID` + `NOT_EVALUATED` is reserved for an unproven pre-Start identity,
+non-fresh/contaminated profile, workload mismatch, an external observer that
+cannot prove delivery or collect an otherwise observable metric/audit, failed
+external cleanup, harness/auditor/hash exception, or missing/corrupt raw
+evidence. A metric or audit made unavailable by an already-observed product
+failure remains a product FAIL, not an evidence error. No other field or
+after-the-fact summary may override this classification.
+
+The harness writes the final raw result only after normal application exit or
+recorded product failure plus exact external cleanup, and after every
+still-possible canonical/file audit. It then records the result's byte length
+and SHA-256 in the evidence manifest. Preflight and shakedown attempts never
+count. After this amendment enters HEAD, the corrected harness and its new
+workload manifest and candidate index must be sealed and independently reviewed
+before a fresh cap-2 attempt.
+The candidate packages may retain identical bytes only if their source,
+archive, `app.asar` and static Worker hashes are recomputed and still match;
+the new index must bind the corrected harness and workload-manifest hashes.
+
+The fresh run uses a new absent-before-launch profile. If cap 2 produces
+`VALID` + `FAIL`, the first-failure rule stops candidate expansion and E1; no
+second repetition is required. An `INVALID` attempt does not count and may be
+repeated only with another fresh profile. Any later change to the sealed
+harness, workload, fixtures, audit rules, manifest or candidate index returns
+to this amendment for exact-byte review before another counted sample.
+
+<!-- nyx-contract-end: multi-thread-library/contracts-core -->
+
+## Migrated Source Block: multi-thread-library/contracts-global-stop
+
+<!-- nyx-contract-start: multi-thread-library/contracts-global-stop sha256:d135adc768a394e752dbd22a36f9945984ae10a80e2988978bc7f9b9d78b0776 -->
+
+### Global Stop conditions
+
+Stop if an active slice requires product code before its gate/scope lock;
+Main `DatabaseSync`; raw-SQL RPC, Worker pool or automatic mutation replay;
+weaker image security/support/memory guarantees; two durable truths,
+dual-read/write or silent migration fallback; Provider effects before pending
+Turn commit; missing single-instance ownership; shutdown fencing before Draft
+save/confirmation or exact handling of every unsaved complete result;
+destructive Library/Thread recovery; rollback of an
+outcome-unknown sidecar; ambiguous Run identity; unacknowledged Draft loss;
+whole-Thread failure for a degradable resource; ambiguous deep-page selection,
+title-hit focus stolen by pagination, silent Search truncation, an illegal
+capacity fixture, duplicate simultaneous generic fallback titles, survivor
+renumbering, Draft save/discard before the Running decision, an unidentified
+result-loss confirmation, unbounded/blank/silently truncated manual titles, or
+another
+unbounded/inaccessible collection/Search state; premature bridge methods; Trash/Purge content
+leakage; a forensics claim; automatic Trash expiry; a new runtime protocol/Run
+platform/queue/project model; or a file outside the active inventory.
+
+<!-- nyx-contract-end: multi-thread-library/contracts-global-stop -->

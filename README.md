@@ -58,7 +58,7 @@ not a thread history collection.
 
 The completed baseline source of truth is
 [docs/v1-min-chat-implementation-plan.md](./docs/v1-min-chat-implementation-plan.md).
-Implemented gated workstreams in
+Implemented gated workstreams linked from
 [docs/next/agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md)
 are narrow, additive sources of truth for their exact shipped behavior. They
 supersede conflicting baseline statements only for those implemented additions
@@ -96,10 +96,11 @@ Out of scope for this phase:
 
 ## Implemented Gated Workstreams
 
-Explicit agent-workbench workstreams are tracked in
+Explicit agent-workbench workstreams are routed through
 [docs/next/agent-workbench-task-slices.md](./docs/next/agent-workbench-task-slices.md).
-They applied only when the user requested their named slices. Ordinary work
-still follows the `v1 min chat` source of truth above.
+Each linked workstream contract owns its current status. The contracts applied
+only when the user requested their named slices. Ordinary work still follows
+the `v1 min chat` source of truth above.
 
 The first agent-workbench workstream added only the foundation needed for a
 thread-first shell and local provider setup:

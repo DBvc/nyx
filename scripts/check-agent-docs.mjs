@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +10,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const routerPath = 'docs/next/agent-workbench-task-slices.md'
 const manifestPath = 'docs/next/agent-workbench-contract-migration.json'
 const splitMarker = '<!-- nyx-contract-layout: split-v1 -->'
+const migrationMode = process.argv.includes('--migration')
 
 const workstreams = [
   'foundation',
@@ -50,6 +52,25 @@ function read(relativePath) {
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
+}
+
+function sourceLines(content) {
+  const lines = []
+  let start = 0
+  while (start < content.length) {
+    const newline = content.indexOf('\n', start)
+    if (newline === -1) {
+      lines.push(content.slice(start))
+      break
+    }
+    lines.push(content.slice(start, newline + 1))
+    start = newline + 1
+  }
+  return lines
+}
+
+function exactRange(lines, startLine, endLine) {
+  return lines.slice(startLine - 1, endLine).join('')
 }
 
 function markdownFiles(directory) {
@@ -186,11 +207,38 @@ function collectContractBlocks(files) {
   for (const [path, content] of files) {
     for (const match of content.matchAll(pattern)) {
       const locations = blocks.get(match[1]) ?? []
-      locations.push({ path, declaredHash: match[2], bodyHash: sha256(match[3]) })
+      locations.push({
+        path,
+        declaredHash: match[2],
+        body: match[3],
+        bodyHash: sha256(match[3]),
+      })
       blocks.set(match[1], locations)
     }
   }
   return blocks
+}
+
+function collectContractMarkers(files) {
+  const starts = new Map()
+  const ends = new Map()
+  const startPattern = /<!-- nyx-contract-start: ([A-Za-z0-9._/-]+) sha256:([0-9a-f]{64}) -->/gu
+  const endPattern = /<!-- nyx-contract-end: ([A-Za-z0-9._/-]+) -->/gu
+
+  for (const [path, content] of files) {
+    for (const match of content.matchAll(startPattern)) {
+      const locations = starts.get(match[1]) ?? []
+      locations.push(path)
+      starts.set(match[1], locations)
+    }
+    for (const match of content.matchAll(endPattern)) {
+      const locations = ends.get(match[1]) ?? []
+      locations.push(path)
+      ends.set(match[1], locations)
+    }
+  }
+
+  return { starts, ends }
 }
 
 function validateSplitOwnership(files, manifest, errors) {
@@ -219,9 +267,17 @@ function validateSplitOwnership(files, manifest, errors) {
   }
 
   const blocks = collectContractBlocks(files)
+  const markers = collectContractMarkers(files)
   const expectedIds = new Set()
   for (const contract of manifest.contracts ?? []) {
     expectedIds.add(contract.id)
+    const starts = markers.starts.get(contract.id) ?? []
+    const ends = markers.ends.get(contract.id) ?? []
+    if (starts.length !== 1 || ends.length !== 1) {
+      errors.push(
+        `split layout: ${contract.id} has ${starts.length} start and ${ends.length} end markers`,
+      )
+    }
     const locations = blocks.get(contract.id) ?? []
     if (locations.length !== 1) {
       errors.push(`split layout: ${contract.id} has ${locations.length} definitions`)
@@ -231,13 +287,83 @@ function validateSplitOwnership(files, manifest, errors) {
     if (block.path !== contract.file) {
       errors.push(`split layout: ${contract.id} is in the wrong file`)
     }
-    if (block.declaredHash !== contract.sha256 || block.bodyHash !== contract.sha256) {
+    if (block.declaredHash !== block.bodyHash) {
       errors.push(`split layout: ${contract.id} content hash mismatch`)
     }
   }
-  for (const id of blocks.keys()) {
+  const markerIds = new Set([...blocks.keys(), ...markers.starts.keys(), ...markers.ends.keys()])
+  for (const id of markerIds) {
     if (!expectedIds.has(id)) {
-      errors.push(`split layout: unlisted contract definition ${id}`)
+      errors.push(`split layout: unlisted contract marker ${id}`)
+    }
+  }
+}
+
+function validateMigrationProvenance(manifest, errors) {
+  let historicalSource
+  try {
+    historicalSource = execFileSync(
+      'git',
+      ['show', `${manifest.source.gitCommit}:${manifest.source.path}`],
+      { cwd: repoRoot, encoding: 'utf8' },
+    )
+  } catch (error) {
+    errors.push(`${manifestPath}: cannot read migration source commit: ${error.message}`)
+    return
+  }
+
+  if (sha256(historicalSource) !== manifest.source.sha256) {
+    errors.push(`${manifestPath}: migration source file hash mismatch`)
+  }
+  const historicalLines = sourceLines(historicalSource)
+  if (historicalLines.length !== manifest.source.lineCount) {
+    errors.push(`${manifestPath}: migration source line count mismatch`)
+  }
+
+  const ranges = [
+    ...(manifest.dispositions ?? []).map((item) => ({
+      startLine: item.startLine,
+      endLine: item.endLine,
+      id: `disposition:${item.action}`,
+    })),
+    ...(manifest.contracts ?? []).map((item) => ({
+      startLine: item.source?.startLine,
+      endLine: item.source?.endLine,
+      id: item.id,
+    })),
+  ].sort((left, right) => left.startLine - right.startLine)
+
+  let expectedLine = 1
+  for (const range of ranges) {
+    if (range.startLine !== expectedLine) {
+      errors.push(
+        `${manifestPath}: source coverage breaks before ${range.id}; expected line ${expectedLine}`,
+      )
+    }
+    expectedLine = range.endLine + 1
+  }
+  if (expectedLine !== manifest.source.lineCount + 1) {
+    errors.push(`${manifestPath}: source coverage ends at line ${expectedLine - 1}`)
+  }
+
+  for (const contract of manifest.contracts ?? []) {
+    const startLine = contract.source?.startLine
+    const endLine = contract.source?.endLine
+    if (
+      !Number.isInteger(startLine) ||
+      !Number.isInteger(endLine) ||
+      startLine < 1 ||
+      endLine < startLine
+    ) {
+      errors.push(`${manifestPath}: ${contract.id} has an invalid source range`)
+      continue
+    }
+    if (!/^[0-9a-f]{64}$/u.test(contract.sha256 ?? '')) {
+      errors.push(`${manifestPath}: ${contract.id} has an invalid initial target hash`)
+    }
+    const sourceBody = exactRange(historicalLines, startLine, endLine)
+    if (sha256(sourceBody) !== contract.source?.sha256) {
+      errors.push(`${manifestPath}: ${contract.id} source hash mismatch`)
     }
   }
 }
@@ -259,7 +385,28 @@ function checkLegacyLayout(router, errors) {
   }
 }
 
-function checkSplitLayout(router, errors) {
+function validateManifestShape(manifest, errors) {
+  if (manifest.version !== 2 || manifest.recordType !== 'migration_provenance_only') {
+    errors.push(`${manifestPath}: unsupported manifest version`)
+  }
+  if (manifest.reversible !== false) {
+    errors.push(`${manifestPath}: provenance record must remain non-reversible`)
+  }
+  if (!/^[0-9a-f]{64}$/u.test(manifest.source?.sha256 ?? '')) {
+    errors.push(`${manifestPath}: invalid source SHA-256`)
+  }
+  if (!/^[0-9a-f]{40}$/u.test(manifest.source?.gitCommit ?? '')) {
+    errors.push(`${manifestPath}: invalid source commit`)
+  }
+  if (manifest.prerequisite?.nf1 !== 'retired') {
+    errors.push(`${manifestPath}: NF1 prerequisite must remain retired`)
+  }
+  if (!manifest.prerequisite?.evidenceRef) {
+    errors.push(`${manifestPath}: NF1 terminal evidence reference is missing`)
+  }
+}
+
+function checkSplitLayout(router, files, errors) {
   if (!existsSync(resolve(repoRoot, manifestPath))) {
     errors.push(`split layout: missing ${manifestPath}`)
     return
@@ -273,113 +420,207 @@ function checkSplitLayout(router, errors) {
     return
   }
 
-  if (manifest.version !== 1) {
-    errors.push(`${manifestPath}: unsupported manifest version`)
-  }
-  if (!/^[0-9a-f]{64}$/u.test(manifest.source?.sha256 ?? '')) {
-    errors.push(`${manifestPath}: invalid source SHA-256`)
-  }
-  if (!['reviewed_pass', 'valid_stop', 'retired'].includes(manifest.prerequisite?.nf1)) {
-    errors.push(`${manifestPath}: NF1 terminal prerequisite is missing`)
-  }
-  if (!manifest.prerequisite?.evidenceRef) {
-    errors.push(`${manifestPath}: NF1 terminal evidence reference is missing`)
-  }
+  validateManifestShape(manifest, errors)
 
-  const files = new Map()
   for (const path of splitFiles) {
-    const absolutePath = resolve(repoRoot, path)
-    if (!existsSync(absolutePath)) {
+    if (!files.has(path)) {
       errors.push(`split layout: missing ${path}`)
-      continue
     }
-    files.set(path, read(path))
   }
   for (const path of missingRouterTargets(router, splitFiles)) {
     errors.push(`${routerPath}: missing route to ${path}`)
   }
 
   validateSplitOwnership(files, manifest, errors)
+  if (migrationMode) {
+    validateMigrationProvenance(manifest, errors)
+  }
 }
 
 function runSelfTests(errors) {
   const body = 'contract body\n'
   const hash = sha256(body)
-  const validFiles = new Map([
-    [
-      'docs/next/multi-thread-library-task-slices.md',
-      `<!-- nyx-workstream-status-owner: multi-thread-library -->\n<!-- nyx-contract-start: MTL/S0 sha256:${hash} -->\n${body}<!-- nyx-contract-end: MTL/S0 -->`,
-    ],
-  ])
+  const mtlPath = 'docs/next/multi-thread-library-task-slices.md'
+  const validFiles = new Map()
   const validManifest = {
-    workstreamOwners: {
-      'multi-thread-library': 'docs/next/multi-thread-library-task-slices.md',
-    },
+    workstreamOwners: {},
     contracts: [
       {
         id: 'MTL/S0',
-        file: 'docs/next/multi-thread-library-task-slices.md',
+        file: mtlPath,
         sha256: hash,
       },
     ],
   }
 
-  const owners = collectStatusOwners(validFiles)
-  const blocks = collectContractBlocks(validFiles)
-  if (owners.get('multi-thread-library')?.length !== 1) {
-    errors.push('self-test: valid status owner was not detected')
-  }
-  if (blocks.get('MTL/S0')?.[0]?.bodyHash !== hash) {
-    errors.push('self-test: valid contract block hash was not detected')
-  }
-
-  const duplicateFiles = new Map(validFiles)
-  duplicateFiles.set(
-    'docs/next/multi-thread-library-e1r-contracts.md',
-    '<!-- nyx-workstream-status-owner: multi-thread-library -->',
-  )
-  if (collectStatusOwners(duplicateFiles).get('multi-thread-library')?.length !== 2) {
-    errors.push('self-test: duplicate status owner was not detected')
+  for (const workstream of workstreams) {
+    const path =
+      workstream === 'multi-thread-library' ? mtlPath : `docs/next/fixtures/${workstream}.md`
+    const contract =
+      workstream === 'multi-thread-library'
+        ? `\n<!-- nyx-contract-start: MTL/S0 sha256:${hash} -->\n${body}<!-- nyx-contract-end: MTL/S0 -->`
+        : ''
+    validFiles.set(path, `<!-- nyx-workstream-status-owner: ${workstream} -->${contract}\n`)
+    validManifest.workstreamOwners[workstream] = path
   }
 
-  const historicalReferenceFiles = new Map(validFiles)
-  historicalReferenceFiles.set(
-    'fixture/history.md',
+  const expectValidation = (label, files, manifest, expectedError = null) => {
+    const fixtureErrors = []
+    validateSplitOwnership(files, manifest, fixtureErrors)
+    if (expectedError === null && fixtureErrors.length > 0) {
+      errors.push(`self-test: ${label} produced unexpected errors: ${fixtureErrors.join('; ')}`)
+    } else if (
+      expectedError !== null &&
+      !fixtureErrors.some((error) => error.includes(expectedError))
+    ) {
+      errors.push(`self-test: ${label} did not report ${expectedError}`)
+    }
+  }
+
+  const validWithHistory = new Map(validFiles)
+  validWithHistory.set(
+    'docs/next/archive/history.md',
     'Historical mention of MTL/S0 is evidence, not a canonical definition.\n',
   )
-  if (collectContractBlocks(historicalReferenceFiles).get('MTL/S0')?.length !== 1) {
-    errors.push('self-test: historical contract mention was treated as an owner')
-  }
+  expectValidation('valid full fixture', validWithHistory, validManifest)
 
-  const wrongHashManifest = structuredClone(validManifest)
-  wrongHashManifest.contracts[0].sha256 = '0'.repeat(64)
-  const focusedErrors = []
-  const focusedWorkstreams = workstreams.filter(
-    (workstream) => workstream !== 'multi-thread-library',
+  const duplicateOwnerFiles = new Map(validFiles)
+  duplicateOwnerFiles.set(
+    'docs/next/archive/duplicate-owner.md',
+    '<!-- nyx-workstream-status-owner: multi-thread-library -->',
   )
-  for (const workstream of focusedWorkstreams) {
-    validFiles.set(
-      `fixture/${workstream}.md`,
-      `<!-- nyx-workstream-status-owner: ${workstream} -->`,
-    )
-    wrongHashManifest.workstreamOwners[workstream] = `fixture/${workstream}.md`
-  }
-  validateSplitOwnership(validFiles, wrongHashManifest, focusedErrors)
-  if (!focusedErrors.some((error) => error.includes('content hash mismatch'))) {
-    errors.push('self-test: contract hash mismatch was not detected')
-  }
+  expectValidation(
+    'nested duplicate owner',
+    duplicateOwnerFiles,
+    validManifest,
+    'multi-thread-library has 2 status owners',
+  )
 
-  const missingBlockManifest = structuredClone(wrongHashManifest)
-  missingBlockManifest.contracts.push({
-    id: 'MTL/MISSING',
-    file: 'docs/next/multi-thread-library-task-slices.md',
+  const startOnlyFiles = new Map(validFiles)
+  const startOnlyPath = 'docs/next/archive/start-only.md'
+  startOnlyFiles.set(
+    startOnlyPath,
+    `<!-- nyx-contract-start: MTL/START-ONLY sha256:${hash} -->\n${body}`,
+  )
+  const startOnlyManifest = structuredClone(validManifest)
+  startOnlyManifest.contracts.push({
+    id: 'MTL/START-ONLY',
+    file: startOnlyPath,
     sha256: hash,
   })
-  const missingBlockErrors = []
-  validateSplitOwnership(validFiles, missingBlockManifest, missingBlockErrors)
-  if (!missingBlockErrors.some((error) => error.includes('MTL/MISSING has 0 definitions'))) {
-    errors.push('self-test: missing contract definition was not detected')
+  expectValidation(
+    'start-only marker',
+    startOnlyFiles,
+    startOnlyManifest,
+    'MTL/START-ONLY has 1 start and 0 end markers',
+  )
+
+  const endOnlyFiles = new Map(validFiles)
+  const endOnlyPath = 'docs/next/archive/end-only.md'
+  endOnlyFiles.set(endOnlyPath, '<!-- nyx-contract-end: MTL/END-ONLY -->')
+  const endOnlyManifest = structuredClone(validManifest)
+  endOnlyManifest.contracts.push({
+    id: 'MTL/END-ONLY',
+    file: endOnlyPath,
+    sha256: hash,
+  })
+  expectValidation(
+    'end-only marker',
+    endOnlyFiles,
+    endOnlyManifest,
+    'MTL/END-ONLY has 0 start and 1 end markers',
+  )
+
+  const duplicateContractFiles = new Map(validFiles)
+  duplicateContractFiles.set(
+    'docs/next/archive/duplicate-contract.md',
+    `<!-- nyx-contract-start: MTL/S0 sha256:${hash} -->\n${body}<!-- nyx-contract-end: MTL/S0 -->`,
+  )
+  expectValidation(
+    'duplicate contract',
+    duplicateContractFiles,
+    validManifest,
+    'MTL/S0 has 2 definitions',
+  )
+
+  const unknownContractFiles = new Map(validFiles)
+  unknownContractFiles.set(
+    'docs/next/archive/unknown-contract.md',
+    `<!-- nyx-contract-start: MTL/UNKNOWN sha256:${hash} -->\n${body}<!-- nyx-contract-end: MTL/UNKNOWN -->`,
+  )
+  expectValidation(
+    'unknown contract',
+    unknownContractFiles,
+    validManifest,
+    'unlisted contract marker MTL/UNKNOWN',
+  )
+
+  const wrongHashFiles = new Map(validFiles)
+  wrongHashFiles.set(
+    mtlPath,
+    wrongHashFiles.get(mtlPath).replace(`sha256:${hash}`, `sha256:${'0'.repeat(64)}`),
+  )
+  expectValidation(
+    'body hash mismatch',
+    wrongHashFiles,
+    validManifest,
+    'MTL/S0 content hash mismatch',
+  )
+
+  const missingContractManifest = structuredClone(validManifest)
+  missingContractManifest.contracts.push({
+    id: 'MTL/MISSING',
+    file: mtlPath,
+    sha256: hash,
+  })
+  expectValidation(
+    'missing contract',
+    validFiles,
+    missingContractManifest,
+    'MTL/MISSING has 0 definitions',
+  )
+
+  for (const nf1 of ['reviewed_pass', 'valid_stop']) {
+    const nonRetiredManifestErrors = []
+    validateManifestShape(
+      {
+        version: 2,
+        recordType: 'migration_provenance_only',
+        reversible: false,
+        source: {
+          sha256: 'a'.repeat(64),
+          gitCommit: 'b'.repeat(40),
+        },
+        prerequisite: {
+          nf1,
+          evidenceRef: `${mtlPath}#current-status`,
+        },
+      },
+      nonRetiredManifestErrors,
+    )
+    if (!nonRetiredManifestErrors.some((error) => error.includes('must remain retired')))
+      errors.push(`self-test: NF1 prerequisite ${nf1} was not rejected`)
   }
+
+  const reversibleManifestErrors = []
+  validateManifestShape(
+    {
+      version: 2,
+      recordType: 'migration_provenance_only',
+      reversible: true,
+      source: {
+        sha256: 'a'.repeat(64),
+        gitCommit: 'b'.repeat(40),
+      },
+      prerequisite: {
+        nf1: 'retired',
+        evidenceRef: `${mtlPath}#current-status`,
+      },
+    },
+    reversibleManifestErrors,
+  )
+  if (!reversibleManifestErrors.some((error) => error.includes('non-reversible')))
+    errors.push('self-test: reversible provenance record was not rejected')
 
   if (!hasMachineLocalPath('/Users/example/project/file.md')) {
     errors.push('self-test: machine-local path was not detected')
@@ -424,8 +665,12 @@ checkInstructionFile(
 )
 
 const router = read(routerPath)
+const docsNext = markdownFiles(resolve(repoRoot, 'docs/next'))
+const docsNextFiles = new Map(
+  docsNext.map((file) => [relative(repoRoot, file), readFileSync(file, 'utf8')]),
+)
 if (router.includes(splitMarker)) {
-  checkSplitLayout(router, errors)
+  checkSplitLayout(router, docsNextFiles, errors)
 } else {
   checkLegacyLayout(router, errors)
 }
@@ -434,7 +679,7 @@ const docs = [
   resolve(repoRoot, 'AGENTS.md'),
   resolve(repoRoot, 'README.md'),
   resolve(repoRoot, 'apps/desktop/AGENTS.md'),
-  ...markdownFiles(resolve(repoRoot, 'docs/next')),
+  ...docsNext,
 ]
 checkMarkdownLinks(docs, errors)
 checkMachineLocalPaths(docs, errors)
@@ -446,5 +691,9 @@ if (errors.length > 0) {
   }
   process.exitCode = 1
 } else {
-  console.log('Agent documentation check passed.')
+  console.log(
+    migrationMode
+      ? 'Agent documentation and migration provenance checks passed.'
+      : 'Agent documentation check passed.',
+  )
 }

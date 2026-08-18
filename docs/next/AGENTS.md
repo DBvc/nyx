@@ -5,10 +5,12 @@ and durable runthrough evidence.
 
 ## Document Roles
 
-- `agent-workbench-task-slices.md` is the canonical execution gate and current
-  workstream status owner until the reviewed split is completed.
-- `*-task-slices.md` files may own current execution status only after the
-  canonical split lands atomically.
+- `agent-workbench-task-slices.md` is the compatibility router and global-rule
+  entry point. It owns no current workstream status.
+- Each routed `*-task-slices.md` file is the sole current-status and execution
+  contract owner for its named workstream.
+- `multi-thread-library-e1r-contracts.md` owns preserved contract text only. It
+  does not own Multi-Thread Library status or execution permission.
 - `*-technical-plan.md` files own reviewed design and architecture. They do not
   grant execution permission by themselves.
 - `*-runthrough.md` files own evidence, experiments, and history. They do not
@@ -28,26 +30,23 @@ and durable runthrough evidence.
 - Do not create a central `STATUS.md`. Current state belongs beside the
   canonical workstream contract.
 
-## Current Structural Gate
+## Structural Migration Record
 
-Do not split or rewrite `agent-workbench-task-slices.md` while its active
-exact-byte NF1 process lacks a canonical reviewed terminal state or an explicit
-retirement decision. This rule does not authorize running or retiring NF1.
+`agent-workbench-contract-migration.json` is a provenance record for the split.
+It records the pre-split source identity, original line ownership, observed
+self-reference replacements, and initial target hashes. It is not a reversible
+migration recipe.
 
-Before the split:
+`mise run docs:check` validates only the current tree: routes, globally unique
+owners and contract markers, current body hashes, links, and manifest shape.
+It does not parse Markdown rendering or infer execution state from prose.
+It does not require historical Git objects. `mise run docs:migration-check` is
+the optional one-time audit for the recorded source commit, complete source line
+disposition, and source range hashes.
 
-- keep `agent-workbench-task-slices.md` as the sole current-status owner
-- allow AGENTS cleanup and checker work that does not change its bytes
-- do not create partial workstream owners or temporary duplicate status files
-
-When the prerequisite is satisfied, the split must:
-
-- record the source file exact SHA-256 and a reviewed block migration manifest
-- establish machine-readable workstream-status and contract-definition owners
-- move each canonical block exactly once without simultaneous prose cleanup
-- replace the old path with a compatible router in the same commit
-- switch every owner atomically, with no dual-owner or ownerless intermediate
-- remain recoverable by reverting that single structural commit
+The old entry path must remain a compatibility router. Future structural moves
+must update router, owner markers, migration record, and links atomically; never
+create a dual-owner or ownerless intermediate state.
 
 ## Editing Rules
 

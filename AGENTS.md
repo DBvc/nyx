@@ -13,8 +13,10 @@ currently executable slices.
 - `runtime/ocaml`: typed runtime core and replayable chat-state projection.
 - `docs/architecture`: stable architecture and boundary notes.
 - `docs/v1-min-chat-implementation-plan.md`: ordinary product baseline.
-- `docs/next/agent-workbench-task-slices.md`: canonical execution gate and
-  current status owner for named workstreams until its reviewed split lands.
+- `docs/next/agent-workbench-task-slices.md`: compatibility router and global
+  rules for named workstreams.
+- `docs/next/*-task-slices.md`: canonical current status and execution contract
+  for the named workstream.
 - `docs/next/*-technical-plan.md`: reviewed design for its named workstream.
 - `docs/next/*-runthrough.md`: evidence and history; never implementation
   permission by itself.
@@ -31,10 +33,11 @@ For ordinary work, resolve conflicts in this order:
 
 For a named agent-workbench workstream:
 
-1. `docs/next/agent-workbench-task-slices.md`
-2. the named workstream technical plan, when present
-3. direction and implementation notes linked by that workstream
-4. the ordinary baseline, whose unaffected behavior must be preserved
+1. `docs/next/agent-workbench-task-slices.md` for global rules and routing
+2. the linked named workstream task-slices file
+3. the named workstream technical plan, when present
+4. direction and implementation notes linked by that workstream
+5. the ordinary baseline, whose unaffected behavior must be preserved
 
 Repository task slices supersede older external draft ordering. Technical plans
 describe a design; runthroughs preserve evidence. Neither grants execution
@@ -46,24 +49,28 @@ currently executable exact slice.
 
 ## Required Workstream Routing
 
-Before changing an area below, read `Global Rules`, `Workstream Status`, and the
-matching section in `docs/next/agent-workbench-task-slices.md`. Read only the
-relevant section and its linked plan/evidence unless the task requires more.
+Before changing an area below, read `Global Rules` in
+`docs/next/agent-workbench-task-slices.md`, follow its route, and read the linked
+workstream status/contracts. Read only that file and its linked plan/evidence
+unless the task requires more.
 
 - Connections, secret storage, provider resolution, or thread-first shell:
-  foundation `A` sections.
-- Durable current thread, hydration, recovery, reset, or runtime replay: `B`
-  sections.
-- Provider request mapping or semantic stream normalization: `C` sections.
-- Composer target selection or assistant target attribution: `D` sections.
-- Image input, image storage, authorized image URLs, or image lifecycle: `E`
-  sections and the Context Composer plan.
-- OpenAI Responses protocol or continuation sidecars: `R` sections and the
-  Responses technical plan.
-- Text/PDF document attachment handling: `F` sections and the document
-  attachments plan.
-- Thread Library, SQLite, Thread IPC, multi-thread lifecycle, or native-fetch
-  gates: `MTL` sections and the Multi-Thread Library plan.
+  `docs/next/agent-workbench-foundation-task-slices.md`.
+- Durable current thread, hydration, recovery, reset, or runtime replay:
+  `docs/next/current-thread-durability-task-slices.md`.
+- Provider request mapping or semantic stream normalization:
+  `docs/next/provider-compatibility-core-task-slices.md`.
+- Composer target selection or assistant target attribution:
+  `docs/next/composer-target-selection-task-slices.md`.
+- Image input, image storage, authorized image URLs, or image lifecycle:
+  `docs/next/context-composer-experiment-task-slices.md` and its plan.
+- OpenAI Responses protocol or continuation sidecars:
+  `docs/next/responses-protocol-task-slices.md` and its plan.
+- Text/PDF document attachment handling:
+  `docs/next/document-attachments-task-slices.md` and its plan.
+- Thread Library, SQLite, Thread IPC, multi-thread lifecycle, or native-fetch:
+  `docs/next/multi-thread-library-task-slices.md` and its plan. E1R contract
+  history is non-executable unless that status owner explicitly reopens it.
 
 If the relevant section has no executable slice, preserve existing behavior and
 stop before adding broader behavior.

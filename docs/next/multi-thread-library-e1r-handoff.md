@@ -2,13 +2,17 @@
 
 更新时间：2026-08-15
 
+> 归档说明：当前 NF1 native-fetch 路线已在 2026-08-18 由用户明确退役。
+> 本文件只保留历史交接背景，不再是可执行 handoff。当前状态只看
+> [multi-thread-library-task-slices.md](./multi-thread-library-task-slices.md)。
+
 ## Focus
 
-下一台电脑上的新 AI session 应从这里继续：为 E1R 选择一个更小、可迭代的请求传输方向，先完成文档决策和独立评审，再做新的 OS-temp feasibility gate。不要恢复、合并或继续旧 E1 候选产品代码，也不要重跑已经完成的 G0。
+没有待继续的 E1R/NF1 任务。不要恢复、合并或继续旧 E1 候选产品代码，也不要根据本文件重跑 G0、起草 amendment、编写 harness 或开始产品实现。
 
 ## 一句话状态
 
-Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝试的 E1R 增量流式方向也在 G0 得到 independently reviewed `VALID_STOP`。当前没有任何 E1/E1R 产品 slice 可执行，必须先做新的用户决策和 reviewed direction gate。
+Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝试的 E1R 增量流式方向也在 G0 得到 independently reviewed `VALID_STOP`。NF1 后续门禁现已退役，没有任何 E1/E1R 产品 slice 可执行。未来如重新考虑该方向，必须由新的用户请求和 reviewed scope contract 重新开始。
 
 ## Current State
 
@@ -25,7 +29,7 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 
 ### In progress
 
-- 仅剩隔离分支的远程上传需要用户明确批准；在批准和实际推送前，新电脑无法从远端取回 `0c2171d`。
+- 无。NF1 已退役，本文件不再交接进行中任务。
 
 ### Not done
 
@@ -38,7 +42,7 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 
 - Workspace/repo：Nyx repository root；目标分支 `main`。
 - Git state：远程 `main` 已包含全部已接受提交和本交接文档；用 `git log -1 -- docs/next/multi-thread-library-e1r-handoff.md` 获取最终交接锚点。停止候选仍只位于本地隔离分支 `codex/e1-stopped-candidate-archive-20260815` 的 `0c2171d`。
-- Relevant files：[agent-workbench-task-slices.md](./agent-workbench-task-slices.md)、[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)、`apps/desktop/electron/main/chat/session.ts`、`apps/desktop/electron/main/thread-library/service.ts`、`apps/desktop/electron/main/thread-library/coordinator.ts`。
+- Relevant files：[multi-thread-library-task-slices.md](./multi-thread-library-task-slices.md)、[multi-thread-library-e1r-contracts.md](./multi-thread-library-e1r-contracts.md)、[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)、`apps/desktop/electron/main/chat/session.ts`、`apps/desktop/electron/main/thread-library/service.ts`、`apps/desktop/electron/main/thread-library/coordinator.ts`。
 - Important commands：`git log --oneline origin/main..main` 查看尚未推送的已接受提交；`mise run desktop:typecheck`、`mise run desktop:typecheck:compat`、`mise run desktop:lint` 和 `mise run desktop:test` 验证 desktop。
 - Existing artifacts：正式 G0 结果、summary、manifest 和 harness identity 已固化在 source of truth；旧电脑的 OS-temp raw evidence 不需要复制或重跑。
 
@@ -63,7 +67,7 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 
 部分 early-response proxy prefix/status 行只是未完整结束的 proxy-side observation 产生的诊断噪声，独立复核明确要求不要把它们当作 Stop 依据。
 
-正式 evidence identity 已写入 [agent-workbench-task-slices.md](./agent-workbench-task-slices.md)，不要依赖旧电脑 OS-temp 目录下的原始大文件才能继续。
+正式 evidence identity 已保留在 [multi-thread-library-e1r-contracts.md](./multi-thread-library-e1r-contracts.md)，不要依赖旧电脑 OS-temp 目录下的原始大文件。
 
 ## 根因判断
 
@@ -138,13 +142,14 @@ Thread Library C1 已完成；E1 在正式 cap-2 性能样本停止；随后尝�
 
 ## Recommended Next Steps
 
-1. 读取本文件、[agent-workbench-task-slices.md](./agent-workbench-task-slices.md) 的 E1 evidence/E1R amendment，以及 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md) 的 E1 ownership/shutdown 部分。
-2. 用 `dbx-technical-plan` 写一个 documentation-only E1R direction amendment，只冻结 Option A 或 Option B 之一；明确 user-behavior、redirect、cancel、buffer、proxy、identity 和 cleanup 门槛。
-3. 用 `dbx-plan-convergence` 删除非必要范围，把下一次 OS-temp gate 限制为：success slow receiver、abort/early-response/socket-close、301/302/307/308，两种协议，同一 cap-2 workload，first-valid-failure stop。
-4. 用 `dbx-linus-review` 独立审查 exact amendment。未接受并进入 HEAD 前，不写 harness 或产品代码。
-5. amendment 进入 HEAD 后，只写 OS-temp harness；pre-run exact review 通过后运行一次。有效失败就停止，有效通过才允许起草新的 product scope lock。
+无。不要按历史 Option A/B 或旧 gate 继续工作。
 
-## Open Questions And Blockers
+如果用户以后重新提出 native-fetch 需求，应先读取当前 MTL 状态，创建一个新的、独立评审的 scope contract。旧 amendment、旧 gate 和旧候选只能作为证据，不能直接恢复。
+
+## Historical Questions
+
+These questions were open when this handoff was written. They no longer block
+current work because the NF1 direction is retired.
 
 - 用户是否接受把严格 1 MiB 改为一个有证据、有限但更高的 native-buffer ceiling？这是 Option A/B 的分叉点。
 - archive branch 是否获准推送远端？在明确批准前，`0c2171d` 只存在当前电脑。
@@ -172,14 +177,9 @@ git diff main...0c2171d -- apps/desktop
 ## Start Prompt For Next Session
 
 ```text
-请先完整阅读 docs/next/multi-thread-library-e1r-handoff.md，然后继续其中 Focus 和 Recommended Next Steps。
-
-先用人话确认当前状态和 Option A/B 的真实分叉，再讨论并冻结新的 E1R direction amendment。不要重跑已完成的 G0，不要 merge/cherry-pick 0c2171d，不要修改产品代码；未经独立评审和进入 HEAD，不要开始写新 harness 或产品实现。
+请先读取 docs/next/multi-thread-library-task-slices.md。E1R/NF1 已退役；不要继续本交接里的历史步骤，不要重跑 G0，不要 merge/cherry-pick 旧候选，也不要修改产品代码。
 ```
 
 ## Suggested Skills
 
-- `dbx-technical-plan`: 形成新的 evidence-grounded direction amendment。
-- `dbx-plan-convergence`: 把下一轮压缩为只验证三个 hard STOP。
-- `dbx-linus-review`: 对 amendment、harness 和 evidence 做独立 exact review。
-- `dbx-agent-handoff`: 下一次换 session 前更新本交接。
+- 无当前建议。本文件不是可执行 handoff。

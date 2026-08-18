@@ -1,0 +1,374 @@
+{
+  "version": 2,
+  "recordType": "migration_provenance_only",
+  "reversible": false,
+  "verification": {
+    "default": "Current-tree routes, owners, contract markers, and body hashes only",
+    "migration": "Optional source commit, line coverage, and source range hashes",
+    "transform": "Recorded path replacement and formatter metadata is historical observation, not a reproducible recipe"
+  },
+  "source": {
+    "path": "docs/next/agent-workbench-task-slices.md",
+    "sha256": "0261f335922eb12631fd825769b28db1bd05b3af0f3966cb0a44a39366543f21",
+    "lineCount": 6246,
+    "gitCommit": "96f67cdf981ccb1c8fa982971dddf7c064f091f7",
+    "lastContentCommit": "1464fc32886348b90a371777007b00f271a1ceb5"
+  },
+  "prerequisite": {
+    "nf1": "retired",
+    "evidenceRef": "docs/next/multi-thread-library-task-slices.md#current-status",
+    "decisionDate": "2026-08-18"
+  },
+  "workstreamOwners": {
+    "foundation": "docs/next/agent-workbench-foundation-task-slices.md",
+    "current-thread-durability": "docs/next/current-thread-durability-task-slices.md",
+    "provider-compatibility-core": "docs/next/provider-compatibility-core-task-slices.md",
+    "composer-target-selection": "docs/next/composer-target-selection-task-slices.md",
+    "context-composer-experiment": "docs/next/context-composer-experiment-task-slices.md",
+    "responses-protocol": "docs/next/responses-protocol-task-slices.md",
+    "document-attachments": "docs/next/document-attachments-task-slices.md",
+    "multi-thread-library": "docs/next/multi-thread-library-task-slices.md"
+  },
+  "dispositions": [
+    {
+      "startLine": 1,
+      "endLine": 53,
+      "action": "rewritten_as_compatibility_router"
+    },
+    {
+      "startLine": 54,
+      "endLine": 55,
+      "action": "replaced_by_per_workstream_status_owners"
+    },
+    {
+      "startLine": 200,
+      "endLine": 200,
+      "action": "discarded_blank_separator"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "foundation/status-summary",
+      "file": "docs/next/agent-workbench-foundation-task-slices.md",
+      "sha256": "23ba1923e4c829989433d16224023c3011b02e4ed883133a21336063af90dac4",
+      "source": {
+        "startLine": 56,
+        "endLine": 57,
+        "sha256": "f8fec85603a43ce8fc44c122be1c00f04a567571bd35c4ac4387d3ed4387132b"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/agent-workbench-foundation-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "f8fec85603a43ce8fc44c122be1c00f04a567571bd35c4ac4387d3ed4387132b",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "foundation/contracts",
+      "file": "docs/next/agent-workbench-foundation-task-slices.md",
+      "sha256": "20db6e5f69cc9f62a61b477f8da96f08331cfeb93e836e081c1a93a1a3358f93",
+      "source": {
+        "startLine": 201,
+        "endLine": 520,
+        "sha256": "519a1681eb91136c97d578080059048a873ec3c34aeafabd9bc3d6d5727e08f5"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/agent-workbench-foundation-task-slices.md",
+        "replacements": 1,
+        "preFormatSha256": "d350b9da0ab465e9c56376de050257e24a2b61759993ff97dc55b446cf523472",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "current-thread-durability/status-summary",
+      "file": "docs/next/current-thread-durability-task-slices.md",
+      "sha256": "1826cb46ee292d8b567e3de4285353531855f685e1fdbc6de1453bf275e26d21",
+      "source": {
+        "startLine": 58,
+        "endLine": 64,
+        "sha256": "88fccd7e82b9e94a7f21ebcf677a2398ad4f05def0a58109aa21d0bc0136385a"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/current-thread-durability-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "88fccd7e82b9e94a7f21ebcf677a2398ad4f05def0a58109aa21d0bc0136385a",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "current-thread-durability/contracts",
+      "file": "docs/next/current-thread-durability-task-slices.md",
+      "sha256": "0de4320bf295a9cc8b9124e3614f8a6dd04e3ef5348fe4db21379c1ef1d8428f",
+      "source": {
+        "startLine": 521,
+        "endLine": 824,
+        "sha256": "44292a0e67b63a6f5446fe5c9bd712dc331b24c4c079d9c1e5a119fbc8f98982"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/current-thread-durability-task-slices.md",
+        "replacements": 2,
+        "preFormatSha256": "8c7ae9705db8bdf4aea711a596a20b9f071a49d4c8cdcde621ebbac8d3bc0f08",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "provider-compatibility-core/status-summary",
+      "file": "docs/next/provider-compatibility-core-task-slices.md",
+      "sha256": "f7306be98ddbaf1f24d5de94f728702f8a93ec644e2ce1da1a4075058a3f3303",
+      "source": {
+        "startLine": 65,
+        "endLine": 71,
+        "sha256": "c9bdc98f5423b5794ac9cd3639b6963ccf83243751acd91cbba0e7d8c4ff7596"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/provider-compatibility-core-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "c9bdc98f5423b5794ac9cd3639b6963ccf83243751acd91cbba0e7d8c4ff7596",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "provider-compatibility-core/contracts",
+      "file": "docs/next/provider-compatibility-core-task-slices.md",
+      "sha256": "535483665f6df31c75d56ab0957c78c5c2b114e04ecef90c8f4b5c2dfe017332",
+      "source": {
+        "startLine": 825,
+        "endLine": 1160,
+        "sha256": "2cbcf8d400c590f7ddcb209dd8d3306570113479df89b777ead4ee2970931da3"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/provider-compatibility-core-task-slices.md",
+        "replacements": 2,
+        "preFormatSha256": "38bbdffc4a34b3f731941d19455d4377cb0dcb7d825640fd318a4d12cce97e12",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "composer-target-selection/status-summary",
+      "file": "docs/next/composer-target-selection-task-slices.md",
+      "sha256": "32c4110b3cffb7f4d8e28c109b85c3dbc63780f4fceeefbadeabda7fbf5001ea",
+      "source": {
+        "startLine": 72,
+        "endLine": 82,
+        "sha256": "14b472e5d96613a99091cd20098a04a157195d860e3303e271d2d3abf8a79018"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/composer-target-selection-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "14b472e5d96613a99091cd20098a04a157195d860e3303e271d2d3abf8a79018",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "composer-target-selection/contracts",
+      "file": "docs/next/composer-target-selection-task-slices.md",
+      "sha256": "aff751900039bbbebc3cad0263887ae02a7abc74b5bf258db1c319840627a944",
+      "source": {
+        "startLine": 1161,
+        "endLine": 1665,
+        "sha256": "c1724c87408e1f9a03d721992bbdee00993fd1681bbffd9640cf63791a4df93b"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/composer-target-selection-task-slices.md",
+        "replacements": 2,
+        "preFormatSha256": "5f2099f700e8e125962c798fb3f8e3d9d0102aa955446c55006d83467373717a",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "context-composer-experiment/status-summary",
+      "file": "docs/next/context-composer-experiment-task-slices.md",
+      "sha256": "33ff9e000f6c4e69cbbef7958abd94c843dec18dabb307156fe0f428a6f0c508",
+      "source": {
+        "startLine": 83,
+        "endLine": 118,
+        "sha256": "106038a2770efd52fe8af0970012f8a71120486a08c6cc978acfea647fadaadd"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/context-composer-experiment-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "106038a2770efd52fe8af0970012f8a71120486a08c6cc978acfea647fadaadd",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "context-composer-experiment/contracts-part-1",
+      "file": "docs/next/context-composer-experiment-task-slices.md",
+      "sha256": "629fcb93b3dccac4cb2d4cd3bc82c50c81ff0152f69d41fb767f665e1237254b",
+      "source": {
+        "startLine": 1666,
+        "endLine": 1997,
+        "sha256": "44a4ad51fc4c7f20e3988aaa99b19de5f0ad38ac68eba68b7b5e5c771c2b9780"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/context-composer-experiment-task-slices.md",
+        "replacements": 3,
+        "preFormatSha256": "2513a9c165da83e931131e148ceb320f53ab3802d8c4c60c64fc9c54a4bbf34e",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "context-composer-experiment/contracts-part-2",
+      "file": "docs/next/context-composer-experiment-task-slices.md",
+      "sha256": "496ccaeb8d64d922f1ea6b895edee3b3062d6fce1f4c7ab2da657e55444fe490",
+      "source": {
+        "startLine": 2213,
+        "endLine": 3062,
+        "sha256": "e07acfa2c628d9a1a33eec2a0f3abcba66529c10e597abb6018582cb84646669"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/context-composer-experiment-task-slices.md",
+        "replacements": 4,
+        "preFormatSha256": "c0f5b071007d04d01c4ac2439098f62ec371261cb1f5a7941e0c2ae983cf7e2e",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "responses-protocol/status-summary",
+      "file": "docs/next/responses-protocol-task-slices.md",
+      "sha256": "237f94298b6bd88a581698f29539b5598f9b9b77534bf731a9847eed244cc3c5",
+      "source": {
+        "startLine": 138,
+        "endLine": 144,
+        "sha256": "bca177b5afeea802e99545378eb0b855112f3935233f39f3f92bb4095599bade"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/responses-protocol-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "bca177b5afeea802e99545378eb0b855112f3935233f39f3f92bb4095599bade",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "responses-protocol/contracts",
+      "file": "docs/next/responses-protocol-task-slices.md",
+      "sha256": "97cd4c5a1f43c50323c06f49253398199b3c3c00b3c18c36b7ec2f66c3218564",
+      "source": {
+        "startLine": 1998,
+        "endLine": 2212,
+        "sha256": "31491cb6a16f0f7cd7c9edf9b095eee8f83b7646d691e4fe9853fc64a5939b42"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/responses-protocol-task-slices.md",
+        "replacements": 1,
+        "preFormatSha256": "0db396bc052a1f0ec4bed66a0a3d9ab9cdcf5009b5c305852f1888eb86ec22a1",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "document-attachments/status-summary",
+      "file": "docs/next/document-attachments-task-slices.md",
+      "sha256": "de7be56acacd96f9b00c0a13e4c66b2cce04746bddb286886d0c687bb53d59fd",
+      "source": {
+        "startLine": 119,
+        "endLine": 137,
+        "sha256": "901b68a7a2dfafd4fe470c0c5166f3eecb7312dbfeb83e595d9c0d3d6b674e39"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/document-attachments-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "901b68a7a2dfafd4fe470c0c5166f3eecb7312dbfeb83e595d9c0d3d6b674e39",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "document-attachments/contracts",
+      "file": "docs/next/document-attachments-task-slices.md",
+      "sha256": "6e97617d76008362bd36656c1bac3ba742ce35d07fa041e244458f49c33b0bdb",
+      "source": {
+        "startLine": 3063,
+        "endLine": 3341,
+        "sha256": "47c4fca2f1736dc4be8e4f2a25185a6b304693d75f352bed92eaa2f900647c72"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/document-attachments-task-slices.md",
+        "replacements": 1,
+        "preFormatSha256": "8c32d6d7fb03f916d66627c3ff0718124882c303343569325161f33ebe120852",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "multi-thread-library/status-summary-at-migration",
+      "file": "docs/next/multi-thread-library-e1r-contracts.md",
+      "sha256": "e4a1dfcb3c2ea1386cf75651a9bdb689dbbd4e1181bdec9a614b50a0485b00a9",
+      "source": {
+        "startLine": 145,
+        "endLine": 199,
+        "sha256": "2f1949c43dc0e953f63a61585531ca3eb2a4396e6fe95f5e5b9138a4ebd4c6a7"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/multi-thread-library-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "2f1949c43dc0e953f63a61585531ca3eb2a4396e6fe95f5e5b9138a4ebd4c6a7",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "multi-thread-library/contracts-core",
+      "file": "docs/next/multi-thread-library-task-slices.md",
+      "sha256": "026319787bf8e466aa11384a1e4440002cedd22bf81eed83b1594fa817018be6",
+      "source": {
+        "startLine": 3342,
+        "endLine": 4864,
+        "sha256": "b61ff07efe8d396dd0066e1199744040b5e8962b4ff7e7a1eec23c3af264d7ff"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/multi-thread-library-task-slices.md",
+        "replacements": 8,
+        "preFormatSha256": "6365b30fe970783214ffbdb7f655cae81dd0f1f05278eb84138e435cdc7bb821",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "multi-thread-library/contracts-global-stop",
+      "file": "docs/next/multi-thread-library-task-slices.md",
+      "sha256": "d135adc768a394e752dbd22a36f9945984ae10a80e2988978bc7f9b9d78b0776",
+      "source": {
+        "startLine": 6228,
+        "endLine": 6246,
+        "sha256": "146e4a415a50c1c10fe4093f56b72ffcc0830fbe166b52368d636c52179b7136"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/multi-thread-library-task-slices.md",
+        "replacements": 0,
+        "preFormatSha256": "146e4a415a50c1c10fe4093f56b72ffcc0830fbe166b52368d636c52179b7136",
+        "formatter": "oxfmt@0.41.0"
+      }
+    },
+    {
+      "id": "multi-thread-library/e1r-contracts",
+      "file": "docs/next/multi-thread-library-e1r-contracts.md",
+      "sha256": "fefc44011dd64551cd5fc7b0fa0ebabfc325427641848bbfa890a17b6b400e56",
+      "source": {
+        "startLine": 4865,
+        "endLine": 6227,
+        "sha256": "fee5ef8254a7414ef5d7d36d493bf431992c0eb6b6d56f81821c5808cccff613"
+      },
+      "transform": {
+        "from": "docs/next/agent-workbench-task-slices.md",
+        "to": "docs/next/multi-thread-library-e1r-contracts.md",
+        "replacements": 7,
+        "preFormatSha256": "5a4ea42d423277b036af202839966f83ad3db78f512ba01ce410393e9dec86b7",
+        "formatter": "oxfmt@0.41.0"
+      }
+    }
+  ]
+}

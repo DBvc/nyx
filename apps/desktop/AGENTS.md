@@ -31,24 +31,28 @@ Directory map:
 
 ## Required Reading by Change Area
 
-Before changing an area below, read `Global Rules`, `Workstream Status`, and the
-matching section in `../../docs/next/agent-workbench-task-slices.md`. Read only
-the relevant section and linked plan/evidence unless the task requires more.
+Before changing an area below, read `Global Rules` in
+`../../docs/next/agent-workbench-task-slices.md`, follow its route, and read the
+linked workstream status/contracts. Read only that file and linked plan/evidence
+unless the task requires more.
 
-- Connections, secrets, provider resolution, thread-first shell: foundation
-  `A` sections.
-- Current-thread store, hydration, recovery, reset, runtime replay: `B`
-  sections.
-- Provider mapping and semantic stream normalization: `C` sections.
-- Composer target catalog, selection, and attribution: `D` sections.
-- Images, authorized local image URLs, import limits, and lifecycle: `E`
-  sections plus the Context Composer plan.
-- Responses protocol and continuation sidecars: `R` sections plus the Responses
-  plan.
-- Text/PDF document attachments: `F` sections plus the document attachments
-  plan.
-- Thread Library, SQLite, Thread IPC, multi-thread lifecycle, or native-fetch
-  gates: `MTL` sections plus the Multi-Thread Library plan.
+- Connections, secrets, provider resolution, thread-first shell:
+  `../../docs/next/agent-workbench-foundation-task-slices.md`.
+- Current-thread store, hydration, recovery, reset, runtime replay:
+  `../../docs/next/current-thread-durability-task-slices.md`.
+- Provider mapping and semantic stream normalization:
+  `../../docs/next/provider-compatibility-core-task-slices.md`.
+- Composer target catalog, selection, and attribution:
+  `../../docs/next/composer-target-selection-task-slices.md`.
+- Images, authorized local image URLs, import limits, and lifecycle:
+  `../../docs/next/context-composer-experiment-task-slices.md` plus its plan.
+- Responses protocol and continuation sidecars:
+  `../../docs/next/responses-protocol-task-slices.md` plus its plan.
+- Text/PDF document attachments:
+  `../../docs/next/document-attachments-task-slices.md` plus its plan.
+- Thread Library, SQLite, Thread IPC, multi-thread lifecycle, or native-fetch:
+  `../../docs/next/multi-thread-library-task-slices.md` plus its plan. E1R
+  contract history is non-executable unless that status owner reopens it.
 
 If the matching contract has no executable slice, preserve the landed behavior
 and stop before adding broader behavior.
