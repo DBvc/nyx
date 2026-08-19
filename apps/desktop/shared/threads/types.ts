@@ -16,6 +16,11 @@ export interface NyxThreadClock {
   includedThroughCursor: number
 }
 
+export interface NyxThreadRunCapacity {
+  activeRuns: number
+  attachmentRunActive: boolean
+}
+
 export interface NyxThreadSafeError {
   code: 'invalid_request' | 'not_found' | 'conflict' | 'library_unavailable' | 'thread_unavailable'
   message: string
@@ -113,6 +118,7 @@ export interface NyxThreadListPageInput {
 export interface NyxThreadListPage extends NyxThreadClock {
   rows: ReadonlyArray<NyxThreadSummary>
   nextCursor: string | null
+  capacity: NyxThreadRunCapacity
 }
 
 export interface NyxThreadGetInput {

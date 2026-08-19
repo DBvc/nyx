@@ -198,6 +198,7 @@ export class ThreadLibraryService {
   private lastCanonicalCursor = 0
   private readonly watermarkCursor = new Map<number, number>()
   private selectedThreadId: string | null = null
+  private capacity = { activeRuns: 0, attachmentRunActive: false }
   private selectionRequest = 0
   private readonly imageAuthorization = new Map<
     string,
@@ -252,7 +253,12 @@ export class ThreadLibraryService {
 
   publishChatEvent(sender: WebContents, event: UnclockedChatEvent) {
     if (!this.eventEpoch) return
-    if (event.type === 'chat:accepted') {
+    if (event.type === 'chat:capacity') {
+      this.capacity = {
+        activeRuns: event.activeRuns,
+        attachmentRunActive: event.attachmentRunActive,
+      }
+    } else if (event.type === 'chat:accepted') {
       this.liveChats.set(event.threadId, {
         threadId: event.threadId,
         requestId: event.requestId,
@@ -303,6 +309,7 @@ export class ThreadLibraryService {
     if (!input.success || !this.active)
       return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
     const boundary = { eventEpoch: this.eventEpoch, includedThroughCursor: this.cursor }
+    const capacity = this.capacity
     const reply = await this.active.client.listPage({
       ...input.data,
       cursor: input.data.cursor ?? null,
@@ -311,6 +318,7 @@ export class ThreadLibraryService {
     return ok({
       rows: reply.value.rows.map((row) => listSummary(row, this.activity(row.id))),
       nextCursor: reply.value.nextCursor,
+      capacity,
       ...boundary,
     })
   }

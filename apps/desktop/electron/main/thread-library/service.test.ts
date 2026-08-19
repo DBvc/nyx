@@ -202,12 +202,18 @@ describe('ThreadLibraryService', () => {
       turnIntent: 'new_user_message',
       attachmentBearing: false,
     })
+    service.publishChatEvent(sender as never, {
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: true,
+    })
 
     await expect(
       service.listPage({ location: 'available', cursor: null, limit: 50 }),
     ).resolves.toMatchObject({
       ok: true,
       value: {
+        capacity: { activeRuns: 2, attachmentRunActive: true },
         rows: [
           {
             id: threadId,
@@ -219,6 +225,13 @@ describe('ThreadLibraryService', () => {
           },
         ],
       },
+    })
+    expect(sender.send).toHaveBeenLastCalledWith('nyx:chat:event', {
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: true,
+      eventEpoch: generation,
+      cursor: 3,
     })
   })
 

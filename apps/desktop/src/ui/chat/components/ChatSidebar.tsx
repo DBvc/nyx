@@ -1,13 +1,18 @@
 import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
 import type { RefObject } from 'react'
 
+import type { NyxChatRunStatus } from '../../../../shared/chat/types'
 import type { NyxThreadSummary } from '../../../../shared/threads/types'
+
+type CurrentThreadStatus = 'idle' | 'running' | 'saving_failed'
 
 interface ChatSidebarProps {
   title: string
   preview: string
   activeView: 'chat' | 'connections'
   threads: ReadonlyArray<NyxThreadSummary>
+  currentThread: NyxThreadSummary | null
+  currentThreadStatus: CurrentThreadStatus
   selectedThreadId: string | null
   newThreadDisabled: boolean
   onNewThread: () => void
@@ -16,11 +21,33 @@ interface ChatSidebarProps {
   settingsPopoverRef: RefObject<HTMLDivElement | null>
 }
 
+export function currentThreadSidebarStatus(
+  runStatus: NyxChatRunStatus,
+  hasSettlementFailure: boolean,
+): CurrentThreadStatus {
+  if (hasSettlementFailure) return 'saving_failed'
+  return runStatus === 'submitting' || runStatus === 'streaming' ? 'running' : 'idle'
+}
+
+export function currentThreadOutsidePage(
+  selectedThreadId: string | null,
+  currentThread: NyxThreadSummary | null,
+  threads: ReadonlyArray<NyxThreadSummary>,
+) {
+  return selectedThreadId &&
+    currentThread?.id === selectedThreadId &&
+    !threads.some((thread) => thread.id === selectedThreadId)
+    ? currentThread
+    : null
+}
+
 export function ChatSidebar({
   title,
   preview,
   activeView,
   threads,
+  currentThread,
+  currentThreadStatus,
   selectedThreadId,
   newThreadDisabled,
   onNewThread,
@@ -28,6 +55,55 @@ export function ChatSidebar({
   onOpenConnectionsSettings,
   settingsPopoverRef,
 }: ChatSidebarProps) {
+  const outsidePageThread = currentThreadOutsidePage(selectedThreadId, currentThread, threads)
+
+  function renderThread(
+    thread: NyxThreadSummary,
+    statusOverride?: Exclude<CurrentThreadStatus, 'idle'>,
+  ) {
+    const selected = activeView === 'chat' && thread.id === selectedThreadId
+    const activity = thread.availability === 'available' ? thread.activity : null
+    const subtitle =
+      statusOverride === 'running'
+        ? 'Running…'
+        : statusOverride === 'saving_failed'
+          ? 'Saving failed'
+          : activity?.status === 'submitting' || activity?.status === 'streaming'
+            ? 'Running…'
+            : activity?.status === 'saving_failed'
+              ? 'Saving failed'
+              : thread.id === selectedThreadId
+                ? preview
+                : thread.availability === 'unavailable'
+                  ? 'Unavailable'
+                  : ''
+    const savingFailed = statusOverride === 'saving_failed' || activity?.status === 'saving_failed'
+    return (
+      <button
+        aria-current={selected ? 'page' : undefined}
+        className={`w-full rounded-lg px-3 py-2.5 text-left ${
+          selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
+        }`}
+        key={thread.id}
+        onClick={() => onSelectThread(thread.id)}
+        type='button'
+      >
+        <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+          {thread.title}
+        </span>
+        {subtitle ? (
+          <span
+            className={`mt-1 block min-w-0 truncate text-[12px] ${
+              savingFailed ? 'text-nyx-danger' : 'text-nyx-muted'
+            }`}
+          >
+            {subtitle}
+          </span>
+        ) : null}
+      </button>
+    )
+  }
+
   return (
     <aside className='flex h-full w-[16.5rem] shrink-0 flex-col border-r border-nyx-line bg-nyx-sidebar px-2 py-2'>
       <div className='sidebar-titlebar mb-1 flex h-9 items-center text-[15px] font-semibold tracking-[-0.01em] text-nyx-ink'>
@@ -45,6 +121,15 @@ export function ChatSidebar({
       </button>
 
       <div className='mt-4 min-h-0 flex-1 overflow-y-auto'>
+        {outsidePageThread ? (
+          <div className='pb-3'>
+            <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Current thread</div>
+            {renderThread(
+              outsidePageThread,
+              currentThreadStatus === 'idle' ? undefined : currentThreadStatus,
+            )}
+          </div>
+        ) : null}
         <div className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'>Threads</div>
         {selectedThreadId === null && activeView === 'chat' ? (
           <div className='w-full rounded-lg bg-nyx-canvas px-3 py-2.5 text-left'>
@@ -58,44 +143,7 @@ export function ChatSidebar({
             ) : null}
           </div>
         ) : null}
-        {threads.map((thread) => {
-          const selected = activeView === 'chat' && thread.id === selectedThreadId
-          const activity = thread.availability === 'available' ? thread.activity : null
-          const subtitle =
-            activity?.status === 'submitting' || activity?.status === 'streaming'
-              ? 'Running…'
-              : activity?.status === 'saving_failed'
-                ? 'Saving failed'
-                : thread.id === selectedThreadId
-                  ? preview
-                  : thread.availability === 'unavailable'
-                    ? 'Unavailable'
-                    : ''
-          return (
-            <button
-              aria-current={selected ? 'page' : undefined}
-              className={`w-full rounded-lg px-3 py-2.5 text-left ${
-                selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
-              }`}
-              key={thread.id}
-              onClick={() => onSelectThread(thread.id)}
-              type='button'
-            >
-              <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
-                {thread.title}
-              </span>
-              {subtitle ? (
-                <span
-                  className={`mt-1 block min-w-0 truncate text-[12px] ${
-                    activity?.status === 'saving_failed' ? 'text-nyx-danger' : 'text-nyx-muted'
-                  }`}
-                >
-                  {subtitle}
-                </span>
-              ) : null}
-            </button>
-          )
-        })}
+        {threads.map((thread) => renderThread(thread))}
       </div>
 
       <div className='relative mt-3 border-t border-nyx-line pt-2'>

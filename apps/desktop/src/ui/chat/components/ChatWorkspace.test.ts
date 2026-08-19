@@ -8,6 +8,7 @@ import {
   isSidebarShortcut,
   readSidebarCollapsed,
 } from './ChatWorkspace'
+import { currentThreadOutsidePage, currentThreadSidebarStatus } from './ChatSidebar'
 
 const targetDraft = {
   kind: 'connection',
@@ -195,6 +196,32 @@ describe('Composer target options', () => {
 })
 
 describe('sidebar workspace helpers', () => {
+  it('keeps a selected Thread outside the canonical first page separate', () => {
+    const first = {
+      availability: 'available' as const,
+      id: 'thread-a',
+      location: 'available' as const,
+      title: 'First',
+      threadRevision: 1,
+      resultRevision: 0,
+      seenResultRevision: 0,
+      lastUserActivityAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const selected = { ...first, id: 'thread-b', title: 'Selected' }
+
+    expect(currentThreadOutsidePage('thread-b', selected, [first])).toBe(selected)
+    expect(currentThreadOutsidePage('thread-a', first, [first])).toBeNull()
+  })
+
+  it('shows live state for the selected Thread outside the canonical first page', () => {
+    expect(currentThreadSidebarStatus('submitting', false)).toBe('running')
+    expect(currentThreadSidebarStatus('streaming', false)).toBe('running')
+    expect(currentThreadSidebarStatus('completed', false)).toBe('idle')
+    expect(currentThreadSidebarStatus('failed', true)).toBe('saving_failed')
+  })
+
   it.each([
     [undefined, false],
     [{ getItem: (): string | null => null }, false],

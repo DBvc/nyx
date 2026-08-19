@@ -239,6 +239,7 @@ export class ChatSessionManager {
       kind: 'classifying',
     }
     this.activeSessions.set(session.threadId, session)
+    this.publishCapacity(sender)
     session.operation = this.run(session)
     void session.operation
   }
@@ -321,6 +322,7 @@ export class ChatSessionManager {
         return
       }
       session.kind = attachmentBearing ? 'attachment' : 'text'
+      if (attachmentBearing) this.publishCapacity(session.sender)
       session.prepared = await this.coordinator().prepareTurn(
         session.request,
         session.abortController.signal,
@@ -399,7 +401,10 @@ export class ChatSessionManager {
         this.emitError(session.sender, session, chatError)
       }
     } finally {
-      if (this.isCurrent(session)) this.activeSessions.delete(session.threadId)
+      if (this.isCurrent(session)) {
+        this.activeSessions.delete(session.threadId)
+        this.publishCapacity(session.sender)
+      }
       session.runtime?.close()
     }
   }
@@ -580,6 +585,16 @@ export class ChatSessionManager {
 
   private isCurrent(session: ActiveChatSession) {
     return this.activeSessions.get(session.threadId) === session
+  }
+
+  private publishCapacity(sender: WebContents) {
+    this.publish(sender, {
+      type: 'chat:capacity',
+      activeRuns: this.activeSessions.size,
+      attachmentRunActive: [...this.activeSessions.values()].some(
+        (session) => session.kind === 'attachment',
+      ),
+    })
   }
 
   private emitPreAcceptanceCancellation(session: ActiveChatSession) {

@@ -18,6 +18,12 @@ vi.mock('./client', () => ({ streamChatCompletion }))
 
 import { ChatSessionManager, type UnclockedNyxChatEvent } from './session'
 
+type BusinessEvent = Exclude<UnclockedNyxChatEvent, { type: 'chat:capacity' }>
+
+function businessEvents(events: ReadonlyArray<UnclockedNyxChatEvent>): BusinessEvent[] {
+  return events.filter((event): event is BusinessEvent => event.type !== 'chat:capacity')
+}
+
 const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const artifactPath = join(repoRoot, 'apps', 'desktop', '.runtime-artifacts', 'nyx-runtime')
 const integrationIt = process.env.NYX_RUNTIME_CHAT_STATE_INTEGRATION === '1' ? it : it.skip
@@ -172,9 +178,16 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       turnIntent: 'new_user_message',
       expectedDraftRevision: 0,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:done'))
+    await waitFor(() =>
+      expect(events.at(-1)).toEqual({
+        type: 'chat:capacity',
+        activeRuns: 0,
+        attachmentRunActive: false,
+      }),
+    )
 
-    expect(events.map((event) => event.type)).toEqual([
+    expect(businessEvents(events).map((event) => event.type)).toEqual([
       'chat:accepted',
       'chat:start',
       'chat:delta',
@@ -236,9 +249,9 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       turnIntent: 'new_user_message',
       expectedDraftRevision: 0,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:done'))
 
-    expect(events.at(-1)).toMatchObject({ finalContent: 'Image answer' })
+    expect(businessEvents(events).at(-1)).toMatchObject({ finalContent: 'Image answer' })
   })
 
   integrationIt('cancels a streaming Runtime turn with its partial content', async () => {
@@ -275,9 +288,9 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       turnIntent: 'new_user_message',
       expectedDraftRevision: 0,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:delta'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:delta'))
     manager.cancel({ threadId, requestId: 'request-1' })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:done'))
 
     expect(coordinator.settleTurn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -285,7 +298,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
         assistantContent: 'Partial answer',
       }),
     )
-    expect(events.at(-1)).toMatchObject({ status: 'cancelled', finalContent: 'Partial answer' })
+    expect(businessEvents(events).at(-1)).toMatchObject({
+      status: 'cancelled',
+      finalContent: 'Partial answer',
+    })
   })
 
   integrationIt('records a Provider failure through the real Runtime reducer', async () => {
@@ -317,12 +333,12 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       turnIntent: 'new_user_message',
       expectedDraftRevision: 0,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:error'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:error'))
 
     expect(coordinator.settleTurn).toHaveBeenCalledWith(
       expect.objectContaining({ assistantStatus: 'failed', assistantContent: '' }),
     )
-    expect(events.at(-1)).toMatchObject({
+    expect(businessEvents(events).at(-1)).toMatchObject({
       targetAttribution: attribution,
       error: { message: 'Provider failed', retryable: true },
     })
@@ -391,10 +407,10 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       turnIntent: 'new_user_message',
       expectedDraftRevision: 1,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:done'))
 
     expect(coordinator.replayRuntimeHistory).toHaveBeenCalledWith(expect.anything(), beforeNext)
-    expect(events.at(-1)).toMatchObject({ finalContent: 'Next answer' })
+    expect(businessEvents(events).at(-1)).toMatchObject({ finalContent: 'Next answer' })
   })
 
   integrationIt('replays one canonical failure before applying its exact Retry', async () => {
@@ -453,7 +469,7 @@ describe('ChatSessionManager runtime chat state artifact integration', () => {
       expectedAttemptRequestId: 'request-failed',
       expectedDraftRevision: 1,
     })
-    await waitFor(() => expect(events.at(-1)?.type).toBe('chat:done'))
+    await waitFor(() => expect(businessEvents(events).at(-1)?.type).toBe('chat:done'))
 
     expect(coordinator.replayRuntimeHistory).toHaveBeenCalledWith(expect.anything(), beforeRetry)
     expect(coordinator.settleTurn).toHaveBeenCalledWith(

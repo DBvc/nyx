@@ -4,8 +4,10 @@ import type {
   NyxChatTargetAttribution,
   NyxChatTurnIntent,
 } from './types'
+import type { NyxThreadRunCapacity } from '../threads/types'
 
 export const nyxChatEventTypes = [
+  'chat:capacity',
   'chat:accepted',
   'chat:start',
   'chat:delta',
@@ -15,11 +17,18 @@ export const nyxChatEventTypes = [
 
 export type NyxChatEventType = (typeof nyxChatEventTypes)[number]
 
-interface NyxChatEventBase {
-  threadId: string
-  requestId: string
+interface NyxChatEventClock {
   eventEpoch: string
   cursor: number
+}
+
+interface NyxChatEventBase extends NyxChatEventClock {
+  threadId: string
+  requestId: string
+}
+
+export interface NyxChatCapacityEvent extends NyxChatEventClock, NyxThreadRunCapacity {
+  type: 'chat:capacity'
 }
 
 export interface NyxChatAcceptedEvent extends NyxChatEventBase {
@@ -60,6 +69,7 @@ export interface NyxChatErrorEvent extends NyxChatEventBase {
 }
 
 export type NyxChatEvent =
+  | NyxChatCapacityEvent
   | NyxChatAcceptedEvent
   | NyxChatStartEvent
   | NyxChatDeltaEvent

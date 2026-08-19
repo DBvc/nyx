@@ -21,6 +21,18 @@ import type { ChatProviderMessage } from './client'
 import { createChatBridgeError } from './errors'
 import { ChatSessionManager, type UnclockedNyxChatEvent, validateChatRequest } from './session'
 
+type CapacityEvent = Extract<UnclockedNyxChatEvent, { type: 'chat:capacity' }>
+type BusinessEvent = Exclude<UnclockedNyxChatEvent, CapacityEvent>
+
+function collectEvent(
+  events: BusinessEvent[],
+  capacityEvents: CapacityEvent[],
+  event: UnclockedNyxChatEvent,
+) {
+  if (event.type === 'chat:capacity') capacityEvents.push(event)
+  else events.push(event)
+}
+
 const threadId = '00000000-0000-4000-8000-000000000001'
 const otherThreadId = '00000000-0000-4000-8000-000000000002'
 const thirdThreadId = '00000000-0000-4000-8000-000000000005'
@@ -174,7 +186,8 @@ function deferred<T>() {
 }
 
 function setup() {
-  const events: UnclockedNyxChatEvent[] = []
+  const events: BusinessEvent[] = []
+  const capacityEvents: CapacityEvent[] = []
   const runtimeClient = runtime()
   const canonicalMessages: ChatProviderMessage[] = [{ role: 'user', content: 'Canonical prompt' }]
   const coordinator = {
@@ -192,13 +205,14 @@ function setup() {
   const createRuntimeChatStateClient = vi.fn(() => runtimeClient)
   const manager = new ChatSessionManager({
     resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
-    publishChatEvent: (_sender, event) => events.push(event),
+    publishChatEvent: (_sender, event) => collectEvent(events, capacityEvents, event),
     resolveChatTarget,
     createRuntimeChatStateClient,
     now: () => timestamp,
   })
   return {
     coordinator,
+    capacityEvents,
     createRuntimeChatStateClient,
     events,
     manager,
@@ -311,7 +325,7 @@ describe('ChatSessionManager canonical execution', () => {
   })
 
   it('uses only canonical Provider history and projects thread-scoped events', async () => {
-    const { coordinator, events, manager, resolveChatTarget, sender } = setup()
+    const { capacityEvents, coordinator, events, manager, resolveChatTarget, sender } = setup()
     streamChatCompletion.mockImplementationOnce(
       async ({ documentBearing, providerMessages, onDelta }) => {
         expect(providerMessages).toEqual([{ role: 'user', content: 'Canonical prompt' }])
@@ -348,14 +362,18 @@ describe('ChatSessionManager canonical execution', () => {
       status: 'completed',
       finalContent: 'Answer',
     })
+    expect(capacityEvents).toEqual([
+      { type: 'chat:capacity', activeRuns: 1, attachmentRunActive: false },
+      { type: 'chat:capacity', activeRuns: 0, attachmentRunActive: false },
+    ])
   })
 
   it('streams normally while the Runtime projection is explicitly disabled', async () => {
-    const { coordinator, events, runtimeClient, sender } = setup()
+    const { capacityEvents, coordinator, events, runtimeClient, sender } = setup()
     const createRuntimeChatStateClient = vi.fn(() => runtimeClient)
     const manager = new ChatSessionManager({
       resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
-      publishChatEvent: (_sender, event) => events.push(event),
+      publishChatEvent: (_sender, event) => collectEvent(events, capacityEvents, event),
       resolveChatTarget: async () => resolvedTarget(),
       createRuntimeChatStateClient,
       env: { NYX_RUNTIME_CHAT_STATE: '0' },
@@ -424,7 +442,7 @@ describe('ChatSessionManager canonical execution', () => {
   })
 
   it('re-resolves and binds target attribution for each ordinary Retry attempt', async () => {
-    const { coordinator, events, sender } = setup()
+    const { capacityEvents, coordinator, events, sender } = setup()
     const retry = prepared()
     retry.requestId = 'request-2'
     const attributionA = { kind: 'env_fallback', modelId: 'model-a' } as const
@@ -450,7 +468,7 @@ describe('ChatSessionManager canonical execution', () => {
       .mockResolvedValueOnce({ finalContent: 'Retried answer' })
     const manager = new ChatSessionManager({
       resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
-      publishChatEvent: (_sender, event) => events.push(event),
+      publishChatEvent: (_sender, event) => collectEvent(events, capacityEvents, event),
       resolveChatTarget,
       env: { NYX_RUNTIME_CHAT_STATE: '0' },
       now: () => timestamp,
@@ -591,7 +609,7 @@ describe('ChatSessionManager canonical execution', () => {
   it('runs two Threads concurrently, rejects a third, and cancels only exact identity', async () => {
     const first = deferred<{ finalContent: string }>()
     const second = deferred<{ finalContent: string }>()
-    const { coordinator, events, manager, sender } = setup()
+    const { capacityEvents, coordinator, events, manager, sender } = setup()
     streamChatCompletion
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise)
@@ -642,12 +660,18 @@ describe('ChatSessionManager canonical execution', () => {
     expect(
       events.find((event) => event.type === 'chat:done' && event.threadId === thirdThreadId),
     ).toMatchObject({ status: 'completed', finalContent: 'third answer' })
+    expect(capacityEvents.every((event) => event.activeRuns <= 2)).toBe(true)
+    expect(capacityEvents.at(-1)).toEqual({
+      type: 'chat:capacity',
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
   })
 
   it('rejects a second attachment Run before Draft mutation and still admits text', async () => {
     const first = deferred<{ finalContent: string }>()
     const text = deferred<{ finalContent: string }>()
-    const { coordinator, events, manager, sender } = setup()
+    const { capacityEvents, coordinator, events, manager, sender } = setup()
     coordinator.classifyTurn.mockImplementation(async (input) => input.threadId !== otherThreadId)
     coordinator.prepareTurn.mockImplementation(async (input) => {
       const next = preparedFor(input)
@@ -678,11 +702,26 @@ describe('ChatSessionManager canonical execution', () => {
     await waitFor(() =>
       expect(events.filter((event) => event.type === 'chat:done')).toHaveLength(2),
     )
+    expect(capacityEvents).toContainEqual({
+      type: 'chat:capacity',
+      activeRuns: 1,
+      attachmentRunActive: true,
+    })
+    expect(capacityEvents).toContainEqual({
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: true,
+    })
+    expect(capacityEvents.at(-1)).toEqual({
+      type: 'chat:capacity',
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
   })
 
   it('preserves the Draft when Stop wins during preflight classification', async () => {
     const classification = deferred<boolean>()
-    const { coordinator, events, manager, sender } = setup()
+    const { capacityEvents, coordinator, events, manager, sender } = setup()
     coordinator.classifyTurn.mockReturnValueOnce(classification.promise)
 
     manager.start(sender, request())
@@ -697,6 +736,10 @@ describe('ChatSessionManager canonical execution', () => {
     })
     expect(coordinator.prepareTurn).not.toHaveBeenCalled()
     expect(streamChatCompletion).not.toHaveBeenCalled()
+    expect(capacityEvents).toEqual([
+      { type: 'chat:capacity', activeRuns: 1, attachmentRunActive: false },
+      { type: 'chat:capacity', activeRuns: 0, attachmentRunActive: false },
+    ])
   })
 
   it('settles a target-resolution failure before exposing its safe error', async () => {
@@ -989,7 +1032,7 @@ describe('ChatSessionManager canonical execution', () => {
   })
 
   it('retries an exact terminal settlement without a second Provider or Runtime call', async () => {
-    const { coordinator, events, manager, runtimeClient, sender } = setup()
+    const { capacityEvents, coordinator, events, manager, runtimeClient, sender } = setup()
     coordinator.settleTurn.mockResolvedValueOnce({
       id: 'settle-failed',
       ok: false,
@@ -1004,6 +1047,11 @@ describe('ChatSessionManager canonical execution', () => {
       }),
     )
     expect(runtimeClient.complete).not.toHaveBeenCalled()
+    expect(capacityEvents.at(-1)).toEqual({
+      type: 'chat:capacity',
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
 
     await manager.retrySettlement(sender, { threadId, requestId: 'request-1' })
     expect(events.at(-1)).toMatchObject({ type: 'chat:done', finalContent: 'Answer' })

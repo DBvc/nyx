@@ -284,7 +284,13 @@ describe('registerIpcHandlers', () => {
   it('returns the Thread Library controller promise to ipcRenderer.invoke callers', () => {
     const pagePromise = Promise.resolve({
       ok: true as const,
-      value: { rows: [], nextCursor: null, eventEpoch: 'epoch', includedThroughCursor: 0 },
+      value: {
+        rows: [],
+        nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
+        eventEpoch: 'epoch',
+        includedThroughCursor: 0,
+      },
     })
     const threads = {
       listPage: vi.fn(() => pagePromise),

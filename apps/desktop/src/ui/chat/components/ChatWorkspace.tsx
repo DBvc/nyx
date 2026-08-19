@@ -12,7 +12,7 @@ import type { NyxChatTargetSelection } from '../../../../shared/chat/types'
 import type { NyxConnectionsOverview } from '../../../../shared/connections/types'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
-import { ChatSidebar } from './ChatSidebar'
+import { ChatSidebar, currentThreadSidebarStatus } from './ChatSidebar'
 import { ChatThread } from './ChatThread'
 
 type WorkspaceView = 'chat' | 'connections'
@@ -368,6 +368,11 @@ export function ChatWorkspace() {
         >
           <ChatSidebar
             activeView={activeView}
+            currentThread={state.threadSummary}
+            currentThreadStatus={currentThreadSidebarStatus(
+              state.runStatus,
+              state.settlementFailure !== null,
+            )}
             newThreadDisabled={state.hydrationStatus !== 'ready' || isResetting}
             onNewThread={() => {
               void startNewChat()

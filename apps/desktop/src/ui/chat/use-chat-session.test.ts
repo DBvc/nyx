@@ -199,6 +199,7 @@ function selectedSnapshot(value: NyxThreadDetail) {
       value: {
         rows: [value.summary],
         nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
         eventEpoch: 'epoch-1',
         includedThroughCursor: 0,
       },
@@ -248,6 +249,7 @@ function installBridge(options?: {
     NyxThreadResult<{
       rows: NyxThreadDetail['summary'][]
       nextCursor: string | null
+      capacity: { activeRuns: number; attachmentRunActive: boolean }
       eventEpoch: string
       includedThroughCursor: number
     }>
@@ -273,6 +275,7 @@ function installBridge(options?: {
         value: {
           rows: [],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 0,
         },
@@ -406,11 +409,305 @@ afterEach(() => {
 })
 
 describe('C1 hydration', () => {
+  it('hydrates Main capacity and lets a later buffered capacity event win', async () => {
+    const page = deferred<
+      NyxThreadResult<{
+        rows: NyxThreadDetail['summary'][]
+        nextCursor: null
+        capacity: { activeRuns: number; attachmentRunActive: boolean }
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    const snapshot = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    const value = detail('Hello')
+    const bridge = installBridge({ list: () => page.promise, get: () => snapshot.promise })
+    render(true)
+    page.resolve({
+      ok: true,
+      value: {
+        rows: [value.summary],
+        nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await vi.waitFor(() => expect(bridge.get).toHaveBeenCalledOnce())
+    bridge.emitChat({
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: false,
+      eventEpoch: 'epoch-1',
+      cursor: 1,
+    })
+    snapshot.resolve({
+      ok: true,
+      value: { detail: value, eventEpoch: 'epoch-1', includedThroughCursor: 1 },
+    })
+
+    await vi.waitFor(() =>
+      expect(render().capacityNotice).toBe('Two responses are already running.'),
+    )
+  })
+
+  it('refreshes the first page for a buffered terminal event already covered by detail', async () => {
+    const page = deferred<
+      NyxThreadResult<{
+        rows: NyxThreadDetail['summary'][]
+        nextCursor: null
+        capacity: { activeRuns: number; attachmentRunActive: boolean }
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    const snapshot = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    const value = detail('Done')
+    const refreshed = { ...value.summary, title: 'Finished' }
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () => {
+        listCalls += 1
+        if (listCalls === 1) return page.promise
+        return {
+          ok: true,
+          value: {
+            rows: [refreshed],
+            nextCursor: null,
+            capacity: { activeRuns: 0, attachmentRunActive: false },
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 1,
+          },
+        }
+      },
+      get: () => snapshot.promise,
+    })
+    render(true)
+    page.resolve({
+      ok: true,
+      value: {
+        rows: [value.summary],
+        nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await vi.waitFor(() => expect(bridge.get).toHaveBeenCalledOnce())
+    bridge.emitChat({
+      type: 'chat:done',
+      threadId: 'thread-a',
+      requestId: 'request-1',
+      assistantMessageId: 'assistant-1',
+      status: 'completed',
+      finalContent: 'Done',
+      eventEpoch: 'epoch-1',
+      cursor: 1,
+    })
+    snapshot.resolve({
+      ok: true,
+      value: { detail: value, eventEpoch: 'epoch-1', includedThroughCursor: 1 },
+    })
+
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(render().threadSummaries[0]?.title).toBe('Finished'))
+  })
+
+  it('does not let a list-only refresh overwrite newer capacity', async () => {
+    const value = detail('Hello')
+    const refreshed = { ...value.summary, title: 'Refreshed title' }
+    const refresh = deferred<
+      NyxThreadResult<{
+        rows: NyxThreadDetail['summary'][]
+        nextCursor: null
+        capacity: { activeRuns: number; attachmentRunActive: boolean }
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () => {
+        listCalls += 1
+        return listCalls === 1
+          ? {
+              ok: true,
+              value: {
+                rows: [value.summary],
+                nextCursor: null,
+                capacity: { activeRuns: 0, attachmentRunActive: false },
+                eventEpoch: 'epoch-1',
+                includedThroughCursor: 0,
+              },
+            }
+          : refresh.promise
+      },
+      get: async () => ({
+        ok: true,
+        value: { detail: value, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: { ...value, summary: refreshed },
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    bridge.emitChat({
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: false,
+      eventEpoch: 'epoch-1',
+      cursor: 2,
+    })
+    refresh.resolve({
+      ok: true,
+      value: {
+        rows: [refreshed],
+        nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+
+    await vi.waitFor(() => expect(render().threadSummaries[0]?.title).toBe('Refreshed title'))
+    expect(render().capacityNotice).toBe('Two responses are already running.')
+  })
+
+  it('replaces the canonical 50-row page when rows reorder or leave the page', async () => {
+    const rows = Array.from({ length: 50 }, (_, index) => ({
+      ...detail('', `thread-${index}`).summary,
+      title: `Thread ${index}`,
+    }))
+    const refreshed = rows.slice(0, 49).reverse()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () => {
+        listCalls += 1
+        return {
+          ok: true,
+          value: {
+            rows: listCalls === 1 ? rows : refreshed,
+            nextCursor: null,
+            capacity: { activeRuns: 0, attachmentRunActive: false },
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: listCalls === 1 ? 0 : 1,
+          },
+        }
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: { ...detail('', 'thread-0'), summary: rows[0]! },
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+    bridge.emitThread({
+      type: 'threads:removed',
+      threadId: 'thread-49',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(49))
+    expect(render().threadSummaries.map((row) => row.id)).toEqual(refreshed.map((row) => row.id))
+  })
+
+  it('discards a stale list-only response after full hydration starts', async () => {
+    const threadA = detail('A', 'thread-a')
+    const threadB = detail('B', 'thread-b')
+    const staleRefresh = deferred<
+      NyxThreadResult<{
+        rows: NyxThreadDetail['summary'][]
+        nextCursor: null
+        capacity: { activeRuns: number; attachmentRunActive: boolean }
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () => {
+        listCalls += 1
+        if (listCalls === 2) return staleRefresh.promise
+        return {
+          ok: true,
+          value: {
+            rows: listCalls === 1 ? [threadA.summary] : [threadB.summary],
+            nextCursor: null,
+            capacity: { activeRuns: 0, attachmentRunActive: false },
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: listCalls === 1 ? 0 : 3,
+          },
+        }
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: threadA,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: listCalls >= 3 ? 3 : 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries[0]?.id).toBe('thread-a'))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: threadA,
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: threadB,
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 3,
+    })
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(render().threadSummaries[0]?.id).toBe('thread-b'))
+    staleRefresh.resolve({
+      ok: true,
+      value: {
+        rows: [{ ...threadA.summary, title: 'Stale' }],
+        nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+    await Promise.resolve()
+
+    expect(render().threadSummaries[0]?.id).toBe('thread-b')
+  })
+
   it('subscribes before list/get and replays list/detail against separate watermarks', async () => {
     const page = deferred<
       NyxThreadResult<{
         rows: NyxThreadDetail['summary'][]
         nextCursor: null
+        capacity: { activeRuns: number; attachmentRunActive: boolean }
         eventEpoch: string
         includedThroughCursor: number
       }>
@@ -429,6 +726,7 @@ describe('C1 hydration', () => {
       value: {
         rows: [detail().summary],
         nextCursor: null,
+        capacity: { activeRuns: 0, attachmentRunActive: false },
         eventEpoch: 'epoch-1',
         includedThroughCursor: 4,
       },
@@ -481,6 +779,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [value.summary],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 0,
         },
@@ -537,6 +836,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [value.summary],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 3,
         },
@@ -602,6 +902,7 @@ describe('C1 hydration', () => {
           value: {
             rows: [value.summary],
             nextCursor: null,
+            capacity: { activeRuns: 0, attachmentRunActive: false },
             eventEpoch: 'epoch-1',
             includedThroughCursor: hydration === 1 ? 0 : 2,
           },
@@ -652,6 +953,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [detail('first').summary, selected.summary],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 2,
         },
@@ -677,6 +979,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [detail('first page').summary],
           nextCursor: 'next-page',
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 2,
         },
@@ -700,6 +1003,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [selected],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 2,
         },
@@ -727,6 +1031,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [selected.summary],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: 0,
         },
@@ -793,6 +1098,7 @@ describe('C1 hydration', () => {
             threadB.summary,
           ],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
           includedThroughCursor: cursor,
         },
@@ -895,6 +1201,7 @@ describe('C1 hydration', () => {
           value: {
             rows: [selected.summary],
             nextCursor: null,
+            capacity: { activeRuns: 0, attachmentRunActive: false },
             eventEpoch: 'epoch-1',
             includedThroughCursor: listCalls === 1 ? 2 : 10,
           },
@@ -963,6 +1270,7 @@ describe('C1 hydration', () => {
         value: {
           rows: [selected.summary],
           nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-2',
           includedThroughCursor: 0,
         },
@@ -1047,27 +1355,11 @@ describe('C1 hydration', () => {
 describe('target and attachment readiness', () => {
   it('blocks the third Run and only serializes attachment-bearing Runs', () => {
     const textState = readyThreadState(detail('Hello'))
-    const first = {
-      ...detail().summary,
-      id: 'thread-a',
-      activity: {
-        status: 'streaming' as const,
-        requestId: 'request-a',
-        attachmentBearing: true,
-      },
-    }
-    const second = {
-      ...detail().summary,
-      id: 'thread-b',
-      activity: {
-        status: 'streaming' as const,
-        requestId: 'request-b',
-        attachmentBearing: false,
-      },
-    }
 
-    expect(runCapacityBlock(textState, [first])).toBeNull()
-    expect(runCapacityBlock(textState, [first, second])).toBe('Two responses are already running.')
+    expect(runCapacityBlock(textState, { activeRuns: 1, attachmentRunActive: true })).toBeNull()
+    expect(runCapacityBlock(textState, { activeRuns: 2, attachmentRunActive: true })).toBe(
+      'Two responses are already running.',
+    )
     expect(
       runCapacityBlock(
         {
@@ -1076,9 +1368,22 @@ describe('target and attachment readiness', () => {
             { id: 'image', name: 'image.png', status: 'preparing', source: new Blob() },
           ],
         },
-        [first],
+        { activeRuns: 1, attachmentRunActive: true },
       ),
     ).toBe('Another attachment response is already running.')
+
+    expect(
+      runCapacityBlock(
+        {
+          ...textState,
+          draftImages: [
+            { id: 'image', name: 'image.png', status: 'preparing', source: new Blob() },
+          ],
+        },
+        { activeRuns: 1, attachmentRunActive: true },
+        'retry_failed_response',
+      ),
+    ).toBeNull()
   })
 
   it('keeps a committed unavailable target blocked until an available draft is chosen', () => {
@@ -1159,6 +1464,116 @@ describe('target and attachment readiness', () => {
 })
 
 describe('C1 save and execution boundary', () => {
+  it('shares one delayed draft save between Send and immediate Thread selection', async () => {
+    const threadA = detail('draft A', 'thread-a')
+    const threadB = detail('draft B', 'thread-b')
+    const pendingSave = deferred<NyxThreadResult<NyxThreadSaveDraftResult>>()
+    const bridge = installBridge({
+      selectedId: 'thread-a',
+      list: async () => ({
+        ok: true,
+        value: {
+          rows: [threadA.summary, threadB.summary],
+          nextCursor: null,
+          capacity: { activeRuns: 0, attachmentRunActive: false },
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === 'thread-b' ? threadB : threadA,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    bridge.saveDraft.mockImplementationOnce(() => pendingSave.promise)
+    await settleSelectedHydration(bridge, threadA)
+    render().setInput('edited A')
+
+    const send = render().sendCurrentInput()
+    await vi.waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledOnce())
+    const selection = render().selectThread('thread-b')
+    const savedDetail = detail('edited A', 'thread-a')
+    savedDetail.draft.revision = 3
+    pendingSave.resolve({
+      ok: true,
+      value: {
+        detail: savedDetail,
+        discarded: false,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+
+    await send
+    expect(await selection).toBe(true)
+    expect(bridge.saveDraft).toHaveBeenCalledOnce()
+    expect(bridge.start).toHaveBeenCalledOnce()
+    expect(bridge.cancel).not.toHaveBeenCalled()
+    expect((harness.state as ChatState).selectedThreadId).toBe('thread-b')
+  })
+
+  it('shares one delayed draft save between Send and immediate New', async () => {
+    const threadA = detail('draft A', 'thread-a')
+    const pendingSave = deferred<NyxThreadResult<NyxThreadSaveDraftResult>>()
+    const bridge = installBridge({
+      selectedId: 'thread-a',
+      ...selectedSnapshot(threadA),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId ? threadA : null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    bridge.saveDraft.mockImplementationOnce(() => pendingSave.promise)
+    await settleSelectedHydration(bridge, threadA)
+    render().setInput('edited A')
+
+    const send = render().sendCurrentInput()
+    await vi.waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledOnce())
+    const newThread = render().startNewChat()
+    const savedDetail = detail('edited A', 'thread-a')
+    savedDetail.draft.revision = 3
+    pendingSave.resolve({
+      ok: true,
+      value: {
+        detail: savedDetail,
+        discarded: false,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+
+    await send
+    expect(await newThread).toBe(true)
+    expect(bridge.saveDraft).toHaveBeenCalledOnce()
+    expect(bridge.start).toHaveBeenCalledOnce()
+    expect(bridge.cancel).not.toHaveBeenCalled()
+    expect((harness.state as ChatState).selectedThreadId).toBeNull()
+  })
+
+  it('starts an autosaved Draft without writing it again', async () => {
+    const value = detail('already saved')
+    const bridge = installBridge(selectedSnapshot(value))
+    const session = await settleSelectedHydration(bridge, value)
+
+    await session.sendCurrentInput()
+
+    expect(bridge.saveDraft).not.toHaveBeenCalled()
+    expect(bridge.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'thread-a',
+        expectedDraftRevision: value.draft.revision,
+      }),
+    )
+  })
+
   it('materializes the first nonblank draft and starts with no Renderer history or ids', async () => {
     const bridge = installBridge()
     const ready = chatReducer(initialChatState, {
@@ -1774,10 +2189,12 @@ describe('C1 save and execution boundary', () => {
       })
       await vi.waitFor(() => expect(bridge.get).toHaveBeenCalledTimes(2))
 
+      if (failureBoundary === 'save') render().setInput('keep me edited')
+
       expect(await render().startNewChat()).toBe(false)
       expect(harness.state).toMatchObject({
         selectedThreadId: 'thread-a',
-        input: 'keep me',
+        input: failureBoundary === 'save' ? 'keep me edited' : 'keep me',
         newThreadPending: false,
         retryableTurn: {
           turnOrdinal: 4,
@@ -1833,9 +2250,10 @@ describe('C1 save and execution boundary', () => {
       },
     })
     const session = await settleSelectedHydration(bridge, value)
+    session.setInput('keep me edited')
 
-    expect(await session.startNewChat()).toBe(false)
-    expect(harness.state).toMatchObject({ selectedThreadId: 'thread-a', input: 'keep me' })
+    expect(await render().startNewChat()).toBe(false)
+    expect(harness.state).toMatchObject({ selectedThreadId: 'thread-a', input: 'keep me edited' })
     expect(bridge.saveDraft).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: 'thread-a', discardEmptyShell: true }),
     )
@@ -2016,12 +2434,11 @@ describe('C1 save and execution boundary', () => {
     })
     expect(await render().startNewChat()).toBe(true)
     expect(bridge.cancel).not.toHaveBeenCalled()
-    expect(bridge.saveDraft).toHaveBeenCalledTimes(2)
+    expect(bridge.saveDraft).not.toHaveBeenCalled()
     expect((harness.state as ChatState).selectedThreadId).toBeNull()
     expect(render().threadSummaries).toMatchObject([
       {
         id: 'thread-a',
-        activity: { status: 'submitting', requestId: request.requestId },
       },
     ])
   })
