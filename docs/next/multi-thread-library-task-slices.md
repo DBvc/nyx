@@ -16,6 +16,12 @@ inventory and passed every required check. E1S permits at most two process-wide
 Runs and at most one attachment-bearing Run, while Thread switching and New
 detach the selected projection without cancelling background work.
 
+The user explicitly requested the bounded `E1S-R1` correctness repair on
+2026-08-19. Contract `NYX-MTL-E1S-R1-SCOPE-20260819-01` below is the only
+candidate execution scope. Until its exact bytes receive independent review
+and this docs-only change enters HEAD, product work remains non-executable.
+No E1S-R1 product result or acceptance evidence exists yet.
+
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old
 PASS, `VALID_STOP`, plan version, artifact, reviewer conclusion, or execution
@@ -23,6 +29,117 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/E1S-R1-scope-lock: Minimal correctness repair
+
+Contract id: `NYX-MTL-E1S-R1-SCOPE-20260819-01`.
+
+This is a bounded repair of landed E1S behavior. It is not a continuation or
+revival of E1, E1R, NF1, COMPAT, v40, R2 or any retired candidate. Those
+materials remain historical evidence only. If the exact bytes of this section
+receive independent scope review and this docs-only change enters HEAD, the
+user's explicit implementation request authorizes only the product work below.
+
+E1S-R1 preserves the existing Main-owned concurrency model and removes three
+Renderer correctness defects:
+
+- `ChatSessionManager.activeSessions` remains the only Run and capacity owner.
+  Main publishes a process-wide `chat:capacity` projection on the existing chat
+  event channel when a Run occupies a slot, classification occupies the
+  attachment slot, or exact cleanup releases capacity. The event contains the
+  existing event clock plus only `activeRuns` and `attachmentRunActive`; it does
+  not carry or invent Thread or request identity and is never published for a
+  delta;
+- `ThreadLibraryService` may cache only the last published capacity projection
+  for hydration. A first-page response captures capacity at its event boundary.
+  Renderer initializes capacity from full hydration and then changes it only
+  from `chat:capacity`; a list-only refresh may replace rows but never capacity;
+- an unchanged Draft save is a no-op. It returns the current Thread id and Draft
+  revision without another Worker mutation. A Send save and immediately queued
+  Select/New therefore share the existing FIFO: the later navigation observes
+  the acknowledged clean Draft and does not advance its revision again. A dirty
+  Draft still must save successfully before leaving, and an eligible empty shell
+  still reaches the existing discard path;
+- Renderer never inserts, sorts, trims or locally updates the canonical bounded
+  Available page. Relevant Thread changes and accepted/terminal chat lifecycle
+  events coalesce into a list-only first-page refresh. Each refresh captures the
+  current hydration generation and event epoch and may replace rows only when
+  both still match, hydration is complete and no relevant event arrived while
+  the request was in flight. `chat:start` and `chat:delta` never refresh the
+  page;
+- a selected Thread outside the first page appears as a separate `Current
+thread` row. It is not inserted into the canonical page and does not
+  participate in capacity calculation; and
+- New-message UI classification includes canonical history plus the current
+  Draft attachments. Retry UI classification includes canonical Turn history
+  only and excludes unrelated current Draft attachments. Main remains the final
+  classifier and rejects conflicts before Draft-to-Turn mutation.
+
+The E1S-R1 product step may change exactly:
+
+- `apps/desktop/shared/chat/events.ts`;
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/electron/main/chat/session.ts`;
+- `apps/desktop/electron/main/chat/session.test.ts`;
+- `apps/desktop/electron/main/chat/session-runtime-chat-state.integration.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.ts`;
+- `apps/desktop/electron/main/thread-library/service.test.ts`;
+- `apps/desktop/electron/main/index.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final reviewed completion record only.
+
+No other file is allowed. In particular E1S-R1 does not add another IPC
+namespace, preflight RPC, Renderer pending-Run or activity Map, cursor ledger,
+queue, daemon, durable Run, SQLite or Worker protocol change, pagination UI,
+full-detail cache, Provider transport change, redirect/backpressure change,
+attachment upload/file id, Base64 rewrite or OCaml protocol/domain change.
+
+Required focused evidence:
+
+- zero, one and two active Runs publish exact capacity; classifying occupies a
+  process-wide slot; attachment classification occupies the attachment slot;
+  rejection, Stop, completion, failure and storage failure release only the
+  matching Run through exact cleanup;
+- full hydration receives a capacity snapshot aligned with its event boundary,
+  and a buffered later `chat:capacity` event wins over that initial snapshot;
+- a list-only response that returns after navigation, newer full hydration or
+  epoch replacement cannot apply; a capacity event received during list refresh
+  cannot be overwritten by that response;
+- delaying the first Draft save and immediately selecting another Thread or New
+  performs one Draft mutation, starts the original Run with the acknowledged
+  revision, navigates successfully and leaves that Run active in background;
+- autosaved Send performs no redundant Draft write; a truly dirty Draft, save
+  failure and empty-shell discard retain their existing behavior;
+- first-page reorder and removal replacement preserve Main order and the 50-row
+  bound; selected off-page remains visibly current; background deltas perform
+  zero `listPage` calls; settlement failure remains reachable; and
+- Retry with an unrelated current Draft attachment follows canonical history
+  classification and matches Main enforcement.
+
+Before final evidence, run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+git diff --check
+```
+
+E1S-R1 stops and returns to this scope lock if implementation needs another
+file, introduces another Run or capacity owner, needs a preflight RPC or local
+activity ledger, blocks navigation until `chat:accepted`, applies capacity from
+a list-only refresh, permits a stale page to cross hydration generation or
+epoch, refreshes per delta, changes transport/schema/protocol behavior, or
+cannot preserve exact Main rejection before Draft-to-Turn mutation.
 
 ## Migrated Source Block: multi-thread-library/contracts-core
 
