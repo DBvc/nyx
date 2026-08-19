@@ -47,6 +47,46 @@ fetch transport, redirect behavior, backpressure, Base64 attachment mapping,
 SQLite schema, Worker count or OCaml protocol. The accepted baseline still
 allows one attachment-bearing Provider history materialization at a time.
 
+## E1S-R1 — Bounded Run Correctness Repair
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-E1S-R1-SCOPE-20260819-01`, committed at `b00bc27`.
+- Scope review receipt: `NYX-E1S-R1-SCOPE-REVIEW-20260819-01`, judgment
+  `accept`, reviewed artifact SHA-256
+  `e73cea71a9e5e1c2a41f16092e8c7a4caf87326765e3a7d2bfa62af4cc6ec998`.
+- Product commit: `6566b93`.
+- Exact product diff SHA-256:
+  `554d00b9d0f925c1aab1411a2a52e85b44ef2a742733b95f1416bed904d52e42`.
+- Electron Main publishes process-wide Run capacity from the existing exact
+  active-Run owner. Full hydration captures that projection at the list event
+  boundary, while later capacity events advance independently from selected
+  detail hydration.
+- Renderer replaces the canonical first Available page from Main instead of
+  locally inserting, sorting or mutating rows. A selected Thread outside that
+  page remains a separate Current thread row with live Running and Saving
+  failed state.
+- Clean Draft saves are no-ops. Immediate Select or New after Send shares the
+  existing FIFO without a second Draft revision, while dirty saves, failures
+  and empty-shell discard keep their previous behavior.
+- Retry capacity classification uses the retried canonical history and ignores
+  unrelated current Draft attachments. Main remains the final pre-mutation
+  enforcement owner.
+- The code ratchet found two projection defects before acceptance: one event
+  watermark could suppress list-level updates, and one off-page Current row
+  could lose live status. One bounded repair fixed both. A fresh independent
+  `dbx-diff-review` receipt at Codex task `e1s_r1_ratchet_rereview`, bound to
+  the exact product diff SHA-256
+  above, returned PASS with no S0-S3 findings.
+- Required checks passed: desktop TypeScript checks with both compilers, lint,
+  format check, all 50 desktop test files (`583` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, and
+  `git diff --check`.
+
+E1S-R1 changes no fetch transport, redirect or backpressure behavior, Base64
+attachment mapping, SQLite schema, Worker protocol/count or OCaml protocol. It
+does not revive E1, E1R, NF1, COMPAT, v40, R2 or any retired gate.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

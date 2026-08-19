@@ -16,11 +16,15 @@ inventory and passed every required check. E1S permits at most two process-wide
 Runs and at most one attachment-bearing Run, while Thread switching and New
 detach the selected projection without cancelling background work.
 
-The user explicitly requested the bounded `E1S-R1` correctness repair on
-2026-08-19. Contract `NYX-MTL-E1S-R1-SCOPE-20260819-01` below is the only
-candidate execution scope. Until its exact bytes receive independent review
-and this docs-only change enters HEAD, product work remains non-executable.
-No E1S-R1 product result or acceptance evidence exists yet.
+The bounded `E1S-R1` correctness repair completed at product commit `6566b93`
+under contract `NYX-MTL-E1S-R1-SCOPE-20260819-01`. Its independently reviewed
+scope lock entered HEAD at `b00bc27`. The final 13-file product diff had
+SHA-256 `554d00b9d0f925c1aab1411a2a52e85b44ef2a742733b95f1416bed904d52e42`.
+Its scope and final product review receipts, bounded repair result and required
+checks are recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+
+E1S-R1 has no remaining executable product work and grants no follow-up slice.
 
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old
@@ -39,6 +43,11 @@ revival of E1, E1R, NF1, COMPAT, v40, R2 or any retired candidate. Those
 materials remain historical evidence only. If the exact bytes of this section
 receive independent scope review and this docs-only change enters HEAD, the
 user's explicit implementation request authorizes only the product work below.
+
+Status: complete at `6566b93`. The scope lock entered HEAD at `b00bc27`; the
+final product artifact and required evidence passed independent re-review.
+This subsection remains the governing repair contract and no longer authorizes
+another E1S-R1 edit.
 
 E1S-R1 preserves the existing Main-owned concurrency model and removes three
 Renderer correctness defects:
