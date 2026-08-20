@@ -24,7 +24,17 @@ Its scope and final product review receipts, bounded repair result and required
 checks are recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
+On 2026-08-20 the user explicitly requested the new bounded `CP1` direction:
+Available collection pagination plus Pinned/Recent projection. Contract
+`NYX-MTL-CP1-SCOPE-20260820-01` below is its only scope-lock candidate. Dirty
+worktree bytes grant no product permission. If the exact candidate receives the
+independent review bound below and this docs-only change enters HEAD, the same
+explicit request authorizes only the CP1 product step frozen by that contract.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
+CP1 is not a continuation or revival of old U1/L1. The later `PIN1` mutation
+direction is not open and requires a separate explicit scope lock after CP1
+completion.
 
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old
@@ -33,6 +43,188 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/CP1-scope-lock: Available pagination and Pinned/Recent projection
+
+Contract id: `NYX-MTL-CP1-SCOPE-20260820-01`.
+
+Independent review binding:
+`NYX-MTL-CP1-SCOPE-REVIEW-20260820-02`.
+
+Status: scope-lock candidate. The independent review must accept the exact diff
+under the binding above. The Plan-First completion commit records that gate.
+Only after that docs-only commit enters HEAD does CP1 become executable without
+rewriting this subsection. Until then this section grants no product permission.
+
+CP1 is a fresh bounded projection slice over landed C1, E1S and E1S-R1
+behavior. It uses the existing SQLite schema, Worker-owned Available ordering,
+typed `listPage` bridge and exact `get` path. It does not revive historical U1,
+L1, E1, E1R, NF1, COMPAT, v40, R2 or either retired native-fetch gate. It does
+not authorize PIN1 or any Thread lifecycle mutation.
+
+The pre-scope-lock baseline is commit
+`823228705e518218df0fb55de1ad0265ea2d0ee6`, which contains E1S-R1 product
+commit `6566b93` and its accepted evidence record. The eventual scope-lock
+commit must have that baseline in its ancestry; otherwise CP1 stops for a fresh
+scope review.
+
+CP1 freezes these user-visible behaviors:
+
+- the Available collection loads at most 50 canonical summaries per explicit
+  page. Initial hydration shows `Loading threads`; a next page is requested only
+  from the ordinary-Tab-stop `Load more threads` control. Loading more preserves
+  existing rows and shows `Loading more`. Exhausting the one permitted bounded
+  candidate rebuild during initial load shows `Couldn't load threads` plus a
+  local page Retry. The same bounded failure during a later load preserves rows,
+  selection, detail and scroll, shows `Couldn't load more` plus local page Retry
+  and focuses Retry;
+- `library_unavailable` never enters either page-error state. It discards the
+  page candidate and enters the existing whole-Library fail-closed hydration:
+  Thread detail, New, mutation and Provider start remain unavailable, the
+  surface shows `Couldn't open Thread Library`, and Retry uses
+  `retryOpen({ scope: 'library' })` rather than replaying `listPage`.
+  `thread_unavailable` remains the existing safe row/detail state when identity,
+  location and order metadata are independently valid;
+- an explicit successful load focuses the first new visible Thread row when no
+  pending selection exists and announces `N more threads loaded`. The final
+  explicit load removes the control and announces `End of threads` once. There
+  is no automatic infinite load, virtual list or around-page request;
+- the Renderer displays every loaded Available summary exactly once. A safely
+  projected positive `pinPosition` places a row in Pinned; `null` places it in
+  Recent. Each group preserves the Worker-returned combined canonical order,
+  Pinned never repeats in Recent, and an empty group has no synthetic row;
+- a selected canonical Thread outside the loaded prefix remains a separate
+  `Current thread` row and retains Main detail. It is never inserted into,
+  sorted with or counted in the canonical prefix. Once its canonical row loads,
+  the separate row disappears without changing selection;
+- the canonical Pinned/Recent loaded prefix uses one roving Tab stop keyed by
+  full `threadId`. The separate Current thread row is an ordinary Tab stop before
+  that collection and does not enter its Arrow/Home/End sequence. Arrow keys
+  move between loaded canonical rows, Home/End use only their currently loaded
+  first/last rows, Enter selects, and Load more remains another separate Tab
+  stop. Selected state uses `aria-current`; full titles and existing safe status
+  remain available to assistive technology; and
+- a valid selected Thread missing from the loaded prefix records one
+  `pendingFocusThreadId`. Initial settle focuses Load more when `nextCursor`
+  exists. Each explicit page either focuses that exact row and clears the
+  pending id or returns focus to the next Load more. Failure keeps the pending id
+  and focuses Retry. If initial settle or an explicit page reaches
+  `nextCursor=null`, it skips any nonexistent Load more and the existing exact
+  `get(threadId)` revalidates once: an invalid target uses the existing
+  deterministic fallback; a still-valid missing target performs one replacement
+  full hydration. A second miss exposes the bounded load error and Retry instead
+  of dropping selection, inventing a row or looping.
+
+CP1 freezes these contract and state boundaries:
+
+- SQLite remains the only durable order source. `pin_position` and the existing
+  Available keyset order do not change. CP1 adds no table, index, migration,
+  mutation command or second database owner;
+- the public summary projection adds only `pinPosition: number | null` to the
+  safe Available and Thread-unavailable list variants. Worker protocol parsing
+  must preserve a safely parsed Pin group for an unavailable row. If id,
+  location or Pin grouping cannot be validated, the operation fails closed as
+  Library unavailable instead of guessing a group or order;
+- the Worker opaque `nextCursor` remains an opaque keyset token. Renderer never
+  decodes it. The Main-exposed `includedThroughCursor` remains a public event
+  boundary. Renderer may initialize its local `publicEventCursor` only from a
+  complete first-page/detail hydration and may advance it only with accepted
+  Main events. A page candidate boundary cannot initialize, advance, consume or
+  overwrite that cursor;
+- follow-up pages and list-only rebuilds ignore the page response's capacity.
+  Run capacity is initialized only by full hydration and then changed only by
+  accepted `chat:capacity` events, preserving E1S-R1 ownership;
+- Renderer owns only `loadedPageCount`, opaque page tokens, one atomic candidate
+  prefix and focus/loading/error state. A candidate rebuild reads no more than
+  the current page budget. A stale Worker cursor discards the whole candidate
+  and permits one fresh bounded rebuild for that action; a second conflict
+  exposes the relevant Retry state. Epoch mismatch or a relevant event during
+  the rebuild discards the candidate and uses one in-flight plus one dirty
+  coalescing marker, never a tight retry loop. Committed rows are not partially
+  appended or locally reordered; and
+- a public event cursor gap or epoch replacement still triggers full hydration.
+  A page-only conflict rebuilds only the bounded local candidate and never
+  fabricates, skips or consumes a Main event.
+
+The CP1 product step may change exactly:
+
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts`;
+- `apps/desktop/electron/main/thread-library/worker.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.ts`;
+- `apps/desktop/electron/main/thread-library/service.test.ts`;
+- new `apps/desktop/src/ui/chat/thread-collection.ts`;
+- new `apps/desktop/src/ui/chat/thread-collection.test.ts`;
+- `apps/desktop/src/ui/chat/chat-reducer.ts`;
+- `apps/desktop/src/ui/chat/chat-reducer.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- new `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final reviewed completion record only.
+
+No other file is allowed. New Renderer files are owned by the existing chat
+feature because they are a rebuildable sidebar projection and its near-source
+tests; they are not shared contracts or a global state layer. CP1 adds no new
+IPC channel or preload/Main handler, Pin write method, raw-SQL RPC, synchronous
+Main SQLite fallback, cache/store, Runtime/Provider/Responses/attachment
+change, OCaml Thread reducer, Search, Rename, Archive, Trash, Restore,
+Permanent delete, Projects, Folders, Tags, drag ordering or visual redesign.
+
+Required focused evidence:
+
+- 137 Available Threads load as 50, 50 and 37 rows; exact page boundaries,
+  duplicate ids, stale cursors and late page replies cannot create duplicates,
+  omissions, mixed candidates or a row count beyond the explicit page budget;
+- at least 50 Pinned plus 100 Recent rows preserve the Worker order and group
+  boundary across pages, including Thread-unavailable safe summaries, with no
+  Pinned duplicate in Recent;
+- Worker exit, database/open/validation failure and unsafe Pin grouping return
+  the existing Library-unavailable surface and `retryOpen` path; they never
+  preserve an editable detail as `Couldn't load more`. Thread-unavailable rows
+  remain isolated, while bounded local candidate conflicts use only the page
+  error and Retry states;
+- full hydration, later explicit pages, list-only refresh, capacity events,
+  relevant Thread events, cursor gaps and epoch replacement prove that page
+  candidates never advance `publicEventCursor` or overwrite Run capacity;
+- selected Threads on the second and third pages cover Current-thread fallback,
+  pending focus, target appearance, target invalidation, load failure/Retry,
+  end-of-list exact revalidation, one replacement hydration and bounded final
+  failure without automatic looping;
+- initial/loading-more/error/retry/end UI, one canonical-prefix roving Tab stop,
+  independent Current/Load-more Tab stops, loaded-only Home/End, initial
+  `nextCursor=null` revalidation, Current-thread de-duplication, scroll
+  preservation and focus restoration have component/hook coverage; and
+- a minimum-window keyboard and VoiceOver runthrough confirms the fixed top and
+  bottom controls remain reachable, Pinned/Recent and status are announced,
+  Load more is not a row, focus stays visible and loading or retry does not jump
+  collection scroll.
+
+Before final evidence, run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+mise run format-check
+git diff --check
+```
+
+CP1 stops and returns to planning if implementation needs another file; a new
+IPC/preload method, schema/index or Pin mutation; Renderer-owned durable or
+full-library state; an around-page API, virtual list or automatic unbounded
+load; page-derived event/capacity ownership; unsafe unavailable-row grouping;
+or cannot preserve selection, scroll, keyboard and focus behavior within the
+bounded candidate model. A Stop unlocks neither PIN1 nor any historical slice.
 
 ## multi-thread-library/E1S-R1-scope-lock: Minimal correctness repair
 
