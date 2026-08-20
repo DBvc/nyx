@@ -34,6 +34,7 @@ export type ChatAction =
       threadId?: string
     }
   | { type: 'thread-library-retry-started' }
+  | { type: 'public-event-advanced'; cursor: number }
   | { type: 'new-thread-started' }
   | { type: 'new-thread-failed' }
   | { type: 'thread-unavailable'; threadId: string; error: NyxThreadSafeError; cursor: number }
@@ -356,6 +357,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case 'thread-library-retry-started':
       return { ...state, hydrationRetrying: true }
+
+    case 'public-event-advanced':
+      return action.cursor > state.listCursor ? { ...state, listCursor: action.cursor } : state
 
     case 'thread-unavailable':
       if (state.selectedThreadId !== action.threadId || !state.threadSummary) return state

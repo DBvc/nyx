@@ -127,6 +127,15 @@ describe('chatReducer C1 projection', () => {
     expect(state.messages).toEqual([])
   })
 
+  it('advances the public list cursor only through an accepted Main event action', () => {
+    const state = hydrated()
+    const advanced = chatReducer(state, { type: 'public-event-advanced', cursor: 5 })
+
+    expect(advanced.listCursor).toBe(5)
+    expect(chatReducer(advanced, { type: 'public-event-advanced', cursor: 5 })).toBe(advanced)
+    expect(chatReducer(advanced, { type: 'public-event-advanced', cursor: 4 })).toBe(advanced)
+  })
+
   it('hydrates canonical attachments and retry metadata without restoring active ids', () => {
     const value = detail({
       draft: {

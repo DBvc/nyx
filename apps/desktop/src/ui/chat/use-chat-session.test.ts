@@ -5,6 +5,8 @@ import type { NyxThreadChatRequest } from '../../../shared/chat/types'
 import type { NyxThreadEvent } from '../../../shared/threads/events'
 import type {
   NyxThreadDetail,
+  NyxThreadListPage,
+  NyxThreadListPageInput,
   NyxThreadMaterializeResult,
   NyxThreadResult,
   NyxThreadSaveDraftResult,
@@ -147,6 +149,40 @@ function detail(text = '', threadId = 'thread-a'): NyxThreadDetail {
   }
 }
 
+function collectionRows(start: number, count: number, pinnedThrough = 0) {
+  return Array.from({ length: count }, (_, index) => {
+    const value = start + index
+    return {
+      ...detail('', `thread-${value}`).summary,
+      pinPosition: value <= pinnedThrough ? value : null,
+      title: `Thread ${value}`,
+    }
+  })
+}
+
+function collectionPageResult(
+  rows: NyxThreadListPage['rows'],
+  nextCursor: string | null,
+  includedThroughCursor = 0,
+  overrides: Partial<Pick<NyxThreadListPage, 'capacity' | 'eventEpoch'>> = {},
+): NyxThreadResult<NyxThreadListPage> {
+  return {
+    ok: true,
+    value: {
+      rows,
+      nextCursor,
+      capacity: { activeRuns: 0, attachmentRunActive: false },
+      eventEpoch: 'epoch-1',
+      includedThroughCursor,
+      ...overrides,
+    },
+  }
+}
+
+function detailForSummary(summary: NyxThreadDetail['summary'], text = ''): NyxThreadDetail {
+  return { ...detail(text, summary.id), summary }
+}
+
 function readyThreadState(value = detail()) {
   const hydrated = chatReducer(initialChatState, {
     type: 'thread-library-hydrated',
@@ -246,15 +282,7 @@ function render(
 }
 
 function installBridge(options?: {
-  list?: () => Promise<
-    NyxThreadResult<{
-      rows: NyxThreadDetail['summary'][]
-      nextCursor: string | null
-      capacity: { activeRuns: number; attachmentRunActive: boolean }
-      eventEpoch: string
-      includedThroughCursor: number
-    }>
-  >
+  list?: (input: NyxThreadListPageInput) => Promise<NyxThreadResult<NyxThreadListPage>>
   get?: (input: { threadId: string | null }) => Promise<
     NyxThreadResult<{
       detail: NyxThreadDetail | null
@@ -328,6 +356,9 @@ function installBridge(options?: {
     getItem: vi.fn(() => storedSelectedId),
     setItem: vi.fn((_key: string, value: string) => {
       storedSelectedId = value
+    }),
+    removeItem: vi.fn(() => {
+      storedSelectedId = null
     }),
   }
   vi.stubGlobal('window', {
@@ -973,12 +1004,16 @@ describe('C1 hydration', () => {
 
   it('restores a stored Thread outside the first list page by exact id', async () => {
     const selected = detail('selected outside page', 'thread-b')
+    const firstPage = Array.from(
+      { length: 50 },
+      (_, index) => detail(`first page ${index}`, `thread-page-${index}`).summary,
+    )
     const bridge = installBridge({
       selectedId: 'thread-b',
       list: async () => ({
         ok: true,
         value: {
-          rows: [detail('first page').summary],
+          rows: firstPage,
           nextCursor: 'next-page',
           capacity: { activeRuns: 0, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
@@ -1037,12 +1072,16 @@ describe('C1 hydration', () => {
         includedThroughCursor: number
       }>
     >()
+    const firstPage = Array.from(
+      { length: 50 },
+      (_, index) => detail(`first page ${index}`, `thread-page-${index}`).summary,
+    )
     const bridge = installBridge({
       selectedId: 'thread-b',
       list: async () => ({
         ok: true,
         value: {
-          rows: [detail('first page').summary],
+          rows: firstPage,
           nextCursor: 'next-page',
           capacity: { activeRuns: 2, attachmentRunActive: false },
           eventEpoch: 'epoch-1',
@@ -1403,6 +1442,498 @@ describe('C1 hydration', () => {
   })
 })
 
+describe('CP1 bounded Thread collection', () => {
+  it('loads 137 rows as 50/50/37 without publishing partial pages or consuming capacity clocks', async () => {
+    const firstRows = collectionRows(1, 50, 50)
+    const secondRows = collectionRows(51, 50, 50)
+    const thirdRows = collectionRows(101, 37, 50)
+    const secondPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    const selected = detailForSummary(firstRows[0]!)
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (cursor === 'cursor-1') return secondPage.promise
+        if (cursor === 'cursor-2') {
+          return collectionPageResult(thirdRows, null, 99, {
+            capacity: { activeRuns: 2, attachmentRunActive: false },
+          })
+        }
+        return collectionPageResult(firstRows, 'cursor-1', 7)
+      },
+      get: async () => ({
+        ok: true,
+        value: { detail: selected, eventEpoch: 'epoch-1', includedThroughCursor: 7 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+
+    const loadingSecond = render().loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    expect(render().threadSummaries).toHaveLength(50)
+    expect(render().threadCollection.status).toBe('loading-more')
+    secondPage.resolve(
+      collectionPageResult(secondRows, 'cursor-2', 99, {
+        capacity: { activeRuns: 2, attachmentRunActive: false },
+      }),
+    )
+    await expect(loadingSecond).resolves.toBe(true)
+    expect(render().threadSummaries).toHaveLength(100)
+
+    await expect(render().loadMoreThreads()).resolves.toBe(true)
+    const session = render()
+    expect(session.threadSummaries).toHaveLength(137)
+    expect(session.pinnedThreadSummaries).toHaveLength(50)
+    expect(session.recentThreadSummaries).toHaveLength(87)
+    expect(session.threadCollection).toMatchObject({
+      loadedPageCount: 3,
+      nextCursor: null,
+      status: 'ready',
+      announcements: ['37 more threads loaded', 'End of threads'],
+    })
+    expect((harness.state as ChatState).listCursor).toBe(7)
+    expect(session.capacityNotice).toBeNull()
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'cursor-1',
+      'cursor-2',
+    ])
+  })
+
+  it('keeps an off-prefix selected Thread separate until its page is explicitly loaded', async () => {
+    const firstRows = collectionRows(1, 50)
+    const secondRows = collectionRows(51, 50)
+    const selected = detailForSummary(secondRows[24]!, 'selected off page')
+    const bridge = installBridge({
+      selectedId: selected.summary.id,
+      list: async ({ cursor }) =>
+        collectionPageResult(cursor ? secondRows : firstRows, cursor ? null : 'cursor-1'),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === 'thread-76' ? detailForSummary(secondRows[25]!) : selected,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).selectedThreadId).toBe('thread-75'))
+
+    let session = render()
+    expect(session.currentThreadSummary?.id).toBe('thread-75')
+    expect(session.threadCollection).toMatchObject({
+      pendingFocusThreadId: 'thread-75',
+      focusRequest: { kind: 'load-more' },
+    })
+
+    await expect(session.loadMoreThreads()).resolves.toBe(true)
+    session = render()
+    expect(session.currentThreadSummary).toBeNull()
+    expect(session.threadCollection).toMatchObject({
+      pendingFocusThreadId: null,
+      focusRequest: { kind: 'thread', threadId: 'thread-75' },
+    })
+    expect(bridge.get).toHaveBeenCalledWith({ threadId: 'thread-75' })
+
+    await expect(session.selectThread('thread-76')).resolves.toBe(true)
+    expect((harness.state as ChatState).selectedThreadId).toBe('thread-76')
+    expect(render().threadSummaries).toHaveLength(100)
+    expect(render().threadCollection.loadedPageCount).toBe(2)
+    expect(render().currentThreadSummary).toBeNull()
+  })
+
+  it('rebuilds the bounded prefix once after a stale page cursor', async () => {
+    const firstRows = collectionRows(1, 50)
+    const refreshedFirst = firstRows.map((row) => ({ ...row, title: `Refreshed ${row.title}` }))
+    const secondRows = collectionRows(51, 50)
+    let nullCalls = 0
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (cursor === 'cursor-1') {
+          return {
+            ok: false,
+            error: { code: 'conflict', message: 'The list changed.' },
+          }
+        }
+        if (cursor === 'rebuilt-cursor') {
+          return collectionPageResult(secondRows, null, 40)
+        }
+        nullCalls += 1
+        return collectionPageResult(
+          nullCalls === 1 ? firstRows : refreshedFirst,
+          nullCalls === 1 ? 'cursor-1' : 'rebuilt-cursor',
+          nullCalls === 1 ? 0 : 40,
+        )
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+
+    await expect(render().loadMoreThreads()).resolves.toBe(true)
+    expect(render().threadSummaries).toHaveLength(100)
+    expect(render().threadSummaries[0]?.title).toBe('Refreshed Thread 1')
+    expect((harness.state as ChatState).listCursor).toBe(0)
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'cursor-1',
+      null,
+      'rebuilt-cursor',
+    ])
+  })
+
+  it('preserves accepted rows after two conflicts and retries only the failed page action', async () => {
+    const firstRows = collectionRows(1, 50)
+    const secondRows = collectionRows(51, 50)
+    let failing = true
+    let nullCalls = 0
+    installBridge({
+      list: async ({ cursor }) => {
+        if (cursor === 'cursor-1') {
+          return failing
+            ? { ok: false, error: { code: 'conflict', message: 'The list changed.' } }
+            : collectionPageResult(secondRows, null)
+        }
+        if (cursor === 'rebuilt-cursor') {
+          return { ok: false, error: { code: 'conflict', message: 'The list changed again.' } }
+        }
+        nullCalls += 1
+        return collectionPageResult(firstRows, nullCalls === 1 ? 'cursor-1' : 'rebuilt-cursor')
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+
+    await expect(render().loadMoreThreads()).resolves.toBe(false)
+    expect(render().threadSummaries).toEqual(firstRows)
+    expect(render().threadCollection).toMatchObject({
+      status: 'error',
+      errorPhase: 'load-more',
+      retryMode: 'load-more',
+      focusRequest: { kind: 'retry' },
+    })
+
+    failing = false
+    await expect(render().retryThreadCollection()).resolves.toBe(true)
+    expect(render().threadSummaries).toHaveLength(100)
+    expect(render().threadCollection.status).toBe('ready')
+  })
+
+  it('coalesces repeated relevant events into bounded replacement candidates', async () => {
+    const firstRows = collectionRows(1, 50)
+    const staleSecond = collectionRows(51, 50).map((row) => ({
+      ...row,
+      title: `Stale ${row.title}`,
+    }))
+    const freshFirst = firstRows.map((row) => ({ ...row, title: `Fresh ${row.title}` }))
+    const freshSecond = collectionRows(51, 50).map((row) => ({
+      ...row,
+      title: `Fresh ${row.title}`,
+    }))
+    const pendingPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    const rebuildingFirstPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let nullCalls = 0
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (cursor === 'cursor-1') return pendingPage.promise
+        if (cursor === 'fresh-cursor') {
+          return collectionPageResult(freshSecond, null, 50, {
+            capacity: { activeRuns: 2, attachmentRunActive: false },
+          })
+        }
+        nullCalls += 1
+        if (nullCalls === 2) return rebuildingFirstPage.promise
+        return collectionPageResult(
+          nullCalls === 1 ? firstRows : freshFirst,
+          nullCalls === 1 ? 'cursor-1' : 'fresh-cursor',
+          nullCalls === 1 ? 0 : 50,
+        )
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+
+    const loading = render().loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: detail('changed', 'thread-999'),
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    pendingPage.resolve(
+      collectionPageResult(staleSecond, null, 50, {
+        capacity: { activeRuns: 2, attachmentRunActive: false },
+      }),
+    )
+
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(3))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: detail('changed twice', 'thread-998'),
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 2,
+    })
+    rebuildingFirstPage.resolve(collectionPageResult(freshFirst, 'fresh-cursor', 2))
+
+    await expect(loading).resolves.toBe(false)
+    expect(render().threadSummaries).toHaveLength(100)
+    expect(render().threadSummaries[0]?.title).toBe('Fresh Thread 1')
+    expect(render().threadSummaries[50]?.title).toBe('Fresh Thread 51')
+    expect((harness.state as ChatState).listCursor).toBe(2)
+    expect(render().capacityNotice).toBeNull()
+  })
+
+  it('discards a late explicit page after replacement hydration starts', async () => {
+    const firstRows = collectionRows(1, 50)
+    const replacementRows = firstRows.map((row) => ({ ...row, title: `Replacement ${row.title}` }))
+    const stalePage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let nullCalls = 0
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (cursor === 'cursor-1') return stalePage.promise
+        nullCalls += 1
+        return collectionPageResult(
+          nullCalls === 1 ? firstRows : replacementRows,
+          nullCalls === 1 ? 'cursor-1' : null,
+          0,
+          { eventEpoch: nullCalls === 1 ? 'epoch-1' : 'epoch-2' },
+        )
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(nullCalls === 1 ? firstRows[0]! : replacementRows[0]!),
+          eventEpoch: nullCalls === 1 ? 'epoch-1' : 'epoch-2',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual(firstRows))
+
+    const loading = render().loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    await vi.waitFor(() => expect(render().threadSummaries[0]?.title).toBe('Replacement Thread 1'))
+    stalePage.resolve(collectionPageResult(collectionRows(51, 50), null))
+
+    await expect(loading).resolves.toBe(false)
+    expect(render().threadSummaries).toEqual(replacementRows)
+  })
+
+  it('falls back deterministically when end-of-list revalidation rejects the pending selection', async () => {
+    const firstRows = collectionRows(1, 50)
+    const finalRows = collectionRows(51, 20)
+    const selected = detail('', 'thread-999')
+    let selectedReads = 0
+    const bridge = installBridge({
+      selectedId: selected.summary.id,
+      list: async ({ cursor }) =>
+        collectionPageResult(cursor ? finalRows : firstRows, cursor ? null : 'cursor-1'),
+      get: async ({ threadId }) => {
+        if (threadId === selected.summary.id) {
+          selectedReads += 1
+          return selectedReads === 1
+            ? {
+                ok: true,
+                value: { detail: selected, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+              }
+            : { ok: false, error: { code: 'not_found', message: 'Not found.' } }
+        }
+        return {
+          ok: true,
+          value: {
+            detail: detailForSummary(firstRows[0]!),
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 0,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).selectedThreadId).toBe('thread-999'))
+
+    await expect(render().loadMoreThreads()).resolves.toBe(false)
+    await vi.waitFor(() => expect((harness.state as ChatState).selectedThreadId).toBe('thread-1'))
+    expect(bridge.localStorage.removeItem).toHaveBeenCalledWith('nyx.thread.selected.v1')
+    expect(render().threadSummaries).toEqual(firstRows)
+  })
+
+  it('replaces the full accepted budget once and resumes events after bounded Retry conflicts', async () => {
+    const firstRows = collectionRows(1, 50)
+    const finalRows = collectionRows(51, 20)
+    const selected = detail('', 'thread-999')
+    const replacementFirst = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let firstPageReads = 0
+    const bridge = installBridge({
+      selectedId: selected.summary.id,
+      list: async ({ cursor }) => {
+        if (!cursor && ++firstPageReads === 2) return replacementFirst.promise
+        return collectionPageResult(cursor ? finalRows : firstRows, cursor ? null : 'cursor-1')
+      },
+      get: async () => ({
+        ok: true,
+        value: { detail: selected, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).selectedThreadId).toBe('thread-999'))
+
+    await expect(render().loadMoreThreads()).resolves.toBe(false)
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(3))
+    expect(render().threadCollection).toMatchObject({
+      status: 'ready',
+      pendingFocusThreadId: 'thread-999',
+      loadedPageCount: 2,
+      nextCursor: null,
+    })
+    expect(render().threadSummaries).toEqual([...firstRows, ...finalRows])
+
+    replacementFirst.resolve(collectionPageResult(firstRows, 'cursor-1'))
+    await vi.waitFor(() => expect(render().threadCollection.status).toBe('error'))
+    expect(bridge.listPage).toHaveBeenCalledTimes(4)
+    expect(render().threadCollection).toMatchObject({
+      status: 'error',
+      errorPhase: 'load-more',
+      retryMode: 'hydrate',
+      pendingFocusThreadId: 'thread-999',
+      loadedPageCount: 2,
+      nextCursor: null,
+    })
+    expect(render().currentThreadSummary?.id).toBe('thread-999')
+
+    render().setInput('still editable')
+    render()
+    const secondConflict = deferred<NyxThreadResult<NyxThreadListPage>>()
+    bridge.listPage
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'conflict', message: 'The list changed.' },
+      })
+      .mockImplementationOnce(() => secondConflict.promise)
+    const retry = render().retryThreadCollection()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(6))
+    bridge.emitChat({
+      type: 'chat:capacity',
+      activeRuns: 2,
+      attachmentRunActive: false,
+      eventEpoch: 'epoch-1',
+      cursor: 1,
+    })
+    secondConflict.resolve({
+      ok: false,
+      error: { code: 'conflict', message: 'The list changed again.' },
+    })
+    await expect(retry).resolves.toBe(true)
+    expect((harness.state as ChatState).hydrationStatus).toBe('ready')
+    expect(render()).toMatchObject({
+      canSend: false,
+      capacityNotice: 'Two responses are already running.',
+      threadCollection: { status: 'error', retryMode: 'hydrate' },
+    })
+  })
+
+  it('fails closed on unsafe Pin grouping and keeps the Library retryOpen path', async () => {
+    const firstRows = collectionRows(1, 50)
+    const unsafeRows = collectionRows(51, 2)
+    unsafeRows[1] = { ...unsafeRows[1]!, pinPosition: 1 }
+    const failedPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    const bridge = installBridge({
+      list: async ({ cursor }) =>
+        cursor ? failedPage.promise : collectionPageResult(firstRows, 'cursor-1'),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toHaveLength(50))
+
+    const loading = render().loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: detail('changed', 'thread-999'),
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    failedPage.resolve(collectionPageResult(unsafeRows, null, 1))
+
+    await expect(loading).resolves.toBe(false)
+    expect((harness.state as ChatState).hydrationStatus).toBe('error')
+    expect((harness.state as ChatState).hydrationError?.code).toBe('library_unavailable')
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    expect(render().threadCollection.errorPhase).toBeNull()
+    expect(render().threadSummaries).toEqual(firstRows)
+    await render().retryOpen()
+    expect(bridge.retryOpen).toHaveBeenCalledWith({ scope: 'library' })
+  })
+
+  it('bounds initial candidate repair and exposes a local Retry instead of a Library error', async () => {
+    const firstRows = collectionRows(1, 2)
+    let failing = true
+    const bridge = installBridge({
+      list: async () =>
+        failing
+          ? { ok: false, error: { code: 'conflict', message: 'The list changed.' } }
+          : collectionPageResult(firstRows, null),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    expect(render().threadCollection).toMatchObject({
+      status: 'error',
+      errorPhase: 'initial',
+      retryMode: 'hydrate',
+    })
+    expect((harness.state as ChatState).hydrationError).toBeNull()
+
+    failing = false
+    await expect(render().retryThreadCollection()).resolves.toBe(true)
+    expect(render().threadSummaries).toEqual(firstRows)
+    expect((harness.state as ChatState).hydrationStatus).toBe('ready')
+  })
+})
+
 describe('target and attachment readiness', () => {
   it('blocks the third Run and only serializes attachment-bearing Runs', () => {
     const textState = readyThreadState(detail('Hello'))
@@ -1518,19 +2049,13 @@ describe('C1 save and execution boundary', () => {
   it('shares one delayed draft save between Send and immediate Thread selection', async () => {
     const threadA = detail('draft A', 'thread-a')
     const threadB = detail('draft B', 'thread-b')
+    const pageRows = [threadA.summary, threadB.summary, ...collectionRows(3, 48)]
+    const latePage = deferred<NyxThreadResult<NyxThreadListPage>>()
     const pendingSave = deferred<NyxThreadResult<NyxThreadSaveDraftResult>>()
     const bridge = installBridge({
       selectedId: 'thread-a',
-      list: async () => ({
-        ok: true,
-        value: {
-          rows: [threadA.summary, threadB.summary],
-          nextCursor: null,
-          capacity: { activeRuns: 0, attachmentRunActive: false },
-          eventEpoch: 'epoch-1',
-          includedThroughCursor: 0,
-        },
-      }),
+      list: async ({ cursor }) =>
+        cursor ? latePage.promise : collectionPageResult(pageRows, 'cursor-1'),
       get: async ({ threadId }) => ({
         ok: true,
         value: {
@@ -1546,7 +2071,12 @@ describe('C1 save and execution boundary', () => {
 
     const send = render().sendCurrentInput()
     await vi.waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledOnce())
+    const loadingMore = render().loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
     const selection = render().selectThread('thread-b')
+    latePage.resolve(collectionPageResult(collectionRows(51, 50), null))
+    await expect(loadingMore).resolves.toBe(false)
+    expect(render().threadSummaries).toEqual(pageRows)
     const savedDetail = detail('edited A', 'thread-a')
     savedDetail.draft.revision = 3
     pendingSave.resolve({
@@ -2293,18 +2823,30 @@ describe('C1 save and execution boundary', () => {
 
   it('keeps the current Thread and dirty overlay when the New save barrier fails', async () => {
     const value = detail('keep me')
+    const firstRows = [value.summary, ...collectionRows(2, 49)]
+    const secondRows = collectionRows(51, 10)
     const bridge = installBridge({
       ...selectedSnapshot(value),
+      list: async ({ cursor }) =>
+        collectionPageResult(cursor ? secondRows : firstRows, cursor ? null : 'cursor-1'),
       saveDraftResult: {
         ok: false,
         error: { code: 'conflict', message: 'Not saved.' },
       },
     })
     const session = await settleSelectedHydration(bridge, value)
+    await session.loadMoreThreads()
     session.setInput('keep me edited')
 
     expect(await render().startNewChat()).toBe(false)
     expect(harness.state).toMatchObject({ selectedThreadId: 'thread-a', input: 'keep me edited' })
+    expect(render().threadSummaries).toEqual([...firstRows, ...secondRows])
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'cursor-1',
+      null,
+      'cursor-1',
+    ])
     expect(bridge.saveDraft).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: 'thread-a', discardEmptyShell: true }),
     )
@@ -2349,6 +2891,10 @@ describe('C1 save and execution boundary', () => {
   })
 
   it('keeps New locked when the discarded Thread event arrives before its reply', async () => {
+    const firstRows = [detail().summary, ...collectionRows(2, 49)]
+    const refreshedRows = collectionRows(2, 49)
+    const latePage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let firstPageReads = 0
     const cleared = deferred<
       NyxThreadResult<{
         detail: NyxThreadDetail | null
@@ -2356,8 +2902,21 @@ describe('C1 save and execution boundary', () => {
         includedThroughCursor: number
       }>
     >()
-    const bridge = installBridge(selectedSnapshot(detail()))
+    const bridge = installBridge({
+      ...selectedSnapshot(detail()),
+      list: ({ cursor }) => {
+        if (cursor) return latePage.promise
+        firstPageReads += 1
+        return Promise.resolve(
+          firstPageReads === 1
+            ? collectionPageResult(firstRows, 'cursor-1')
+            : collectionPageResult(refreshedRows, null, 1),
+        )
+      },
+    })
     const session = await settleSelectedHydration(bridge, detail())
+    const loadingMore = session.loadMoreThreads()
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
     bridge.get.mockImplementationOnce(() => cleared.promise)
     bridge.saveDraft.mockImplementationOnce(async () => {
       bridge.emitThread({
@@ -2381,6 +2940,10 @@ describe('C1 save and execution boundary', () => {
     await vi.waitFor(() => expect(bridge.get).toHaveBeenLastCalledWith({ threadId: null }))
     expect((harness.state as ChatState).newThreadPending).toBe(true)
     render().setInput('blocked edit')
+    latePage.resolve(collectionPageResult(collectionRows(51, 50), null, 1))
+    await expect(loadingMore).resolves.toBe(false)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual(refreshedRows))
+    expect((harness.state as ChatState).newThreadPending).toBe(true)
     cleared.resolve({
       ok: true,
       value: { detail: null, eventEpoch: 'epoch-1', includedThroughCursor: 1 },
@@ -2388,6 +2951,13 @@ describe('C1 save and execution boundary', () => {
 
     expect(await newThread).toBe(true)
     expect((harness.state as ChatState).input).toBe('')
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'cursor-1',
+      null,
+    ])
+    expect(render().threadCollection.focusRequest).toBeNull()
+    expect(render().threadCollection.announcements).toEqual([])
   })
 
   it('keeps a background save failure reachable after New detaches', async () => {

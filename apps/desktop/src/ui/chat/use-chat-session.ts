@@ -4,9 +4,9 @@ import type { NyxChatEvent } from '../../../shared/chat/events'
 import type { NyxThreadEvent } from '../../../shared/threads/events'
 import type {
   NyxThreadDetail,
+  NyxThreadListPage,
   NyxThreadSafeError,
   NyxThreadSaveDraftInput,
-  NyxThreadSummary,
   NyxThreadRunCapacity,
 } from '../../../shared/threads/types'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
@@ -33,6 +33,22 @@ import {
   selectInitialChatTarget,
   type ConnectionStatusState,
 } from './connection-status'
+import {
+  appendThreadCollectionPage,
+  beginThreadCollectionHydration,
+  beginThreadCollectionLoadMore,
+  beginThreadCollectionRetry,
+  buildThreadCollectionCandidate,
+  commitThreadCollectionCandidate,
+  currentThreadOutsideCollection,
+  failThreadCollection,
+  initialThreadCollectionState,
+  ThreadCollectionCandidateError,
+  threadCollectionGroups,
+  type ThreadCollectionCandidate,
+  type ThreadCollectionPage,
+  type ThreadCollectionState,
+} from './thread-collection'
 
 function normalizeBridgeError(error: unknown): NyxChatError {
   if (error instanceof Error) {
@@ -244,7 +260,10 @@ export function useChatSession({
   getLatestConnectionRequestEpoch,
 }: UseChatSessionOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState)
-  const [threadSummaries, setThreadSummaries] = useState<ReadonlyArray<NyxThreadSummary>>([])
+  const [threadCollection, setThreadCollection] = useState<ThreadCollectionState>(
+    initialThreadCollectionState,
+  )
+  const threadSummaries = threadCollection.rows
   const [runCapacity, setRunCapacity] = useState<NyxThreadRunCapacity>({
     activeRuns: 0,
     attachmentRunActive: false,
@@ -252,6 +271,7 @@ export function useChatSession({
   const [navigating, setNavigating] = useState(false)
   const projectionGeneration = useRef(initialChatState.projectionGeneration)
   const stateRef = useRef(state)
+  const threadCollectionRef = useRef(threadCollection)
   const threadSummariesRef = useRef(threadSummaries)
   const runCapacityRef = useRef(runCapacity)
   const workerRef = useRef<Worker | null>(null)
@@ -268,17 +288,41 @@ export function useChatSession({
     Promise.resolve({ ok: true, threadId: null, draftRevision: null }),
   )
   const hydrationRef = useRef(0)
-  const retryHydrationRef = useRef<(() => Promise<void>) | null>(null)
+  const retryHydrationRef = useRef<
+    ((options?: { pageBudget?: number; preserveCollection?: boolean }) => Promise<void>) | null
+  >(null)
+  const loadMoreThreadsRef = useRef<(() => Promise<boolean>) | null>(null)
+  const retryThreadCollectionRef = useRef<(() => Promise<boolean>) | null>(null)
+  const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
   stateRef.current = state
+  threadCollectionRef.current = threadCollection
   threadSummariesRef.current = threadSummaries
   runCapacityRef.current = runCapacity
   selectedThreadIdRef.current = state.selectedThreadId
   activeRequestIdRef.current = state.activeRequestId ?? null
 
-  function replaceThreadSummaries(rows: ReadonlyArray<NyxThreadSummary>) {
-    threadSummariesRef.current = rows
-    setThreadSummaries(rows)
+  function replaceThreadCollection(next: ThreadCollectionState) {
+    threadCollectionRef.current = next
+    threadSummariesRef.current = next.rows
+    setThreadCollection(next)
+  }
+
+  function updateThreadCollection(
+    updater: (current: ThreadCollectionState) => ThreadCollectionState,
+  ) {
+    replaceThreadCollection(updater(threadCollectionRef.current))
+  }
+
+  function clearThreadCollectionSelection() {
+    updateThreadCollection((current) => ({
+      ...current,
+      status: current.status === 'loading-more' ? 'ready' : current.status,
+      errorPhase: current.status === 'loading-more' ? null : current.errorPhase,
+      retryMode: current.status === 'loading-more' ? null : current.retryMode,
+      pendingFocusThreadId: null,
+      focusRequest: null,
+    }))
   }
 
   function failDraft(imageId: string, error = 'Nyx could not prepare this image.') {
@@ -613,41 +657,285 @@ export function useChatSession({
     let eventEpoch: string | null = null
     let listCursor = 0
     let detailCursor = 0
-    let listRefreshInFlight = false
-    let listRefreshDirty = false
+    let collectionInFlight = false
+    let collectionDirty = false
 
-    function markFirstPageDirty() {
-      listRefreshDirty = true
-      if (!listRefreshInFlight) void refreshFirstPage()
+    type CollectionCandidateOutcome =
+      | { kind: 'candidate'; candidate: ThreadCollectionCandidate }
+      | { kind: 'conflict' }
+      | { kind: 'epoch-mismatch' }
+      | { kind: 'failure'; error: NyxThreadSafeError }
+      | { kind: 'cancelled' }
+
+    function collectionPage(page: NyxThreadListPage): ThreadCollectionPage {
+      return { rows: page.rows, nextCursor: page.nextCursor }
     }
 
-    async function refreshFirstPage() {
-      if (listRefreshInFlight || !hydrated || !eventEpoch) return
-      listRefreshInFlight = true
+    function collectionRequestCurrent(hydration: number) {
+      return !disposed && hydrated && hydration === hydrationRef.current
+    }
+
+    async function readBoundedPrefix(
+      pageBudget: number,
+      epoch: string,
+      hydration: number,
+    ): Promise<CollectionCandidateOutcome> {
+      const pages: ThreadCollectionPage[] = []
+      let cursor: string | null = null
+
+      for (let pageIndex = 0; pageIndex < pageBudget; pageIndex += 1) {
+        const result = await threads.listPage({ location: 'available', cursor, limit: 50 })
+        if (!collectionRequestCurrent(hydration)) return { kind: 'cancelled' }
+        if (!result.ok) {
+          return result.error.code === 'conflict'
+            ? { kind: 'conflict' }
+            : { kind: 'failure', error: result.error }
+        }
+        if (result.value.eventEpoch !== epoch || eventEpoch !== epoch) {
+          return { kind: 'epoch-mismatch' }
+        }
+        pages.push(collectionPage(result.value))
+        cursor = result.value.nextCursor
+        if (!cursor) break
+      }
+
       try {
-        while (listRefreshDirty && hydrated && !disposed) {
-          listRefreshDirty = false
-          const hydration = hydrationRef.current
-          const epoch: string = eventEpoch
-          const result = await threads.listPage({ location: 'available', limit: 50 })
-          if (disposed || !hydrated || hydration !== hydrationRef.current) return
-          if (!result.ok) {
-            void hydrateThreadLibrary()
-            return
+        return { kind: 'candidate', candidate: buildThreadCollectionCandidate(pages, pageBudget) }
+      } catch (error) {
+        return error instanceof ThreadCollectionCandidateError && !error.unsafe
+          ? { kind: 'conflict' }
+          : { kind: 'failure', error: threadLibraryBridgeError() }
+      }
+    }
+
+    async function readNextPage(
+      accepted: ThreadCollectionState,
+      epoch: string,
+      hydration: number,
+    ): Promise<CollectionCandidateOutcome> {
+      if (!accepted.nextCursor) return { kind: 'conflict' }
+      const result = await threads.listPage({
+        location: 'available',
+        cursor: accepted.nextCursor,
+        limit: 50,
+      })
+      if (!collectionRequestCurrent(hydration)) return { kind: 'cancelled' }
+      if (!result.ok) {
+        return result.error.code === 'conflict'
+          ? { kind: 'conflict' }
+          : { kind: 'failure', error: result.error }
+      }
+      if (result.value.eventEpoch !== epoch || eventEpoch !== epoch) {
+        return { kind: 'epoch-mismatch' }
+      }
+      try {
+        return {
+          kind: 'candidate',
+          candidate: appendThreadCollectionPage(accepted, collectionPage(result.value)),
+        }
+      } catch (error) {
+        return error instanceof ThreadCollectionCandidateError && !error.unsafe
+          ? { kind: 'conflict' }
+          : { kind: 'failure', error: threadLibraryBridgeError() }
+      }
+    }
+
+    function failWholeLibrary(error: NyxThreadSafeError) {
+      hydrated = false
+      collectionDirty = false
+      dispatch({
+        type: 'thread-library-hydration-failed',
+        generation: projectionGeneration.current,
+        error: error.code === 'thread_unavailable' ? threadLibraryBridgeError() : error,
+      })
+    }
+
+    async function checkMissingSelectionAtEnd(
+      candidate: ThreadCollectionCandidate,
+      source: 'hydration' | 'refresh' | 'explicit-load',
+      hydration: number,
+    ): Promise<'accept' | 'reject' | 'local-error'> {
+      const threadId = selectedThreadIdRef.current
+      if (
+        !threadId ||
+        candidate.nextCursor !== null ||
+        candidate.rows.some((row) => row.id === threadId)
+      ) {
+        if (threadId && candidate.rows.some((row) => row.id === threadId)) {
+          missingSelectionRecoveryRef.current = null
+        }
+        return 'accept'
+      }
+
+      const result = await threads.get({ threadId })
+      if (disposed || hydration !== hydrationRef.current) return 'reject'
+      if (
+        !result.ok &&
+        (result.error.code === 'invalid_request' || result.error.code === 'not_found')
+      ) {
+        try {
+          window.localStorage.removeItem('nyx.thread.selected.v1')
+        } catch {
+          // A blocked UI preference does not block deterministic fallback.
+        }
+        missingSelectionRecoveryRef.current = null
+        void hydrateThreadLibrary()
+        return 'reject'
+      }
+      if (!result.ok) {
+        failWholeLibrary(
+          result.error.code === 'thread_unavailable' ? threadLibraryBridgeError() : result.error,
+        )
+        return 'reject'
+      }
+      if (!result.value.detail || result.value.detail.summary.location !== 'available') {
+        try {
+          window.localStorage.removeItem('nyx.thread.selected.v1')
+        } catch {
+          // A blocked UI preference does not block deterministic fallback.
+        }
+        missingSelectionRecoveryRef.current = null
+        void hydrateThreadLibrary()
+        return 'reject'
+      }
+      if (result.value.eventEpoch !== eventEpoch) {
+        void hydrateThreadLibrary()
+        return 'reject'
+      }
+      if (missingSelectionRecoveryRef.current === threadId) {
+        return 'local-error'
+      }
+
+      missingSelectionRecoveryRef.current = threadId
+      replaceThreadCollection(
+        commitThreadCollectionCandidate(threadCollectionRef.current, candidate, {
+          selectedThreadId: threadId,
+          source,
+        }),
+      )
+      void hydrateThreadLibrary({
+        pageBudget: candidate.loadedPageCount,
+        preserveCollection: true,
+      })
+      return 'reject'
+    }
+
+    async function runCollectionAction(source: 'refresh' | 'explicit-load', forceRebuild = false) {
+      if (collectionInFlight || !hydrated || !eventEpoch) return false
+      const accepted = threadCollectionRef.current
+      if (source === 'explicit-load' && !accepted.nextCursor) return false
+
+      collectionInFlight = true
+      const hydration = hydrationRef.current
+      const epoch: string = eventEpoch
+      const pageBudget = Math.max(
+        1,
+        accepted.loadedPageCount + (source === 'explicit-load' ? 1 : 0),
+      )
+      if (source === 'explicit-load') {
+        updateThreadCollection(beginThreadCollectionLoadMore)
+      }
+
+      let rerunAfterDirty = false
+      try {
+        let rebuild = forceRebuild || source === 'refresh'
+        let conflictRebuildUsed = false
+        let dirtyRebuildUsed = false
+        for (;;) {
+          collectionDirty = false
+          const outcome = rebuild
+            ? await readBoundedPrefix(pageBudget, epoch, hydration)
+            : await readNextPage(accepted, epoch, hydration)
+          if (outcome.kind === 'cancelled') return false
+          if (outcome.kind === 'failure') {
+            failWholeLibrary(outcome.error)
+            return false
           }
-          if (result.value.eventEpoch !== epoch || eventEpoch !== epoch) {
+          if (outcome.kind === 'epoch-mismatch') {
             void hydrateThreadLibrary()
-            return
+            return false
           }
-          if (listRefreshDirty) continue
-          replaceThreadSummaries(result.value.rows)
+          if (outcome.kind === 'conflict') {
+            if (!conflictRebuildUsed) {
+              conflictRebuildUsed = true
+              rebuild = true
+              continue
+            }
+            collectionDirty = false
+            updateThreadCollection((current) =>
+              failThreadCollection(
+                current,
+                current.rows.length === 0 ? 'initial' : 'load-more',
+                source === 'explicit-load' ? 'load-more' : 'refresh',
+              ),
+            )
+            return false
+          }
+          if (collectionDirty) {
+            if (!dirtyRebuildUsed) {
+              dirtyRebuildUsed = true
+              rebuild = true
+              continue
+            }
+            collectionDirty = false
+            rerunAfterDirty = true
+            return false
+          }
+
+          const missingSelection = await checkMissingSelectionAtEnd(
+            outcome.candidate,
+            source,
+            hydration,
+          )
+          if (missingSelection === 'reject') return false
+          if (collectionDirty) {
+            if (!dirtyRebuildUsed) {
+              dirtyRebuildUsed = true
+              rebuild = true
+              continue
+            }
+            collectionDirty = false
+            rerunAfterDirty = true
+            return false
+          }
+          updateThreadCollection((current) =>
+            missingSelection === 'local-error'
+              ? failThreadCollection(
+                  commitThreadCollectionCandidate(current, outcome.candidate, {
+                    selectedThreadId: selectedThreadIdRef.current,
+                    source: source === 'explicit-load' ? 'explicit-load' : 'refresh',
+                  }),
+                  source === 'explicit-load' ? 'load-more' : 'initial',
+                  'hydrate',
+                )
+              : commitThreadCollectionCandidate(current, outcome.candidate, {
+                  selectedThreadId: selectedThreadIdRef.current,
+                  source: source === 'explicit-load' ? 'explicit-load' : 'refresh',
+                }),
+          )
+          return missingSelection === 'accept'
         }
       } catch {
-        if (!disposed && hydrated) void hydrateThreadLibrary()
+        failWholeLibrary(threadLibraryBridgeError())
+        return false
       } finally {
-        listRefreshInFlight = false
-        if (listRefreshDirty && hydrated && !disposed) void refreshFirstPage()
+        collectionInFlight = false
+        const rerunSource = hydration === hydrationRef.current ? source : 'refresh'
+        if (
+          (rerunAfterDirty || collectionDirty) &&
+          hydrated &&
+          !disposed &&
+          threadCollectionRef.current.status !== 'error'
+        ) {
+          collectionDirty = false
+          void runCollectionAction(rerunSource, true)
+        }
       }
+    }
+
+    function markCollectionDirty() {
+      collectionDirty = true
+      if (!collectionInFlight) void runCollectionAction('refresh')
     }
 
     function acceptClock(nextEpoch: string, cursor: number) {
@@ -665,6 +953,7 @@ export function useChatSession({
         }
         listCursor = cursor
         listAdvanced = true
+        dispatch({ type: 'public-event-advanced', cursor })
       }
       if (cursor > detailCursor) {
         if (cursor !== detailCursor + 1) {
@@ -698,7 +987,7 @@ export function useChatSession({
           event.type === 'chat:done' ||
           event.type === 'chat:error'
         ) {
-          markFirstPageDirty()
+          markCollectionDirty()
         }
       }
 
@@ -805,7 +1094,7 @@ export function useChatSession({
       if (!accepted) return
       if (accepted.listAdvanced) {
         if (event.type === 'threads:changed' || event.type === 'threads:removed') {
-          markFirstPageDirty()
+          markCollectionDirty()
         }
         if (
           event.type === 'threads:changed' &&
@@ -871,21 +1160,91 @@ export function useChatSession({
       else handleThreadEvent(event)
     })
 
-    async function hydrateThreadLibrary() {
+    function resumeEventPump() {
+      hydrated = true
+      for (const buffered of bufferedEvents.splice(0)) {
+        if (!hydrated) break
+        if (buffered.kind === 'chat') handleChatEvent(buffered.event)
+        else handleThreadEvent(buffered.event)
+      }
+    }
+
+    async function hydrateThreadLibrary(
+      options: { pageBudget?: number; preserveCollection?: boolean } = {},
+    ) {
       const request = ++hydrationRef.current
       const generation = projectionGeneration.current
+      const pageBudget = Math.max(1, options.pageBudget ?? 1)
+      const resumeReadyProjection =
+        options.preserveCollection && stateRef.current.hydrationStatus === 'ready'
       hydrated = false
-      listRefreshDirty = false
+      collectionDirty = false
       bufferedEvents.length = 0
+      if (!options.preserveCollection) updateThreadCollection(beginThreadCollectionHydration)
 
       try {
-        const pageResult = await threads.listPage({ location: 'available', limit: 50 })
-        if (disposed || request !== hydrationRef.current) return
-        if (!pageResult.ok) {
-          dispatch({ type: 'thread-library-hydration-failed', generation, error: pageResult.error })
-          return
+        let pageResult: NyxThreadListPage | null = null
+        let initialCandidate: ThreadCollectionCandidate | null = null
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const pages: ThreadCollectionPage[] = []
+          let cursor: string | null = null
+          let conflicted = false
+          for (let pageIndex = 0; pageIndex < pageBudget; pageIndex += 1) {
+            const result = await threads.listPage({ location: 'available', cursor, limit: 50 })
+            if (disposed || request !== hydrationRef.current) return
+            if (!result.ok) {
+              if (result.error.code === 'conflict') {
+                conflicted = true
+                break
+              }
+              failWholeLibrary(result.error)
+              return
+            }
+            if (pageResult && result.value.eventEpoch !== pageResult.eventEpoch) {
+              conflicted = true
+              break
+            }
+            pageResult ??= result.value
+            pages.push(collectionPage(result.value))
+            cursor = result.value.nextCursor
+            if (!cursor) break
+          }
+          if (conflicted) {
+            pageResult = null
+            if (attempt === 0) continue
+            updateThreadCollection((current) =>
+              failThreadCollection(
+                current,
+                current.rows.length === 0 ? 'initial' : 'load-more',
+                'hydrate',
+              ),
+            )
+            if (resumeReadyProjection) resumeEventPump()
+            return
+          }
+          try {
+            initialCandidate = buildThreadCollectionCandidate(pages, pageBudget)
+            break
+          } catch (error) {
+            if (!(error instanceof ThreadCollectionCandidateError) || error.unsafe) {
+              failWholeLibrary(threadLibraryBridgeError())
+              return
+            }
+            pageResult = null
+            if (attempt === 0) continue
+            updateThreadCollection((current) =>
+              failThreadCollection(
+                current,
+                current.rows.length === 0 ? 'initial' : 'load-more',
+                'hydrate',
+              ),
+            )
+            if (resumeReadyProjection) resumeEventPump()
+            return
+          }
         }
-        const firstSummary = pageResult.value.rows[0] ?? null
+        if (!pageResult || !initialCandidate) return
+        const firstSummary = pageResult.rows[0] ?? null
         let storedId: string | null = null
         try {
           storedId = window.localStorage.getItem('nyx.thread.selected.v1')
@@ -895,7 +1254,7 @@ export function useChatSession({
 
         let selectedId = storedId ?? firstSummary?.id ?? null
         let summary =
-          pageResult.value.rows.find((row) => row.id === selectedId) ??
+          pageResult.rows.find((row) => row.id === selectedId) ??
           (selectedId === firstSummary?.id ? firstSummary : null)
         let detailResult = selectedId ? await threads.get({ threadId: selectedId }) : null
         if (disposed || request !== hydrationRef.current) return
@@ -905,7 +1264,9 @@ export function useChatSession({
           ((!detailResult?.ok &&
             (detailResult?.error.code === 'invalid_request' ||
               detailResult?.error.code === 'not_found')) ||
-            (detailResult?.ok && detailResult.value.detail === null))
+            (detailResult?.ok &&
+              (detailResult.value.detail === null ||
+                detailResult.value.detail.summary.location !== 'available')))
         ) {
           selectedId = firstSummary?.id ?? null
           summary = firstSummary
@@ -936,15 +1297,15 @@ export function useChatSession({
         }
 
         const snapshot = detailResult?.ok ? detailResult.value : null
-        if (snapshot && snapshot.eventEpoch !== pageResult.value.eventEpoch) {
+        if (snapshot && snapshot.eventEpoch !== pageResult.eventEpoch) {
           void hydrateThreadLibrary()
           return
         }
 
         const resolvedSummary =
           snapshot?.detail?.summary ?? (summary?.availability === 'unavailable' ? summary : null)
-        eventEpoch = pageResult.value.eventEpoch
-        listCursor = pageResult.value.includedThroughCursor
+        eventEpoch = pageResult.eventEpoch
+        listCursor = pageResult.includedThroughCursor
         detailCursor = snapshot?.includedThroughCursor ?? listCursor
         selectedThreadIdRef.current = resolvedSummary?.id ?? null
         if (snapshot?.detail?.activeRun) {
@@ -959,9 +1320,39 @@ export function useChatSession({
             // A blocked UI preference does not block canonical hydration.
           }
         }
-        runCapacityRef.current = pageResult.value.capacity
-        setRunCapacity(pageResult.value.capacity)
-        replaceThreadSummaries(pageResult.value.rows)
+        const nextCollection = commitThreadCollectionCandidate(
+          threadCollectionRef.current,
+          initialCandidate,
+          { selectedThreadId: resolvedSummary?.id ?? null, source: 'hydration' },
+        )
+        const missingAtEnd =
+          resolvedSummary?.location === 'available' &&
+          nextCollection.pendingFocusThreadId === resolvedSummary.id &&
+          nextCollection.nextCursor === null
+        if (missingAtEnd && missingSelectionRecoveryRef.current !== resolvedSummary.id) {
+          missingSelectionRecoveryRef.current = resolvedSummary.id
+          replaceThreadCollection(nextCollection)
+          void hydrateThreadLibrary({
+            pageBudget: initialCandidate.loadedPageCount,
+            preserveCollection: true,
+          })
+          return
+        }
+        if (nextCollection.rows.some((row) => row.id === resolvedSummary?.id)) {
+          missingSelectionRecoveryRef.current = null
+        }
+
+        runCapacityRef.current = pageResult.capacity
+        setRunCapacity(pageResult.capacity)
+        replaceThreadCollection(
+          missingAtEnd
+            ? failThreadCollection(
+                nextCollection,
+                threadCollectionRef.current.rows.length === 0 ? 'initial' : 'load-more',
+                'hydrate',
+              )
+            : nextCollection,
+        )
         dispatch({
           type: 'thread-library-hydrated',
           generation,
@@ -974,12 +1365,7 @@ export function useChatSession({
             stateRef.current.selectedThreadId === resolvedSummary?.id &&
             stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
-        hydrated = true
-        for (const buffered of bufferedEvents.splice(0)) {
-          if (!hydrated) break
-          if (buffered.kind === 'chat') handleChatEvent(buffered.event)
-          else handleThreadEvent(buffered.event)
-        }
+        resumeEventPump()
       } catch {
         if (!disposed && request === hydrationRef.current) {
           dispatch({
@@ -992,11 +1378,28 @@ export function useChatSession({
     }
 
     retryHydrationRef.current = hydrateThreadLibrary
+    loadMoreThreadsRef.current = () => runCollectionAction('explicit-load')
+    retryThreadCollectionRef.current = async () => {
+      const failedCollection = threadCollectionRef.current
+      const retryMode = failedCollection.retryMode
+      if (!retryMode) return false
+      updateThreadCollection(beginThreadCollectionRetry)
+      if (retryMode === 'hydrate') {
+        await hydrateThreadLibrary({
+          pageBudget: Math.max(1, failedCollection.loadedPageCount),
+          preserveCollection: failedCollection.rows.length > 0,
+        })
+        return true
+      }
+      return runCollectionAction(retryMode === 'refresh' ? 'refresh' : 'explicit-load')
+    }
     void hydrateThreadLibrary()
 
     return () => {
       disposed = true
       if (retryHydrationRef.current === hydrateThreadLibrary) retryHydrationRef.current = null
+      loadMoreThreadsRef.current = null
+      retryThreadCollectionRef.current = null
       unsubscribeChat()
       unsubscribeThreads()
     }
@@ -1566,16 +1969,26 @@ export function useChatSession({
       return false
 
     navigationRef.current = true
+    const pageBudget = Math.max(1, threadCollectionRef.current.loadedPageCount)
+    hydrationRef.current += 1
     setNavigating(true)
     try {
       const saved = await queueSaveDraft(false, true)
-      if (!saved.ok) return false
+      if (!saved.ok) {
+        await retryHydrationRef.current?.({ pageBudget, preserveCollection: true })
+        return false
+      }
       try {
         window.localStorage.setItem('nyx.thread.selected.v1', threadId)
       } catch {
         // A blocked UI preference does not block canonical selection.
       }
-      await retryHydrationRef.current?.()
+      missingSelectionRecoveryRef.current = null
+      clearThreadCollectionSelection()
+      await retryHydrationRef.current?.({
+        pageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
+        preserveCollection: true,
+      })
       return selectedThreadIdRef.current === threadId
     } finally {
       navigationRef.current = false
@@ -1595,11 +2008,13 @@ export function useChatSession({
     const started = { type: 'new-thread-started' as const }
     stateRef.current = chatReducer(stateRef.current, started)
     dispatch(started)
+    const pageBudget = Math.max(1, threadCollectionRef.current.loadedPageCount)
+    hydrationRef.current += 1
     const fail = async () => {
       const action = { type: 'new-thread-failed' as const }
       stateRef.current = chatReducer(stateRef.current, action)
       dispatch(action)
-      await retryHydrationRef.current?.()
+      await retryHydrationRef.current?.({ pageBudget, preserveCollection: true })
       return false
     }
 
@@ -1631,6 +2046,8 @@ export function useChatSession({
     const generation = projectionGeneration.current + 1
     projectionGeneration.current = generation
     selectedThreadIdRef.current = null
+    missingSelectionRecoveryRef.current = null
+    clearThreadCollectionSelection()
     releaseAllDrafts()
     submittingRef.current = false
     dispatch({
@@ -1673,10 +2090,15 @@ export function useChatSession({
 
   const capacityNotice = runCapacityBlock(state, runCapacity)
   const retryCapacityNotice = runCapacityBlock(state, runCapacity, 'retry_failed_response')
+  const threadGroups = threadCollectionGroups(threadCollection)
 
   return {
     state,
     threadSummaries,
+    threadCollection,
+    pinnedThreadSummaries: threadGroups.pinned,
+    recentThreadSummaries: threadGroups.recent,
+    currentThreadSummary: currentThreadOutsideCollection(threadCollection, state.threadSummary),
     isBusy: Boolean(state.activeRequestId),
     isAccepting: Boolean(state.activeTurn && !state.activeTurn.accepted),
     isResetting: state.newThreadPending || navigating,
@@ -1712,5 +2134,11 @@ export function useChatSession({
     selectThread,
     startNewChat,
     retryOpen,
+    loadMoreThreads() {
+      return loadMoreThreadsRef.current?.() ?? Promise.resolve(false)
+    },
+    retryThreadCollection() {
+      return retryThreadCollectionRef.current?.() ?? Promise.resolve(false)
+    },
   }
 }
