@@ -143,6 +143,65 @@ function harness() {
 }
 
 describe('ThreadLibraryService', () => {
+  it('projects validated Pin metadata for available, unavailable, and detail summaries', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+    client.listPage.mockResolvedValueOnce({
+      id: 'list-pin-metadata',
+      ok: true,
+      value: {
+        rows: [
+          {
+            availability: 'available',
+            id: threadId,
+            location: 'available',
+            title: 'Pinned Thread',
+            pinPosition: 1,
+            lastUserActivityAt: createdAt,
+            createdAt,
+            updatedAt: createdAt,
+            threadRevision: 1,
+            resultRevision: 0,
+            seenResultRevision: 0,
+          },
+          {
+            availability: 'unavailable',
+            id: otherThreadId,
+            location: 'available',
+            pinPosition: 2,
+          },
+        ],
+        nextCursor: null,
+        includedThroughCursor: 0,
+      },
+      clock: { generation, watermark: 0, actualMutation: false },
+    } as never)
+    const pinnedDetail = detail()
+    pinnedDetail.summary.pinPosition = 1
+    client.snapshot.mockResolvedValueOnce({
+      id: 'snapshot-pin-metadata',
+      ok: true,
+      value: { detail: pinnedDetail, includedThroughCursor: 0 },
+      clock: { generation, watermark: 0, actualMutation: false },
+    } as never)
+
+    await expect(
+      service.listPage({ location: 'available', cursor: null, limit: 50 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        rows: [
+          { availability: 'available', id: threadId, pinPosition: 1 },
+          { availability: 'unavailable', id: otherThreadId, pinPosition: 2 },
+        ],
+      },
+    })
+    await expect(service.get({ threadId })).resolves.toMatchObject({
+      ok: true,
+      value: { detail: { summary: { id: threadId, pinPosition: 1 } } },
+    })
+  })
+
   it('keeps independent live activity for two Threads', async () => {
     const { client, service } = harness()
     await service.initialize()

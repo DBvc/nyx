@@ -1156,6 +1156,39 @@ describe('ThreadLibraryDatabase', () => {
     owner.close()
   })
 
+  it('validates cursor anchors and the lookahead row Pin grouping', async () => {
+    const { owner } = await createOwner()
+    for (let value = 1; value <= 51; value += 1) {
+      execute(owner, 'materialize', materializeInput(value))
+    }
+    const first = execute(owner, 'listPage', {
+      location: 'available',
+      cursor: null,
+      limit: 50,
+    })
+    expect(first.nextCursor).not.toBeNull()
+
+    const database = rawDatabase(owner)
+    database.exec('PRAGMA ignore_check_constraints = ON')
+    const anchorId = first.rows.at(-1)!.id
+    database.prepare('UPDATE threads SET pin_position = 0 WHERE id = ?').run(anchorId)
+    expect(() =>
+      execute(owner, 'listPage', {
+        location: 'available',
+        cursor: first.nextCursor,
+        limit: 50,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+
+    database.prepare('UPDATE threads SET pin_position = NULL WHERE id = ?').run(anchorId)
+    database.prepare("UPDATE threads SET location = 'archived'").run()
+    database.prepare('UPDATE threads SET pin_position = 1 WHERE id = ?').run(uuid(1))
+    expect(() =>
+      execute(owner, 'listPage', { location: 'archived', cursor: null, limit: 50 }),
+    ).toThrow('The Thread Library is unavailable.')
+    owner.close()
+  })
+
   it('imports semantic resources exactly once and rolls back conflicts or disk-full writes', async () => {
     const { root, owner } = await createOwner()
     const rows = importedRows(500)
@@ -1232,14 +1265,41 @@ describe('ThreadLibraryDatabase', () => {
     execute(owner, 'materialize', input)
     const database = rawDatabase(owner)
     database.exec('PRAGMA ignore_check_constraints = ON')
+    database.prepare('UPDATE threads SET pin_position = 1 WHERE id = ?').run(input.threadId)
+    expect(
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }).rows,
+    ).toMatchObject([{ availability: 'available', id: input.threadId, pinPosition: 1 }])
+
     database.prepare("UPDATE threads SET title = '' WHERE id = ?").run(input.threadId)
 
     expect(
       execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }).rows,
-    ).toEqual([{ availability: 'unavailable', id: input.threadId, location: 'available' }])
+    ).toEqual([
+      {
+        availability: 'unavailable',
+        id: input.threadId,
+        location: 'available',
+        pinPosition: 1,
+      },
+    ])
     expect(() => execute(owner, 'readThread', { threadId: input.threadId })).toThrow(
       'This thread is unavailable.',
     )
+
+    database.prepare('UPDATE threads SET pin_position = 0 WHERE id = ?').run(input.threadId)
+    expect(() =>
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }),
+    ).toThrow('The Thread Library is unavailable.')
+    expect(() => execute(owner, 'readThread', { threadId: input.threadId })).toThrow(
+      'The Thread Library is unavailable.',
+    )
+
+    database
+      .prepare("UPDATE threads SET location = 'archived', pin_position = 1 WHERE id = ?")
+      .run(input.threadId)
+    expect(() =>
+      execute(owner, 'listPage', { location: 'archived', cursor: null, limit: 50 }),
+    ).toThrow('The Thread Library is unavailable.')
 
     database.prepare("UPDATE threads SET location = 'broken' WHERE id = ?").run(input.threadId)
     expect(() => execute(owner, 'readThread', { threadId: input.threadId })).toThrow(

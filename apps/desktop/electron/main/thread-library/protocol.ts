@@ -17,6 +17,7 @@ const uuid = z.uuid()
 const timestamp = z.iso.datetime()
 const localSecond = z.iso.datetime({ local: true, precision: 0 })
 const location = z.enum(['available', 'archived', 'trash'])
+const pinPosition = z.number().int().positive().nullable()
 const position = z.number().int().nonnegative()
 
 export function formatThreadGenericTitle(
@@ -34,7 +35,7 @@ const threadRowSchema = z
     location,
     trashedFromLocation: z.enum(['available', 'archived']).nullable(),
     trashedPinPosition: z.number().int().positive().nullable(),
-    pinPosition: z.number().int().positive().nullable(),
+    pinPosition,
     title: nonBlank,
     titleSource: z.enum(['auto', 'manual']),
     fallbackLocalSecond: localSecond.nullable(),
@@ -529,7 +530,7 @@ const threadSummarySchema = z
     id: uuid,
     location,
     title: nonBlank,
-    pinPosition: z.number().int().positive().nullable(),
+    pinPosition,
     lastUserActivityAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -541,9 +542,12 @@ const threadSummarySchema = z
 const threadListRowSchema = z
   .discriminatedUnion('availability', [
     threadSummarySchema.extend({ availability: z.literal('available') }),
-    threadIdentitySchema.extend({ availability: z.literal('unavailable') }),
+    threadIdentitySchema.extend({ availability: z.literal('unavailable'), pinPosition }),
   ])
   .superRefine((row, context) => {
+    if (row.pinPosition !== null && row.location !== 'available') {
+      context.addIssue({ code: 'custom', message: 'Thread Pin grouping is inconsistent.' })
+    }
     if (row.availability === 'available' && row.seenResultRevision > row.resultRevision) {
       context.addIssue({ code: 'custom', message: 'Seen result revision is ahead of the result.' })
     }

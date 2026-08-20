@@ -23,7 +23,6 @@ import {
   importedV5RowsSchema,
   parseThreadLibraryListRow,
   parseThreadLibraryThreadDetail,
-  parseThreadLibraryThreadIdentity,
   parseThreadLibraryRequest,
   threadLibrarySafeErrorMessages,
   type ImportedV5Rows,
@@ -345,18 +344,25 @@ function threadSummary(row: Record<string, unknown>) {
   }
 }
 
-function threadListRow(row: Record<string, unknown>): ThreadLibraryListRow {
-  let identity: ReturnType<typeof parseThreadLibraryThreadIdentity>
+function unavailableThreadListRow(row: Record<string, unknown>): ThreadLibraryListRow {
   try {
-    identity = parseThreadLibraryThreadIdentity({ id: row.id, location: row.location })
+    return parseThreadLibraryListRow({
+      availability: 'unavailable',
+      id: row.id,
+      location: row.location,
+      pinPosition: row.pin_position,
+    })
   } catch {
     throw new DatabaseOperationError('library_unavailable')
   }
+}
 
+function threadListRow(row: Record<string, unknown>): ThreadLibraryListRow {
+  const unavailable = unavailableThreadListRow(row)
   try {
     return parseThreadLibraryListRow({ availability: 'available', ...threadSummary(row) })
   } catch {
-    return { availability: 'unavailable', ...identity }
+    return unavailable
   }
 }
 
@@ -604,7 +610,11 @@ function listPage(
   }
   if (cursor) {
     const anchor = database.prepare('SELECT * FROM threads WHERE id = ?').get(cursor.id)
-    if (!anchor || !sameCursorRow(anchor, cursor)) {
+    if (!anchor) {
+      throw new DatabaseOperationError('stale_cursor')
+    }
+    unavailableThreadListRow(anchor)
+    if (!sameCursorRow(anchor, cursor)) {
       throw new DatabaseOperationError('stale_cursor')
     }
   }
@@ -646,12 +656,13 @@ function listPage(
       : statement.all(input.location)
   }
 
-  const hasMore = rows.length > input.limit
-  const page = rows.slice(0, input.limit)
+  const parsedRows = rows.map(threadListRow)
+  const hasMore = parsedRows.length > input.limit
+  const page = parsedRows.slice(0, input.limit)
   return {
-    rows: page.map(threadListRow),
+    rows: page,
     nextCursor: hasMore
-      ? encodeCursor(cursorFromRow(page.at(-1)!, cursorEpoch, mutationCursor))
+      ? encodeCursor(cursorFromRow(rows[input.limit - 1]!, cursorEpoch, mutationCursor))
       : null,
     includedThroughCursor: mutationCursor,
   }
@@ -758,11 +769,7 @@ function readImportedRows(database: DatabaseSync, threadId: string): ImportedV5R
   if (!thread) {
     return null
   }
-  try {
-    parseThreadLibraryThreadIdentity({ id: thread.id, location: thread.location })
-  } catch {
-    throw new DatabaseOperationError('library_unavailable')
-  }
+  unavailableThreadListRow(thread)
   const draft = database.prepare('SELECT * FROM drafts WHERE thread_id = ?').get(threadId)
   if (!draft) {
     throw new DatabaseOperationError('thread_unavailable')

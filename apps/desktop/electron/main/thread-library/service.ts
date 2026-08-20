@@ -154,6 +154,7 @@ function availableSummary(
     availability: 'available',
     id: detail.id,
     location: detail.location,
+    pinPosition: detail.pinPosition,
     title: detail.title,
     threadRevision: detail.threadRevision,
     resultRevision: detail.resultRevision,
@@ -171,6 +172,7 @@ function listSummary(row: ThreadLibraryListRow, activity: NyxThreadActivity): Ny
         availability: 'available',
         id: row.id,
         location: row.location,
+        pinPosition: row.pinPosition,
         title: row.title,
         threadRevision: row.threadRevision,
         resultRevision: row.resultRevision,
@@ -184,6 +186,7 @@ function listSummary(row: ThreadLibraryListRow, activity: NyxThreadActivity): Ny
         availability: 'unavailable',
         id: row.id,
         location: row.location,
+        pinPosition: row.pinPosition,
         title: "Couldn't open this thread",
         unavailable: safeErrors.thread_unavailable,
       }

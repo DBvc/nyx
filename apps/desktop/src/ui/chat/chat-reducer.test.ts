@@ -29,6 +29,7 @@ function detail(overrides: Partial<NyxThreadDetail> = {}): NyxThreadDetail {
       availability: 'available',
       id: 'thread-a',
       location: 'available',
+      pinPosition: null,
       title: 'Canonical title',
       threadRevision: 1,
       resultRevision: 0,
@@ -315,6 +316,7 @@ describe('chatReducer C1 projection', () => {
       input: 'local edit',
       threadSummary: {
         availability: 'unavailable',
+        pinPosition: null,
         title: "Couldn't open this thread",
       },
     })

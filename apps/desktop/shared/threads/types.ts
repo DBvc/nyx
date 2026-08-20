@@ -34,6 +34,7 @@ export interface NyxThreadAvailableSummary {
   availability: 'available'
   id: string
   location: NyxThreadLocation
+  pinPosition: number | null
   title: string
   threadRevision: number
   resultRevision: number
@@ -57,6 +58,7 @@ export interface NyxThreadUnavailableSummary {
   availability: 'unavailable'
   id: string
   location: NyxThreadLocation
+  pinPosition: number | null
   title: "Couldn't open this thread"
   unavailable: NyxThreadSafeError
 }

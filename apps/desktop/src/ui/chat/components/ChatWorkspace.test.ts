@@ -201,6 +201,7 @@ describe('sidebar workspace helpers', () => {
       availability: 'available' as const,
       id: 'thread-a',
       location: 'available' as const,
+      pinPosition: null,
       title: 'First',
       threadRevision: 1,
       resultRevision: 0,

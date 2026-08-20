@@ -885,10 +885,6 @@ export function useChatSession({
           dispatch({ type: 'thread-library-hydration-failed', generation, error: pageResult.error })
           return
         }
-        runCapacityRef.current = pageResult.value.capacity
-        setRunCapacity(pageResult.value.capacity)
-        replaceThreadSummaries(pageResult.value.rows)
-
         const firstSummary = pageResult.value.rows[0] ?? null
         let storedId: string | null = null
         try {
@@ -917,11 +913,12 @@ export function useChatSession({
           if (disposed || request !== hydrationRef.current) return
         }
         if (detailResult && !detailResult.ok) {
-          if (detailResult.error.code === 'thread_unavailable' && selectedId) {
+          if (detailResult.error.code === 'thread_unavailable' && selectedId && summary) {
             summary = {
               availability: 'unavailable',
               id: selectedId,
-              location: summary?.location ?? 'available',
+              location: summary.location,
+              pinPosition: summary.pinPosition,
               title: "Couldn't open this thread",
               unavailable: detailResult.error,
             }
@@ -929,7 +926,10 @@ export function useChatSession({
             dispatch({
               type: 'thread-library-hydration-failed',
               generation,
-              error: detailResult.error,
+              error:
+                detailResult.error.code === 'thread_unavailable'
+                  ? threadLibraryBridgeError()
+                  : detailResult.error,
             })
             return
           }
@@ -959,6 +959,9 @@ export function useChatSession({
             // A blocked UI preference does not block canonical hydration.
           }
         }
+        runCapacityRef.current = pageResult.value.capacity
+        setRunCapacity(pageResult.value.capacity)
+        replaceThreadSummaries(pageResult.value.rows)
         dispatch({
           type: 'thread-library-hydrated',
           generation,

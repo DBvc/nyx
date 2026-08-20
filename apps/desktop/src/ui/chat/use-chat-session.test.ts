@@ -129,6 +129,7 @@ function detail(text = '', threadId = 'thread-a'): NyxThreadDetail {
       availability: 'available',
       id: threadId,
       location: 'available',
+      pinPosition: null,
       title: 'Canonical title',
       threadRevision: 1,
       resultRevision: 0,
@@ -997,6 +998,7 @@ describe('C1 hydration', () => {
 
   it('keeps an identifiable unavailable Thread selected and Retry-only', async () => {
     const selected = detail().summary
+    selected.pinPosition = 2
     installBridge({
       list: async () => ({
         ok: true,
@@ -1019,7 +1021,56 @@ describe('C1 hydration', () => {
     expect(harness.state).toMatchObject({
       selectedThreadId: 'thread-a',
       hydrationErrorThreadId: 'thread-a',
-      threadSummary: { availability: 'unavailable', title: "Couldn't open this thread" },
+      threadSummary: {
+        availability: 'unavailable',
+        pinPosition: 2,
+        title: "Couldn't open this thread",
+      },
+    })
+  })
+
+  it('fails the Library closed when an unavailable off-page Thread has no safe Pin grouping', async () => {
+    const snapshot = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    const bridge = installBridge({
+      selectedId: 'thread-b',
+      list: async () => ({
+        ok: true,
+        value: {
+          rows: [detail('first page').summary],
+          nextCursor: 'next-page',
+          capacity: { activeRuns: 2, attachmentRunActive: false },
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 2,
+        },
+      }),
+      get: () => snapshot.promise,
+    })
+    render(true)
+
+    await vi.waitFor(() => expect(bridge.get).toHaveBeenCalledOnce())
+    expect(render().threadSummaries).toEqual([])
+    expect(render().capacityNotice).toBeNull()
+    snapshot.resolve({
+      ok: false,
+      error: { code: 'thread_unavailable', message: 'Canonical content failed.' },
+    })
+
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('error'))
+    expect(render().threadSummaries).toEqual([])
+    expect(render().capacityNotice).toBeNull()
+    expect(harness.state).toMatchObject({
+      selectedThreadId: null,
+      threadSummary: null,
+      hydrationError: {
+        code: 'library_unavailable',
+        message: "Couldn't open Thread Library",
+      },
     })
   })
 
