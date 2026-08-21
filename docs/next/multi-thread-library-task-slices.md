@@ -31,6 +31,13 @@ worktree bytes grant no product permission. If the exact candidate receives the
 independent review bound below and this docs-only change enters HEAD, the same
 explicit request authorizes only the CP1 product step frozen by that contract.
 
+On 2026-08-21 the user explicitly narrowed CP1 to pagination and the
+Pinned/Recent projection. Custom roving keyboard navigation, automatic focus
+movement, live loading announcements and manual VoiceOver evidence are removed
+from CP1. Ordinary button behavior, selected state and existing accessible
+labels remain. This narrower decision supersedes the broader CP1 focus and
+VoiceOver mechanics in the technical plan.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. The later `PIN1` mutation
 direction is not open and requires a separate explicit scope lock after CP1
@@ -51,10 +58,10 @@ Contract id: `NYX-MTL-CP1-SCOPE-20260820-01`.
 Independent review binding:
 `NYX-MTL-CP1-SCOPE-REVIEW-20260820-02`.
 
-Status: scope-lock candidate. The independent review must accept the exact diff
-under the binding above. The Plan-First completion commit records that gate.
-Only after that docs-only commit enters HEAD does CP1 become executable without
-rewriting this subsection. Until then this section grants no product permission.
+Status: executable and in progress. The independent review accepted the exact
+scope candidate under the binding above, and the Plan-First scope-lock commit
+entered HEAD at `1131cfe`. The 2026-08-21 user decision narrows the accepted
+scope as recorded in Current Status and this subsection.
 
 CP1 is a fresh bounded projection slice over landed C1, E1S and E1S-R1
 behavior. It uses the existing SQLite schema, Worker-owned Available ordering,
@@ -72,12 +79,11 @@ CP1 freezes these user-visible behaviors:
 
 - the Available collection loads at most 50 canonical summaries per explicit
   page. Initial hydration shows `Loading threads`; a next page is requested only
-  from the ordinary-Tab-stop `Load more threads` control. Loading more preserves
+  from the `Load more threads` control. Loading more preserves
   existing rows and shows `Loading more`. Exhausting the one permitted bounded
   candidate rebuild during initial load shows `Couldn't load threads` plus a
   local page Retry. The same bounded failure during a later load preserves rows,
-  selection, detail and scroll, shows `Couldn't load more` plus local page Retry
-  and focuses Retry;
+  selection and detail, and shows `Couldn't load more` plus local page Retry;
 - `library_unavailable` never enters either page-error state. It discards the
   page candidate and enters the existing whole-Library fail-closed hydration:
   Thread detail, New, mutation and Provider start remain unavailable, the
@@ -85,10 +91,9 @@ CP1 freezes these user-visible behaviors:
   `retryOpen({ scope: 'library' })` rather than replaying `listPage`.
   `thread_unavailable` remains the existing safe row/detail state when identity,
   location and order metadata are independently valid;
-- an explicit successful load focuses the first new visible Thread row when no
-  pending selection exists and announces `N more threads loaded`. The final
-  explicit load removes the control and announces `End of threads` once. There
-  is no automatic infinite load, virtual list or around-page request;
+- an explicit successful load appends the next bounded page. The final explicit
+  load removes the control. There is no automatic infinite load, virtual list
+  or around-page request;
 - the Renderer displays every loaded Available summary exactly once. A safely
   projected positive `pinPosition` places a row in Pinned; `null` places it in
   Recent. Each group preserves the Worker-returned combined canonical order,
@@ -97,19 +102,12 @@ CP1 freezes these user-visible behaviors:
   `Current thread` row and retains Main detail. It is never inserted into,
   sorted with or counted in the canonical prefix. Once its canonical row loads,
   the separate row disappears without changing selection;
-- the canonical Pinned/Recent loaded prefix uses one roving Tab stop keyed by
-  full `threadId`. The separate Current thread row is an ordinary Tab stop before
-  that collection and does not enter its Arrow/Home/End sequence. Arrow keys
-  move between loaded canonical rows, Home/End use only their currently loaded
-  first/last rows, Enter selects, and Load more remains another separate Tab
-  stop. Selected state uses `aria-current`; full titles and existing safe status
-  remain available to assistive technology; and
-- a valid selected Thread missing from the loaded prefix records one
-  `pendingFocusThreadId`. Initial settle focuses Load more when `nextCursor`
-  exists. Each explicit page either focuses that exact row and clears the
-  pending id or returns focus to the next Load more. Failure keeps the pending id
-  and focuses Retry. If initial settle or an explicit page reaches
-  `nextCursor=null`, it skips any nonexistent Load more and the existing exact
+- Thread rows and `Load more threads` remain ordinary buttons. Selected state
+  uses `aria-current`; full titles and existing safe status remain available.
+  CP1 adds no custom roving Tab state, Arrow/Home/End navigation, automatic
+  focus movement or live announcement state; and
+- if a valid selected Thread is missing from the loaded prefix and initial
+  settle or an explicit page reaches `nextCursor=null`, the existing exact
   `get(threadId)` revalidates once: an invalid target uses the existing
   deterministic fallback; a still-valid missing target performs one replacement
   full hydration. A second miss exposes the bounded load error and Retry instead
@@ -135,7 +133,7 @@ CP1 freezes these contract and state boundaries:
   Run capacity is initialized only by full hydration and then changed only by
   accepted `chat:capacity` events, preserving E1S-R1 ownership;
 - Renderer owns only `loadedPageCount`, opaque page tokens, one atomic candidate
-  prefix and focus/loading/error state. A candidate rebuild reads no more than
+  prefix and loading/error state. A candidate rebuild reads no more than
   the current page budget. A stale Worker cursor discards the whole candidate
   and permits one fresh bounded rebuild for that action; a second conflict
   exposes the relevant Retry state. Epoch mismatch or a relevant event during
@@ -192,17 +190,12 @@ Required focused evidence:
   relevant Thread events, cursor gaps and epoch replacement prove that page
   candidates never advance `publicEventCursor` or overwrite Run capacity;
 - selected Threads on the second and third pages cover Current-thread fallback,
-  pending focus, target appearance, target invalidation, load failure/Retry,
-  end-of-list exact revalidation, one replacement hydration and bounded final
-  failure without automatic looping;
-- initial/loading-more/error/retry/end UI, one canonical-prefix roving Tab stop,
-  independent Current/Load-more Tab stops, loaded-only Home/End, initial
-  `nextCursor=null` revalidation, Current-thread de-duplication, scroll
-  preservation and focus restoration have component/hook coverage; and
-- a minimum-window keyboard and VoiceOver runthrough confirms the fixed top and
-  bottom controls remain reachable, Pinned/Recent and status are announced,
-  Load more is not a row, focus stays visible and loading or retry does not jump
-  collection scroll.
+  target appearance, target invalidation, load failure/Retry, end-of-list exact
+  revalidation, one replacement hydration and bounded final failure without
+  automatic looping; and
+- initial/loading-more/error/retry UI, final Load-more removal, initial
+  `nextCursor=null` revalidation and Current-thread de-duplication have
+  component/hook coverage.
 
 Before final evidence, run:
 
@@ -223,8 +216,8 @@ CP1 stops and returns to planning if implementation needs another file; a new
 IPC/preload method, schema/index or Pin mutation; Renderer-owned durable or
 full-library state; an around-page API, virtual list or automatic unbounded
 load; page-derived event/capacity ownership; unsafe unavailable-row grouping;
-or cannot preserve selection, scroll, keyboard and focus behavior within the
-bounded candidate model. A Stop unlocks neither PIN1 nor any historical slice.
+or cannot preserve selection and pagination consistency within the bounded
+candidate model. A Stop unlocks neither PIN1 nor any historical slice.
 
 ## multi-thread-library/E1S-R1-scope-lock: Minimal correctness repair
 
