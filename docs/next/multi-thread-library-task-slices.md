@@ -42,10 +42,18 @@ from CP1. Ordinary button behavior, selected state and existing accessible
 labels remain. This narrower decision supersedes the broader CP1 focus and
 VoiceOver mechanics in the technical plan.
 
+On 2026-08-21 the user explicitly requested the bounded `PIN1` direction:
+Pin, Unpin and deterministic movement inside the existing Pinned collection.
+Contract `NYX-MTL-PIN1-SCOPE-20260820-01` below is its only scope-lock
+candidate. Dirty worktree bytes grant no product permission. If the exact
+candidate receives the independent review bound below and this docs-only
+change enters HEAD, the same explicit request authorizes only the ordered PIN1
+product steps frozen by that contract.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
-CP1 is not a continuation or revival of old U1/L1. The later `PIN1` mutation
-direction is not open and requires a separate explicit scope lock after CP1
-completion.
+CP1 is not a continuation or revival of old U1/L1. PIN1 remains closed until
+its exact independent scope review and docs-only scope-lock commit complete;
+neither CP1 nor an older plan or review grants PIN1 product permission.
 
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old
@@ -223,6 +231,276 @@ full-library state; an around-page API, virtual list or automatic unbounded
 load; page-derived event/capacity ownership; unsafe unavailable-row grouping;
 or cannot preserve selection and pagination consistency within the bounded
 candidate model. A Stop unlocks neither PIN1 nor any historical slice.
+
+## multi-thread-library/PIN1-scope-lock: Bounded Pin lifecycle
+
+Contract id: `NYX-MTL-PIN1-SCOPE-20260820-01`.
+
+Independent review binding:
+`NYX-MTL-PIN1-SCOPE-REVIEW-20260821-01`.
+
+Status: scope-lock candidate. The independent review must accept the exact diff
+under the binding above. The Plan-First completion commit records that gate.
+Only after that docs-only commit enters HEAD does PIN1 become executable without
+rewriting this subsection. Until then this section grants no product permission.
+
+PIN1 is a fresh bounded mutation slice over completed CP1. Its scope-lock
+baseline is `113b139f60695b80e6dcc96512c5c097e41ed4dd`, which contains CP1
+product head `0247c69`, accepted final review
+`NYX-MTL-CP1-FINAL-REVIEW-20260821-01` and the complete CP1 evidence record.
+The eventual PIN1 scope-lock commit must have that baseline in its ancestry;
+otherwise PIN1 stops for a fresh scope review. PIN1 reuses the existing SQLite
+`pin_position`, Worker ownership, typed bridge, Main events and Renderer
+collection projection. It adds no schema or second state owner and does not
+revive U1, L1 or any lifecycle work outside Pin.
+
+PIN1 freezes exactly six semantic actions:
+
+- `pin` requires canonical `pin_position=null` and inserts the target at
+  position 1. Existing Pinned rows retain their relative order and shift down;
+- `unpin` requires a positive canonical Pin position, removes the target from
+  Pinned and closes the remaining positions. The target returns to Recent at
+  its existing canonical activity order;
+- `move_up` and `move_down` move a Pinned target by one position;
+- `move_top` and `move_bottom` move a Pinned target to the first or last Pin
+  position; and
+- an action already at its boundary is a successful no-op. Every successful
+  mutation leaves Pinned positions unique and continuous from 1 through the
+  current Pinned count. Pin state survives Worker and application restart.
+
+All six successful actions preserve the selected Thread and its detail. Pin
+movement does not change `last_user_activity_at`, Recent tie-break fields,
+title, Draft, Turn, resource, result or seen-result state. It also does not
+increment `thread_revision` or change `created_at`/`updated_at`; the transaction
+writes only the affected `pin_position` values. An unavailable summary has no
+Pin controls. A mutation target must still be an Available Thread that can
+produce a safe canonical detail; otherwise the action fails without a write.
+
+The existing empty-shell cleanup is the only already-landed non-PIN1 operation
+that can delete an Available Pinned row. PIN1 extends that same
+`discardEmptyShell` Worker transaction, without a new public action: deleting a
+Pinned shell also closes every following Pin position through the same checked
+collision-free rewrite before commit. The existing removal acknowledgement and
+collection refresh remain authoritative. Surviving rows keep their activity,
+revision and timestamp fields, and an unknown discard outcome keeps its existing
+no-replay replacement-generation reconciliation.
+
+PIN1 freezes this public contract:
+
+- shared types add `NyxThreadPinAction`, `NyxThreadUpdatePinInput` and
+  `NyxThreadUpdatePinResult`. The input contains only `threadId`, one of the six
+  actions and `expectedPinPosition: number | null`. The result contains the
+  canonical target detail plus the existing public Thread clock;
+- the only new public method is `threads.updatePin(input)`, carried by the one
+  typed IPC channel `nyx:threads:update-pin` through shared, preload and Main.
+  It exposes neither SQL, a caller-chosen absolute destination, the full Pinned
+  order nor Worker/database diagnostics;
+- `expectedPinPosition` is an exact compare-and-set guard. `pin` accepts only
+  `null`; the other actions accept only a positive safe integer equal to the
+  target's current canonical value. A stale value returns the existing public
+  `conflict` error and performs no write. Invalid shape, missing target,
+  unavailable target or Library failure use only the existing safe public error
+  set; and
+- the Worker protocol adds only the semantic `updatePin` mutation and one
+  Worker-only `pinState` reconciliation read. `pinState` makes one Worker-local
+  pass that validates the complete continuous order, but returns only the fixed
+  size `pinnedCount`, target `pinPosition` and exact target `readThread` detail
+  from one read transaction. Ordered Pin ids never cross into Main, preload or
+  Renderer;
+- the fixed-size pre-state plus the action determines the only valid target
+  position and Pinned count after commit. The single Worker owner, atomic
+  reorder and collection-wide Renderer action gate below exclude a second Pin
+  mutation from changing an unseen neighbor while that proof is live. No
+  persisted operation id, schema revision or probabilistic order hash is added.
+
+The Worker owns one atomic Pin transaction:
+
+- `BEGIN IMMEDIATE` reads the target and current ordered Pinned set, validates
+  Available identity, safe detail, exact guard, positive safe integer positions
+  and a unique continuous `1..N` pre-state before computing the semantic result;
+- the transaction derives the final ordered ids from the action. A changed
+  order first moves affected rows into a checked collision-free positive
+  temporary range above the current maximum, then writes final continuous
+  positions, so the existing partial unique index is never transiently
+  violated. The temporary range and final positions must remain safe integers;
+- a boundary no-op reports `actualMutation=false`, advances no Worker mutation
+  cursor and publishes no changed event. A real change reports one logical
+  mutation even when several rows shift; and
+- every validation, statement or commit failure rolls back the entire reorder.
+  Invalid or non-continuous stored Pin metadata fails closed as Library
+  unavailable; PIN1 never repairs, guesses or partially normalizes it; and
+- `discardEmptyShell` applies the same pre-state validation and two-phase
+  collision-free rewrite when its target has a Pin position. The delete and
+  position closure are one logical mutation and roll back together.
+
+The Main client serializes each PIN1 mutation together with its reconciliation
+barrier. The existing `discardEmptyShell` operation joins the same barrier
+because it can now change Pin order; no Pin preflight/mutation/reconciliation
+may interleave with that delete. Before sending the mutation Main captures the
+Worker-only `pinState` pre-state as fixed-size target position/count/detail; the
+preflight first applies the same action shape and exact `expectedPinPosition`
+guard as the mutation. A mismatch returns public `conflict` without sending the
+write. The Worker transaction still repeats every guard and full-order invariant
+check. A known committed mutation follows the existing acknowledgement path:
+Main publishes the target's canonical `threads:changed` event, and the Renderer
+rebuilds its bounded collection from `listPage` rather than locally moving rows.
+
+Renderer holds one collection-wide PIN1 action gate from command dispatch until
+one authoritative bounded collection rebuild for that action commits. Every Pin
+control is disabled while the gate is held, so a second action cannot use an old
+neighbor after the first canonical reorder. A successful response requests or
+joins exactly one coalesced bounded rebuild; the changed event for a real
+mutation may satisfy the same rebuild, while a boundary no-op performs the one
+explicit read without inventing an event or cursor. Only the committed rebuild
+clears the gate and earlier row error. This gate is Renderer-local transient
+state, not another order owner, and it does not block unrelated chat activity.
+
+If transport or commit acknowledgement makes the outcome unknown, Main must not
+replay the mutation. It invalidates the failed generation, opens one replacement
+generation and performs one atomic Worker-only `pinState` read containing the
+same-generation target position/count/detail. Main computes the exact expected
+target position and Pinned count from the captured pre-state and semantic action:
+
+- an independently validated continuous state with the exact expected target
+  position and count returns canonical success;
+- the exact pre-state returns the public target-level `conflict` error, except
+  that an intended boundary no-op is canonical success only when the captured
+  pre-state position exactly matched the caller's `expectedPinPosition` and the
+  semantic action computed identical pre/post position and count; and
+- any missing, unsafe, non-continuous or third state remains outcome unknown and
+  returns Library unavailable.
+
+The replacement epoch triggers one complete Renderer hydration for all three
+results. Main does not fabricate an event in the failed epoch, emit a partial
+shift set or convert uncertainty into another write. A second replacement/read
+failure remains failed and bounded. The originating Renderer action records its
+local projection generation. If the replacement epoch arrives before the action
+response, that response cannot write a row error into the newer generation; if
+the response arrives first, the later epoch hydration replaces it. Tests must
+cover both orders, and the PIN1 gate clears only after the replacement hydration
+commits or the whole-Library failure state takes ownership.
+
+PIN1 UI is deliberately ordinary:
+
+- an Available Recent row has a plain Pin button. An Available Pinned row has
+  plain Unpin, Move up, Move down, Move to top and Move to bottom buttons. Each
+  sends only the row's semantic action, `threadId` and current projected
+  `pinPosition`; boundary controls may be disabled when the boundary is known,
+  while the Worker no-op remains authoritative. All Pin controls share the
+  transient collection-wide action gate above;
+- Renderer performs no optimistic Pin, Unpin, reorder or durable write. A known
+  real mutation uses the Main changed event and coalesced bounded collection
+  refresh; replacement reconciliation uses the epoch hydration. A boundary
+  no-op uses one explicit bounded refresh without a changed event. Target-level
+  `invalid_request`, `conflict`, `not_found` or `thread_unavailable` failures
+  perform no local reorder, preserve the current projection while exposing the
+  safe error next to the originating row actions, and keep the loaded-page
+  budget. Conflict, missing-target and target-unavailable failures also request
+  the existing bounded collection rebuild and CP1 exact selected-target
+  revalidation so stale state is replaced atomically. The collection-wide gate
+  remains held until that recovery commits; `invalid_request` may release it
+  immediately because no canonical read is stale; and
+- `library_unavailable` is never a row-local PIN1 error. Unsafe or
+  non-continuous Pin metadata, an unknown third state, replacement/read failure
+  or any other Library failure discards the page candidate and enters the
+  accepted CP1 whole-Library fail-closed hydration. Thread detail, New, all
+  mutation and Provider start remain unavailable, and Retry uses
+  `retryOpen({ scope: 'library' })`; and
+- if a selected row moves outside the loaded prefix, the accepted CP1 `Current
+thread` fallback keeps it visible until canonical pagination contains it
+  again. PIN1 adds no custom keyboard navigation, roving Tab state, context
+  menu, automatic focus movement, focus restoration, live announcement,
+  VoiceOver evidence, drag-and-drop, batch operation or visual redesign.
+
+The PIN1 canonical transaction step may change exactly:
+
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/shared/threads/ipc.ts`;
+- `apps/desktop/shared/contracts/desktop.ts`;
+- `apps/desktop/electron/preload/index.ts`;
+- `apps/desktop/electron/preload/index.test.ts`;
+- `apps/desktop/electron/main/index.ts`;
+- `apps/desktop/electron/main/index.test.ts`;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/client.ts`;
+- `apps/desktop/electron/main/thread-library/client.test.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts`;
+- `apps/desktop/electron/main/thread-library/worker.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.ts`; and
+- `apps/desktop/electron/main/thread-library/service.test.ts`.
+
+The later PIN1 controls step may change exactly:
+
+- `apps/desktop/src/ui/chat/thread-collection.ts`;
+- `apps/desktop/src/ui/chat/thread-collection.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`; and
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`.
+
+The two product steps are ordered: canonical transaction first, ordinary
+controls second. Each step may also update only this status owner and
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md) for
+its final reviewed evidence; evidence-only edits do not grant additional code
+scope. No other file is allowed.
+
+Required focused evidence:
+
+- Worker tests cover all six actions, new-Pin-at-top, relative-order stability,
+  boundary no-ops, stale guards, duplicate/gapped/unsafe pre-state rejection,
+  collision-free reorder, full rollback and restart persistence. They also Pin
+  an eligible empty shell between other Pinned rows, discard it through the
+  existing operation, prove continuous survivors/restart state and inject a
+  rollback failure across delete plus position closure;
+- client/service tests cover known acknowledgement, fixed-size pre-state
+  capture with no ordered-id transfer, one-pass continuity validation,
+  process-wide Pin serialization including non-interleaving empty-shell delete,
+  commit-unknown and transport-unknown exact reconciliation,
+  definitely-not-committed, third-state failure, replacement failure and proof
+  that no unknown mutation is replayed. They also prove stale-to-boundary
+  preflight returns `conflict` without sending a mutation, while a guard-matched
+  boundary no-op with a lost reply reconciles to canonical success;
+- shared/preload/Main tests prove the single exact method/channel, strict input,
+  safe error mapping, canonical result clock and absence of raw order/SQL; and
+- Renderer tests cover ordinary action controls, known boundaries, no optimistic
+  reorder, collection-wide disabling from dispatch through committed canonical
+  refresh, rapid adjacent actions against a stale row, changed-event refresh,
+  boundary no-op explicit refresh, replacement hydration in both event/response
+  orders, target-level failure preservation and rebuild, safe row error,
+  Library-unavailable fail-closed routing and selected off-prefix Current-thread
+  fallback.
+
+Final PIN1 evidence must run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+mise run format-check
+git diff --check
+```
+
+PIN1 stops and returns to planning if implementation needs a schema/index or
+file outside the inventories above; another public method; raw SQL, arbitrary
+position or full-order IPC; a synchronous Main SQLite fallback; a second
+database or durable Renderer owner; replay of an unknown mutation; unbounded or
+non-atomic reconciliation retry, full ordered-id transfer across the Worker
+boundary or more than one replacement read; optimistic persistence; custom
+keyboard/focus/live announcement behavior; Search, Rename, Archive, Trash,
+Restore, delete beyond the already-landed empty-shell invariant closure, or any
+other lifecycle action; Runtime/Provider/Responses/attachment change; or cannot
+prove exact continuous order and full collection refresh within the existing
+Worker/Main/Renderer boundaries. One finite Worker-local continuity scan per
+preflight, transaction or replacement read is permitted; it does not authorize
+paging/retry loops or a Main-owned order copy. A Stop revives no historical
+slice.
 
 ## multi-thread-library/E1S-R1-scope-lock: Minimal correctness repair
 
