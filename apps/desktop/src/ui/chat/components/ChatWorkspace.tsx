@@ -213,7 +213,8 @@ export function ChatWorkspace() {
   const connectionSetup = useConnectionStatus()
   const {
     state,
-    threadSummaries,
+    threadCollection,
+    currentThreadSummary,
     isBusy,
     isAccepting,
     isResetting,
@@ -234,6 +235,8 @@ export function ChatWorkspace() {
     selectThread,
     startNewChat,
     retryOpen,
+    loadMoreThreads,
+    retryThreadCollection,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -262,6 +265,8 @@ export function ChatWorkspace() {
     state.threadSummary?.title ??
     (state.hydrationError ? "Couldn't open Thread Library" : 'New thread')
   const currentThreadPreview = state.hydrationError ? '' : threadPreview(state.messages)
+  const libraryUnavailable =
+    state.hydrationStatus === 'error' && state.hydrationErrorThreadId === null
   const { containerRef, followLatest, handleScroll, isFollowing } = useAutoScroll(
     threadItems.length,
     latestMessageItem?.message.content ?? state.runStatus,
@@ -368,11 +373,16 @@ export function ChatWorkspace() {
         >
           <ChatSidebar
             activeView={activeView}
-            currentThread={state.threadSummary}
+            collection={threadCollection}
+            collectionFocusEnabled={
+              activeView === 'chat' && !sidebarCollapsed && !libraryUnavailable
+            }
+            currentThread={currentThreadSummary}
             currentThreadStatus={currentThreadSidebarStatus(
               state.runStatus,
               state.settlementFailure !== null,
             )}
+            libraryUnavailable={libraryUnavailable}
             newThreadDisabled={state.hydrationStatus !== 'ready' || isResetting}
             onNewThread={() => {
               void startNewChat()
@@ -386,10 +396,13 @@ export function ChatWorkspace() {
               settingsPopoverRef.current?.hidePopover()
               setActiveView('connections')
             }}
+            onLoadMoreThreads={() => {
+              void loadMoreThreads()
+            }}
+            onRetryThreadCollection={retryThreadCollection}
             preview={currentThreadPreview}
             selectedThreadId={state.selectedThreadId}
             settingsPopoverRef={settingsPopoverRef}
-            threads={threadSummaries}
             title={currentThreadTitle}
           />
         </div>
