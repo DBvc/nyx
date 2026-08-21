@@ -1189,6 +1189,168 @@ describe('ThreadLibraryDatabase', () => {
     owner.close()
   })
 
+  it.each([
+    {
+      location: 'available' as const,
+      move: '',
+      column: 'last_user_activity_at',
+    },
+    {
+      location: 'archived' as const,
+      move: "UPDATE threads SET location = 'archived'",
+      column: 'last_user_activity_at',
+    },
+    {
+      location: 'trash' as const,
+      move: "UPDATE threads SET location = 'trash', trashed_from_location = 'available'",
+      column: 'updated_at',
+    },
+  ])('fails closed when a $location row has a corrupt order timestamp', async (testCase) => {
+    const { owner } = await createOwner()
+    const input = materializeInput(52)
+    execute(owner, 'materialize', input)
+
+    const database = rawDatabase(owner)
+    database.exec('PRAGMA ignore_check_constraints = ON')
+    if (testCase.move) database.exec(testCase.move)
+    database
+      .prepare(`UPDATE threads SET ${testCase.column} = 'not-a-timestamp' WHERE id = ?`)
+      .run(input.threadId)
+
+    expect(() =>
+      execute(owner, 'listPage', { location: testCase.location, cursor: null, limit: 50 }),
+    ).toThrow('The Thread Library is unavailable.')
+    owner.close()
+  })
+
+  it.each([
+    {
+      location: 'available' as const,
+      move: '',
+      column: 'updated_at',
+      pinPosition: null,
+    },
+    {
+      location: 'available' as const,
+      move: 'UPDATE threads SET pin_position = 1',
+      column: 'last_user_activity_at',
+      pinPosition: 1,
+    },
+    {
+      location: 'archived' as const,
+      move: "UPDATE threads SET location = 'archived'",
+      column: 'updated_at',
+      pinPosition: null,
+    },
+    {
+      location: 'trash' as const,
+      move: "UPDATE threads SET location = 'trash', trashed_from_location = 'available'",
+      column: 'last_user_activity_at',
+      pinPosition: null,
+    },
+  ])(
+    'keeps a $location row thread-scoped when only a non-order timestamp is corrupt',
+    async (testCase) => {
+      const { owner } = await createOwner()
+      const input = materializeInput(53)
+      execute(owner, 'materialize', input)
+
+      const database = rawDatabase(owner)
+      database.exec('PRAGMA ignore_check_constraints = ON')
+      if (testCase.move) database.exec(testCase.move)
+      database
+        .prepare(`UPDATE threads SET ${testCase.column} = 'not-a-timestamp' WHERE id = ?`)
+        .run(input.threadId)
+
+      expect(
+        execute(owner, 'listPage', {
+          location: testCase.location,
+          cursor: null,
+          limit: 50,
+        }).rows,
+      ).toEqual([
+        {
+          availability: 'unavailable',
+          id: input.threadId,
+          location: testCase.location,
+          pinPosition: testCase.pinPosition,
+        },
+      ])
+      expect(() => execute(owner, 'readThread', { threadId: input.threadId })).toThrow(
+        'This thread is unavailable.',
+      )
+      owner.close()
+    },
+  )
+
+  it('fails closed when a page-tail cursor anchor has corrupt order timestamps', async () => {
+    const { owner } = await createOwner()
+    for (let value = 1; value <= 51; value += 1) {
+      execute(owner, 'materialize', materializeInput(value))
+    }
+    const first = execute(owner, 'listPage', {
+      location: 'available',
+      cursor: null,
+      limit: 50,
+    })
+    expect(first.nextCursor).not.toBeNull()
+
+    const database = rawDatabase(owner)
+    database.exec('PRAGMA ignore_check_constraints = ON')
+    database
+      .prepare(
+        "UPDATE threads SET last_user_activity_at = last_user_activity_at || ' ' WHERE id = ?",
+      )
+      .run(first.rows.at(-1)!.id)
+
+    expect(() =>
+      execute(owner, 'listPage', {
+        location: 'available',
+        cursor: first.nextCursor,
+        limit: 50,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+    owner.close()
+  })
+
+  it('fails closed when the lookahead row has corrupt order timestamps', async () => {
+    const { owner } = await createOwner()
+    for (let value = 1; value <= 51; value += 1) {
+      execute(owner, 'materialize', materializeInput(value))
+    }
+
+    const database = rawDatabase(owner)
+    const lookahead = database
+      .prepare(
+        `SELECT id FROM threads WHERE location = 'available'
+         ORDER BY CASE WHEN pin_position IS NULL THEN 1 ELSE 0 END,
+                  pin_position ASC, last_user_activity_at DESC, created_at DESC, id ASC
+         LIMIT 1 OFFSET 50`,
+      )
+      .get() as { id: string }
+    database.exec('PRAGMA ignore_check_constraints = ON')
+    database
+      .prepare(
+        "UPDATE threads SET last_user_activity_at = last_user_activity_at || ' ' WHERE id = ?",
+      )
+      .run(lookahead.id)
+    expect(
+      database
+        .prepare(
+          `SELECT id FROM threads WHERE location = 'available'
+           ORDER BY CASE WHEN pin_position IS NULL THEN 1 ELSE 0 END,
+                    pin_position ASC, last_user_activity_at DESC, created_at DESC, id ASC
+           LIMIT 1 OFFSET 50`,
+        )
+        .get(),
+    ).toMatchObject({ id: lookahead.id })
+
+    expect(() =>
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }),
+    ).toThrow('The Thread Library is unavailable.')
+    owner.close()
+  })
+
   it('imports semantic resources exactly once and rolls back conflicts or disk-full writes', async () => {
     const { root, owner } = await createOwner()
     const rows = importedRows(500)

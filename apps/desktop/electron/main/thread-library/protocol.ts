@@ -525,6 +525,18 @@ const safeErrorSchema = z
   })
 
 const threadIdentitySchema = z.object({ id: uuid, location }).strict()
+const threadListOrderIdentitySchema = z
+  .object({
+    id: uuid,
+    location,
+    pinPosition,
+  })
+  .passthrough()
+  .superRefine((row, context) => {
+    if (row.pinPosition !== null && row.location !== 'available') {
+      context.addIssue({ code: 'custom', message: 'Thread Pin grouping is inconsistent.' })
+    }
+  })
 const threadSummarySchema = z
   .object({
     id: uuid,
@@ -682,6 +694,23 @@ export function parseThreadLibraryThreadIdentity(value: unknown) {
 
 export function parseThreadLibraryListRow(value: unknown): ThreadLibraryListRow {
   return threadListRowSchema.parse(value)
+}
+
+export function parseThreadLibraryListOrderMetadata(value: unknown) {
+  const metadata = threadListOrderIdentitySchema.parse(value)
+  const usesActivityOrder =
+    metadata.location === 'archived' ||
+    (metadata.location === 'available' && metadata.pinPosition === null)
+  const usesTrashOrder = metadata.location === 'trash'
+
+  return {
+    id: metadata.id,
+    location: metadata.location,
+    pinPosition: metadata.pinPosition,
+    lastUserActivityAt: usesActivityOrder ? timestamp.parse(metadata.lastUserActivityAt) : '',
+    createdAt: usesActivityOrder || usesTrashOrder ? timestamp.parse(metadata.createdAt) : '',
+    updatedAt: usesTrashOrder ? timestamp.parse(metadata.updatedAt) : '',
+  }
 }
 
 export function parseThreadLibraryThreadDetail(value: unknown): ThreadLibraryThreadDetail {

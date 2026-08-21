@@ -21,6 +21,7 @@ import {
   deriveThreadDraftTitle,
   formatThreadGenericTitle,
   importedV5RowsSchema,
+  parseThreadLibraryListOrderMetadata,
   parseThreadLibraryListRow,
   parseThreadLibraryThreadDetail,
   parseThreadLibraryRequest,
@@ -344,13 +345,29 @@ function threadSummary(row: Record<string, unknown>) {
   }
 }
 
-function unavailableThreadListRow(row: Record<string, unknown>): ThreadLibraryListRow {
+function threadListOrderMetadata(row: Record<string, unknown>) {
   try {
-    return parseThreadLibraryListRow({
-      availability: 'unavailable',
+    return parseThreadLibraryListOrderMetadata({
       id: row.id,
       location: row.location,
       pinPosition: row.pin_position,
+      lastUserActivityAt: row.last_user_activity_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })
+  } catch {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+}
+
+function unavailableThreadListRow(row: Record<string, unknown>): ThreadLibraryListRow {
+  const orderMetadata = threadListOrderMetadata(row)
+  try {
+    return parseThreadLibraryListRow({
+      availability: 'unavailable',
+      id: orderMetadata.id,
+      location: orderMetadata.location,
+      pinPosition: orderMetadata.pinPosition,
     })
   } catch {
     throw new DatabaseOperationError('library_unavailable')
@@ -512,22 +529,31 @@ function encodeCursor(value: CursorValue) {
 
 function decodeCursor(value: string): CursorValue {
   try {
-    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as CursorValue
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >
     if (
       !parsed ||
       typeof parsed.epoch !== 'string' ||
       !Number.isSafeInteger(parsed.includedThroughCursor) ||
-      parsed.includedThroughCursor < 0 ||
-      !['available', 'archived', 'trash'].includes(parsed.location) ||
-      typeof parsed.id !== 'string' ||
-      (parsed.pinPosition !== null && !Number.isInteger(parsed.pinPosition)) ||
-      typeof parsed.lastUserActivityAt !== 'string' ||
-      typeof parsed.createdAt !== 'string' ||
-      typeof parsed.updatedAt !== 'string'
+      (parsed.includedThroughCursor as number) < 0
     ) {
       throw new Error('invalid')
     }
-    return parsed
+    const orderMetadata = parseThreadLibraryListOrderMetadata({
+      id: parsed.id,
+      location: parsed.location,
+      pinPosition: parsed.pinPosition,
+      lastUserActivityAt: parsed.lastUserActivityAt,
+      createdAt: parsed.createdAt,
+      updatedAt: parsed.updatedAt,
+    })
+    return {
+      epoch: parsed.epoch,
+      includedThroughCursor: parsed.includedThroughCursor as number,
+      ...orderMetadata,
+    }
   } catch {
     throw new DatabaseOperationError('invalid_request')
   }
@@ -538,15 +564,11 @@ function cursorFromRow(
   epoch: string,
   includedThroughCursor: number,
 ): CursorValue {
+  const orderMetadata = threadListOrderMetadata(row)
   return {
     epoch,
     includedThroughCursor,
-    location: row.location as CursorValue['location'],
-    id: String(row.id),
-    pinPosition: row.pin_position as number | null,
-    lastUserActivityAt: String(row.last_user_activity_at),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    ...orderMetadata,
   }
 }
 
