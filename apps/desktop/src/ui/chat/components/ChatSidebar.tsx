@@ -1,13 +1,12 @@
 import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
+import { useMemo } from 'react'
+import type { RefObject } from 'react'
 
 import type { NyxChatRunStatus } from '../../../../shared/chat/types'
 import type { NyxThreadSummary } from '../../../../shared/threads/types'
-import type { ThreadCollectionFocusRequest, ThreadCollectionState } from '../thread-collection'
+import type { ThreadCollectionState } from '../thread-collection'
 
 type CurrentThreadStatus = 'idle' | 'running' | 'saving_failed'
-type ThreadNavigationKey = 'ArrowDown' | 'ArrowUp' | 'Home' | 'End'
 
 interface ChatSidebarProps {
   title: string
@@ -17,7 +16,6 @@ interface ChatSidebarProps {
   currentThreadStatus: CurrentThreadStatus
   selectedThreadId: string | null
   collection: ThreadCollectionState
-  collectionFocusEnabled: boolean
   libraryUnavailable: boolean
   newThreadDisabled: boolean
   onNewThread: () => void
@@ -48,37 +46,6 @@ export function currentThreadOutsidePage(
     : null
 }
 
-export function nextThreadNavigationId(
-  threadIds: ReadonlyArray<string>,
-  currentThreadId: string | null,
-  key: ThreadNavigationKey,
-) {
-  if (threadIds.length === 0) return null
-  if (key === 'Home') return threadIds[0]
-  if (key === 'End') return threadIds.at(-1) ?? null
-
-  const currentIndex = Math.max(0, threadIds.indexOf(currentThreadId ?? ''))
-  const nextIndex =
-    key === 'ArrowDown'
-      ? Math.min(threadIds.length - 1, currentIndex + 1)
-      : Math.max(0, currentIndex - 1)
-  return threadIds[nextIndex]
-}
-
-export function threadCollectionTabStopId(
-  threadIds: ReadonlyArray<string>,
-  currentThreadId: string | null,
-  selectedThreadId: string | null,
-) {
-  if (currentThreadId && threadIds.includes(currentThreadId)) return currentThreadId
-  if (selectedThreadId && threadIds.includes(selectedThreadId)) return selectedThreadId
-  return threadIds[0] ?? null
-}
-
-export function initialThreadCollectionFocusId(threadIds: ReadonlyArray<string>) {
-  return threadIds[0] ?? null
-}
-
 export function ChatSidebar({
   title,
   preview,
@@ -87,7 +54,6 @@ export function ChatSidebar({
   currentThreadStatus,
   selectedThreadId,
   collection,
-  collectionFocusEnabled,
   libraryUnavailable,
   newThreadDisabled,
   onNewThread,
@@ -106,127 +72,11 @@ export function ChatSidebar({
     () => canonicalThreads.filter((thread) => thread.pinPosition === null),
     [canonicalThreads],
   )
-  const canonicalThreadIds = useMemo(
-    () => canonicalThreads.map((thread) => thread.id),
-    [canonicalThreads],
-  )
-  const [tabStopThreadId, setTabStopThreadId] = useState<string | null>(() =>
-    threadCollectionTabStopId(canonicalThreadIds, null, selectedThreadId),
-  )
-  const threadButtonRefs = useRef(new Map<string, HTMLButtonElement>())
-  const newThreadRef = useRef<HTMLButtonElement>(null)
-  const initialRetryRef = useRef<HTMLButtonElement>(null)
-  const tailActionRef = useRef<HTMLButtonElement>(null)
-  const handledFocusRequestRef = useRef<ThreadCollectionFocusRequest | null>(null)
-  const initialRetryFocusPendingRef = useRef(false)
-  const [initialCollectionRetrying, setInitialCollectionRetrying] = useState(false)
-
-  useEffect(() => {
-    setTabStopThreadId((current) =>
-      threadCollectionTabStopId(canonicalThreadIds, current, selectedThreadId),
-    )
-  }, [canonicalThreadIds, selectedThreadId])
-
-  useEffect(() => {
-    const request = collection.focusRequest
-    if (
-      libraryUnavailable ||
-      !collectionFocusEnabled ||
-      !request ||
-      handledFocusRequestRef.current === request
-    ) {
-      return
-    }
-
-    const target =
-      request.kind === 'thread'
-        ? threadButtonRefs.current.get(request.threadId)
-        : request.kind === 'load-more'
-          ? tailActionRef.current
-          : (initialRetryRef.current ?? tailActionRef.current)
-
-    if (!target) return
-
-    if (request.kind === 'thread') setTabStopThreadId(request.threadId)
-    target.focus()
-    if (document.activeElement !== target) return
-
-    handledFocusRequestRef.current = request
-    target.scrollIntoView({ block: 'nearest' })
-  }, [collection.focusRequest, collectionFocusEnabled, libraryUnavailable])
-
-  useEffect(() => {
-    if (!initialRetryFocusPendingRef.current || initialCollectionRetrying) return
-    if (collection.status === 'loading') return
-
-    if (collection.status !== 'ready') return
-    if (collection.focusRequest) {
-      if (handledFocusRequestRef.current === collection.focusRequest) {
-        initialRetryFocusPendingRef.current = false
-      }
-      return
-    }
-    if (!collectionFocusEnabled || libraryUnavailable) return
-
-    const targetId = initialThreadCollectionFocusId(canonicalThreadIds)
-    const target = targetId ? threadButtonRefs.current.get(targetId) : newThreadRef.current
-    if (!target || (!targetId && newThreadDisabled)) return
-
-    if (targetId) setTabStopThreadId(targetId)
-    target.focus()
-    if (document.activeElement !== target) return
-
-    initialRetryFocusPendingRef.current = false
-    target.scrollIntoView({ block: 'nearest' })
-  }, [
-    canonicalThreadIds,
-    collection.focusRequest,
-    collection.status,
-    collectionFocusEnabled,
-    initialCollectionRetrying,
-    libraryUnavailable,
-    newThreadDisabled,
-  ])
-
-  async function handleInitialCollectionRetry() {
-    if (initialCollectionRetrying) return
-
-    initialRetryFocusPendingRef.current = true
-    setInitialCollectionRetrying(true)
-    try {
-      await onRetryThreadCollection()
-    } catch {
-      // The collection owner publishes the safe retry result.
-    } finally {
-      setInitialCollectionRetrying(false)
-    }
-  }
-
-  function handleThreadKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, threadId: string) {
-    if (
-      event.key !== 'ArrowDown' &&
-      event.key !== 'ArrowUp' &&
-      event.key !== 'Home' &&
-      event.key !== 'End'
-    ) {
-      return
-    }
-
-    event.preventDefault()
-    const nextId = nextThreadNavigationId(canonicalThreadIds, threadId, event.key)
-    if (!nextId) return
-
-    setTabStopThreadId(nextId)
-    const target = threadButtonRefs.current.get(nextId)
-    target?.focus()
-    target?.scrollIntoView({ block: 'nearest' })
-  }
 
   function renderThread(
     thread: NyxThreadSummary,
     options: {
       statusOverride?: Exclude<CurrentThreadStatus, 'idle'>
-      canonical?: boolean
     } = {},
   ) {
     const selected = activeView === 'chat' && thread.id === selectedThreadId
@@ -256,20 +106,6 @@ export function ChatSidebar({
         }`}
         key={thread.id}
         onClick={() => onSelectThread(thread.id)}
-        onFocus={options.canonical ? () => setTabStopThreadId(thread.id) : undefined}
-        onKeyDown={options.canonical ? (event) => handleThreadKeyDown(event, thread.id) : undefined}
-        ref={
-          options.canonical
-            ? (node) => {
-                if (node) {
-                  threadButtonRefs.current.set(thread.id, node)
-                } else {
-                  threadButtonRefs.current.delete(thread.id)
-                }
-              }
-            : undefined
-        }
-        tabIndex={options.canonical ? (thread.id === tabStopThreadId ? 0 : -1) : undefined}
         type='button'
       >
         <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
@@ -291,7 +127,6 @@ export function ChatSidebar({
   const initialLoading = collection.status === 'loading'
   const initialError = collection.status === 'error' && collection.errorPhase === 'initial'
   const loadMoreError = collection.status === 'error' && collection.errorPhase === 'load-more'
-  const announcement = collection.announcements.join('. ')
   const tailAction = loadMoreError
     ? { label: 'Retry', action: 'retry' as const, disabled: false }
     : collection.status === 'loading-more'
@@ -310,7 +145,6 @@ export function ChatSidebar({
         className='mt-1 flex h-8 items-center gap-2 rounded-lg bg-nyx-accent px-3 text-left text-[13px] font-medium text-nyx-canvas hover:opacity-90'
         disabled={newThreadDisabled}
         onClick={onNewThread}
-        ref={newThreadRef}
         type='button'
       >
         <Plus aria-hidden='true' className='h-3.5 w-3.5' strokeWidth={1.75} />
@@ -350,8 +184,7 @@ export function ChatSidebar({
             {selectedThreadId === null &&
             activeView === 'chat' &&
             !initialLoading &&
-            !initialError &&
-            !initialCollectionRetrying ? (
+            !initialError ? (
               <div className='mb-3 w-full rounded-lg bg-nyx-canvas px-3 py-2.5 text-left'>
                 <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
                   {title}
@@ -372,7 +205,7 @@ export function ChatSidebar({
                 >
                   Pinned
                 </h2>
-                {pinnedThreads.map((thread) => renderThread(thread, { canonical: true }))}
+                {pinnedThreads.map((thread) => renderThread(thread))}
               </section>
             ) : null}
 
@@ -384,29 +217,27 @@ export function ChatSidebar({
                 >
                   Recent
                 </h2>
-                {recentThreads.map((thread) => renderThread(thread, { canonical: true }))}
+                {recentThreads.map((thread) => renderThread(thread))}
               </section>
             ) : null}
 
-            {initialLoading && !initialCollectionRetrying ? (
+            {initialLoading ? (
               <p className='px-3 py-2 text-[12px] text-nyx-muted'>Loading threads…</p>
             ) : null}
 
-            {initialError || initialCollectionRetrying ? (
+            {initialError ? (
               <div className='px-2 py-2'>
                 <p className='text-[12px] text-nyx-danger' id='thread-collection-initial-error'>
                   Couldn’t load threads.
                 </p>
                 <button
                   aria-describedby='thread-collection-initial-error'
-                  aria-disabled={initialCollectionRetrying || undefined}
                   className='mt-2 rounded-lg border border-nyx-line-strong px-2.5 py-1.5 text-[12px] font-medium text-nyx-ink hover:bg-nyx-canvas'
                   id='thread-collection-initial-action'
-                  onClick={() => void handleInitialCollectionRetry()}
-                  ref={initialRetryRef}
+                  onClick={() => void onRetryThreadCollection()}
                   type='button'
                 >
-                  {initialCollectionRetrying ? 'Retrying…' : 'Retry'}
+                  Retry
                 </button>
               </div>
             ) : null}
@@ -421,7 +252,6 @@ export function ChatSidebar({
                 </p>
                 <button
                   aria-describedby={loadMoreError ? 'thread-collection-tail-error' : undefined}
-                  aria-disabled={tailAction.disabled || undefined}
                   className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${
                     loadMoreError
                       ? 'mt-2 border border-nyx-line-strong text-nyx-ink hover:bg-nyx-canvas'
@@ -429,31 +259,21 @@ export function ChatSidebar({
                         ? 'text-nyx-subtle'
                         : 'text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
                   }`}
+                  disabled={tailAction.disabled}
                   id='thread-collection-tail-action'
                   onClick={() => {
                     if (tailAction.disabled) return
                     if (tailAction.action === 'retry') void onRetryThreadCollection()
                     else onLoadMoreThreads()
                   }}
-                  ref={tailActionRef}
                   type='button'
                 >
                   {tailAction.label}
                 </button>
               </div>
             ) : null}
-
-            {collection.status === 'ready' &&
-            collection.nextCursor === null &&
-            collection.endAnnounced ? (
-              <p className='px-3 py-2 text-[11px] text-nyx-subtle'>End of threads</p>
-            ) : null}
           </>
         )}
-
-        <p aria-atomic='true' aria-live='polite' className='sr-only'>
-          {libraryUnavailable ? '' : announcement}
-        </p>
       </div>
 
       <div className='relative mt-3 border-t border-nyx-line pt-2'>

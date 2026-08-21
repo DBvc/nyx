@@ -374,9 +374,6 @@ export function ChatWorkspace() {
           <ChatSidebar
             activeView={activeView}
             collection={threadCollection}
-            collectionFocusEnabled={
-              activeView === 'chat' && !sidebarCollapsed && !libraryUnavailable
-            }
             currentThread={currentThreadSummary}
             currentThreadStatus={currentThreadSidebarStatus(
               state.runStatus,

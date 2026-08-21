@@ -17,19 +17,11 @@ export interface ThreadCollectionCandidate {
 export type ThreadCollectionStatus = 'loading' | 'ready' | 'loading-more' | 'error'
 export type ThreadCollectionErrorPhase = 'initial' | 'load-more'
 export type ThreadCollectionRetryMode = 'hydrate' | 'load-more' | 'refresh'
-export type ThreadCollectionFocusRequest =
-  | { kind: 'thread'; threadId: string }
-  | { kind: 'load-more' }
-  | { kind: 'retry' }
 
 export interface ThreadCollectionState extends ThreadCollectionCandidate {
   status: ThreadCollectionStatus
   errorPhase: ThreadCollectionErrorPhase | null
   retryMode: ThreadCollectionRetryMode | null
-  pendingFocusThreadId: string | null
-  focusRequest: ThreadCollectionFocusRequest | null
-  announcements: ReadonlyArray<string>
-  endAnnounced: boolean
 }
 
 export class ThreadCollectionCandidateError extends Error {
@@ -50,10 +42,6 @@ export const initialThreadCollectionState: ThreadCollectionState = {
   status: 'loading',
   errorPhase: null,
   retryMode: null,
-  pendingFocusThreadId: null,
-  focusRequest: null,
-  announcements: [],
-  endAnnounced: false,
 }
 
 function validatePageRows(
@@ -174,8 +162,6 @@ export function beginThreadCollectionHydration(
     status: 'loading',
     errorPhase: null,
     retryMode: null,
-    focusRequest: null,
-    announcements: [],
   }
 }
 
@@ -186,8 +172,6 @@ export function beginThreadCollectionLoadMore(state: ThreadCollectionState): Thr
     status: 'loading-more',
     errorPhase: null,
     retryMode: null,
-    focusRequest: null,
-    announcements: [],
   }
 }
 
@@ -197,60 +181,17 @@ export function beginThreadCollectionRetry(state: ThreadCollectionState): Thread
     ...state,
     status: state.errorPhase === 'initial' ? 'loading' : 'loading-more',
     errorPhase: null,
-    focusRequest: null,
-    announcements: [],
   }
 }
 
 export function commitThreadCollectionCandidate(
-  state: ThreadCollectionState,
   candidate: ThreadCollectionCandidate,
-  options: {
-    selectedThreadId: string | null
-    source: 'hydration' | 'refresh' | 'explicit-load'
-  },
 ): ThreadCollectionState {
-  const candidateIds = new Set(candidate.rows.map((row) => row.id))
-  const oldIds = new Set(state.rows.map((row) => row.id))
-  const firstNewThreadId = candidate.rows.find((row) => !oldIds.has(row.id))?.id ?? null
-  const selectedMissing =
-    options.selectedThreadId !== null && !candidateIds.has(options.selectedThreadId)
-  const pendingFocusThreadId = selectedMissing ? options.selectedThreadId : null
-  const pendingAppeared =
-    state.pendingFocusThreadId !== null &&
-    state.pendingFocusThreadId === options.selectedThreadId &&
-    candidateIds.has(state.pendingFocusThreadId)
-
-  let focusRequest: ThreadCollectionFocusRequest | null = null
-  if (options.source !== 'refresh') {
-    if (pendingAppeared) {
-      focusRequest = { kind: 'thread', threadId: state.pendingFocusThreadId! }
-    } else if (pendingFocusThreadId && candidate.nextCursor) {
-      focusRequest = { kind: 'load-more' }
-    } else if (options.source === 'explicit-load' && firstNewThreadId) {
-      focusRequest = { kind: 'thread', threadId: firstNewThreadId }
-    }
-  }
-
-  const announcements: string[] = []
-  if (options.source === 'explicit-load') {
-    const added = candidate.rows.filter((row) => !oldIds.has(row.id)).length
-    if (added > 0) announcements.push(`${added} more threads loaded`)
-    if (candidate.nextCursor === null && !state.endAnnounced) announcements.push('End of threads')
-  }
-
   return {
     ...candidate,
     status: 'ready',
     errorPhase: null,
     retryMode: null,
-    pendingFocusThreadId,
-    focusRequest,
-    announcements,
-    endAnnounced:
-      candidate.nextCursor === null
-        ? state.endAnnounced || options.source === 'explicit-load'
-        : false,
   }
 }
 
@@ -264,8 +205,6 @@ export function failThreadCollection(
     status: 'error',
     errorPhase: phase,
     retryMode,
-    focusRequest: { kind: 'retry' },
-    announcements: [],
   }
 }
 

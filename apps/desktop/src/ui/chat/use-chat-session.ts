@@ -46,6 +46,7 @@ import {
   ThreadCollectionCandidateError,
   threadCollectionGroups,
   type ThreadCollectionCandidate,
+  type ThreadCollectionErrorPhase,
   type ThreadCollectionPage,
   type ThreadCollectionState,
 } from './thread-collection'
@@ -320,8 +321,6 @@ export function useChatSession({
       status: current.status === 'loading-more' ? 'ready' : current.status,
       errorPhase: current.status === 'loading-more' ? null : current.errorPhase,
       retryMode: current.status === 'loading-more' ? null : current.retryMode,
-      pendingFocusThreadId: null,
-      focusRequest: null,
     }))
   }
 
@@ -752,7 +751,6 @@ export function useChatSession({
 
     async function checkMissingSelectionAtEnd(
       candidate: ThreadCollectionCandidate,
-      source: 'hydration' | 'refresh' | 'explicit-load',
       hydration: number,
     ): Promise<'accept' | 'reject' | 'local-error'> {
       const threadId = selectedThreadIdRef.current
@@ -807,12 +805,7 @@ export function useChatSession({
       }
 
       missingSelectionRecoveryRef.current = threadId
-      replaceThreadCollection(
-        commitThreadCollectionCandidate(threadCollectionRef.current, candidate, {
-          selectedThreadId: threadId,
-          source,
-        }),
-      )
+      replaceThreadCollection(commitThreadCollectionCandidate(candidate))
       void hydrateThreadLibrary({
         pageBudget: candidate.loadedPageCount,
         preserveCollection: true,
@@ -882,11 +875,7 @@ export function useChatSession({
             return false
           }
 
-          const missingSelection = await checkMissingSelectionAtEnd(
-            outcome.candidate,
-            source,
-            hydration,
-          )
+          const missingSelection = await checkMissingSelectionAtEnd(outcome.candidate, hydration)
           if (missingSelection === 'reject') return false
           if (collectionDirty) {
             if (!dirtyRebuildUsed) {
@@ -898,20 +887,14 @@ export function useChatSession({
             rerunAfterDirty = true
             return false
           }
-          updateThreadCollection((current) =>
+          replaceThreadCollection(
             missingSelection === 'local-error'
               ? failThreadCollection(
-                  commitThreadCollectionCandidate(current, outcome.candidate, {
-                    selectedThreadId: selectedThreadIdRef.current,
-                    source: source === 'explicit-load' ? 'explicit-load' : 'refresh',
-                  }),
+                  commitThreadCollectionCandidate(outcome.candidate),
                   source === 'explicit-load' ? 'load-more' : 'initial',
                   'hydrate',
                 )
-              : commitThreadCollectionCandidate(current, outcome.candidate, {
-                  selectedThreadId: selectedThreadIdRef.current,
-                  source: source === 'explicit-load' ? 'explicit-load' : 'refresh',
-                }),
+              : commitThreadCollectionCandidate(outcome.candidate),
           )
           return missingSelection === 'accept'
         }
@@ -1170,11 +1153,17 @@ export function useChatSession({
     }
 
     async function hydrateThreadLibrary(
-      options: { pageBudget?: number; preserveCollection?: boolean } = {},
+      options: {
+        pageBudget?: number
+        preserveCollection?: boolean
+        errorPhase?: ThreadCollectionErrorPhase
+      } = {},
     ) {
       const request = ++hydrationRef.current
       const generation = projectionGeneration.current
       const pageBudget = Math.max(1, options.pageBudget ?? 1)
+      const errorPhase =
+        options.errorPhase ?? (options.preserveCollection ? 'load-more' : 'initial')
       const resumeReadyProjection =
         options.preserveCollection && stateRef.current.hydrationStatus === 'ready'
       hydrated = false
@@ -1213,11 +1202,7 @@ export function useChatSession({
             pageResult = null
             if (attempt === 0) continue
             updateThreadCollection((current) =>
-              failThreadCollection(
-                current,
-                current.rows.length === 0 ? 'initial' : 'load-more',
-                'hydrate',
-              ),
+              failThreadCollection(current, errorPhase, 'hydrate'),
             )
             if (resumeReadyProjection) resumeEventPump()
             return
@@ -1233,11 +1218,7 @@ export function useChatSession({
             pageResult = null
             if (attempt === 0) continue
             updateThreadCollection((current) =>
-              failThreadCollection(
-                current,
-                current.rows.length === 0 ? 'initial' : 'load-more',
-                'hydrate',
-              ),
+              failThreadCollection(current, errorPhase, 'hydrate'),
             )
             if (resumeReadyProjection) resumeEventPump()
             return
@@ -1320,14 +1301,10 @@ export function useChatSession({
             // A blocked UI preference does not block canonical hydration.
           }
         }
-        const nextCollection = commitThreadCollectionCandidate(
-          threadCollectionRef.current,
-          initialCandidate,
-          { selectedThreadId: resolvedSummary?.id ?? null, source: 'hydration' },
-        )
+        const nextCollection = commitThreadCollectionCandidate(initialCandidate)
         const missingAtEnd =
           resolvedSummary?.location === 'available' &&
-          nextCollection.pendingFocusThreadId === resolvedSummary.id &&
+          !nextCollection.rows.some((row) => row.id === resolvedSummary.id) &&
           nextCollection.nextCursor === null
         if (missingAtEnd && missingSelectionRecoveryRef.current !== resolvedSummary.id) {
           missingSelectionRecoveryRef.current = resolvedSummary.id
@@ -1335,6 +1312,7 @@ export function useChatSession({
           void hydrateThreadLibrary({
             pageBudget: initialCandidate.loadedPageCount,
             preserveCollection: true,
+            errorPhase,
           })
           return
         }
@@ -1346,11 +1324,7 @@ export function useChatSession({
         setRunCapacity(pageResult.capacity)
         replaceThreadCollection(
           missingAtEnd
-            ? failThreadCollection(
-                nextCollection,
-                threadCollectionRef.current.rows.length === 0 ? 'initial' : 'load-more',
-                'hydrate',
-              )
+            ? failThreadCollection(nextCollection, errorPhase, 'hydrate')
             : nextCollection,
         )
         dispatch({
@@ -1388,6 +1362,9 @@ export function useChatSession({
         await hydrateThreadLibrary({
           pageBudget: Math.max(1, failedCollection.loadedPageCount),
           preserveCollection: failedCollection.rows.length > 0,
+          errorPhase:
+            failedCollection.errorPhase ??
+            (failedCollection.rows.length > 0 ? 'load-more' : 'initial'),
         })
         return true
       }

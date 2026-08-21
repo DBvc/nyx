@@ -4,12 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { NyxThreadSummary } from '../../../../shared/threads/types'
 import { initialThreadCollectionState } from '../thread-collection'
-import {
-  ChatSidebar,
-  initialThreadCollectionFocusId,
-  nextThreadNavigationId,
-  threadCollectionTabStopId,
-} from './ChatSidebar'
+import { ChatSidebar } from './ChatSidebar'
 
 function thread(id: string, title: string, pinPosition: number | null): NyxThreadSummary {
   return {
@@ -45,7 +40,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ChatSidebar>> = 
       loadedPageCount: 1,
       status: 'ready',
     },
-    collectionFocusEnabled: true,
     libraryUnavailable: false,
     newThreadDisabled: false,
     onNewThread: vi.fn(),
@@ -68,8 +62,7 @@ describe('ChatSidebar Thread Library', () => {
     expect(html.indexOf('Current thread')).toBeLessThan(html.indexOf('Pinned'))
     expect(html.indexOf('Pinned')).toBeLessThan(html.indexOf('Recent'))
     expect(html).toContain('Current outside prefix')
-    expect(html.match(/tabindex="0"/g)).toHaveLength(1)
-    expect(html.match(/tabindex="-1"/g)).toHaveLength(1)
+    expect(html).not.toContain('tabindex="-1"')
     expect(html).toContain('Load more threads')
   })
 
@@ -100,30 +93,6 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).not.toContain('aria-busy="true"')
   })
 
-  it('moves one roving tab stop through the loaded canonical order', () => {
-    const ids = ['pinned-1', 'recent-1', 'recent-2']
-
-    expect(nextThreadNavigationId(ids, 'pinned-1', 'ArrowUp')).toBe('pinned-1')
-    expect(nextThreadNavigationId(ids, 'pinned-1', 'ArrowDown')).toBe('recent-1')
-    expect(nextThreadNavigationId(ids, 'recent-1', 'Home')).toBe('pinned-1')
-    expect(nextThreadNavigationId(ids, 'recent-1', 'End')).toBe('recent-2')
-    expect(nextThreadNavigationId(ids, 'recent-2', 'ArrowDown')).toBe('recent-2')
-    expect(nextThreadNavigationId([], null, 'Home')).toBeNull()
-  })
-
-  it('keeps the focused row as the tab stop when selected state refreshes', () => {
-    const ids = ['selected', 'newly-focused']
-
-    expect(threadCollectionTabStopId(ids, 'newly-focused', 'selected')).toBe('newly-focused')
-    expect(threadCollectionTabStopId(ids, 'removed', 'selected')).toBe('selected')
-    expect(threadCollectionTabStopId(ids, 'removed', 'also-removed')).toBe('selected')
-  })
-
-  it('focuses the first canonical row after an initial retry, independent of selection', () => {
-    expect(initialThreadCollectionFocusId(['first', 'selected'])).toBe('first')
-    expect(initialThreadCollectionFocusId([])).toBeNull()
-  })
-
   it.each([
     ['initial loading', { status: 'loading' as const }, ['Loading threads…', 'aria-busy="true"']],
     [
@@ -144,21 +113,7 @@ describe('ChatSidebar Thread Library', () => {
         'id="thread-collection-tail-action"',
       ],
     ],
-    [
-      'loading more',
-      { status: 'loading-more' as const },
-      ['Loading more…', 'aria-disabled="true"'],
-    ],
-    [
-      'collection end',
-      {
-        status: 'ready' as const,
-        nextCursor: null,
-        endAnnounced: true,
-        announcements: ['13 more threads loaded', 'End of threads'],
-      },
-      ['13 more threads loaded. End of threads', 'End of threads'],
-    ],
+    ['loading more', { status: 'loading-more' as const }, ['Loading more…', 'disabled=""']],
   ])('renders %s state', (_name, collectionOverrides, expectedText) => {
     const html = renderSidebar({
       collection: {
@@ -171,6 +126,21 @@ describe('ChatSidebar Thread Library', () => {
     })
 
     for (const text of expectedText) expect(html).toContain(text)
+  })
+
+  it('removes Load more when the final page is loaded', () => {
+    const html = renderSidebar({
+      collection: {
+        ...initialThreadCollectionState,
+        rows: [pinned, recent],
+        nextCursor: null,
+        loadedPageCount: 2,
+        status: 'ready',
+      },
+    })
+
+    expect(html).not.toContain('Load more threads')
+    expect(html).not.toContain('Loading more…')
   })
 
   it('keeps one stable tail control identity across ready, busy, and retry states', () => {

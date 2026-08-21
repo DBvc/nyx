@@ -141,21 +141,15 @@ describe('thread collection candidate', () => {
 
   it('atomically appends one page and rejects an unchanged next cursor', () => {
     const initial = commitThreadCollectionCandidate(
-      initialThreadCollectionState,
       buildThreadCollectionCandidate([page(1, 50, 'opaque-1')], 1),
-      { selectedThreadId: 'thread-1', source: 'hydration' },
     )
     const loading = beginThreadCollectionLoadMore(initial)
     const candidate = appendThreadCollectionPage(loading, page(51, 37, null))
-    const committed = commitThreadCollectionCandidate(loading, candidate, {
-      selectedThreadId: 'thread-1',
-      source: 'explicit-load',
-    })
+    const committed = commitThreadCollectionCandidate(candidate)
 
     expect(loading.rows).toHaveLength(50)
     expect(committed.rows).toHaveLength(87)
-    expect(committed.focusRequest).toEqual({ kind: 'thread', threadId: 'thread-51' })
-    expect(committed.announcements).toEqual(['37 more threads loaded', 'End of threads'])
+    expect(committed).toMatchObject({ status: 'ready', nextCursor: null })
     expect(() => appendThreadCollectionPage(initial, page(51, 50, 'opaque-1'))).toThrow(
       'cursor repeated',
     )
@@ -163,14 +157,10 @@ describe('thread collection candidate', () => {
 
   it('appends beyond the second page without treating the accepted prefix as one page', () => {
     const first = commitThreadCollectionCandidate(
-      initialThreadCollectionState,
       buildThreadCollectionCandidate([page(1, 50, 'opaque-1')], 1),
-      { selectedThreadId: null, source: 'hydration' },
     )
     const second = commitThreadCollectionCandidate(
-      first,
       appendThreadCollectionPage(first, page(51, 50, 'opaque-2')),
-      { selectedThreadId: null, source: 'explicit-load' },
     )
     expect(() => appendThreadCollectionPage(second, page(101, 50, 'opaque-1'))).toThrow(
       'cursor repeated',
@@ -182,51 +172,27 @@ describe('thread collection candidate', () => {
   })
 })
 
-describe('thread collection focus and failure state', () => {
+describe('thread collection selection and failure state', () => {
   it('keeps an off-prefix selection separate until a later page reveals it', () => {
     const first = commitThreadCollectionCandidate(
-      initialThreadCollectionState,
       buildThreadCollectionCandidate([page(1, 50, 'opaque-1')], 1),
-      { selectedThreadId: 'thread-75', source: 'hydration' },
     )
     const selected = row(75)
 
-    expect(first.pendingFocusThreadId).toBe('thread-75')
-    expect(first.focusRequest).toEqual({ kind: 'load-more' })
     expect(currentThreadOutsideCollection(first, selected)).toBe(selected)
 
     const revealed = appendThreadCollectionPage(first, page(51, 50, null))
-    const refreshed = commitThreadCollectionCandidate(first, revealed, {
-      selectedThreadId: 'thread-75',
-      source: 'refresh',
-    })
-    const changed = commitThreadCollectionCandidate(first, revealed, {
-      selectedThreadId: null,
-      source: 'explicit-load',
-    })
-    const committed = commitThreadCollectionCandidate(first, revealed, {
-      selectedThreadId: 'thread-75',
-      source: 'explicit-load',
-    })
-    expect(changed.pendingFocusThreadId).toBeNull()
-    expect(changed.focusRequest).toEqual({ kind: 'thread', threadId: 'thread-51' })
-    expect(refreshed).toMatchObject({ focusRequest: null, announcements: [] })
-    expect(committed.pendingFocusThreadId).toBeNull()
-    expect(committed.focusRequest).toEqual({ kind: 'thread', threadId: 'thread-75' })
+    const committed = commitThreadCollectionCandidate(revealed)
     expect(currentThreadOutsideCollection(committed, selected)).toBeNull()
   })
 
-  it('preserves accepted rows and pending focus when a later page fails', () => {
+  it('preserves accepted rows when a later page fails', () => {
     const accepted = commitThreadCollectionCandidate(
-      initialThreadCollectionState,
       buildThreadCollectionCandidate([page(1, 50, 'opaque-1')], 1),
-      { selectedThreadId: 'thread-75', source: 'hydration' },
     )
     const failed = failThreadCollection(beginThreadCollectionLoadMore(accepted), 'load-more')
 
     expect(failed.rows).toBe(accepted.rows)
-    expect(failed.pendingFocusThreadId).toBe('thread-75')
     expect(failed).toMatchObject({ status: 'error', errorPhase: 'load-more' })
-    expect(failed.focusRequest).toEqual({ kind: 'retry' })
   })
 })

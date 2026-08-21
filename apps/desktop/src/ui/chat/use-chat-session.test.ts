@@ -1488,7 +1488,6 @@ describe('CP1 bounded Thread collection', () => {
       loadedPageCount: 3,
       nextCursor: null,
       status: 'ready',
-      announcements: ['37 more threads loaded', 'End of threads'],
     })
     expect((harness.state as ChatState).listCursor).toBe(7)
     expect(session.capacityNotice).toBeNull()
@@ -1521,18 +1520,12 @@ describe('CP1 bounded Thread collection', () => {
 
     let session = render()
     expect(session.currentThreadSummary?.id).toBe('thread-75')
-    expect(session.threadCollection).toMatchObject({
-      pendingFocusThreadId: 'thread-75',
-      focusRequest: { kind: 'load-more' },
-    })
+    expect(session.threadCollection.nextCursor).toBe('cursor-1')
 
     await expect(session.loadMoreThreads()).resolves.toBe(true)
     session = render()
     expect(session.currentThreadSummary).toBeNull()
-    expect(session.threadCollection).toMatchObject({
-      pendingFocusThreadId: null,
-      focusRequest: { kind: 'thread', threadId: 'thread-75' },
-    })
+    expect(session.threadCollection.nextCursor).toBeNull()
     expect(bridge.get).toHaveBeenCalledWith({ threadId: 'thread-75' })
 
     await expect(session.selectThread('thread-76')).resolves.toBe(true)
@@ -1625,7 +1618,6 @@ describe('CP1 bounded Thread collection', () => {
       status: 'error',
       errorPhase: 'load-more',
       retryMode: 'load-more',
-      focusRequest: { kind: 'retry' },
     })
 
     failing = false
@@ -1811,7 +1803,6 @@ describe('CP1 bounded Thread collection', () => {
     await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(3))
     expect(render().threadCollection).toMatchObject({
       status: 'ready',
-      pendingFocusThreadId: 'thread-999',
       loadedPageCount: 2,
       nextCursor: null,
     })
@@ -1824,7 +1815,6 @@ describe('CP1 bounded Thread collection', () => {
       status: 'error',
       errorPhase: 'load-more',
       retryMode: 'hydrate',
-      pendingFocusThreadId: 'thread-999',
       loadedPageCount: 2,
       nextCursor: null,
     })
@@ -1899,6 +1889,52 @@ describe('CP1 bounded Thread collection', () => {
     expect(render().threadSummaries).toEqual(firstRows)
     await render().retryOpen()
     expect(bridge.retryOpen).toHaveBeenCalledWith({ scope: 'library' })
+  })
+
+  it('bounds initial missing-selection recovery when the first page is already final', async () => {
+    const firstRows = collectionRows(1, 2)
+    const selected = detail('selected draft', 'thread-999')
+    const bridge = installBridge({
+      selectedId: selected.summary.id,
+      list: async () => collectionPageResult(firstRows, null),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === selected.summary.id ? selected : detailForSummary(firstRows[0]!),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+
+    await vi.waitFor(() => expect(render().threadCollection.status).toBe('error'))
+    const session = render()
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    expect(bridge.get).toHaveBeenCalledTimes(2)
+    expect(bridge.get.mock.calls.map(([input]) => input.threadId)).toEqual([
+      'thread-999',
+      'thread-999',
+    ])
+    expect(harness.state as ChatState).toMatchObject({
+      selectedThreadId: 'thread-999',
+      input: 'selected draft',
+    })
+    expect(session.currentThreadSummary?.id).toBe('thread-999')
+    expect(session.threadSummaries).toEqual(firstRows)
+    expect(session.threadSummaries.some((row) => row.id === 'thread-999')).toBe(false)
+    expect(session.threadCollection).toMatchObject({
+      status: 'error',
+      errorPhase: 'initial',
+      retryMode: 'hydrate',
+      loadedPageCount: 1,
+      nextCursor: null,
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    expect(bridge.get).toHaveBeenCalledTimes(2)
   })
 
   it('bounds initial candidate repair and exposes a local Retry instead of a Library error', async () => {
@@ -2956,8 +2992,6 @@ describe('C1 save and execution boundary', () => {
       'cursor-1',
       null,
     ])
-    expect(render().threadCollection.focusRequest).toBeNull()
-    expect(render().threadCollection.announcements).toEqual([])
   })
 
   it('keeps a background save failure reachable after New detaches', async () => {
