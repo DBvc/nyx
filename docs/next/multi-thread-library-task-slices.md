@@ -24,12 +24,16 @@ Its scope and final product review receipts, bounded repair result and required
 checks are recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
-On 2026-08-20 the user explicitly requested the new bounded `CP1` direction:
-Available collection pagination plus Pinned/Recent projection. Contract
-`NYX-MTL-CP1-SCOPE-20260820-01` below is its only scope-lock candidate. Dirty
-worktree bytes grant no product permission. If the exact candidate receives the
-independent review bound below and this docs-only change enters HEAD, the same
-explicit request authorizes only the CP1 product step frozen by that contract.
+On 2026-08-20 the user explicitly requested the bounded `CP1` direction:
+Available collection pagination plus Pinned/Recent projection. CP1 completed at
+product head `0247c69` under contract `NYX-MTL-CP1-SCOPE-20260820-01`; its
+scope lock entered HEAD at `1131cfe`. The final 17-file diff from the frozen
+baseline through that product head had SHA-256
+`daffe2db1174f7567309269db9c1e17423393551f4b273f9f874243d311aaada`.
+Independent final review `NYX-MTL-CP1-FINAL-REVIEW-20260821-01` returned
+`accept` with no findings, and all required checks passed. The implementation,
+repair, review and validation evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
 On 2026-08-21 the user explicitly narrowed CP1 to pagination and the
 Pinned/Recent projection. Custom roving keyboard navigation, automatic focus
@@ -58,10 +62,12 @@ Contract id: `NYX-MTL-CP1-SCOPE-20260820-01`.
 Independent review binding:
 `NYX-MTL-CP1-SCOPE-REVIEW-20260820-02`.
 
-Status: executable and in progress. The independent review accepted the exact
-scope candidate under the binding above, and the Plan-First scope-lock commit
-entered HEAD at `1131cfe`. The 2026-08-21 user decision narrows the accepted
-scope as recorded in Current Status and this subsection.
+Status: complete at product head `0247c69`. The independent scope review
+accepted the exact scope candidate under the binding above, and the Plan-First
+scope-lock commit entered HEAD at `1131cfe`. The 2026-08-21 user decision
+narrowed the accepted scope at `98caec8`; independent final review
+`NYX-MTL-CP1-FINAL-REVIEW-20260821-01` accepted the resulting implementation
+with no findings.
 
 CP1 is a fresh bounded projection slice over landed C1, E1S and E1S-R1
 behavior. It uses the existing SQLite schema, Worker-owned Available ordering,
@@ -71,9 +77,8 @@ not authorize PIN1 or any Thread lifecycle mutation.
 
 The pre-scope-lock baseline is commit
 `823228705e518218df0fb55de1ad0265ea2d0ee6`, which contains E1S-R1 product
-commit `6566b93` and its accepted evidence record. The eventual scope-lock
-commit must have that baseline in its ancestry; otherwise CP1 stops for a fresh
-scope review.
+commit `6566b93` and its accepted evidence record. Scope-lock commit `1131cfe`
+has that baseline in its ancestry.
 
 CP1 freezes these user-visible behaviors:
 
@@ -197,7 +202,7 @@ Required focused evidence:
   `nextCursor=null` revalidation and Current-thread de-duplication have
   component/hook coverage.
 
-Before final evidence, run:
+Final evidence ran:
 
 ```text
 mise run desktop:typecheck

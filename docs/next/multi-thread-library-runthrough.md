@@ -87,6 +87,53 @@ E1S-R1 changes no fetch transport, redirect or backpressure behavior, Base64
 attachment mapping, SQLite schema, Worker protocol/count or OCaml protocol. It
 does not revive E1, E1R, NF1, COMPAT, v40, R2 or any retired gate.
 
+## CP1 — Available Pagination and Pinned/Recent Projection
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-CP1-SCOPE-20260820-01`, independently accepted and
+  committed at `1131cfe`. The user-narrowed contract entered HEAD at `98caec8`
+  and removed custom roving keyboard navigation, automatic focus movement,
+  live loading announcements and manual VoiceOver evidence from CP1.
+- Product commits: `51d0e25`, `ceef5d2` and `44d5008`; final bounded repairs:
+  `36575c6` and `0247c69`.
+- The exact 17-file diff from baseline
+  `823228705e518218df0fb55de1ad0265ea2d0ee6` through product head
+  `0247c696a24f8b7add0d79573bbba8162eced14c` had SHA-256
+  `daffe2db1174f7567309269db9c1e17423393551f4b273f9f874243d311aaada`.
+- Automated coverage loads 137 Available rows as 50, 50 and 37 and preserves
+  50 Pinned plus 100 Recent rows in Worker order across page boundaries. It
+  rejects duplicates, mixed group order, malformed pages, stale cursors and
+  candidates beyond the explicit page budget.
+- Worker projection validates identity, location, Pin grouping and only the
+  actual keyset fields for each location. Corrupt ordering metadata in a page
+  row, anchor or lookahead fails closed as Library unavailable, while unrelated
+  damaged content remains isolated as Thread unavailable.
+- Renderer keeps the opaque page cursor separate from the public event cursor
+  and Run capacity. Page conflicts permit one bounded candidate rebuild; cursor
+  gaps and epoch replacement use full hydration, and late pages cannot replace
+  a newer projection.
+- A selected Thread outside the loaded prefix remains one separate Current
+  thread row. Exact `get`, one replacement hydration and the second-miss page
+  error form a bounded recovery path without dropping selection, fabricating a
+  row or looping. Component coverage includes loading, loading-more, initial and
+  later Retry, group order, Current-thread de-duplication and final Load-more
+  removal.
+- Independent final review `NYX-MTL-CP1-FINAL-REVIEW-20260821-01` recomputed the
+  exact diff fingerprint, inspected all 17 allowed files, ran 142 focused tests
+  and returned `accept` with no S0-S3 findings. Reviewer provider:
+  `dbx-linus-review`; capability: `strict_pragmatic_diff_review`; independence:
+  `independent`.
+- Required checks passed on 2026-08-21: both desktop TypeScript checks, lint,
+  format check, all 52 desktop test files (`625` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+CP1 adds no Pin mutation, schema/index, IPC/preload method, second database
+owner, full-library Renderer cache, automatic infinite loading, around-page API,
+Runtime/Provider/attachment change or historical U1/L1 behavior. PIN1 remains
+closed until its own explicit, independently reviewed scope lock enters HEAD.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
