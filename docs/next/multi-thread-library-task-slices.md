@@ -44,16 +44,20 @@ VoiceOver mechanics in the technical plan.
 
 On 2026-08-21 the user explicitly requested the bounded `PIN1` direction:
 Pin, Unpin and deterministic movement inside the existing Pinned collection.
-Contract `NYX-MTL-PIN1-SCOPE-20260820-01` below is its only scope-lock
-candidate. Dirty worktree bytes grant no product permission. If the exact
-candidate receives the independent review bound below and this docs-only
-change enters HEAD, the same explicit request authorizes only the ordered PIN1
-product steps frozen by that contract.
+PIN1 completed at product head `4b77390` under contract
+`NYX-MTL-PIN1-SCOPE-20260820-01`; its scope lock entered HEAD at `ddfc0cd`.
+The exact 21-file product diff from that scope-lock head through the product
+head had SHA-256
+`6ce8c5c10597623177a9ea84244661bf0777aa7ce17d5a5f46911b3300b49afe`.
+Independent final review `NYX-MTL-PIN1-FINAL-REVIEW-20260822-02` returned
+`accept` with no findings, and all required checks passed. The implementation,
+repair, review and validation evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
-CP1 is not a continuation or revival of old U1/L1. PIN1 remains closed until
-its exact independent scope review and docs-only scope-lock commit complete;
-neither CP1 nor an older plan or review grants PIN1 product permission.
+CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
+executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
+older plan or review grants further product permission.
 
 Old E1/E1R product slices and native-fetch gates remain non-executable.
 `E1S` does not revive an old candidate, restore an old gate, or inherit an old
@@ -239,10 +243,13 @@ Contract id: `NYX-MTL-PIN1-SCOPE-20260820-01`.
 Independent review binding:
 `NYX-MTL-PIN1-SCOPE-REVIEW-20260821-01`.
 
-Status: scope-lock candidate. The independent review must accept the exact diff
-under the binding above. The Plan-First completion commit records that gate.
-Only after that docs-only commit enters HEAD does PIN1 become executable without
-rewriting this subsection. Until then this section grants no product permission.
+Status: complete at product head `4b77390`. Independent scope review
+`NYX-MTL-PIN1-SCOPE-REVIEW-20260821-01` accepted the exact candidate, and the
+Plan-First scope-lock commit entered HEAD at `ddfc0cd`. The canonical
+transaction landed at `a83dfc3`, ordinary controls at `f08bf6a`, and the final
+bounded pagination-recovery repair at `4b77390`. Independent final review
+`NYX-MTL-PIN1-FINAL-REVIEW-20260822-02` accepted the exact 21-file product diff
+with no findings.
 
 PIN1 is a fresh bounded mutation slice over completed CP1. Its scope-lock
 baseline is `113b139f60695b80e6dcc96512c5c097e41ed4dd`, which contains CP1

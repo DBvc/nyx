@@ -131,8 +131,55 @@ Result: complete.
 
 CP1 adds no Pin mutation, schema/index, IPC/preload method, second database
 owner, full-library Renderer cache, automatic infinite loading, around-page API,
-Runtime/Provider/attachment change or historical U1/L1 behavior. PIN1 remains
-closed until its own explicit, independently reviewed scope lock enters HEAD.
+Runtime/Provider/attachment change or historical U1/L1 behavior.
+
+## PIN1 — Bounded Pin Lifecycle
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-PIN1-SCOPE-20260820-01`, independently accepted
+  under review binding `NYX-MTL-PIN1-SCOPE-REVIEW-20260821-01` and committed at
+  `ddfc0cd`.
+- Product commits: canonical transaction `a83dfc3`, ordinary controls
+  `f08bf6a`, and final bounded pagination-recovery repair `4b77390`.
+- The exact 21-file product diff from scope-lock head
+  `ddfc0cd27b9f5065d351a5d6d618cd51e6855366` through product head
+  `4b77390732d2c3190f4542295906913e86d8b5d3` had SHA-256
+  `6ce8c5c10597623177a9ea84244661bf0777aa7ce17d5a5f46911b3300b49afe`.
+- The public boundary adds one semantic `threads.updatePin` method and one
+  `nyx:threads:update-pin` channel. It exposes no SQL, caller-selected absolute
+  position, complete Pin order or Worker diagnostics.
+- Worker coverage proves all six actions, new Pin at the top, stable relative
+  order, continuous unique positions, boundary no-ops, stale guards,
+  collision-free two-phase rewrites, full rollback and restart persistence.
+  Pinned empty-shell removal closes positions in the same atomic transaction.
+- Main keeps only fixed-size pre-state, serializes Pin and empty-shell writes
+  behind one barrier, and never replays an unknown mutation. One replacement
+  generation plus one `pinState` read distinguishes exact pre-state conflict,
+  expected post-state success and fail-closed third states.
+- Renderer uses ordinary buttons, performs no optimistic reorder and holds one
+  collection-wide action gate through the authoritative bounded rebuild. Known
+  changes, boundary no-ops, target failures and replacement event/response
+  ordering preserve safe row errors, selection and the loaded-page budget.
+- The first final review found that unknown-outcome replacement hydration could
+  collapse a two-page projection to one page. Repair `4b77390` made the action
+  capture and preserve its loaded-page budget and added event-first and
+  response-first 100-row conflict regressions with exact bounded reads.
+- Independent final review `NYX-MTL-PIN1-FINAL-REVIEW-20260822-02` recomputed
+  the exact diff fingerprint, inspected all 21 allowed files, ran 215 focused
+  PIN1 tests and returned `accept` with no S0-S3 findings. Reviewer provider:
+  `codex-subagent-pin1-final-20260822-02`; capability:
+  `strict_pragmatic_diff_review`; independence: `independent`.
+- Required checks passed on 2026-08-22: both desktop TypeScript checks, lint,
+  format check, all 52 desktop test files (`663` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+PIN1 adds no schema/index, second database or durable Renderer owner, raw-order
+IPC, replay of an unknown mutation, optimistic persistence, custom
+keyboard/focus/live-announcement behavior, Search, Archive or other lifecycle
+work, or Runtime/Provider/Responses/attachment change. It grants no follow-up
+slice.
 
 ## G1 — SQLite on Electron Main
 
