@@ -59,9 +59,10 @@ sequence described by the current amendment in
 [multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md):
 Rename, then Archive/Unarchive, then Trash/Restore. This authorization removes
 the earlier product-code hold after the exact current slice is recorded here.
-Only the Rename slice below is currently executable. Archive/Unarchive remains
-blocked on its verified completion, and Trash/Restore remains blocked on the
-verified completion of Archive/Unarchive.
+Rename completed at product head `2b4c393` under contract
+`NYX-MTL-RENAME-SCOPE-20260822-01`; its scope lock entered HEAD at `cf74d4b`.
+The Archive/Unarchive slice below is now executable from that verified product
+head. Trash/Restore remains blocked on verified Archive/Unarchive completion.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -80,8 +81,12 @@ status history for traceability. This Current Status section is authoritative.
 
 Contract id: `NYX-MTL-RENAME-SCOPE-20260822-01`.
 
-Status: executable by explicit user authorization on 2026-08-22. Baseline:
+Status: complete at product head `2b4c39386d3ef7f90c2c7e46684353d413fd2719`
+by explicit user authorization on 2026-08-22. Baseline:
 `0f1bedd65acd236cb81da7ce583937ec90900076`, containing completed CP1 and PIN1.
+The exact 21-file product diff from scope-lock head
+`cf74d4bce0186e2211bb88d8fba44946846ede52` through the product head had
+SHA-256 `05bf1da38357cecb048955e33c5a1f52c7f5212f864ca55f0f28889efbd2da22`.
 
 This slice implements only manual Rename over landed CP1/PIN1 behavior. It does
 not implement Archive, Unarchive, Trash or Restore, and does not reopen or redo
@@ -153,6 +158,78 @@ git diff --check
 Stop if Rename needs a schema change, a second collection mutation barrier or
 Renderer action token, direct response-owned projection writes, mutation replay,
 another database owner, or any CP1/PIN1 product behavior change.
+
+## multi-thread-library/Archive-Unarchive-scope-lock: Reversible Archive location
+
+Contract id: `NYX-MTL-ARCHIVE-SCOPE-20260822-01`.
+
+Status: executable by the user's bounded lifecycle authorization on 2026-08-22.
+Baseline: `2b4c39386d3ef7f90c2c7e46684353d413fd2719`, containing completed Rename.
+
+This slice implements only `Available → Archived` and `Archived → Available`.
+It does not implement Trash, Restore, Search, Undo, automatic unarchive on Send,
+Stop-and-move or permanent deletion. It reuses the existing SQLite location
+columns, semantic location-aware `listPage`, one Main collection mutation
+barrier and one Renderer collection action token. No schema or migration is
+allowed.
+
+The public bridge adds one typed semantic `threads.updateLocation(input)` with
+`archive | unarchive`, `threadId` and `expectedThreadRevision`. Archive requires
+Available, clears Pin and closes the remaining Pin order atomically. Unarchive
+requires Archived and returns to unpinned Available/Recent. Both increment
+`thread_revision` exactly once, may update `updated_at`, preserve
+`last_user_activity_at`, Draft, Turns, resources and result state, and reject a
+stale revision or wrong source location without a write. Active Run, durable
+pending Turn and settlement failure reject Archive. Archived Draft, Send and
+Retry mutations are rejected in Main/Worker; reading, Rename and Unarchive stay
+available.
+
+Main serializes location mutation with Pin, Rename and empty-shell discard.
+Known commits use the normal changed event. Unknown outcomes are never replayed:
+after one replacement Worker, Main performs one Worker-only `locationState`
+read transaction that validates the complete Pin order and returns only
+`pinnedCount + detail`. The client accepts only the exact intended post-location
+at expected revision plus one, treats the exact pre-location at expected
+revision as definitely not committed, and fails closed for every third state.
+
+Renderer generalizes the existing Available collection projection to one active
+`available | archived` mode while preserving the same 50-row explicit paging,
+loaded-page budget, selection, epoch and bounded recovery rules. Archived and
+Back to threads are ordinary buttons; no custom focus system or announcements
+are added. Available shows Archive; Archived shows Rename and Unarchive but no
+Pin or Composer. A selected Archive/Unarchive first holds the existing
+navigation-save barrier and flushes the current Draft; failure stays in the old
+mode/location. A successful selected move switches to the target mode and keeps
+that Thread selected. Moving an unselected row keeps the current mode and
+selection. Mutation responses never write location or Pin directly into the
+Renderer projection; the shared action token remains held until matching
+canonical hydration or whole-Library failure.
+
+The Archive/Unarchive product step may change exactly:
+
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/shared/threads/ipc.ts`;
+- `apps/desktop/shared/contracts/desktop.ts`;
+- `apps/desktop/electron/preload/index.ts` and its test;
+- `apps/desktop/electron/main/index.ts` and its test;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts` and its test;
+- `apps/desktop/electron/main/thread-library/client.ts` and its test;
+- `apps/desktop/electron/main/thread-library/service.ts` and its test;
+- `apps/desktop/src/ui/chat/thread-collection.ts` and its test;
+- `apps/desktop/src/ui/chat/use-chat-session.ts` and its test;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx` and its test;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx` and its test only for
+  carrying the existing hook mode/actions and hiding the Archived Composer; and
+- this status owner plus `multi-thread-library-runthrough.md` for completion
+  evidence only.
+
+Required validation is the same ten-command matrix frozen for Rename above.
+
+Stop if this step needs a schema change, a second Main mutation barrier, a
+second Renderer collection token, direct response-owned projection writes,
+mutation replay, a new database owner, Trash/Restore behavior or CP1/PIN1
+reimplementation.
 
 ## multi-thread-library/CP1-scope-lock: Available pagination and Pinned/Recent projection
 

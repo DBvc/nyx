@@ -181,6 +181,35 @@ keyboard/focus/live-announcement behavior, Search, Archive or other lifecycle
 work, or Runtime/Provider/Responses/attachment change. It grants no follow-up
 slice.
 
+## Rename — Manual Thread Title
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-RENAME-SCOPE-20260822-01`, committed at `cf74d4b` by
+  the user's explicit bounded lifecycle authorization.
+- Product commit: `2b4c39386d3ef7f90c2c7e46684353d413fd2719`.
+- The exact 21-file diff from scope-lock head
+  `cf74d4bce0186e2211bb88d8fba44946846ede52` through product head had SHA-256
+  `05bf1da38357cecb048955e33c5a1f52c7f5212f864ca55f0f28889efbd2da22`.
+- One shared validator trims titles, accepts 1–48 Unicode code points and
+  rejects invalid input before any write. Worker tests cover Available and
+  Archived Rename, duplicates, stale revision, Trash rejection, manual no-op,
+  fallback-identity clearing and unchanged activity ordering.
+- Main adds one typed Rename IPC path, serializes it with Pin and empty-shell
+  discard, and never replays an unknown write. Unknown reconciliation performs
+  one replacement plus one existing exact Thread read.
+- Renderer uses inline Enter/Escape Rename and shares the existing collection
+  action gate with Pin. It performs no optimistic title write and waits for the
+  canonical bounded collection refresh.
+- Required checks passed on 2026-08-22: both desktop TypeScript checks, lint,
+  format check, all 53 desktop test files (`671` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+Rename adds no schema/index, second database owner, second mutation barrier or
+Renderer action token, write replay, direct response-owned projection update,
+Archive/Trash behavior, or Runtime/Provider/Responses/attachment change.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
