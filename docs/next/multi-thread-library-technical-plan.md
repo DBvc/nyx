@@ -2,6 +2,59 @@
 
 状态：C1 title-identity amendment candidate。v5.3、G1W、D1、D2 与 C1 scope lock 已进入 HEAD；C1 实现发现既有 SQLite CHECK 无法表示已冻结的 pre-send 标题状态，已按 Stop 规则暂停。第 3.4、5、7.1 与 10 节的 v5.4 窄修订通过 exact-byte reviews并进入 HEAD 后，C1 才可从同一 scope 继续。
 
+## 2026-08-22 已授权的可逆生命周期修订（当前）
+
+本节取代本文中与 Rename、Archive、Unarchive、Trash、Restore 冲突的旧
+L1 描述。旧的 Search、Permanent delete、Empty Trash、Undo、Stop-and-move
+和自动 Archived-on-Send 设计不属于本次实现。
+
+产品行为固定为：
+
+- Rename 只允许 Available 和 Archived；trim 后必须为 1–48 个 Unicode code
+  points，允许重名。Trash 不提供 Rename。Rename 不改变
+  `last_user_activity_at`，因此不改变 Available/Archived 活动顺序；手工标题
+  清除 fallback identity，且后续 Draft/Send 不再覆盖；
+- Archive 把 Available 移到 Archived 并清除 Pin；Unarchive 回到
+  Available/Recent，不恢复 Pin；
+- Trash 保存 `trashed_from_location`，从 Pinned Available 移入时同时保存
+  `trashed_pin_position`；Restore 回到原位置，并在当前 Pinned 边界内恢复
+  保存的 Pin 位置；
+- Rename、Archive、Unarchive、Trash、Restore 都保留
+  `last_user_activity_at`。Trash 仍以进入 Trash 时更新的 `updated_at` 排序；
+- Archived 和 Trash 的内容只读：Draft、Send、Retry 都不可用，只有 Rename
+  和对应 location metadata action 按上述位置规则开放；
+- Archive/Trash 先通过现有 navigation-save barrier 保存当前 Draft。保存
+  失败时留在原位置。该 barrier 从 flush 前持有到 mutation 失败或 matching
+  canonical hydration 完成，期间阻止同一 Thread 的 Draft、Send、Retry 和
+  其他 navigation；
+- Active Run、durable pending Turn 或 `settlement_failed` 阻止 Archive/Trash。
+  不停止、不隐藏、不登记延后动作；用户先完成或解决当前状态后再移动。
+
+实现只保留一个 Main collection mutation barrier。现有 `updatePin` 和
+`discardEmptyShell` 加入同一 barrier，后续 Rename 和 location mutation 复用它；
+Draft、Turn 和 seen-result mutation 不加入。Worker 仍是唯一 SQLite owner，Pin
+位置变化继续复用现有 collision-free `rewritePinOrder`。
+
+Renderer 只保留一个 collection action token，统一覆盖 Pin、Rename 和
+location action；它们互相阻塞，并共用现有 bounded collection refresh、epoch、
+projection generation 和 replacement hydration。Renderer 不用 mutation response
+直接改 title/location/pin；只有 matching canonical hydration 可以提交显示状态。
+Restore 的目标 mode 例外地从成功 `updateLocation` response 的
+`detail.summary.location` 绑定，但该值只选择下一次 hydration 的 collection，不能
+直接写入 Renderer projection。
+
+不确定提交不自动重放：Pin 继续使用现有 Worker-only `pinState`；Rename 只在
+outcome unknown 且 replacement Worker 就绪后调用一次现有 `readThread`；location
+mutation 新增一个 Worker-only `locationState`，在同一读事务返回完整校验后的
+`pinnedCount + detail`。不新增 `renameState`、通用 reconciliation framework、
+持久化 operation id、schema、数据库 owner 或 Renderer durable state。
+
+实施顺序固定为 Rename，随后 Archive/Unarchive，最后 Trash/Restore。Rename
+步骤先做一次保持 PIN1 行为不变的内部重命名：`pinMutationBarrier` 泛化为一个
+collection mutation barrier，`ActivePinAction` 泛化为唯一 collection action
+token；然后在同一步实现 Rename。任一阶段若需要第二个 Renderer token、第二个
+数据库 owner、新 schema、自动 replay，或改变 CP1/PIN1 用户行为，立即停止。
+
 模式：architecture change + migration plan。
 长期产品决策：永久删除必须在当前 Nyx 进程内立即撤销访问；不能做到时，不开放永久删除。
 

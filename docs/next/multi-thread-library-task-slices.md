@@ -54,6 +54,15 @@ Independent final review `NYX-MTL-PIN1-FINAL-REVIEW-20260822-02` returned
 repair, review and validation evidence is recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
+On 2026-08-22 the user explicitly authorized the bounded reversible lifecycle
+sequence described by the current amendment in
+[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md):
+Rename, then Archive/Unarchive, then Trash/Restore. This authorization removes
+the earlier product-code hold after the exact current slice is recorded here.
+Only the Rename slice below is currently executable. Archive/Unarchive remains
+blocked on its verified completion, and Trash/Restore remains blocked on the
+verified completion of Archive/Unarchive.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -66,6 +75,84 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/Rename-scope-lock: Manual Thread rename
+
+Contract id: `NYX-MTL-RENAME-SCOPE-20260822-01`.
+
+Status: executable by explicit user authorization on 2026-08-22. Baseline:
+`0f1bedd65acd236cb81da7ce583937ec90900076`, containing completed CP1 and PIN1.
+
+This slice implements only manual Rename over landed CP1/PIN1 behavior. It does
+not implement Archive, Unarchive, Trash or Restore, and does not reopen or redo
+CP1/PIN1. It first performs the minimum behavior-preserving internal
+generalization needed to keep one Main collection mutation barrier and one
+Renderer collection action token, then adds Rename through that existing path.
+
+Rename is allowed for Available and Archived Threads and absent for Trash.
+Main revalidates trim plus 1–48 Unicode code points; duplicates are allowed and
+invalid input performs no write. A successful auto-title Rename writes the
+manual title, clears fallback identity and increments `thread_revision` once.
+An already-manual identical title is a successful no-op. Rename preserves
+`last_user_activity_at`, Pin, location, Draft, Turns, resources, result state and
+collection order. It may update `updated_at`, which does not order Available or
+Archived collections.
+
+The public bridge adds only typed `threads.rename(input)`, carrying `threadId`,
+`title` and `expectedThreadRevision`, and returning canonical public detail plus
+the existing Thread clock. Worker protocol adds only semantic `rename`; no
+schema or migration changes. Main serializes Rename with Pin and empty-shell
+discard. A known commit uses the normal changed event. An unknown outcome is
+never replayed: after one replacement Worker, Main performs one existing
+`readThread` and accepts only the canonical intended manual state at the
+expected revision/no-op boundary or expected revision plus one.
+
+Renderer generalizes the one existing PIN1 action token into a discriminated
+Pin/Rename/location-capable token, but this slice exposes only Pin and Rename.
+The token records Thread identity, dispatch epoch/projection generation and the
+loaded page budget. Pin and Rename block each other until matching bounded
+collection hydration or whole-Library failure owns the surface. The response
+never writes title or Pin directly into Renderer projection. Inline Rename uses
+Enter to submit, Escape to cancel, preserves invalid input and focus, and does
+not appear for unavailable or Trash rows.
+
+The Rename product step may change exactly:
+
+- `apps/desktop/shared/threads/types.ts`;
+- new `apps/desktop/shared/threads/title.ts` and its near-source test if needed;
+- `apps/desktop/shared/threads/ipc.ts`;
+- `apps/desktop/shared/contracts/desktop.ts`;
+- `apps/desktop/electron/preload/index.ts` and its test;
+- `apps/desktop/electron/main/index.ts` and its test;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts` and its test;
+- `apps/desktop/electron/main/thread-library/client.ts` and its test;
+- `apps/desktop/electron/main/thread-library/service.ts` and its test;
+- `apps/desktop/src/ui/chat/use-chat-session.ts` and its test;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx` and its test;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx` and its test when
+  needed only to carry the existing hook action; and
+- this status owner, the linked technical plan and
+  `multi-thread-library-runthrough.md` for scope/completion evidence only.
+
+Required validation:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+mise run format-check
+git diff --check
+```
+
+Stop if Rename needs a schema change, a second collection mutation barrier or
+Renderer action token, direct response-owned projection writes, mutation replay,
+another database owner, or any CP1/PIN1 product behavior change.
 
 ## multi-thread-library/CP1-scope-lock: Available pagination and Pinned/Recent projection
 
