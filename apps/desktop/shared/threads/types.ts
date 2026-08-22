@@ -207,3 +207,15 @@ export interface NyxThreadRenameInput {
 export interface NyxThreadRenameResult extends NyxThreadClock {
   detail: NyxThreadDetail
 }
+
+export type NyxThreadLocationAction = 'archive' | 'unarchive'
+
+export interface NyxThreadUpdateLocationInput {
+  threadId: string
+  action: NyxThreadLocationAction
+  expectedThreadRevision: number
+}
+
+export interface NyxThreadUpdateLocationResult extends NyxThreadClock {
+  detail: NyxThreadDetail
+}

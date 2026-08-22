@@ -1192,7 +1192,7 @@ function saveDraft(
     if (!thread || !current) {
       throw new DatabaseOperationError('not_found')
     }
-    if (!['available', 'archived'].includes(String(thread.location))) {
+    if (thread.location !== 'available') {
       throw new DatabaseOperationError('invalid_request')
     }
     if (current.draft_revision !== input.expectedDraftRevision) {
@@ -1269,7 +1269,7 @@ function startTurn(
     if (!thread || !draft) {
       throw new DatabaseOperationError('not_found')
     }
-    if (!['available', 'archived'].includes(String(thread.location))) {
+    if (thread.location !== 'available') {
       throw new DatabaseOperationError('invalid_request')
     }
     if (draft.draft_revision !== input.expectedDraftRevision) {
@@ -1344,8 +1344,7 @@ function startTurn(
       .run(input.startedAt, input.threadId)
     database
       .prepare(
-        `UPDATE threads SET location = 'available',
-         thread_revision = thread_revision + CASE WHEN location = 'archived' THEN 1 ELSE 0 END,
+        `UPDATE threads SET
          fallback_local_second = CASE WHEN ? THEN fallback_local_second ELSE NULL END,
          fallback_ordinal = CASE WHEN ? THEN fallback_ordinal ELSE NULL END,
          last_user_activity_at = ?, updated_at = ? WHERE id = ?`,
@@ -1380,7 +1379,7 @@ function retryTurn(
     if (!thread || !draft || !turn) {
       throw new DatabaseOperationError('not_found')
     }
-    if (!['available', 'archived'].includes(String(thread.location))) {
+    if (thread.location !== 'available') {
       throw new DatabaseOperationError('invalid_request')
     }
     if (draft.draft_revision !== input.expectedDraftRevision) {
@@ -1412,11 +1411,7 @@ function retryTurn(
         input.turnOrdinal,
       )
     database
-      .prepare(
-        `UPDATE threads SET location = 'available',
-         thread_revision = thread_revision + CASE WHEN location = 'archived' THEN 1 ELSE 0 END,
-         last_user_activity_at = ?, updated_at = ? WHERE id = ?`,
-      )
+      .prepare(`UPDATE threads SET last_user_activity_at = ?, updated_at = ? WHERE id = ?`)
       .run(input.retriedAt, input.retriedAt, input.threadId)
     return {
       mutated: true,
@@ -1687,6 +1682,23 @@ function pinState(database: DatabaseSync, input: ThreadLibraryOperationInput['pi
   })
 }
 
+function locationState(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['locationState'],
+) {
+  return runReadTransaction(database, () => {
+    const pinned = readPinnedThreads(database)
+    const detail = queryThread(database, input.threadId)
+    if (!detail) throw new DatabaseOperationError('not_found')
+    if (detail.summary.location === 'available') {
+      assertPinStateMatchesDetail(pinned, detail)
+    } else if (detail.summary.pinPosition !== null) {
+      throw new DatabaseOperationError('library_unavailable')
+    }
+    return { pinnedCount: pinned.length, detail }
+  })
+}
+
 function finalPinOrder(
   pinned: ReadonlyArray<PinnedThread>,
   input: ThreadLibraryOperationInput['updatePin'],
@@ -1767,6 +1779,55 @@ function updatePin(database: DatabaseSync, input: ThreadLibraryOperationInput['u
     const finalIds = finalPinOrder(pinned, input)
     const mutated = rewritePinOrder(database, pinned, finalIds)
     return { mutated, value: mutated ? queryThread(database, input.threadId)! : detail }
+  })
+}
+
+function updateThreadLocation(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['updateLocation'],
+) {
+  return runTransaction(database, () => {
+    const detail = queryThread(database, input.threadId)
+    if (!detail) throw new DatabaseOperationError('not_found')
+    const source = input.action === 'archive' ? 'available' : 'archived'
+    const target = input.action === 'archive' ? 'archived' : 'available'
+    if (detail.summary.location !== source) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (detail.summary.threadRevision !== input.expectedThreadRevision) {
+      throw new DatabaseOperationError('stale_thread_revision')
+    }
+    if (
+      database
+        .prepare(
+          "SELECT 1 AS present FROM turns WHERE thread_id = ? AND assistant_status = 'pending'",
+        )
+        .get(input.threadId)
+    ) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+
+    if (input.action === 'archive') {
+      const pinned = readPinnedThreads(database)
+      assertPinStateMatchesDetail(pinned, detail)
+      if (detail.summary.pinPosition !== null) {
+        rewritePinOrder(
+          database,
+          pinned,
+          pinned.filter((row) => row.id !== input.threadId).map((row) => row.id),
+        )
+      }
+    }
+
+    const moved = database
+      .prepare(
+        `UPDATE threads SET location = ?, pin_position = NULL,
+         thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(target, input.movedAt, input.threadId)
+    if (moved.changes !== 1) throw new DatabaseOperationError('library_unavailable')
+    readPinnedThreads(database)
+    return { mutated: true, value: queryThread(database, input.threadId)! }
   })
 }
 
@@ -2079,6 +2140,8 @@ export class ThreadLibraryDatabase {
       }
       case 'pinState':
         return pinState(database, request.input)
+      case 'locationState':
+        return locationState(database, request.input)
       case 'updatePin': {
         const result = updatePin(database, request.input)
         if (result.mutated) {
@@ -2091,6 +2154,11 @@ export class ThreadLibraryDatabase {
         if (result.mutated) {
           this.acknowledgeMutation()
         }
+        return result.value
+      }
+      case 'updateLocation': {
+        const result = updateThreadLocation(database, request.input)
+        this.acknowledgeMutation()
         return result.value
       }
       case 'discardEmptyShell': {

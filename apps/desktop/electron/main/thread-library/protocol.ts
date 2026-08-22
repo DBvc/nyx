@@ -21,6 +21,7 @@ const location = z.enum(['available', 'archived', 'trash'])
 const pinPosition = z.number().int().positive().nullable()
 const position = z.number().int().nonnegative()
 const pinAction = z.enum(['pin', 'unpin', 'move_up', 'move_down', 'move_top', 'move_bottom'])
+const locationAction = z.enum(['archive', 'unarchive'])
 
 const updatePinInputSchema = z
   .object({ threadId: uuid, action: pinAction, expectedPinPosition: pinPosition })
@@ -432,6 +433,7 @@ const operationInputSchemas = {
     })
     .strict(),
   pinState: z.object({ threadId: uuid }).strict(),
+  locationState: z.object({ threadId: uuid }).strict(),
   updatePin: updatePinInputSchema,
   rename: z
     .object({
@@ -447,6 +449,14 @@ const operationInputSchemas = {
         context.addIssue({ code: 'custom', message: 'Thread title is invalid.' })
       }
     }),
+  updateLocation: z
+    .object({
+      threadId: uuid,
+      action: locationAction,
+      expectedThreadRevision: z.number().int().positive(),
+      movedAt: timestamp,
+    })
+    .strict(),
   discardEmptyShell: z
     .object({
       threadId: uuid,
@@ -714,8 +724,21 @@ const operationValueSchemas = {
         context.addIssue({ code: 'custom', message: 'Thread Pin state is inconsistent.' })
       }
     }),
+  locationState: z
+    .object({
+      pinnedCount: z.number().int().nonnegative(),
+      detail: threadDetailSchema,
+    })
+    .strict()
+    .superRefine((state, context) => {
+      const pinPosition = state.detail.summary.pinPosition
+      if (pinPosition !== null && pinPosition > state.pinnedCount) {
+        context.addIssue({ code: 'custom', message: 'Thread location state is inconsistent.' })
+      }
+    }),
   updatePin: threadDetailSchema,
   rename: threadDetailSchema,
+  updateLocation: threadDetailSchema,
   discardEmptyShell: z.object({ discarded: z.boolean() }).strict(),
 } as const
 

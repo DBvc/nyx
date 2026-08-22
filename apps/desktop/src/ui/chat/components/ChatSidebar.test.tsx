@@ -47,6 +47,8 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ChatSidebar>> = 
     onSelectThread: vi.fn(),
     onUpdateThreadPin: vi.fn(),
     onRenameThread: vi.fn(async () => ({ ok: true as const })),
+    onUpdateThreadLocation: vi.fn(),
+    onSwitchThreadCollection: vi.fn(),
     onLoadMoreThreads: vi.fn(),
     onRetryThreadCollection: vi.fn(async () => true),
     onOpenConnectionsSettings: vi.fn(),
@@ -122,6 +124,29 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).toMatch(/disabled=""[^>]*>Pin<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Unpin<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Rename<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Archive<\/button>/u)
+  })
+
+  it('renders the simple Archived mode with Rename and Unarchive only', () => {
+    const archived = { ...recent, location: 'archived' as const }
+    const html = renderSidebar({
+      selectedThreadId: archived.id,
+      currentThread: null,
+      collection: {
+        ...initialThreadCollectionState,
+        location: 'archived',
+        rows: [archived],
+        loadedPageCount: 1,
+        status: 'ready',
+      },
+    })
+
+    expect(html).toContain('Back to threads')
+    expect(html).toContain('>Rename</button>')
+    expect(html).toContain('>Unarchive</button>')
+    expect(html).not.toContain('>Pin</button>')
+    expect(html).not.toContain('>Archive</button>')
+    expect(html.indexOf('disabled=""')).toBeLessThan(html.indexOf('New thread'))
   })
 
   it('keeps controls on an available Current thread fallback and hides them for unavailable rows', () => {

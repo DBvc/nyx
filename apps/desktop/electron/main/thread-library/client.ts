@@ -257,6 +257,27 @@ function renameMatches(
   )
 }
 
+function locationPostStateMatches(
+  input: ThreadLibraryOperationInput['updateLocation'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  return (
+    detail.summary.location === (input.action === 'archive' ? 'archived' : 'available') &&
+    detail.summary.pinPosition === null &&
+    detail.summary.threadRevision === input.expectedThreadRevision + 1
+  )
+}
+
+function locationPreStateMatches(
+  input: ThreadLibraryOperationInput['updateLocation'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  return (
+    detail.summary.location === (input.action === 'archive' ? 'available' : 'archived') &&
+    detail.summary.threadRevision === input.expectedThreadRevision
+  )
+}
+
 export class ThreadLibraryClient {
   private readonly databasePath: string
   private generation = 0
@@ -368,6 +389,76 @@ export class ThreadLibraryClient {
         )
       }),
     )
+  }
+
+  updateLocation(input: ThreadLibraryOperationInput['updateLocation']) {
+    return this.serializeCollectionMutation(() => this.updateLocationNow(input))
+  }
+
+  private async updateLocationNow(input: ThreadLibraryOperationInput['updateLocation']) {
+    const failedGeneration = this.generation
+    let requestId = ''
+    try {
+      const reply = await this.send('updateLocation', input, (id) => {
+        requestId = id
+      })
+      if (reply.ok || reply.outcome === 'definitely_not_committed') return reply
+      this.invalidateGeneration(failedGeneration, 'Thread location outcome is unknown.')
+    } catch (error) {
+      if (!(error instanceof ThreadLibraryTransportError)) throw error
+      if (error.outcome === 'definitely_not_committed') {
+        return failure(
+          requestId || 'updateLocation',
+          'library_unavailable',
+          'definitely_not_committed',
+        ) as ThreadLibraryReply<'updateLocation'>
+      }
+    }
+
+    if (!(await this.ensureReplacement(failedGeneration))) {
+      return failure(
+        requestId || 'updateLocation',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updateLocation'>
+    }
+    let canonical: ThreadLibraryReply<'locationState'>
+    try {
+      canonical = await this.send('locationState', { threadId: input.threadId })
+    } catch {
+      return failure(
+        requestId || 'updateLocation',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updateLocation'>
+    }
+    if (!canonical.ok) {
+      return failure(
+        requestId || 'updateLocation',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updateLocation'>
+    }
+    if (locationPostStateMatches(input, canonical.value.detail)) {
+      return {
+        id: requestId || 'updateLocation',
+        ok: true,
+        value: canonical.value.detail,
+        clock: this.requiredClock(),
+      } as ThreadLibraryReply<'updateLocation'>
+    }
+    if (locationPreStateMatches(input, canonical.value.detail)) {
+      return failure(
+        requestId || 'updateLocation',
+        'stale_thread_revision',
+        'definitely_not_committed',
+      ) as ThreadLibraryReply<'updateLocation'>
+    }
+    return failure(
+      requestId || 'updateLocation',
+      'library_unavailable',
+      'outcome_unknown',
+    ) as ThreadLibraryReply<'updateLocation'>
   }
 
   private async updatePinNow(input: ThreadLibraryOperationInput['updatePin']) {

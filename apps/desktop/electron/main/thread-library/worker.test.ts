@@ -351,6 +351,18 @@ describe('ThreadLibraryDatabase', () => {
         },
       }),
     ).toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'updateLocation',
+        input: {
+          threadId: uuid(19),
+          action: 'trash',
+          expectedThreadRevision: 1,
+          movedAt: timestamp,
+        },
+      }),
+    ).toThrow()
   })
 
   it('materializes the complete initial Draft and preserves its exact canonical state on restart', async () => {
@@ -843,6 +855,19 @@ describe('ThreadLibraryDatabase', () => {
     rawDatabase(owner)
       .prepare("UPDATE threads SET location = 'archived' WHERE id = ?")
       .run(second.threadId)
+    expect(() =>
+      execute(owner, 'retryTurn', {
+        threadId: second.threadId,
+        turnOrdinal: 0,
+        expectedAttemptRequestId: 'request-pending',
+        requestId: 'request-retry',
+        expectedDraftRevision: 2,
+        retriedAt: at(118),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
+    rawDatabase(owner)
+      .prepare("UPDATE threads SET location = 'available' WHERE id = ?")
+      .run(second.threadId)
     expect(
       execute(owner, 'retryTurn', {
         threadId: second.threadId,
@@ -855,7 +880,7 @@ describe('ThreadLibraryDatabase', () => {
     ).toMatchObject({
       status: 'committed',
       detail: {
-        summary: { location: 'available', threadRevision: 2 },
+        summary: { location: 'available', threadRevision: 1 },
         turns: [{ attemptRequestId: 'request-retry', assistantStatus: 'pending' }],
       },
     })
@@ -887,7 +912,7 @@ describe('ThreadLibraryDatabase', () => {
     owner.close()
   })
 
-  it('serializes autosave and Send races and restores Archived only after the winning ack', async () => {
+  it('keeps Archived drafts and turns read-only across autosave and Send races', async () => {
     const { databasePath, owner } = await createOwner()
     const input = materializeInput(4)
     execute(owner, 'materialize', input)
@@ -915,24 +940,26 @@ describe('ThreadLibraryDatabase', () => {
     const archivedSave = draftInput(input.threadId, 1)
     archivedSave.draft.targetSelection = connectionSelection
     archivedSave.savedAt = at(121)
-    expect(execute(owner, 'saveDraft', archivedSave)).toMatchObject({
-      status: 'committed',
-      detail: {
-        summary: { location: 'archived', threadRevision: 1 },
-        draft: { draftRevision: 2, targetSelection: connectionSelection },
-      },
-    })
-    const winningSend = { ...staleSend, requestId: 'request-winning', expectedDraftRevision: 2 }
+    expect(() => execute(owner, 'saveDraft', archivedSave)).toThrow(
+      'The Thread Library request is invalid.',
+    )
+    const winningSend = { ...staleSend, requestId: 'request-winning', expectedDraftRevision: 1 }
+    expect(() => execute(owner, 'startTurn', winningSend)).toThrow(
+      'The Thread Library request is invalid.',
+    )
+    rawDatabase(owner)
+      .prepare("UPDATE threads SET location = 'available' WHERE id = ?")
+      .run(input.threadId)
     expect(execute(owner, 'startTurn', winningSend)).toMatchObject({
       status: 'committed',
       detail: {
-        summary: { location: 'available', threadRevision: 2 },
+        summary: { location: 'available', threadRevision: 1 },
         turns: [{ attemptRequestId: 'request-winning', assistantStatus: 'pending' }],
       },
     })
     expect(execute(owner, 'startTurn', { ...winningSend, requestId: 'request-second' })).toEqual({
       status: 'conflict',
-      canonicalDraftRevision: 3,
+      canonicalDraftRevision: 2,
     })
     owner.close()
     const restarted = new ThreadLibraryDatabase()
@@ -1231,6 +1258,116 @@ describe('ThreadLibraryDatabase', () => {
     owner.close()
   })
 
+  it('archives and unarchives atomically while preserving activity and closing Pin order', async () => {
+    const { databasePath, owner } = await createOwner()
+    const first = materializeInput(91)
+    const second = materializeInput(92)
+    const running = materializeInput(93)
+    for (const input of [first, second, running]) execute(owner, 'materialize', input)
+    execute(owner, 'updatePin', {
+      threadId: first.threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    execute(owner, 'updatePin', {
+      threadId: second.threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const before = execute(owner, 'readThread', { threadId: second.threadId })!
+
+    const archived = execute(owner, 'updateLocation', {
+      threadId: second.threadId,
+      action: 'archive',
+      expectedThreadRevision: 1,
+      movedAt: at(200),
+    })
+    expect(archived.summary).toMatchObject({
+      location: 'archived',
+      pinPosition: null,
+      threadRevision: 2,
+      lastUserActivityAt: before.summary.lastUserActivityAt,
+      updatedAt: at(200),
+    })
+    expect(execute(owner, 'locationState', { threadId: second.threadId })).toMatchObject({
+      pinnedCount: 1,
+      detail: { summary: { location: 'archived', pinPosition: null } },
+    })
+    expect(execute(owner, 'readThread', { threadId: first.threadId })!.summary.pinPosition).toBe(1)
+    expect(
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }).rows.map(
+        (row) => row.id,
+      ),
+    ).not.toContain(second.threadId)
+    expect(
+      execute(owner, 'listPage', { location: 'archived', cursor: null, limit: 50 }).rows.map(
+        (row) => row.id,
+      ),
+    ).toContain(second.threadId)
+
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: second.threadId,
+        action: 'archive',
+        expectedThreadRevision: 2,
+        movedAt: at(201),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: second.threadId,
+        action: 'unarchive',
+        expectedThreadRevision: 1,
+        movedAt: at(201),
+      }),
+    ).toThrow('This thread changed. Reload it and try again.')
+
+    const unarchived = execute(owner, 'updateLocation', {
+      threadId: second.threadId,
+      action: 'unarchive',
+      expectedThreadRevision: 2,
+      movedAt: at(202),
+    })
+    expect(unarchived.summary).toMatchObject({
+      location: 'available',
+      pinPosition: null,
+      threadRevision: 3,
+      lastUserActivityAt: before.summary.lastUserActivityAt,
+      updatedAt: at(202),
+    })
+
+    const runningDraft = draftInput(running.threadId)
+    runningDraft.draft.images = []
+    runningDraft.draft.documents = []
+    execute(owner, 'saveDraft', runningDraft)
+    execute(owner, 'startTurn', {
+      threadId: running.threadId,
+      requestId: 'request-running-archive',
+      expectedDraftRevision: 1,
+      userMessageId: 'user-running-archive',
+      assistantMessageId: 'assistant-running-archive',
+      startedAt: at(203),
+    })
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: running.threadId,
+        action: 'archive',
+        expectedThreadRevision: 1,
+        movedAt: at(204),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
+
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'readThread', { threadId: second.threadId })!.summary).toMatchObject({
+      location: 'available',
+      pinPosition: null,
+      threadRevision: 3,
+    })
+    restarted.close()
+  })
+
   it('applies all semantic Pin actions, preserves metadata, and persists exact order on restart', async () => {
     const { databasePath, owner } = await createOwner()
     const inputs = [materializeInput(101), materializeInput(102), materializeInput(103)]
@@ -1413,6 +1550,9 @@ describe('ThreadLibraryDatabase', () => {
     const before = positions()
 
     expect(() => execute(owner, 'pinState', { threadId: uuid(403) })).toThrow(
+      'The Thread Library is unavailable.',
+    )
+    expect(() => execute(owner, 'locationState', { threadId: uuid(403) })).toThrow(
       'The Thread Library is unavailable.',
     )
     expect(() =>

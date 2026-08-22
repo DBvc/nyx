@@ -42,6 +42,7 @@ describe('preload Thread Library bridge', () => {
       'retryOpen',
       'saveDraft',
       'subscribe',
+      'updateLocation',
       'updatePin',
     ])
   })
@@ -85,6 +86,17 @@ describe('preload Thread Library bridge', () => {
     expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:rename', {
       threadId: event.threadId,
       title: 'Renamed thread',
+      expectedThreadRevision: 1,
+    })
+
+    api.threads.updateLocation({
+      threadId: event.threadId,
+      action: 'archive',
+      expectedThreadRevision: 1,
+    })
+    expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:update-location', {
+      threadId: event.threadId,
+      action: 'archive',
       expectedThreadRevision: 1,
     })
 

@@ -36,6 +36,12 @@ interface ChatSidebarProps {
     title: string,
     expectedThreadRevision: number,
   ) => Promise<{ ok: true } | { ok: false; message: string }>
+  onUpdateThreadLocation: (
+    threadId: string,
+    action: 'archive' | 'unarchive',
+    expectedThreadRevision: number,
+  ) => void
+  onSwitchThreadCollection: (location: 'available' | 'archived') => void
   onLoadMoreThreads: () => void
   onRetryThreadCollection: () => Promise<boolean>
   onOpenConnectionsSettings: () => void
@@ -77,6 +83,8 @@ export function ChatSidebar({
   onSelectThread,
   onUpdateThreadPin,
   onRenameThread,
+  onUpdateThreadLocation,
+  onSwitchThreadCollection,
   onLoadMoreThreads,
   onRetryThreadCollection,
   onOpenConnectionsSettings,
@@ -121,6 +129,10 @@ export function ChatSidebar({
                   : ''
     const savingFailed =
       options.statusOverride === 'saving_failed' || activity?.status === 'saving_failed'
+    const locationBlocked =
+      activity?.status === 'submitting' ||
+      activity?.status === 'streaming' ||
+      activity?.status === 'saving_failed'
     const pinError = pinAction.error?.threadId === thread.id ? pinAction.error.message : null
     const boundaries = threadPinBoundaries(collection, thread)
     const renameDraft = rename?.threadId === thread.id ? rename : null
@@ -232,8 +244,31 @@ export function ChatSidebar({
               >
                 Rename
               </button>
-              {thread.pinPosition === null ? (
-                renderPinAction('Pin', 'pin')
+              {thread.location === 'archived' ? (
+                <button
+                  className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                  disabled={pinAction.pending || locationBlocked}
+                  onClick={() =>
+                    onUpdateThreadLocation(thread.id, 'unarchive', thread.threadRevision)
+                  }
+                  type='button'
+                >
+                  Unarchive
+                </button>
+              ) : thread.pinPosition === null ? (
+                <>
+                  {renderPinAction('Pin', 'pin')}
+                  <button
+                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                    disabled={pinAction.pending || locationBlocked}
+                    onClick={() =>
+                      onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
+                    }
+                    type='button'
+                  >
+                    Archive
+                  </button>
+                </>
               ) : (
                 <>
                   {renderPinAction('Unpin', 'unpin')}
@@ -241,6 +276,16 @@ export function ChatSidebar({
                   {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
                   {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
                   {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
+                  <button
+                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                    disabled={pinAction.pending || locationBlocked}
+                    onClick={() =>
+                      onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
+                    }
+                    type='button'
+                  >
+                    Archive
+                  </button>
                 </>
               )}
             </div>
@@ -272,7 +317,7 @@ export function ChatSidebar({
 
       <button
         className='mt-1 flex h-8 items-center gap-2 rounded-lg bg-nyx-accent px-3 text-left text-[13px] font-medium text-nyx-canvas hover:opacity-90'
-        disabled={newThreadDisabled}
+        disabled={newThreadDisabled || collection.location === 'archived'}
         onClick={onNewThread}
         type='button'
       >
@@ -289,6 +334,16 @@ export function ChatSidebar({
         className='nyx-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto'
         role='region'
       >
+        {collection.location === 'archived' && !libraryUnavailable ? (
+          <button
+            className='mb-3 rounded-lg px-3 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
+            disabled={pinAction.pending}
+            onClick={() => onSwitchThreadCollection('available')}
+            type='button'
+          >
+            Back to threads
+          </button>
+        ) : null}
         {libraryUnavailable ? (
           <div className='px-3 py-2 text-left'>
             <p className='text-[12px] font-medium text-nyx-danger'>Thread Library unavailable</p>
@@ -310,7 +365,8 @@ export function ChatSidebar({
               </section>
             ) : null}
 
-            {selectedThreadId === null &&
+            {collection.location === 'available' &&
+            selectedThreadId === null &&
             activeView === 'chat' &&
             !initialLoading &&
             !initialError ? (
@@ -326,7 +382,7 @@ export function ChatSidebar({
               </div>
             ) : null}
 
-            {pinnedThreads.length > 0 ? (
+            {collection.location === 'available' && pinnedThreads.length > 0 ? (
               <section className='pb-3' aria-labelledby='pinned-threads-heading'>
                 <h2
                   className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'
@@ -338,7 +394,7 @@ export function ChatSidebar({
               </section>
             ) : null}
 
-            {recentThreads.length > 0 ? (
+            {collection.location === 'available' && recentThreads.length > 0 ? (
               <section className='pb-2' aria-labelledby='recent-threads-heading'>
                 <h2
                   className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'
@@ -347,6 +403,18 @@ export function ChatSidebar({
                   Recent
                 </h2>
                 {recentThreads.map((thread) => renderThread(thread))}
+              </section>
+            ) : null}
+
+            {collection.location === 'archived' && canonicalThreads.length > 0 ? (
+              <section className='pb-2' aria-labelledby='archived-threads-heading'>
+                <h2
+                  className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'
+                  id='archived-threads-heading'
+                >
+                  Archived
+                </h2>
+                {canonicalThreads.map((thread) => renderThread(thread))}
               </section>
             ) : null}
 
@@ -404,6 +472,17 @@ export function ChatSidebar({
           </>
         )}
       </div>
+
+      {collection.location === 'available' ? (
+        <button
+          className='mt-2 rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
+          disabled={libraryUnavailable || pinAction.pending}
+          onClick={() => onSwitchThreadCollection('archived')}
+          type='button'
+        >
+          Archived
+        </button>
+      ) : null}
 
       <div className='relative mt-3 border-t border-nyx-line pt-2'>
         <button

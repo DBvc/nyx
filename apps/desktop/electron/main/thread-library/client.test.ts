@@ -119,6 +119,12 @@ const renameInput: ThreadLibraryOperationInput['rename'] = {
   expectedThreadRevision: 1,
   renamedAt: '2026-08-12T00:00:03.000Z',
 }
+const archiveInput: ThreadLibraryOperationInput['updateLocation'] = {
+  threadId,
+  action: 'archive',
+  expectedThreadRevision: 1,
+  movedAt: '2026-08-12T00:00:04.000Z',
+}
 
 function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = materializeInput) {
   return {
@@ -180,6 +186,20 @@ function renamedDetail(revision = 2) {
       fallbackOrdinal: null,
       threadRevision: revision,
       updatedAt: renameInput.renamedAt,
+    },
+  }
+}
+
+function locationDetail(location: 'available' | 'archived', revision: number) {
+  const detail = materializedDetail()
+  return {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      location,
+      pinPosition: null,
+      threadRevision: revision,
+      updatedAt: revision === 1 ? detail.summary.updatedAt : archiveInput.movedAt,
     },
   }
 }
@@ -565,6 +585,73 @@ describe('ThreadLibraryClient', () => {
     await expect(renaming).resolves.toMatchObject({
       ok: true,
       value: { summary: { threadRevision: 1 } },
+    })
+  })
+
+  it.each([
+    {
+      branch: 'committed post-state',
+      canonical: () => locationDetail('archived', 2),
+      expected: { ok: true, value: { summary: { location: 'archived', threadRevision: 2 } } },
+    },
+    {
+      branch: 'exact pre-state',
+      canonical: () => locationDetail('available', 1),
+      expected: {
+        ok: false,
+        safeError: { code: 'stale_thread_revision' },
+        outcome: 'definitely_not_committed',
+      },
+    },
+    {
+      branch: 'third state',
+      canonical: () => locationDetail('archived', 3),
+      expected: {
+        ok: false,
+        safeError: { code: 'library_unavailable' },
+        outcome: 'outcome_unknown',
+      },
+    },
+  ])('reconciles an unknown Archive result without replay: $branch', async (testCase) => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updateLocation(archiveInput)
+    const mutation = await waitForPost(first, 1)
+    expect(mutation).toMatchObject({ operation: 'updateLocation', input: archiveInput })
+    fail(first, mutation, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    expect(canonical.operation).toBe('locationState')
+    succeed(replacement, canonical, { pinnedCount: 0, detail: testCase.canonical() })
+
+    await expect(updating).resolves.toMatchObject(testCase.expected)
+    expect(posts('updateLocation')).toHaveLength(1)
+    expect(replacement.posts.map((request) => request.operation)).toEqual(['open', 'locationState'])
+    expect(workerMock.maxActive).toBe(1)
+  })
+
+  it('serializes Unarchive behind Rename on the one collection mutation barrier', async () => {
+    const { client, instance } = await openClient()
+    const renaming = client.rename(renameInput)
+    const rename = await waitForPost(instance, 1)
+    const unarchiving = client.updateLocation({
+      ...archiveInput,
+      action: 'unarchive',
+      expectedThreadRevision: 2,
+    })
+    await Promise.resolve()
+    expect(posts('updateLocation')).toHaveLength(0)
+
+    succeed(instance, rename, renamedDetail(), true)
+    await renaming
+    const location = await waitForPost(instance, 2)
+    expect(location.operation).toBe('updateLocation')
+    succeed(instance, location, locationDetail('available', 3), true)
+    await expect(unarchiving).resolves.toMatchObject({
+      ok: true,
+      value: { summary: { location: 'available', threadRevision: 3 } },
     })
   })
 

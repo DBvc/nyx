@@ -14,6 +14,8 @@ import type {
   NyxThreadSaveDraftResult,
   NyxThreadUpdatePinInput,
   NyxThreadUpdatePinResult,
+  NyxThreadUpdateLocationInput,
+  NyxThreadUpdateLocationResult,
 } from '../../../shared/threads/types'
 import type { NyxConnectionsOverview } from '../../../shared/connections/types'
 import { chatReducer } from './chat-reducer'
@@ -300,6 +302,9 @@ function installBridge(options?: {
   retryOpenResult?: NyxThreadResult<null>
   updatePin?: (input: NyxThreadUpdatePinInput) => Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
   rename?: (input: NyxThreadRenameInput) => Promise<NyxThreadResult<NyxThreadRenameResult>>
+  updateLocation?: (
+    input: NyxThreadUpdateLocationInput,
+  ) => Promise<NyxThreadResult<NyxThreadUpdateLocationResult>>
   selectedId?: string | null
 }) {
   let chatListener: ((event: NyxChatEvent) => void) | null = null
@@ -390,6 +395,29 @@ function installBridge(options?: {
         }
       }),
   )
+  const updateLocation = vi.fn(
+    options?.updateLocation ??
+      (async (input: NyxThreadUpdateLocationInput) => {
+        const current = detail('', input.threadId)
+        return {
+          ok: true as const,
+          value: {
+            detail: {
+              ...current,
+              summary: {
+                ...current.summary,
+                location:
+                  input.action === 'archive' ? ('archived' as const) : ('available' as const),
+                pinPosition: null,
+                threadRevision: input.expectedThreadRevision + 1,
+              },
+            },
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 0,
+          },
+        }
+      }),
+  )
   let storedSelectedId = options?.selectedId ?? null
   const localStorage = {
     getItem: vi.fn(() => storedSelectedId),
@@ -426,6 +454,7 @@ function installBridge(options?: {
         markSeen: vi.fn(),
         updatePin,
         rename,
+        updateLocation,
         subscribe(listener: (event: NyxThreadEvent) => void) {
           threadListener = listener
           return () => {
@@ -448,6 +477,7 @@ function installBridge(options?: {
     retryOpen,
     updatePin,
     rename,
+    updateLocation,
     localStorage,
     emitChat(event: NyxChatEvent) {
       chatListener?.(event)
@@ -2609,6 +2639,189 @@ describe('Rename Renderer controls', () => {
       }),
     ).resolves.toEqual({ ok: false, message: 'Use 48 characters or fewer.' })
     expect(bridge.rename).not.toHaveBeenCalled()
+  })
+})
+
+describe('Archive and Unarchive Renderer controls', () => {
+  it('flushes the selected Draft, holds the shared gate, and switches on canonical hydration', async () => {
+    const available = detail('', 'thread-a')
+    const archived = {
+      ...available,
+      summary: {
+        ...available.summary,
+        location: 'archived' as const,
+        pinPosition: null,
+        threadRevision: available.summary.threadRevision + 1,
+      },
+      draft: { ...available.draft, text: 'Edited draft', revision: available.draft.revision + 1 },
+    }
+    const moved = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+    let location: 'available' | 'archived' = 'available'
+    let includedThroughCursor = 0
+    let availableProjection = available
+    const bridge = installBridge({
+      list: async () =>
+        collectionPageResult(
+          [location === 'available' ? availableProjection.summary : archived.summary],
+          null,
+          includedThroughCursor,
+        ),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: location === 'available' ? availableProjection : archived,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor,
+        },
+      }),
+      updateLocation: () => moved.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([available.summary]))
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    render().setInput('Edited draft')
+
+    const archiving = render().updateThreadLocation({
+      threadId: available.summary.id,
+      action: 'archive',
+      expectedThreadRevision: available.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledOnce())
+    expect(bridge.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      bridge.updateLocation.mock.invocationCallOrder[0]!,
+    )
+    expect(render().threadCollection.location).toBe('available')
+    expect(render().threadPinAction.pending).toBe(true)
+
+    location = 'archived'
+    includedThroughCursor = 1
+    moved.resolve({
+      ok: true,
+      value: {
+        detail: archived,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+    await expect(archiving).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().threadCollection.location).toBe('archived'))
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadSummaries).toEqual([archived.summary])
+    expect(render().state.threadSummary?.location).toBe('archived')
+    expect(render().canSend).toBe(false)
+
+    render().setInput('Ignored edit')
+    expect(render().state.input).toBe('Edited draft')
+
+    const restored = {
+      ...archived,
+      summary: {
+        ...archived.summary,
+        location: 'available' as const,
+        threadRevision: archived.summary.threadRevision + 1,
+      },
+    }
+    const restoredResult = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+    bridge.updateLocation.mockImplementationOnce(() => restoredResult.promise)
+    const unarchiving = render().updateThreadLocation({
+      threadId: archived.summary.id,
+      action: 'unarchive',
+      expectedThreadRevision: archived.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledTimes(2))
+    location = 'available'
+    includedThroughCursor = 2
+    availableProjection = restored
+    restoredResult.resolve({
+      ok: true,
+      value: {
+        detail: restored,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 2,
+      },
+    })
+    await expect(unarchiving).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadCollection.location).toBe('available')
+    expect(render().state.threadSummary?.location).toBe('available')
+    expect(bridge.saveDraft).toHaveBeenCalledOnce()
+  })
+
+  it('switches between Available and Archived with the existing bounded collection reader', async () => {
+    const available = detail('', 'thread-a')
+    const archivedSummary = {
+      ...detail('', 'thread-b').summary,
+      location: 'archived' as const,
+      pinPosition: null,
+    }
+    const archived = detailForSummary(archivedSummary)
+    const bridge = installBridge({
+      list: async (input) =>
+        collectionPageResult(
+          [input.location === 'available' ? available.summary : archived.summary],
+          null,
+        ),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail:
+            threadId === available.summary.id
+              ? available
+              : threadId === archived.summary.id
+                ? archived
+                : null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+
+    await expect(render().switchThreadCollectionLocation('archived')).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(archived.summary.id))
+    expect(render().threadCollection.location).toBe('archived')
+    expect(render().threadSummaries).toEqual([archived.summary])
+
+    await expect(render().switchThreadCollectionLocation('available')).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    expect(render().threadCollection.location).toBe('available')
+    expect(bridge.listPage.mock.calls.map(([input]) => input.location)).toEqual([
+      'available',
+      'archived',
+      'available',
+    ])
+  })
+
+  it('blocks Archive for a running row before crossing the bridge', async () => {
+    const running = detail('', 'thread-a')
+    const runningSummary = {
+      ...running.summary,
+      activity: {
+        status: 'streaming' as const,
+        requestId: 'request-running',
+        attachmentBearing: false,
+      },
+    }
+    const bridge = installBridge({
+      list: async () => collectionPageResult([runningSummary], null),
+      get: async () => ({
+        ok: true,
+        value: { detail: running, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([runningSummary]))
+
+    await expect(
+      render().updateThreadLocation({
+        threadId: running.summary.id,
+        action: 'archive',
+        expectedThreadRevision: running.summary.threadRevision,
+      }),
+    ).resolves.toBe(false)
+    expect(bridge.updateLocation).not.toHaveBeenCalled()
   })
 })
 

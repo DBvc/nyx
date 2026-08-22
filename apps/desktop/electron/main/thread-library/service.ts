@@ -125,6 +125,13 @@ const renameInput = z
     expectedThreadRevision: z.number().int().positive(),
   })
   .strict()
+const updateLocationInput = z
+  .object({
+    threadId: uuid,
+    action: z.enum(['archive', 'unarchive']),
+    expectedThreadRevision: z.number().int().positive(),
+  })
+  .strict()
 
 type UnclockedChatEvent = NyxChatEvent extends infer Event
   ? Event extends NyxChatEvent
@@ -536,6 +543,23 @@ export class ThreadLibraryService {
     })
   }
 
+  async updateLocation(value: unknown) {
+    const input = updateLocationInput.safeParse(value)
+    if (!input.success || !this.active) {
+      return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
+    }
+    const reply = await this.active.client.updateLocation({
+      ...input.data,
+      movedAt: (this.options.now?.() ?? new Date()).toISOString(),
+    })
+    if (!reply.ok) return fail(this.publicError(reply.safeError.code))
+    return ok({
+      detail: this.toSharedDetail(reply.value),
+      eventEpoch: this.eventEpoch,
+      includedThroughCursor: this.boundaryCursor(reply.clock),
+    })
+  }
+
   private async activate() {
     if (this.active) return true
     if (this.activation) return this.activation
@@ -886,6 +910,7 @@ export class ThreadLibraryService {
     const read = await this.active!.client.readThread({ threadId: input.threadId })
     if (!read.ok) throw new ServiceReadError(read.safeError.code)
     if (!read.value) return null
+    if (read.value.summary.location !== 'available') return null
     const newImageIds = new Set((input.newImages ?? []).map((row) => row.imageId))
     const newDocumentIds = new Set((input.newDocuments ?? []).map((row) => row.documentId))
     const images = []

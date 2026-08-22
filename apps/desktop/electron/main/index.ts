@@ -202,6 +202,7 @@ type ThreadLibraryController = Pick<
   | 'markSeen'
   | 'updatePin'
   | 'rename'
+  | 'updateLocation'
 >
 
 export interface RegisterIpcHandlersOptions {
@@ -248,6 +249,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}) {
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.markSeen, (_event, input) => threads.markSeen(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.updatePin, (_event, input) => threads.updatePin(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.rename, (_event, input) => threads.rename(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.updateLocation, (_event, input) =>
+    threads.updateLocation(input),
+  )
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())
 

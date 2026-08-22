@@ -1,4 +1,6 @@
-import type { NyxThreadSummary } from '../../../shared/threads/types'
+import type { NyxThreadLocation, NyxThreadSummary } from '../../../shared/threads/types'
+
+export type ThreadCollectionLocation = Extract<NyxThreadLocation, 'available' | 'archived'>
 
 export const threadCollectionPageSize = 50
 
@@ -8,6 +10,7 @@ export interface ThreadCollectionPage {
 }
 
 export interface ThreadCollectionCandidate {
+  location: ThreadCollectionLocation
   rows: ReadonlyArray<NyxThreadSummary>
   nextCursor: string | null
   pageCursors: ReadonlyArray<string>
@@ -45,6 +48,7 @@ export class ThreadCollectionCandidateError extends Error {
 }
 
 export const initialThreadCollectionState: ThreadCollectionState = {
+  location: 'available',
   rows: [],
   nextCursor: null,
   pageCursors: [],
@@ -63,20 +67,24 @@ function validatePageRows(
   rows: ReadonlyArray<NyxThreadSummary>,
   seenIds: Set<string>,
   sawRecent: { current: boolean },
+  location: ThreadCollectionLocation,
 ) {
   if (rows.length > threadCollectionPageSize) {
     throw new ThreadCollectionCandidateError('A Thread page exceeded the fixed page size.')
   }
 
   for (const row of rows) {
-    if (row.location !== 'available') {
-      throw new ThreadCollectionCandidateError('A Thread appeared outside Available.', true)
+    if (row.location !== location) {
+      throw new ThreadCollectionCandidateError('A Thread appeared outside its collection.', true)
     }
     if (typeof row.id !== 'string' || row.id.length === 0 || seenIds.has(row.id)) {
       throw new ThreadCollectionCandidateError('A Thread id was not safe and unique.', true)
     }
     seenIds.add(row.id)
 
+    if (location === 'archived' && row.pinPosition !== null) {
+      throw new ThreadCollectionCandidateError('An Archived Thread retained a Pin.', true)
+    }
     if (row.pinPosition === null) {
       sawRecent.current = true
     } else if (!Number.isSafeInteger(row.pinPosition) || row.pinPosition < 1) {
@@ -90,6 +98,7 @@ function validatePageRows(
 export function buildThreadCollectionCandidate(
   pages: ReadonlyArray<ThreadCollectionPage>,
   pageBudget: number,
+  location: ThreadCollectionLocation = 'available',
 ): ThreadCollectionCandidate {
   if (!Number.isInteger(pageBudget) || pageBudget < 1 || pages.length < 1) {
     throw new ThreadCollectionCandidateError('A positive page budget is required.')
@@ -107,7 +116,7 @@ export function buildThreadCollectionCandidate(
     if (index > 0 && page.rows.length === 0) {
       throw new ThreadCollectionCandidateError('A Thread page omitted the expected next row.')
     }
-    validatePageRows(page.rows, seenIds, sawRecent)
+    validatePageRows(page.rows, seenIds, sawRecent, location)
     rows.push(...page.rows)
 
     if (page.nextCursor !== null) {
@@ -126,6 +135,7 @@ export function buildThreadCollectionCandidate(
   }
 
   return {
+    location,
     rows,
     nextCursor: pages.at(-1)!.nextCursor,
     pageCursors: [...seenCursors],
@@ -155,12 +165,13 @@ export function appendThreadCollectionPage(
   if (page.rows.length === 0) {
     throw new ThreadCollectionCandidateError('A Thread page omitted the expected next row.')
   }
-  validatePageRows(page.rows, seenIds, sawRecent)
+  validatePageRows(page.rows, seenIds, sawRecent, state.location)
   if (page.nextCursor !== null && page.rows.length !== threadCollectionPageSize) {
     throw new ThreadCollectionCandidateError('The Thread page cursor did not advance safely.')
   }
 
   return {
+    location: state.location,
     rows: [...state.rows, ...page.rows],
     nextCursor: page.nextCursor,
     pageCursors:

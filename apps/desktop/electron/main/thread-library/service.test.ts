@@ -133,6 +133,20 @@ function harness() {
       observer?.(acknowledgement)
       return { id: 'rename', ok: true as const, ...acknowledgement }
     }),
+    updateLocation: vi.fn(async (input: { action: 'archive' | 'unarchive'; movedAt: string }) => {
+      const moved = detail()
+      moved.summary.location = input.action === 'archive' ? 'archived' : 'available'
+      moved.summary.pinPosition = null
+      moved.summary.threadRevision = 2
+      moved.summary.updatedAt = input.movedAt
+      const acknowledgement = {
+        operation: 'updateLocation' as const,
+        value: moved,
+        clock: { generation, watermark: 1, actualMutation: true },
+      }
+      observer?.(acknowledgement)
+      return { id: 'update-location', ok: true as const, ...acknowledgement }
+    }),
     recoverPending: vi.fn(async () => ({
       id: 'recover',
       ok: true as const,
@@ -330,6 +344,75 @@ describe('ThreadLibraryService', () => {
       error: { code: 'invalid_request', message: 'Use 48 characters or fewer.' },
     })
     expect(client.rename).not.toHaveBeenCalled()
+  })
+
+  it('validates and publishes one semantic Archive location change', async () => {
+    const { client, events, service } = harness()
+    await service.initialize()
+
+    await expect(
+      service.updateLocation({ threadId, action: 'archive', expectedThreadRevision: 1 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        detail: {
+          summary: {
+            location: 'archived',
+            pinPosition: null,
+            threadRevision: 2,
+            lastUserActivityAt: createdAt,
+          },
+        },
+        eventEpoch: generation,
+        includedThroughCursor: 1,
+      },
+    })
+    expect(client.updateLocation).toHaveBeenCalledWith({
+      threadId,
+      action: 'archive',
+      expectedThreadRevision: 1,
+      movedAt: createdAt,
+    })
+    expect(events).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'threads:changed',
+        detail: expect.objectContaining({
+          summary: expect.objectContaining({ location: 'archived', pinPosition: null }),
+        }),
+      }),
+    )
+
+    client.updateLocation.mockClear()
+    await expect(
+      service.updateLocation({ threadId, action: 'trash', expectedThreadRevision: 1 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(client.updateLocation).not.toHaveBeenCalled()
+  })
+
+  it('rejects an Archived Draft before invoking the save coordinator', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+    const archived = detail()
+    archived.summary.location = 'archived'
+    client.readThread.mockResolvedValueOnce({
+      id: 'archived-read',
+      ok: true,
+      value: archived,
+      clock: { generation, watermark: 0, actualMutation: false },
+    } as never)
+    const saveDraft = vi.spyOn(service.resolveCoordinator(), 'saveDraft')
+
+    await expect(
+      service.saveDraft({
+        threadId,
+        expectedDraftRevision: 0,
+        text: 'edited',
+        targetSelection: { kind: 'env_fallback' },
+        images: [],
+        documents: [],
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(saveDraft).not.toHaveBeenCalled()
   })
 
   it('keeps independent live activity for two Threads', async () => {

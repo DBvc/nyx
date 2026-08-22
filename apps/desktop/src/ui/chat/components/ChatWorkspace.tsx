@@ -240,6 +240,8 @@ export function ChatWorkspace() {
     retryThreadCollection,
     updateThreadPin,
     renameThread,
+    updateThreadLocation,
+    switchThreadCollectionLocation,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -336,6 +338,7 @@ export function ChatWorkspace() {
     const settlementRetry = state.settlementFailure?.assistantMessageId === messageId
     if (
       state.hydrationStatus !== 'ready' ||
+      state.threadSummary?.location === 'archived' ||
       isBusy ||
       isResetting ||
       (!settlementRetry && !canStartRun) ||
@@ -384,7 +387,11 @@ export function ChatWorkspace() {
             )}
             libraryUnavailable={libraryUnavailable}
             pinAction={threadPinAction}
-            newThreadDisabled={state.hydrationStatus !== 'ready' || isResetting}
+            newThreadDisabled={
+              state.hydrationStatus !== 'ready' ||
+              isResetting ||
+              threadCollection.location === 'archived'
+            }
             onNewThread={() => {
               void startNewChat()
               setActiveView('chat')
@@ -399,6 +406,12 @@ export function ChatWorkspace() {
             onRenameThread={(threadId, title, expectedThreadRevision) =>
               renameThread({ threadId, title, expectedThreadRevision })
             }
+            onUpdateThreadLocation={(threadId, action, expectedThreadRevision) => {
+              void updateThreadLocation({ threadId, action, expectedThreadRevision })
+            }}
+            onSwitchThreadCollection={(location) => {
+              void switchThreadCollectionLocation(location)
+            }}
             onOpenConnectionsSettings={() => {
               settingsPopoverRef.current?.hidePopover()
               setActiveView('connections')
@@ -467,7 +480,12 @@ export function ChatWorkspace() {
                   onScroll={handleScroll}
                 />
               )}
-              {state.hydrationStatus === 'error' ? null : (
+              {state.hydrationStatus === 'error' ? null : state.threadSummary?.location ===
+                'archived' ? (
+                <div className='border-t border-nyx-line px-5 py-4 text-center text-[12px] text-nyx-muted'>
+                  Archived threads are read-only. Unarchive this thread to continue chatting.
+                </div>
+              ) : (
                 <ChatComposer
                   canSend={canSend}
                   composerError={state.composerError}

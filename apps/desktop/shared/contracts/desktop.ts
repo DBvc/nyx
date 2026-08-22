@@ -40,6 +40,8 @@ import type {
   NyxThreadSnapshot,
   NyxThreadUpdatePinInput,
   NyxThreadUpdatePinResult,
+  NyxThreadUpdateLocationInput,
+  NyxThreadUpdateLocationResult,
 } from '../threads/types'
 
 export interface NyxDesktopChatApi {
@@ -60,6 +62,9 @@ export interface NyxDesktopThreadsApi {
   markSeen(input: NyxThreadMarkSeenInput): Promise<NyxThreadResult<NyxThreadMarkSeenResult>>
   updatePin(input: NyxThreadUpdatePinInput): Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
   rename(input: NyxThreadRenameInput): Promise<NyxThreadResult<NyxThreadRenameResult>>
+  updateLocation(
+    input: NyxThreadUpdateLocationInput,
+  ): Promise<NyxThreadResult<NyxThreadUpdateLocationResult>>
   subscribe(listener: NyxThreadEventListener): () => void
 }
 

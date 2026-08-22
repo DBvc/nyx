@@ -80,6 +80,27 @@ describe('thread collection candidate', () => {
     )
   })
 
+  it('accepts only unpinned Archived rows in the Archived collection', () => {
+    const archivedRows = [row(1), row(2)].map((item) => ({
+      ...item,
+      location: 'archived' as const,
+    }))
+    const candidate = buildThreadCollectionCandidate(
+      [{ rows: archivedRows, nextCursor: null }],
+      1,
+      'archived',
+    )
+
+    expect(candidate).toMatchObject({ location: 'archived', rows: archivedRows })
+    expect(() =>
+      buildThreadCollectionCandidate(
+        [{ rows: [{ ...archivedRows[0]!, pinPosition: 1 }], nextCursor: null }],
+        1,
+        'archived',
+      ),
+    ).toThrow('retained a Pin')
+  })
+
   it('groups safely identified unavailable rows without duplicating them', () => {
     const pinnedUnavailable: NyxThreadSummary = {
       availability: 'unavailable',
@@ -138,7 +159,7 @@ describe('thread collection candidate', () => {
         [{ rows: [{ ...row(1), location: 'archived' }], nextCursor: null }],
         1,
       ),
-    ).toThrow('outside Available')
+    ).toThrow('outside its collection')
     expect(() =>
       buildThreadCollectionCandidate([page(1, 50, 'opaque-1'), page(51, 1, null)], 1),
     ).toThrow('page budget')

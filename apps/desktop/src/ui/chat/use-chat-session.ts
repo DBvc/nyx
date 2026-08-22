@@ -9,6 +9,7 @@ import type {
   NyxThreadSafeError,
   NyxThreadSaveDraftInput,
   NyxThreadRunCapacity,
+  NyxThreadUpdateLocationInput,
   NyxThreadUpdatePinInput,
 } from '../../../shared/threads/types'
 import { validateNyxThreadTitle } from '../../../shared/threads/title'
@@ -238,6 +239,7 @@ export function canSubmitChat(
 
   return (
     state.hydrationStatus === 'ready' &&
+    (!state.threadSummary || state.threadSummary.location === 'available') &&
     state.saveStatus === 'idle' &&
     hasContent &&
     imagesReady &&
@@ -310,6 +312,12 @@ export function useChatSession({
   )
   const renameThreadRef = useRef<
     ((input: NyxThreadRenameInput) => Promise<ThreadRenameOutcome>) | null
+  >(null)
+  const updateThreadLocationRef = useRef<
+    ((input: NyxThreadUpdateLocationInput) => Promise<boolean>) | null
+  >(null)
+  const switchThreadCollectionLocationRef = useRef<
+    ((location: 'available' | 'archived') => Promise<boolean>) | null
   >(null)
   const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
@@ -695,8 +703,9 @@ export function useChatSession({
       | { kind: 'waiting_hydration'; afterRequest: number; epoch?: string }
 
     interface ActiveThreadCollectionAction {
-      kind: 'pin' | 'rename'
+      kind: 'pin' | 'rename' | 'location'
       threadId: string
+      holdsNavigation: boolean
       hydration: number
       epoch: string
       projectionGeneration: number
@@ -709,7 +718,12 @@ export function useChatSession({
     let activeThreadCollectionAction: ActiveThreadCollectionAction | null = null
 
     function finishThreadCollectionAction() {
+      const action = activeThreadCollectionAction
       activeThreadCollectionAction = null
+      if (action?.holdsNavigation) {
+        navigationRef.current = false
+        setNavigating(false)
+      }
       replaceThreadPinAction(initialThreadPinActionState)
     }
 
@@ -802,6 +816,10 @@ export function useChatSession({
           eventEpoch !== action.epoch ||
           projectionGeneration.current !== action.projectionGeneration
         if (result.error.code === 'invalid_request' && !projectionChanged) {
+          if (action.holdsNavigation) {
+            navigationRef.current = false
+            setNavigating(false)
+          }
           activeThreadCollectionAction = null
           replaceThreadPinAction(
             releaseThreadPinAction(
@@ -905,12 +923,13 @@ export function useChatSession({
       pageBudget: number,
       epoch: string,
       hydration: number,
+      location: 'available' | 'archived',
     ): Promise<CollectionCandidateOutcome> {
       const pages: ThreadCollectionPage[] = []
       let cursor: string | null = null
 
       for (let pageIndex = 0; pageIndex < pageBudget; pageIndex += 1) {
-        const result = await threads.listPage({ location: 'available', cursor, limit: 50 })
+        const result = await threads.listPage({ location, cursor, limit: 50 })
         if (!collectionRequestCurrent(hydration)) return { kind: 'cancelled' }
         if (!result.ok) {
           return result.error.code === 'conflict'
@@ -926,7 +945,10 @@ export function useChatSession({
       }
 
       try {
-        return { kind: 'candidate', candidate: buildThreadCollectionCandidate(pages, pageBudget) }
+        return {
+          kind: 'candidate',
+          candidate: buildThreadCollectionCandidate(pages, pageBudget, location),
+        }
       } catch (error) {
         return error instanceof ThreadCollectionCandidateError && !error.unsafe
           ? { kind: 'conflict' }
@@ -941,7 +963,7 @@ export function useChatSession({
     ): Promise<CollectionCandidateOutcome> {
       if (!accepted.nextCursor) return { kind: 'conflict' }
       const result = await threads.listPage({
-        location: 'available',
+        location: accepted.location,
         cursor: accepted.nextCursor,
         limit: 50,
       })
@@ -1014,7 +1036,7 @@ export function useChatSession({
         )
         return 'reject'
       }
-      if (!result.value.detail || result.value.detail.summary.location !== 'available') {
+      if (!result.value.detail || result.value.detail.summary.location !== candidate.location) {
         try {
           window.localStorage.removeItem('nyx.thread.selected.v1')
         } catch {
@@ -1049,6 +1071,7 @@ export function useChatSession({
       collectionInFlight = true
       const hydration = hydrationRef.current
       const epoch: string = eventEpoch
+      const location = accepted.location
       const pageBudget = Math.max(
         1,
         accepted.loadedPageCount + (source === 'explicit-load' ? 1 : 0),
@@ -1067,7 +1090,7 @@ export function useChatSession({
           const readSerial = ++collectionReadSerial
           const readCursor = listCursor
           const outcome = rebuild
-            ? await readBoundedPrefix(pageBudget, epoch, hydration)
+            ? await readBoundedPrefix(pageBudget, epoch, hydration, location)
             : await readNextPage(accepted, epoch, hydration)
           if (outcome.kind === 'cancelled') return false
           if (outcome.kind === 'failure') {
@@ -1404,6 +1427,7 @@ export function useChatSession({
     ) {
       const request = ++hydrationRef.current
       const generation = projectionGeneration.current
+      const location = threadCollectionRef.current.location
       const pageBudget = Math.max(1, options.pageBudget ?? 1)
       const errorPhase =
         options.errorPhase ?? (options.preserveCollection ? 'load-more' : 'initial')
@@ -1422,7 +1446,7 @@ export function useChatSession({
           let cursor: string | null = null
           let conflicted = false
           for (let pageIndex = 0; pageIndex < pageBudget; pageIndex += 1) {
-            const result = await threads.listPage({ location: 'available', cursor, limit: 50 })
+            const result = await threads.listPage({ location, cursor, limit: 50 })
             if (disposed || request !== hydrationRef.current) return
             if (!result.ok) {
               if (result.error.code === 'conflict') {
@@ -1451,7 +1475,7 @@ export function useChatSession({
             return
           }
           try {
-            initialCandidate = buildThreadCollectionCandidate(pages, pageBudget)
+            initialCandidate = buildThreadCollectionCandidate(pages, pageBudget, location)
             break
           } catch (error) {
             if (!(error instanceof ThreadCollectionCandidateError) || error.unsafe) {
@@ -1490,7 +1514,7 @@ export function useChatSession({
               detailResult?.error.code === 'not_found')) ||
             (detailResult?.ok &&
               (detailResult.value.detail === null ||
-                detailResult.value.detail.summary.location !== 'available')))
+                detailResult.value.detail.summary.location !== location)))
         ) {
           selectedId = firstSummary?.id ?? null
           summary = firstSummary
@@ -1543,7 +1567,7 @@ export function useChatSession({
         }
         const nextCollection = commitThreadCollectionCandidate(initialCandidate)
         const missingAtEnd =
-          resolvedSummary?.location === 'available' &&
+          resolvedSummary?.location === location &&
           !nextCollection.rows.some((row) => row.id === resolvedSummary.id) &&
           nextCollection.nextCursor === null
         if (missingAtEnd && missingSelectionRecoveryRef.current !== resolvedSummary.id) {
@@ -1635,6 +1659,7 @@ export function useChatSession({
       const action: ActiveThreadCollectionAction = {
         kind: 'pin',
         threadId: input.threadId,
+        holdsNavigation: false,
         hydration: hydrationRef.current,
         epoch: eventEpoch,
         projectionGeneration: projectionGeneration.current,
@@ -1684,6 +1709,7 @@ export function useChatSession({
       const action: ActiveThreadCollectionAction = {
         kind: 'rename',
         threadId: input.threadId,
+        holdsNavigation: false,
         hydration: hydrationRef.current,
         epoch: eventEpoch,
         projectionGeneration: projectionGeneration.current,
@@ -1710,6 +1736,112 @@ export function useChatSession({
             message: result.ok ? "Couldn't rename this thread." : result.error.message,
           }
     }
+    updateThreadLocationRef.current = async (input) => {
+      if (
+        disposed ||
+        !hydrated ||
+        !eventEpoch ||
+        activeThreadCollectionAction ||
+        threadPinActionRef.current.pending
+      ) {
+        return false
+      }
+      const target =
+        threadCollectionRef.current.rows.find((row) => row.id === input.threadId) ??
+        (stateRef.current.threadSummary?.id === input.threadId
+          ? stateRef.current.threadSummary
+          : null)
+      const source = input.action === 'archive' ? 'available' : 'archived'
+      if (
+        target?.availability !== 'available' ||
+        target.location !== source ||
+        target.threadRevision !== input.expectedThreadRevision ||
+        target.activity?.status === 'submitting' ||
+        target.activity?.status === 'streaming' ||
+        target.activity?.status === 'saving_failed'
+      ) {
+        return false
+      }
+      const selected = selectedThreadIdRef.current === input.threadId
+      if (
+        selected &&
+        (Boolean(stateRef.current.activeRequestId) || stateRef.current.settlementFailure !== null)
+      ) {
+        return false
+      }
+
+      const action: ActiveThreadCollectionAction = {
+        kind: 'location',
+        threadId: input.threadId,
+        holdsNavigation: selected,
+        hydration: hydrationRef.current,
+        epoch: eventEpoch,
+        projectionGeneration: projectionGeneration.current,
+        listCursor,
+        loadedPageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
+        replacementHydration: null,
+        phase: { kind: 'dispatching' },
+      }
+      activeThreadCollectionAction = action
+      replaceThreadPinAction(beginThreadPinAction(threadPinActionRef.current))
+      if (selected) {
+        navigationRef.current = true
+        setNavigating(true)
+        const saved = await queueSaveDraft(false, true)
+        if (!saved.ok || activeThreadCollectionAction !== action) {
+          if (activeThreadCollectionAction === action) finishThreadCollectionAction()
+          return false
+        }
+      }
+
+      let result
+      try {
+        result = await threads.updateLocation(input)
+      } catch {
+        if (activeThreadCollectionAction === action) failWholeLibrary(threadLibraryBridgeError())
+        return false
+      }
+      if (!result.ok || !selected) {
+        return settleThreadCollectionAction(action, result)
+      }
+      if (activeThreadCollectionAction !== action) return false
+
+      const location = input.action === 'archive' ? 'archived' : 'available'
+      action.phase = {
+        kind: 'waiting_hydration',
+        afterRequest: action.hydration,
+        epoch: result.value.eventEpoch,
+      }
+      replaceThreadCollection({ ...initialThreadCollectionState, location })
+      void hydrateThreadLibrary()
+      return true
+    }
+    switchThreadCollectionLocationRef.current = async (location) => {
+      if (
+        disposed ||
+        !hydrated ||
+        activeThreadCollectionAction ||
+        threadPinActionRef.current.pending ||
+        navigationRef.current
+      ) {
+        return false
+      }
+      if (threadCollectionRef.current.location === location) return true
+
+      navigationRef.current = true
+      setNavigating(true)
+      try {
+        const saved = await queueSaveDraft(false, true)
+        if (!saved.ok) return false
+        missingSelectionRecoveryRef.current = null
+        replaceThreadCollection({ ...initialThreadCollectionState, location })
+        await hydrateThreadLibrary()
+        return threadCollectionRef.current.location === location
+      } finally {
+        navigationRef.current = false
+        setNavigating(false)
+      }
+    }
     void hydrateThreadLibrary()
 
     return () => {
@@ -1719,6 +1851,8 @@ export function useChatSession({
       retryThreadCollectionRef.current = null
       updateThreadPinRef.current = null
       renameThreadRef.current = null
+      updateThreadLocationRef.current = null
+      switchThreadCollectionLocationRef.current = null
       unsubscribeChat()
       unsubscribeThreads()
     }
@@ -1745,6 +1879,7 @@ export function useChatSession({
   function addDraftImages(sources: ReadonlyArray<Blob>) {
     if (
       state.hydrationStatus !== 'ready' ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
@@ -1788,6 +1923,7 @@ export function useChatSession({
   function addDraftDocuments(sources: ReadonlyArray<File>) {
     if (
       state.hydrationStatus !== 'ready' ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
       state.saveStatus === 'saving' ||
@@ -1838,6 +1974,7 @@ export function useChatSession({
   function removeDraftImage(imageId: string) {
     if (
       stateRef.current.newThreadPending ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -1859,6 +1996,7 @@ export function useChatSession({
   function retryDraftImage(imageId: string) {
     if (
       stateRef.current.newThreadPending ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -1880,6 +2018,7 @@ export function useChatSession({
   function removeDraftDocument(documentId: string) {
     if (
       stateRef.current.newThreadPending ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -1899,6 +2038,7 @@ export function useChatSession({
   function retryDraftDocument(documentId: string) {
     if (
       stateRef.current.newThreadPending ||
+      stateRef.current.threadSummary?.location === 'archived' ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -1923,6 +2063,15 @@ export function useChatSession({
       .then(async () => {
         for (;;) {
           const current = stateRef.current
+          if (current.threadSummary?.location === 'archived') {
+            return current.draftEditVersion === current.savedEditVersion
+              ? {
+                  ok: true as const,
+                  threadId: current.selectedThreadId,
+                  draftRevision: current.draftRevision,
+                }
+              : { ok: false as const }
+          }
           const targetSelection = current.targetDraft
           const readyImages = current.draftImages.filter(
             (image): image is Extract<ChatImageDraft, { status: 'ready' }> =>
@@ -2115,6 +2264,7 @@ export function useChatSession({
   useEffect(() => {
     if (
       state.hydrationStatus !== 'ready' ||
+      state.threadSummary?.location === 'archived' ||
       state.activeRequestId ||
       state.draftEditVersion <= state.savedEditVersion
     )
@@ -2133,6 +2283,7 @@ export function useChatSession({
     if (
       submittingRef.current ||
       stateRef.current.newThreadPending ||
+      state.threadSummary?.location === 'archived' ||
       navigationRef.current ||
       !canSubmitChat(
         stateRef.current,
@@ -2422,18 +2573,32 @@ export function useChatSession({
     isBusy: Boolean(state.activeRequestId),
     isAccepting: Boolean(state.activeTurn && !state.activeTurn.accepted),
     isResetting: state.newThreadPending || navigating,
-    canStartRun: !state.activeRequestId && !state.settlementFailure && retryCapacityNotice === null,
+    canStartRun:
+      state.threadSummary?.location !== 'archived' &&
+      !state.activeRequestId &&
+      !state.settlementFailure &&
+      retryCapacityNotice === null,
     canSend: canSubmitChat(state, connectionStatus, capacityNotice === null),
     capacityNotice,
     setInput(value: string) {
-      if (stateRef.current.newThreadPending || navigationRef.current) return
+      if (
+        stateRef.current.newThreadPending ||
+        stateRef.current.threadSummary?.location === 'archived' ||
+        navigationRef.current
+      )
+        return
       dispatch({
         type: 'set-input',
         value,
       })
     },
     setTargetSelection(selection: NyxChatTargetSelection) {
-      if (stateRef.current.newThreadPending || navigationRef.current) return
+      if (
+        stateRef.current.newThreadPending ||
+        stateRef.current.threadSummary?.location === 'archived' ||
+        navigationRef.current
+      )
+        return
       dispatch({
         type: 'target-draft-changed',
         selection,
@@ -2468,6 +2633,12 @@ export function useChatSession({
         renameThreadRef.current?.(input) ??
         Promise.resolve({ ok: false as const, message: 'Thread Library is not ready.' })
       )
+    },
+    updateThreadLocation(input: NyxThreadUpdateLocationInput) {
+      return updateThreadLocationRef.current?.(input) ?? Promise.resolve(false)
+    },
+    switchThreadCollectionLocation(location: 'available' | 'archived') {
+      return switchThreadCollectionLocationRef.current?.(location) ?? Promise.resolve(false)
     },
   }
 }

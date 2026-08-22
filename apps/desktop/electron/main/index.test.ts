@@ -301,6 +301,7 @@ describe('registerIpcHandlers', () => {
       markSeen: vi.fn(),
       updatePin: vi.fn(),
       rename: vi.fn(),
+      updateLocation: vi.fn(),
     }
 
     registerIpcHandlers({ threads })
@@ -329,6 +330,17 @@ describe('registerIpcHandlers', () => {
     }
     registeredHandler(NYX_THREADS_IPC_CHANNELS.rename)({ sender: {} as WebContents }, renameInput)
     expect(threads.rename).toHaveBeenCalledWith(renameInput)
+
+    const locationInput = {
+      threadId: pinInput.threadId,
+      action: 'archive' as const,
+      expectedThreadRevision: 1,
+    }
+    registeredHandler(NYX_THREADS_IPC_CHANNELS.updateLocation)(
+      { sender: {} as WebContents },
+      locationInput,
+    )
+    expect(threads.updateLocation).toHaveBeenCalledWith(locationInput)
   })
 
   it('returns connection IPC handler promises to ipcRenderer.invoke callers', () => {
