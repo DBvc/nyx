@@ -61,8 +61,10 @@ Rename, then Archive/Unarchive, then Trash/Restore. This authorization removes
 the earlier product-code hold after the exact current slice is recorded here.
 Rename completed at product head `2b4c393` under contract
 `NYX-MTL-RENAME-SCOPE-20260822-01`; its scope lock entered HEAD at `cf74d4b`.
-The Archive/Unarchive slice below is now executable from that verified product
-head. Trash/Restore remains blocked on verified Archive/Unarchive completion.
+Archive/Unarchive completed at product head `7e661d0` under contract
+`NYX-MTL-ARCHIVE-SCOPE-20260822-01`; its scope lock entered HEAD at `bc79920`.
+The Trash/Restore slice below is now executable from that verified product
+head.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -163,8 +165,12 @@ another database owner, or any CP1/PIN1 product behavior change.
 
 Contract id: `NYX-MTL-ARCHIVE-SCOPE-20260822-01`.
 
-Status: executable by the user's bounded lifecycle authorization on 2026-08-22.
-Baseline: `2b4c39386d3ef7f90c2c7e46684353d413fd2719`, containing completed Rename.
+Status: complete at product head `7e661d0064296dff70298bee2b2cb1c846299b87`
+by the user's bounded lifecycle authorization on 2026-08-22. Baseline:
+`2b4c39386d3ef7f90c2c7e46684353d413fd2719`, containing completed Rename. The
+exact 21-file product diff from scope-lock head
+`bc799200692bf76aa9b34f7d8de8c9b40734a74a` through the product head had
+SHA-256 `39e66136c40016d26b18af695d5489b149e842e77669b32d1c05ccf1f297fe54`.
 
 This slice implements only `Available → Archived` and `Archived → Available`.
 It does not implement Trash, Restore, Search, Undo, automatic unarchive on Send,
@@ -230,6 +236,78 @@ Stop if this step needs a schema change, a second Main mutation barrier, a
 second Renderer collection token, direct response-owned projection writes,
 mutation replay, a new database owner, Trash/Restore behavior or CP1/PIN1
 reimplementation.
+
+## multi-thread-library/Trash-Restore-scope-lock: Reversible Trash location
+
+Contract id: `NYX-MTL-TRASH-SCOPE-20260822-01`.
+
+Status: executable by the user's bounded lifecycle authorization on 2026-08-22.
+Baseline: `7e661d0064296dff70298bee2b2cb1c846299b87`, containing completed Rename and
+Archive/Unarchive.
+
+This slice implements only reversible Trash and Restore. Trash accepts an
+Available or Archived Thread, records `trashed_from_location`, records the
+existing Pin position only for a Pinned Available source, removes any Pin and
+enters Trash. Restore returns to that saved location; a saved Available Pin is
+inserted at its saved position clamped to the current Pinned boundary, while
+all other restores are unpinned. Both operations clear or establish the Trash
+metadata atomically, increment `thread_revision` exactly once, preserve
+`last_user_activity_at`, Draft, Turns, resources and result state, and reject a
+stale revision or wrong source location without a write. Entering Trash may
+update `updated_at` for deterministic Trash ordering. No schema or migration is
+allowed.
+
+The existing typed semantic `threads.updateLocation(input)` action union gains
+only `trash | restore`; it does not add another bridge method. Trash requires
+the same Draft-save, navigation, Active Run, durable pending Turn and
+`settlement_failed` protections as Archive. Trash content is read-only: Draft,
+Send and Retry are rejected, while Restore remains available. Restore does not
+make an Archived origin writable until it has canonically returned to
+Available.
+
+Main reuses the one collection mutation barrier and never replays an unknown
+location write. The existing Worker-only `locationState` read transaction is
+extended only as needed to validate complete Pin order plus canonical Trash
+metadata. The client accepts only the semantic post-state at expected revision
+plus one, treats the exact pre-state at expected revision as definitely not
+committed, and fails closed for every third state.
+
+Renderer extends the one active collection mode to `available | archived |
+trash` and reuses the same paging, selection, epoch, navigation-save barrier and
+collection action token. Available and Archived rows expose Trash; Trash rows
+expose only Restore and no Rename or Pin. A selected Trash first saves the
+current Draft and then hydrates canonical Trash. A selected Restore chooses its
+target mode from the successful canonical response detail, then hydrates that
+mode without directly writing Thread location or Pin into Renderer projection.
+Moving an unselected row keeps the current mode and selection. Trash has no
+Composer and is read-only.
+
+The Trash/Restore product step may change exactly:
+
+- `apps/desktop/shared/threads/types.ts`;
+- `apps/desktop/shared/threads/ipc.ts`;
+- `apps/desktop/shared/contracts/desktop.ts`;
+- `apps/desktop/electron/preload/index.ts` and its test;
+- `apps/desktop/electron/main/index.ts` and its test;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts` and its test;
+- `apps/desktop/electron/main/thread-library/client.ts` and its test;
+- `apps/desktop/electron/main/thread-library/service.ts` and its test;
+- `apps/desktop/src/ui/chat/thread-collection.ts` and its test;
+- `apps/desktop/src/ui/chat/use-chat-session.ts` and its test;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx` and its test;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx` and its test only for
+  carrying the existing mode/actions and hiding the Trash Composer; and
+- this status owner plus `multi-thread-library-runthrough.md` for completion
+  evidence only.
+
+Required validation is the same ten-command matrix frozen for Rename above.
+
+Stop if this step needs a schema change, another bridge method, a second Main
+mutation barrier, a second Renderer collection token, direct response-owned
+projection writes beyond choosing Restore's canonical target mode, mutation
+replay, a new database owner, Permanent delete, Empty Trash, Undo, Search,
+Stop-and-move or CP1/PIN1 reimplementation.
 
 ## multi-thread-library/CP1-scope-lock: Available pagination and Pinned/Recent projection
 

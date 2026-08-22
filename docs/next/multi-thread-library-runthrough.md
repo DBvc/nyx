@@ -210,6 +210,36 @@ Rename adds no schema/index, second database owner, second mutation barrier or
 Renderer action token, write replay, direct response-owned projection update,
 Archive/Trash behavior, or Runtime/Provider/Responses/attachment change.
 
+## Archive / Unarchive — Reversible Archived collection
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-ARCHIVE-SCOPE-20260822-01`, committed at `bc79920`
+  by the user's explicit bounded lifecycle authorization.
+- Product commit: `7e661d0064296dff70298bee2b2cb1c846299b87`.
+- The exact 21-file diff from scope-lock head
+  `bc799200692bf76aa9b34f7d8de8c9b40734a74a` through product head had SHA-256
+  `39e66136c40016d26b18af695d5489b149e842e77669b32d1c05ccf1f297fe54`.
+- Worker transactions enforce Available to Archived and Archived to unpinned
+  Available, close Pin order atomically, preserve user-activity ordering, and
+  reject stale, wrong-source and pending-Turn mutations.
+- Main adds one typed location path, reuses the existing mutation barrier and
+  never replays an unknown write. One replacement Worker and one validated
+  `locationState` read distinguish the exact post-state, exact pre-state and
+  every unsafe third state.
+- Renderer reuses one collection action token and the existing Draft-save and
+  navigation gate. Archived uses canonical paging, remains read-only, exposes
+  Rename and Unarchive, and has no Pin controls or Composer.
+- Required checks passed on 2026-08-22: both desktop TypeScript checks, lint,
+  format check, all 53 desktop test files (`683` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+Archive/Unarchive adds no schema/index, second database owner, second mutation
+barrier or Renderer action token, mutation replay, direct response-owned
+projection update, Trash/Restore behavior, custom focus system, or
+Runtime/Provider/Responses/attachment change.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
