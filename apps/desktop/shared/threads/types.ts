@@ -208,7 +208,7 @@ export interface NyxThreadRenameResult extends NyxThreadClock {
   detail: NyxThreadDetail
 }
 
-export type NyxThreadLocationAction = 'archive' | 'unarchive'
+export type NyxThreadLocationAction = 'archive' | 'unarchive' | 'trash' | 'restore'
 
 export interface NyxThreadUpdateLocationInput {
   threadId: string

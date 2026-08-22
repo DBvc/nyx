@@ -127,7 +127,7 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).toMatch(/disabled=""[^>]*>Archive<\/button>/u)
   })
 
-  it('renders the simple Archived mode with Rename and Unarchive only', () => {
+  it('renders the simple Archived mode with Rename, Unarchive and Trash', () => {
     const archived = { ...recent, location: 'archived' as const }
     const html = renderSidebar({
       selectedThreadId: archived.id,
@@ -144,9 +144,31 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).toContain('Back to threads')
     expect(html).toContain('>Rename</button>')
     expect(html).toContain('>Unarchive</button>')
+    expect(html).toContain('>Trash</button>')
     expect(html).not.toContain('>Pin</button>')
     expect(html).not.toContain('>Archive</button>')
     expect(html.indexOf('disabled=""')).toBeLessThan(html.indexOf('New thread'))
+  })
+
+  it('renders Trash as read-only Restore-only rows without Rename or Pin', () => {
+    const trashed = { ...recent, location: 'trash' as const }
+    const html = renderSidebar({
+      selectedThreadId: trashed.id,
+      collection: {
+        ...initialThreadCollectionState,
+        location: 'trash',
+        rows: [trashed],
+        loadedPageCount: 1,
+        status: 'ready',
+      },
+    })
+
+    expect(html).toContain('Back to threads')
+    expect(html).toContain('>Restore</button>')
+    expect(html).not.toContain('>Rename</button>')
+    expect(html).not.toContain('>Pin</button>')
+    expect(html).not.toContain('>Archive</button>')
+    expect(html).not.toContain('>Trash</button>')
   })
 
   it('keeps controls on an available Current thread fallback and hides them for unavailable rows', () => {

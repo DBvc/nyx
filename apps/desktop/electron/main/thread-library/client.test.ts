@@ -190,13 +190,15 @@ function renamedDetail(revision = 2) {
   }
 }
 
-function locationDetail(location: 'available' | 'archived', revision: number) {
+function locationDetail(location: 'available' | 'archived' | 'trash', revision: number) {
   const detail = materializedDetail()
   return {
     ...detail,
     summary: {
       ...detail.summary,
       location,
+      trashedFromLocation: location === 'trash' ? ('available' as const) : null,
+      trashedPinPosition: null,
       pinPosition: null,
       threadRevision: revision,
       updatedAt: revision === 1 ? detail.summary.updatedAt : archiveInput.movedAt,
@@ -630,6 +632,90 @@ describe('ThreadLibraryClient', () => {
     expect(posts('updateLocation')).toHaveLength(1)
     expect(replacement.posts.map((request) => request.operation)).toEqual(['open', 'locationState'])
     expect(workerMock.maxActive).toBe(1)
+  })
+
+  it.each([
+    {
+      branch: 'Trash committed post-state',
+      input: { ...archiveInput, action: 'trash' as const },
+      canonical: () => locationDetail('trash', 2),
+      expected: { ok: true, value: { summary: { location: 'trash', threadRevision: 2 } } },
+    },
+    {
+      branch: 'Trash exact pre-state',
+      input: { ...archiveInput, action: 'trash' as const },
+      canonical: () => locationDetail('archived', 1),
+      expected: {
+        ok: false,
+        safeError: { code: 'stale_thread_revision' },
+        outcome: 'definitely_not_committed',
+      },
+    },
+    {
+      branch: 'Trash third state',
+      input: { ...archiveInput, action: 'trash' as const },
+      canonical: () => locationDetail('trash', 3),
+      expected: {
+        ok: false,
+        safeError: { code: 'library_unavailable' },
+        outcome: 'outcome_unknown',
+      },
+    },
+    {
+      branch: 'Restore committed post-state',
+      input: {
+        ...archiveInput,
+        action: 'restore' as const,
+        expectedThreadRevision: 2,
+      },
+      canonical: () => locationDetail('available', 3),
+      expected: {
+        ok: true,
+        value: { summary: { location: 'available', threadRevision: 3 } },
+      },
+    },
+    {
+      branch: 'Restore exact pre-state',
+      input: {
+        ...archiveInput,
+        action: 'restore' as const,
+        expectedThreadRevision: 2,
+      },
+      canonical: () => locationDetail('trash', 2),
+      expected: {
+        ok: false,
+        safeError: { code: 'stale_thread_revision' },
+        outcome: 'definitely_not_committed',
+      },
+    },
+    {
+      branch: 'Restore third state',
+      input: {
+        ...archiveInput,
+        action: 'restore' as const,
+        expectedThreadRevision: 2,
+      },
+      canonical: () => locationDetail('archived', 4),
+      expected: {
+        ok: false,
+        safeError: { code: 'library_unavailable' },
+        outcome: 'outcome_unknown',
+      },
+    },
+  ])('reconciles unknown Trash/Restore without replay: $branch', async (testCase) => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updateLocation(testCase.input)
+    const mutation = await waitForPost(first, 1)
+    fail(first, mutation, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    succeed(replacement, canonical, { pinnedCount: 0, detail: testCase.canonical() })
+
+    await expect(updating).resolves.toMatchObject(testCase.expected)
+    expect(posts('updateLocation')).toHaveLength(1)
   })
 
   it('serializes Unarchive behind Rename on the one collection mutation barrier', async () => {

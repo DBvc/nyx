@@ -407,7 +407,11 @@ function installBridge(options?: {
               summary: {
                 ...current.summary,
                 location:
-                  input.action === 'archive' ? ('archived' as const) : ('available' as const),
+                  input.action === 'archive'
+                    ? ('archived' as const)
+                    : input.action === 'trash'
+                      ? ('trash' as const)
+                      : ('available' as const),
                 pinPosition: null,
                 threadRevision: input.expectedThreadRevision + 1,
               },
@@ -2745,6 +2749,110 @@ describe('Archive and Unarchive Renderer controls', () => {
     await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
     expect(render().threadCollection.location).toBe('available')
     expect(render().state.threadSummary?.location).toBe('available')
+    expect(bridge.saveDraft).toHaveBeenCalledOnce()
+  })
+
+  it('saves before selected Trash and restores to the canonical saved origin', async () => {
+    const available = detail('', 'thread-trash')
+    const trashed = {
+      ...available,
+      summary: {
+        ...available.summary,
+        location: 'trash' as const,
+        pinPosition: null,
+        threadRevision: available.summary.threadRevision + 1,
+      },
+      draft: {
+        ...available.draft,
+        text: 'Keep this draft',
+        revision: available.draft.revision + 1,
+      },
+    }
+    const restoredArchived = {
+      ...trashed,
+      summary: {
+        ...trashed.summary,
+        location: 'archived' as const,
+        threadRevision: trashed.summary.threadRevision + 1,
+      },
+    }
+    const moved = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+    const restored = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+    let location: 'available' | 'archived' | 'trash' = 'available'
+    let includedThroughCursor = 0
+    const projection = () =>
+      location === 'available' ? available : location === 'trash' ? trashed : restoredArchived
+    const bridge = installBridge({
+      list: async () => collectionPageResult([projection().summary], null, includedThroughCursor),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: projection(),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor,
+        },
+      }),
+      updateLocation: vi
+        .fn()
+        .mockImplementationOnce(() => moved.promise)
+        .mockImplementationOnce(() => restored.promise),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    render().setInput('Keep this draft')
+
+    const trashing = render().updateThreadLocation({
+      threadId: available.summary.id,
+      action: 'trash',
+      expectedThreadRevision: available.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.saveDraft).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledOnce())
+    expect(bridge.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      bridge.updateLocation.mock.invocationCallOrder[0]!,
+    )
+    location = 'trash'
+    includedThroughCursor = 1
+    moved.resolve({
+      ok: true,
+      value: {
+        detail: trashed,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor,
+      },
+    })
+    await expect(trashing).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().threadCollection.location).toBe('trash'))
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().state.threadSummary?.location).toBe('trash')
+    expect(render().canSend).toBe(false)
+    render().setInput('Ignored in Trash')
+    expect(render().state.input).toBe('Keep this draft')
+    expect(render().state.selectedThreadId).toBe(trashed.summary.id)
+    expect(render().threadSummaries[0]).toMatchObject({
+      id: trashed.summary.id,
+      location: 'trash',
+      threadRevision: trashed.summary.threadRevision,
+    })
+    const restoring = render().updateThreadLocation({
+      threadId: trashed.summary.id,
+      action: 'restore',
+      expectedThreadRevision: trashed.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledTimes(2))
+    location = 'archived'
+    includedThroughCursor = 2
+    restored.resolve({
+      ok: true,
+      value: {
+        detail: restoredArchived,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor,
+      },
+    })
+    await expect(restoring).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().threadCollection.location).toBe('archived'))
+    expect(render().state.threadSummary?.location).toBe('archived')
     expect(bridge.saveDraft).toHaveBeenCalledOnce()
   })
 

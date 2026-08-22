@@ -357,7 +357,7 @@ describe('ThreadLibraryDatabase', () => {
         operation: 'updateLocation',
         input: {
           threadId: uuid(19),
-          action: 'trash',
+          action: 'permanent_delete',
           expectedThreadRevision: 1,
           movedAt: timestamp,
         },
@@ -1365,6 +1365,135 @@ describe('ThreadLibraryDatabase', () => {
       pinPosition: null,
       threadRevision: 3,
     })
+    restarted.close()
+  })
+
+  it('trashes and restores the saved location and bounded Pin position across restart', async () => {
+    const { databasePath, owner } = await createOwner()
+    const first = materializeInput(94)
+    const second = materializeInput(95)
+    const third = materializeInput(96)
+    const fourth = materializeInput(97)
+    const archivedInput = materializeInput(98)
+    for (const input of [first, second, third, fourth, archivedInput]) {
+      execute(owner, 'materialize', input)
+    }
+    for (const input of [first, second, third]) {
+      execute(owner, 'updatePin', {
+        threadId: input.threadId,
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+    }
+
+    const before = execute(owner, 'readThread', { threadId: second.threadId })!
+    const trashed = execute(owner, 'updateLocation', {
+      threadId: second.threadId,
+      action: 'trash',
+      expectedThreadRevision: 1,
+      movedAt: at(210),
+    })
+    expect(trashed.summary).toMatchObject({
+      location: 'trash',
+      trashedFromLocation: 'available',
+      trashedPinPosition: 2,
+      pinPosition: null,
+      threadRevision: 2,
+      lastUserActivityAt: before.summary.lastUserActivityAt,
+      updatedAt: at(210),
+    })
+    expect(
+      execute(owner, 'listPage', { location: 'trash', cursor: null, limit: 50 }).rows.map(
+        (row) => row.id,
+      ),
+    ).toContain(second.threadId)
+    execute(owner, 'updatePin', {
+      threadId: fourth.threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+
+    const restored = execute(owner, 'updateLocation', {
+      threadId: second.threadId,
+      action: 'restore',
+      expectedThreadRevision: 2,
+      movedAt: at(211),
+    })
+    expect(restored.summary).toMatchObject({
+      location: 'available',
+      trashedFromLocation: null,
+      trashedPinPosition: null,
+      pinPosition: 2,
+      threadRevision: 3,
+      lastUserActivityAt: before.summary.lastUserActivityAt,
+    })
+    expect(
+      [fourth, second, third, first].map(
+        (input) => execute(owner, 'readThread', { threadId: input.threadId })!.summary.pinPosition,
+      ),
+    ).toEqual([1, 2, 3, 4])
+
+    const archived = execute(owner, 'updateLocation', {
+      threadId: archivedInput.threadId,
+      action: 'archive',
+      expectedThreadRevision: 1,
+      movedAt: at(212),
+    })
+    const trashedArchived = execute(owner, 'updateLocation', {
+      threadId: archivedInput.threadId,
+      action: 'trash',
+      expectedThreadRevision: archived.summary.threadRevision,
+      movedAt: at(213),
+    })
+    expect(trashedArchived.summary).toMatchObject({
+      location: 'trash',
+      trashedFromLocation: 'archived',
+      trashedPinPosition: null,
+      pinPosition: null,
+    })
+    expect(
+      execute(owner, 'updateLocation', {
+        threadId: archivedInput.threadId,
+        action: 'restore',
+        expectedThreadRevision: trashedArchived.summary.threadRevision,
+        movedAt: at(214),
+      }).summary,
+    ).toMatchObject({
+      location: 'archived',
+      trashedFromLocation: null,
+      trashedPinPosition: null,
+      pinPosition: null,
+      threadRevision: 4,
+    })
+
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: archivedInput.threadId,
+        action: 'restore',
+        expectedThreadRevision: 4,
+        movedAt: at(215),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: second.threadId,
+        action: 'trash',
+        expectedThreadRevision: 2,
+        movedAt: at(215),
+      }),
+    ).toThrow('This thread changed. Reload it and try again.')
+
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'readThread', { threadId: second.threadId })!.summary).toMatchObject({
+      location: 'available',
+      pinPosition: 2,
+      threadRevision: 3,
+    })
+    expect(
+      execute(restarted, 'readThread', { threadId: archivedInput.threadId })!.summary,
+    ).toMatchObject({ location: 'archived', pinPosition: null, threadRevision: 4 })
     restarted.close()
   })
 

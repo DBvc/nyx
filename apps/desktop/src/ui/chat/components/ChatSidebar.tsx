@@ -3,10 +3,15 @@ import { useMemo, useState } from 'react'
 import type { RefObject } from 'react'
 
 import type { NyxChatRunStatus } from '../../../../shared/chat/types'
-import type { NyxThreadPinAction, NyxThreadSummary } from '../../../../shared/threads/types'
+import type {
+  NyxThreadLocationAction,
+  NyxThreadPinAction,
+  NyxThreadSummary,
+} from '../../../../shared/threads/types'
 import { validateNyxThreadTitle } from '../../../../shared/threads/title'
 import {
   threadPinBoundaries,
+  type ThreadCollectionLocation,
   type ThreadCollectionState,
   type ThreadPinActionState,
 } from '../thread-collection'
@@ -38,10 +43,10 @@ interface ChatSidebarProps {
   ) => Promise<{ ok: true } | { ok: false; message: string }>
   onUpdateThreadLocation: (
     threadId: string,
-    action: 'archive' | 'unarchive',
+    action: NyxThreadLocationAction,
     expectedThreadRevision: number,
   ) => void
-  onSwitchThreadCollection: (location: 'available' | 'archived') => void
+  onSwitchThreadCollection: (location: ThreadCollectionLocation) => void
   onLoadMoreThreads: () => void
   onRetryThreadCollection: () => Promise<boolean>
   onOpenConnectionsSettings: () => void
@@ -236,55 +241,70 @@ export function ChatSidebar({
         {thread.availability === 'available' ? (
           <div className='px-2 pb-1'>
             <div className='flex flex-wrap gap-0.5'>
-              <button
-                className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                disabled={pinAction.pending || thread.location === 'trash'}
-                onClick={beginRename}
-                type='button'
-              >
-                Rename
-              </button>
-              {thread.location === 'archived' ? (
+              {thread.location === 'trash' ? (
                 <button
                   className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                  disabled={pinAction.pending || locationBlocked}
+                  disabled={pinAction.pending}
                   onClick={() =>
-                    onUpdateThreadLocation(thread.id, 'unarchive', thread.threadRevision)
+                    onUpdateThreadLocation(thread.id, 'restore', thread.threadRevision)
                   }
                   type='button'
                 >
-                  Unarchive
+                  Restore
                 </button>
-              ) : thread.pinPosition === null ? (
-                <>
-                  {renderPinAction('Pin', 'pin')}
-                  <button
-                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                    disabled={pinAction.pending || locationBlocked}
-                    onClick={() =>
-                      onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
-                    }
-                    type='button'
-                  >
-                    Archive
-                  </button>
-                </>
               ) : (
                 <>
-                  {renderPinAction('Unpin', 'unpin')}
-                  {renderPinAction('Move up', 'move_up', boundaries.atTop)}
-                  {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
-                  {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
-                  {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
+                  <button
+                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                    disabled={pinAction.pending}
+                    onClick={beginRename}
+                    type='button'
+                  >
+                    Rename
+                  </button>
+                  {thread.location === 'archived' ? (
+                    <button
+                      className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                      disabled={pinAction.pending || locationBlocked}
+                      onClick={() =>
+                        onUpdateThreadLocation(thread.id, 'unarchive', thread.threadRevision)
+                      }
+                      type='button'
+                    >
+                      Unarchive
+                    </button>
+                  ) : thread.pinPosition === null ? (
+                    renderPinAction('Pin', 'pin')
+                  ) : (
+                    <>
+                      {renderPinAction('Unpin', 'unpin')}
+                      {renderPinAction('Move up', 'move_up', boundaries.atTop)}
+                      {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
+                      {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
+                      {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
+                    </>
+                  )}
+                  {thread.location === 'available' ? (
+                    <button
+                      className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                      disabled={pinAction.pending || locationBlocked}
+                      onClick={() =>
+                        onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
+                      }
+                      type='button'
+                    >
+                      Archive
+                    </button>
+                  ) : null}
                   <button
                     className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
                     disabled={pinAction.pending || locationBlocked}
                     onClick={() =>
-                      onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
+                      onUpdateThreadLocation(thread.id, 'trash', thread.threadRevision)
                     }
                     type='button'
                   >
-                    Archive
+                    Trash
                   </button>
                 </>
               )}
@@ -317,7 +337,7 @@ export function ChatSidebar({
 
       <button
         className='mt-1 flex h-8 items-center gap-2 rounded-lg bg-nyx-accent px-3 text-left text-[13px] font-medium text-nyx-canvas hover:opacity-90'
-        disabled={newThreadDisabled || collection.location === 'archived'}
+        disabled={newThreadDisabled || collection.location !== 'available'}
         onClick={onNewThread}
         type='button'
       >
@@ -334,7 +354,7 @@ export function ChatSidebar({
         className='nyx-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto'
         role='region'
       >
-        {collection.location === 'archived' && !libraryUnavailable ? (
+        {collection.location !== 'available' && !libraryUnavailable ? (
           <button
             className='mb-3 rounded-lg px-3 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
             disabled={pinAction.pending}
@@ -418,6 +438,18 @@ export function ChatSidebar({
               </section>
             ) : null}
 
+            {collection.location === 'trash' && canonicalThreads.length > 0 ? (
+              <section className='pb-2' aria-labelledby='trash-threads-heading'>
+                <h2
+                  className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'
+                  id='trash-threads-heading'
+                >
+                  Trash
+                </h2>
+                {canonicalThreads.map((thread) => renderThread(thread))}
+              </section>
+            ) : null}
+
             {initialLoading ? (
               <p className='px-3 py-2 text-[12px] text-nyx-muted'>Loading threads…</p>
             ) : null}
@@ -474,14 +506,24 @@ export function ChatSidebar({
       </div>
 
       {collection.location === 'available' ? (
-        <button
-          className='mt-2 rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
-          disabled={libraryUnavailable || pinAction.pending}
-          onClick={() => onSwitchThreadCollection('archived')}
-          type='button'
-        >
-          Archived
-        </button>
+        <div className='mt-2 flex flex-col'>
+          <button
+            className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
+            disabled={libraryUnavailable || pinAction.pending}
+            onClick={() => onSwitchThreadCollection('archived')}
+            type='button'
+          >
+            Archived
+          </button>
+          <button
+            className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
+            disabled={libraryUnavailable || pinAction.pending}
+            onClick={() => onSwitchThreadCollection('trash')}
+            type='button'
+          >
+            Trash
+          </button>
+        </div>
       ) : null}
 
       <div className='relative mt-3 border-t border-nyx-line pt-2'>

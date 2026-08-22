@@ -21,7 +21,7 @@ const location = z.enum(['available', 'archived', 'trash'])
 const pinPosition = z.number().int().positive().nullable()
 const position = z.number().int().nonnegative()
 const pinAction = z.enum(['pin', 'unpin', 'move_up', 'move_down', 'move_top', 'move_bottom'])
-const locationAction = z.enum(['archive', 'unarchive'])
+const locationAction = z.enum(['archive', 'unarchive', 'trash', 'restore'])
 
 const updatePinInputSchema = z
   .object({ threadId: uuid, action: pinAction, expectedPinPosition: pinPosition })

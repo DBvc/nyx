@@ -128,7 +128,7 @@ const renameInput = z
 const updateLocationInput = z
   .object({
     threadId: uuid,
-    action: z.enum(['archive', 'unarchive']),
+    action: z.enum(['archive', 'unarchive', 'trash', 'restore']),
     expectedThreadRevision: z.number().int().positive(),
   })
   .strict()
@@ -547,6 +547,13 @@ export class ThreadLibraryService {
     const input = updateLocationInput.safeParse(value)
     if (!input.success || !this.active) {
       return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
+    }
+    const activity = this.activity(input.data.threadId)
+    if (
+      (input.data.action === 'archive' || input.data.action === 'trash') &&
+      activity.status !== 'idle'
+    ) {
+      return fail(safeErrors.invalid_request)
     }
     const reply = await this.active.client.updateLocation({
       ...input.data,

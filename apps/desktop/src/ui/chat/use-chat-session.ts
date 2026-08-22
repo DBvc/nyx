@@ -55,6 +55,7 @@ import {
   threadCollectionGroups,
   type ThreadCollectionCandidate,
   type ThreadCollectionErrorPhase,
+  type ThreadCollectionLocation,
   type ThreadCollectionPage,
   type ThreadCollectionState,
 } from './thread-collection'
@@ -80,6 +81,10 @@ function threadLibraryBridgeError(): NyxThreadSafeError {
     code: 'library_unavailable',
     message: "Couldn't open Thread Library",
   }
+}
+
+function threadLocationIsReadOnly(location: NyxThreadDetail['summary']['location'] | undefined) {
+  return location === 'archived' || location === 'trash'
 }
 
 function threadMutationError(error: NyxThreadSafeError): NyxChatError {
@@ -317,7 +322,7 @@ export function useChatSession({
     ((input: NyxThreadUpdateLocationInput) => Promise<boolean>) | null
   >(null)
   const switchThreadCollectionLocationRef = useRef<
-    ((location: 'available' | 'archived') => Promise<boolean>) | null
+    ((location: ThreadCollectionLocation) => Promise<boolean>) | null
   >(null)
   const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
@@ -923,7 +928,7 @@ export function useChatSession({
       pageBudget: number,
       epoch: string,
       hydration: number,
-      location: 'available' | 'archived',
+      location: ThreadCollectionLocation,
     ): Promise<CollectionCandidateOutcome> {
       const pages: ThreadCollectionPage[] = []
       let cursor: string | null = null
@@ -1751,10 +1756,15 @@ export function useChatSession({
         (stateRef.current.threadSummary?.id === input.threadId
           ? stateRef.current.threadSummary
           : null)
-      const source = input.action === 'archive' ? 'available' : 'archived'
+      const validSource =
+        (input.action === 'archive' && target?.location === 'available') ||
+        (input.action === 'unarchive' && target?.location === 'archived') ||
+        (input.action === 'trash' &&
+          (target?.location === 'available' || target?.location === 'archived')) ||
+        (input.action === 'restore' && target?.location === 'trash')
       if (
         target?.availability !== 'available' ||
-        target.location !== source ||
+        !validSource ||
         target.threadRevision !== input.expectedThreadRevision ||
         target.activity?.status === 'submitting' ||
         target.activity?.status === 'streaming' ||
@@ -1784,7 +1794,7 @@ export function useChatSession({
       }
       activeThreadCollectionAction = action
       replaceThreadPinAction(beginThreadPinAction(threadPinActionRef.current))
-      if (selected) {
+      if (selected && target.location === 'available') {
         navigationRef.current = true
         setNavigating(true)
         const saved = await queueSaveDraft(false, true)
@@ -1806,7 +1816,18 @@ export function useChatSession({
       }
       if (activeThreadCollectionAction !== action) return false
 
-      const location = input.action === 'archive' ? 'archived' : 'available'
+      const location =
+        input.action === 'archive'
+          ? 'archived'
+          : input.action === 'unarchive'
+            ? 'available'
+            : input.action === 'trash'
+              ? 'trash'
+              : result.value.detail.summary.location
+      if (input.action === 'restore' && location === 'trash') {
+        failWholeLibrary(threadLibraryBridgeError())
+        return false
+      }
       action.phase = {
         kind: 'waiting_hydration',
         afterRequest: action.hydration,
@@ -1831,8 +1852,10 @@ export function useChatSession({
       navigationRef.current = true
       setNavigating(true)
       try {
-        const saved = await queueSaveDraft(false, true)
-        if (!saved.ok) return false
+        if (threadCollectionRef.current.location === 'available') {
+          const saved = await queueSaveDraft(false, true)
+          if (!saved.ok) return false
+        }
         missingSelectionRecoveryRef.current = null
         replaceThreadCollection({ ...initialThreadCollectionState, location })
         await hydrateThreadLibrary()
@@ -1879,7 +1902,7 @@ export function useChatSession({
   function addDraftImages(sources: ReadonlyArray<Blob>) {
     if (
       state.hydrationStatus !== 'ready' ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
@@ -1923,7 +1946,7 @@ export function useChatSession({
   function addDraftDocuments(sources: ReadonlyArray<File>) {
     if (
       state.hydrationStatus !== 'ready' ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
       state.saveStatus === 'saving' ||
@@ -1974,7 +1997,7 @@ export function useChatSession({
   function removeDraftImage(imageId: string) {
     if (
       stateRef.current.newThreadPending ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -1996,7 +2019,7 @@ export function useChatSession({
   function retryDraftImage(imageId: string) {
     if (
       stateRef.current.newThreadPending ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -2018,7 +2041,7 @@ export function useChatSession({
   function removeDraftDocument(documentId: string) {
     if (
       stateRef.current.newThreadPending ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -2038,7 +2061,7 @@ export function useChatSession({
   function retryDraftDocument(documentId: string) {
     if (
       stateRef.current.newThreadPending ||
-      stateRef.current.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
       navigationRef.current ||
       (state.activeTurn && !state.activeTurn.accepted)
     ) {
@@ -2063,7 +2086,7 @@ export function useChatSession({
       .then(async () => {
         for (;;) {
           const current = stateRef.current
-          if (current.threadSummary?.location === 'archived') {
+          if (threadLocationIsReadOnly(current.threadSummary?.location)) {
             return current.draftEditVersion === current.savedEditVersion
               ? {
                   ok: true as const,
@@ -2264,7 +2287,7 @@ export function useChatSession({
   useEffect(() => {
     if (
       state.hydrationStatus !== 'ready' ||
-      state.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(state.threadSummary?.location) ||
       state.activeRequestId ||
       state.draftEditVersion <= state.savedEditVersion
     )
@@ -2283,7 +2306,7 @@ export function useChatSession({
     if (
       submittingRef.current ||
       stateRef.current.newThreadPending ||
-      state.threadSummary?.location === 'archived' ||
+      threadLocationIsReadOnly(state.threadSummary?.location) ||
       navigationRef.current ||
       !canSubmitChat(
         stateRef.current,
@@ -2574,16 +2597,18 @@ export function useChatSession({
     isAccepting: Boolean(state.activeTurn && !state.activeTurn.accepted),
     isResetting: state.newThreadPending || navigating,
     canStartRun:
-      state.threadSummary?.location !== 'archived' &&
+      !threadLocationIsReadOnly(state.threadSummary?.location) &&
       !state.activeRequestId &&
       !state.settlementFailure &&
       retryCapacityNotice === null,
-    canSend: canSubmitChat(state, connectionStatus, capacityNotice === null),
+    canSend:
+      !threadLocationIsReadOnly(state.threadSummary?.location) &&
+      canSubmitChat(state, connectionStatus, capacityNotice === null),
     capacityNotice,
     setInput(value: string) {
       if (
         stateRef.current.newThreadPending ||
-        stateRef.current.threadSummary?.location === 'archived' ||
+        threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
         navigationRef.current
       )
         return
@@ -2595,7 +2620,7 @@ export function useChatSession({
     setTargetSelection(selection: NyxChatTargetSelection) {
       if (
         stateRef.current.newThreadPending ||
-        stateRef.current.threadSummary?.location === 'archived' ||
+        threadLocationIsReadOnly(stateRef.current.threadSummary?.location) ||
         navigationRef.current
       )
         return
@@ -2637,7 +2662,7 @@ export function useChatSession({
     updateThreadLocation(input: NyxThreadUpdateLocationInput) {
       return updateThreadLocationRef.current?.(input) ?? Promise.resolve(false)
     },
-    switchThreadCollectionLocation(location: 'available' | 'archived') {
+    switchThreadCollectionLocation(location: ThreadCollectionLocation) {
       return switchThreadCollectionLocationRef.current?.(location) ?? Promise.resolve(false)
     },
   }

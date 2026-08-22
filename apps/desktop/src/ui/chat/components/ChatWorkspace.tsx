@@ -339,6 +339,7 @@ export function ChatWorkspace() {
     if (
       state.hydrationStatus !== 'ready' ||
       state.threadSummary?.location === 'archived' ||
+      state.threadSummary?.location === 'trash' ||
       isBusy ||
       isResetting ||
       (!settlementRetry && !canStartRun) ||
@@ -390,7 +391,7 @@ export function ChatWorkspace() {
             newThreadDisabled={
               state.hydrationStatus !== 'ready' ||
               isResetting ||
-              threadCollection.location === 'archived'
+              threadCollection.location !== 'available'
             }
             onNewThread={() => {
               void startNewChat()
@@ -481,9 +482,11 @@ export function ChatWorkspace() {
                 />
               )}
               {state.hydrationStatus === 'error' ? null : state.threadSummary?.location ===
-                'archived' ? (
+                  'archived' || state.threadSummary?.location === 'trash' ? (
                 <div className='border-t border-nyx-line px-5 py-4 text-center text-[12px] text-nyx-muted'>
-                  Archived threads are read-only. Unarchive this thread to continue chatting.
+                  {state.threadSummary.location === 'trash'
+                    ? 'Trash threads are read-only. Restore this thread to continue chatting.'
+                    : 'Archived threads are read-only. Unarchive this thread to continue chatting.'}
                 </div>
               ) : (
                 <ChatComposer

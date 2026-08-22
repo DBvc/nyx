@@ -261,10 +261,24 @@ function locationPostStateMatches(
   input: ThreadLibraryOperationInput['updateLocation'],
   detail: ThreadLibraryThreadDetail,
 ) {
+  if (detail.summary.threadRevision !== input.expectedThreadRevision + 1) return false
+  if (input.action === 'archive') {
+    return detail.summary.location === 'archived' && detail.summary.pinPosition === null
+  }
+  if (input.action === 'unarchive') {
+    return detail.summary.location === 'available' && detail.summary.pinPosition === null
+  }
+  if (input.action === 'trash') {
+    return (
+      detail.summary.location === 'trash' &&
+      detail.summary.pinPosition === null &&
+      detail.summary.trashedFromLocation !== null
+    )
+  }
   return (
-    detail.summary.location === (input.action === 'archive' ? 'archived' : 'available') &&
-    detail.summary.pinPosition === null &&
-    detail.summary.threadRevision === input.expectedThreadRevision + 1
+    (detail.summary.location === 'available' || detail.summary.location === 'archived') &&
+    detail.summary.trashedFromLocation === null &&
+    detail.summary.trashedPinPosition === null
   )
 }
 
@@ -272,10 +286,13 @@ function locationPreStateMatches(
   input: ThreadLibraryOperationInput['updateLocation'],
   detail: ThreadLibraryThreadDetail,
 ) {
-  return (
-    detail.summary.location === (input.action === 'archive' ? 'available' : 'archived') &&
-    detail.summary.threadRevision === input.expectedThreadRevision
-  )
+  if (detail.summary.threadRevision !== input.expectedThreadRevision) return false
+  if (input.action === 'archive') return detail.summary.location === 'available'
+  if (input.action === 'unarchive') return detail.summary.location === 'archived'
+  if (input.action === 'trash') {
+    return detail.summary.location === 'available' || detail.summary.location === 'archived'
+  }
+  return detail.summary.location === 'trash'
 }
 
 export class ThreadLibraryClient {

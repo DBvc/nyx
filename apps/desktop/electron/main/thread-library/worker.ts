@@ -1789,9 +1789,13 @@ function updateThreadLocation(
   return runTransaction(database, () => {
     const detail = queryThread(database, input.threadId)
     if (!detail) throw new DatabaseOperationError('not_found')
-    const source = input.action === 'archive' ? 'available' : 'archived'
-    const target = input.action === 'archive' ? 'archived' : 'available'
-    if (detail.summary.location !== source) {
+    const source = detail.summary.location
+    const validSource =
+      (input.action === 'archive' && source === 'available') ||
+      (input.action === 'unarchive' && source === 'archived') ||
+      (input.action === 'trash' && (source === 'available' || source === 'archived')) ||
+      (input.action === 'restore' && source === 'trash')
+    if (!validSource) {
       throw new DatabaseOperationError('invalid_request')
     }
     if (detail.summary.threadRevision !== input.expectedThreadRevision) {
@@ -1807,10 +1811,11 @@ function updateThreadLocation(
       throw new DatabaseOperationError('invalid_request')
     }
 
-    if (input.action === 'archive') {
+    const sourcePinPosition = detail.summary.pinPosition
+    if ((input.action === 'archive' || input.action === 'trash') && source === 'available') {
       const pinned = readPinnedThreads(database)
       assertPinStateMatchesDetail(pinned, detail)
-      if (detail.summary.pinPosition !== null) {
+      if (sourcePinPosition !== null) {
         rewritePinOrder(
           database,
           pinned,
@@ -1819,15 +1824,56 @@ function updateThreadLocation(
       }
     }
 
-    const moved = database
-      .prepare(
-        `UPDATE threads SET location = ?, pin_position = NULL,
-         thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
-      )
-      .run(target, input.movedAt, input.threadId)
+    let moved
+    if (input.action === 'trash') {
+      moved = database
+        .prepare(
+          `UPDATE threads SET location = 'trash', trashed_from_location = ?,
+           trashed_pin_position = ?, pin_position = NULL,
+           thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(
+          source,
+          source === 'available' ? sourcePinPosition : null,
+          input.movedAt,
+          input.threadId,
+        )
+    } else if (input.action === 'restore') {
+      const target = detail.summary.trashedFromLocation
+      if (!target) throw new DatabaseOperationError('library_unavailable')
+      moved = database
+        .prepare(
+          `UPDATE threads SET location = ?, trashed_from_location = NULL,
+           trashed_pin_position = NULL, pin_position = NULL,
+           thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(target, input.movedAt, input.threadId)
+      if (target === 'available' && detail.summary.trashedPinPosition !== null) {
+        const pinned = readPinnedThreads(database)
+        const insertionIndex = Math.min(detail.summary.trashedPinPosition - 1, pinned.length)
+        const finalIds = pinned.map((row) => row.id)
+        finalIds.splice(insertionIndex, 0, input.threadId)
+        rewritePinOrder(database, pinned, finalIds)
+      }
+    } else {
+      const target = input.action === 'archive' ? 'archived' : 'available'
+      moved = database
+        .prepare(
+          `UPDATE threads SET location = ?, pin_position = NULL,
+           thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
+        )
+        .run(target, input.movedAt, input.threadId)
+    }
     if (moved.changes !== 1) throw new DatabaseOperationError('library_unavailable')
-    readPinnedThreads(database)
-    return { mutated: true, value: queryThread(database, input.threadId)! }
+    const pinned = readPinnedThreads(database)
+    const canonical = queryThread(database, input.threadId)
+    if (!canonical) throw new DatabaseOperationError('library_unavailable')
+    if (canonical.summary.location === 'available') {
+      assertPinStateMatchesDetail(pinned, canonical)
+    } else if (canonical.summary.pinPosition !== null) {
+      throw new DatabaseOperationError('library_unavailable')
+    }
+    return { mutated: true, value: canonical }
   })
 }
 

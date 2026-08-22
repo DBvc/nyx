@@ -101,6 +101,23 @@ describe('thread collection candidate', () => {
     ).toThrow('retained a Pin')
   })
 
+  it('accepts only unpinned Trash rows in the Trash collection', () => {
+    const trashRows = [row(1), row(2)].map((item) => ({
+      ...item,
+      location: 'trash' as const,
+    }))
+    expect(
+      buildThreadCollectionCandidate([{ rows: trashRows, nextCursor: null }], 1, 'trash'),
+    ).toMatchObject({ location: 'trash', rows: trashRows })
+    expect(() =>
+      buildThreadCollectionCandidate(
+        [{ rows: [{ ...trashRows[0]!, pinPosition: 1 }], nextCursor: null }],
+        1,
+        'trash',
+      ),
+    ).toThrow('retained a Pin')
+  })
+
   it('groups safely identified unavailable rows without duplicating them', () => {
     const pinnedUnavailable: NyxThreadSummary = {
       availability: 'unavailable',

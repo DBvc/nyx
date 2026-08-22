@@ -1,6 +1,9 @@
 import type { NyxThreadLocation, NyxThreadSummary } from '../../../shared/threads/types'
 
-export type ThreadCollectionLocation = Extract<NyxThreadLocation, 'available' | 'archived'>
+export type ThreadCollectionLocation = Extract<
+  NyxThreadLocation,
+  'available' | 'archived' | 'trash'
+>
 
 export const threadCollectionPageSize = 50
 
@@ -82,8 +85,8 @@ function validatePageRows(
     }
     seenIds.add(row.id)
 
-    if (location === 'archived' && row.pinPosition !== null) {
-      throw new ThreadCollectionCandidateError('An Archived Thread retained a Pin.', true)
+    if (location !== 'available' && row.pinPosition !== null) {
+      throw new ThreadCollectionCandidateError('A read-only Thread retained a Pin.', true)
     }
     if (row.pinPosition === null) {
       sawRecent.current = true
