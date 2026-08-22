@@ -107,6 +107,17 @@ function harness() {
       value: detail(),
       clock: { generation, watermark: 1, actualMutation: false },
     })),
+    updatePin: vi.fn(async () => {
+      const pinned = detail()
+      pinned.summary.pinPosition = 1
+      const acknowledgement = {
+        operation: 'updatePin' as const,
+        value: pinned,
+        clock: { generation, watermark: 1, actualMutation: true },
+      }
+      observer?.(acknowledgement)
+      return { id: 'update-pin', ok: true as const, ...acknowledgement }
+    }),
     recoverPending: vi.fn(async () => ({
       id: 'recover',
       ok: true as const,
@@ -199,6 +210,62 @@ describe('ThreadLibraryService', () => {
     await expect(service.get({ threadId })).resolves.toMatchObject({
       ok: true,
       value: { detail: { summary: { id: threadId, pinPosition: 1 } } },
+    })
+  })
+
+  it('validates and publishes one semantic Pin update through the public boundary', async () => {
+    const { client, events, service } = harness()
+    await service.initialize()
+
+    await expect(
+      service.updatePin({ threadId, action: 'pin', expectedPinPosition: null }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        detail: { summary: { id: threadId, pinPosition: 1 } },
+        eventEpoch: generation,
+        includedThroughCursor: 1,
+      },
+    })
+    expect(client.updatePin).toHaveBeenCalledWith({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    expect(events).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'threads:changed',
+        detail: expect.objectContaining({
+          summary: expect.objectContaining({ id: threadId, pinPosition: 1 }),
+        }),
+        includedThroughCursor: 1,
+      }),
+    )
+  })
+
+  it('rejects malformed Pin guards and maps stale guards to public conflict', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+
+    await expect(
+      service.updatePin({ threadId, action: 'pin', expectedPinPosition: 1 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(client.updatePin).not.toHaveBeenCalled()
+
+    client.updatePin.mockResolvedValueOnce({
+      id: 'stale-pin',
+      ok: false,
+      safeError: {
+        code: 'stale_pin_position',
+        message: 'This Pin position changed. Reload it and try again.',
+      },
+      outcome: 'definitely_not_committed',
+    } as never)
+    await expect(
+      service.updatePin({ threadId, action: 'move_top', expectedPinPosition: 1 }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'conflict', message: 'This thread changed. Reload it and try again.' },
     })
   })
 

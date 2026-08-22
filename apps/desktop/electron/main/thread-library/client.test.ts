@@ -73,6 +73,11 @@ type FakeWorker = EventEmitter & {
 
 const timestamp = '2026-08-12T00:00:00.000Z'
 const threadId = '00000000-0000-4000-8000-000000000001'
+
+function uuid(value: number) {
+  return `00000000-0000-4000-8000-${value.toString(16).padStart(12, '0')}`
+}
+
 const materializeInput: ThreadLibraryOperationInput['materialize'] = {
   threadId,
   draft: {
@@ -150,6 +155,11 @@ function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = 
     })),
     providerStateRefs: [],
   } as const
+}
+
+function pinDetail(pinPosition: number | null, targetThreadId = threadId) {
+  const detail = materializedDetail({ ...materializeInput, threadId: targetThreadId })
+  return { ...detail, summary: { ...detail.summary, pinPosition } }
 }
 
 function genericMaterializedDetail(
@@ -427,6 +437,321 @@ describe('ThreadLibraryClient', () => {
     await expect(snapshotting).rejects.toBeInstanceOf(ThreadLibraryTransportError)
     await vi.waitFor(() => expect(instance.exited).toBe(true))
     expect(() => client.currentClock()).toThrow('no verified acknowledgement clock')
+  })
+
+  it('serializes Pin updates with empty-shell discard and preserves boundary no-op clocks', async () => {
+    const { client, instance } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const preflight = await waitForPost(instance, 1)
+    expect(preflight).toMatchObject({ operation: 'pinState', input: { threadId } })
+
+    const discarding = client.discardEmptyShell({ threadId, expectedDraftRevision: 0 })
+    await Promise.resolve()
+    expect(instance.posts).toHaveLength(2)
+
+    succeed(instance, preflight, {
+      pinnedCount: 0,
+      pinPosition: null,
+      detail: pinDetail(null),
+    })
+    const mutation = await waitForPost(instance, 2)
+    expect(mutation.operation).toBe('updatePin')
+    succeed(instance, mutation, pinDetail(1), true)
+    await expect(updating).resolves.toMatchObject({
+      ok: true,
+      value: { summary: { pinPosition: 1 } },
+      clock: { watermark: 1, actualMutation: true },
+    })
+
+    const discard = await waitForPost(instance, 3)
+    expect(discard.operation).toBe('discardEmptyShell')
+    succeed(instance, discard, { discarded: false })
+    await expect(discarding).resolves.toMatchObject({ ok: true, value: { discarded: false } })
+
+    const boundary = client.updatePin({
+      threadId,
+      action: 'move_top',
+      expectedPinPosition: 1,
+    })
+    const boundaryPreflight = await waitForPost(instance, 4)
+    succeed(instance, boundaryPreflight, {
+      pinnedCount: 1,
+      pinPosition: 1,
+      detail: pinDetail(1),
+    })
+    const boundaryMutation = await waitForPost(instance, 5)
+    succeed(instance, boundaryMutation, pinDetail(1))
+    await expect(boundary).resolves.toMatchObject({
+      ok: true,
+      clock: { watermark: 1, actualMutation: false },
+    })
+  })
+
+  it('rejects a stale Pin guard during preflight without sending a mutation', async () => {
+    const { client, instance } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'move_top',
+      expectedPinPosition: 2,
+    })
+    const preflight = await waitForPost(instance, 1)
+    succeed(instance, preflight, {
+      pinnedCount: 1,
+      pinPosition: 1,
+      detail: pinDetail(1),
+    })
+    await expect(updating).resolves.toMatchObject({
+      ok: false,
+      safeError: { code: 'stale_pin_position' },
+      outcome: 'definitely_not_committed',
+    })
+    expect(posts('updatePin')).toHaveLength(0)
+  })
+
+  it.each([
+    {
+      branch: 'detail position mismatch',
+      reply: () => ({ pinnedCount: 2, pinPosition: 1, detail: pinDetail(2) }),
+    },
+    {
+      branch: 'position beyond count',
+      reply: () => ({ pinnedCount: 1, pinPosition: 2, detail: pinDetail(2) }),
+    },
+    {
+      branch: 'unavailable target location',
+      reply: () => {
+        const detail = pinDetail(null)
+        return {
+          pinnedCount: 0,
+          pinPosition: null,
+          detail: { ...detail, summary: { ...detail.summary, location: 'archived' as const } },
+        }
+      },
+    },
+    {
+      branch: 'different target detail',
+      reply: () => ({ pinnedCount: 0, pinPosition: null, detail: pinDetail(null, uuid(99)) }),
+    },
+  ])('fails closed on a malformed Pin preflight: $branch', async ({ reply }) => {
+    const { client, instance } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const preflight = await waitForPost(instance, 1)
+    succeed(instance, preflight, reply())
+
+    await expect(updating).resolves.toMatchObject({
+      ok: false,
+      safeError: { code: 'library_unavailable' },
+      outcome: 'definitely_not_committed',
+    })
+    await vi.waitFor(() => expect(instance.exited).toBe(true))
+    expect(posts('updatePin')).toHaveLength(0)
+    expect(workerMock.instances).toHaveLength(1)
+  })
+
+  it.each([
+    {
+      branch: 'committed post-state',
+      input: { threadId, action: 'pin' as const, expectedPinPosition: null },
+      pre: { pinnedCount: 0, pinPosition: null },
+      canonical: { pinnedCount: 1, pinPosition: 1 },
+      expected: { ok: true, value: { summary: { pinPosition: 1 } } },
+    },
+    {
+      branch: 'exact pre-state',
+      input: { threadId, action: 'pin' as const, expectedPinPosition: null },
+      pre: { pinnedCount: 0, pinPosition: null },
+      canonical: { pinnedCount: 0, pinPosition: null },
+      expected: { ok: false, safeError: { code: 'stale_pin_position' } },
+    },
+    {
+      branch: 'third state',
+      input: { threadId, action: 'pin' as const, expectedPinPosition: null },
+      pre: { pinnedCount: 0, pinPosition: null },
+      canonical: { pinnedCount: 2, pinPosition: 2 },
+      expected: { ok: false, safeError: { code: 'library_unavailable' } },
+    },
+    {
+      branch: 'boundary no-op pre-state',
+      input: { threadId, action: 'move_top' as const, expectedPinPosition: 1 },
+      pre: { pinnedCount: 1, pinPosition: 1 },
+      canonical: { pinnedCount: 1, pinPosition: 1 },
+      expected: { ok: true, value: { summary: { pinPosition: 1 } } },
+    },
+  ])('reconciles an unknown Pin result from one replacement: $branch', async (testCase) => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updatePin(testCase.input)
+    const preflight = await waitForPost(first, 1)
+    succeed(first, preflight, {
+      ...testCase.pre,
+      detail: pinDetail(testCase.pre.pinPosition),
+    })
+    const mutation = await waitForPost(first, 2)
+    fail(first, mutation, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    expect(canonical.operation).toBe('pinState')
+    succeed(replacement, canonical, {
+      ...testCase.canonical,
+      detail: pinDetail(testCase.canonical.pinPosition),
+    })
+
+    await expect(updating).resolves.toMatchObject(testCase.expected)
+    expect(posts('updatePin')).toHaveLength(1)
+    expect(replacement.posts.map((request) => request.operation)).toEqual(['open', 'pinState'])
+    expect(workerMock.maxActive).toBe(1)
+  })
+
+  it('reconciles a transport-unknown Pin result once without replaying the mutation', async () => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const preflight = await waitForPost(first, 1)
+    succeed(first, preflight, {
+      pinnedCount: 0,
+      pinPosition: null,
+      detail: pinDetail(null),
+    })
+    await waitForPost(first, 2)
+    first.exit(1)
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    succeed(replacement, canonical, {
+      pinnedCount: 1,
+      pinPosition: 1,
+      detail: pinDetail(1),
+    })
+
+    await expect(updating).resolves.toMatchObject({
+      ok: true,
+      value: { summary: { id: threadId, pinPosition: 1 } },
+    })
+    expect(posts('updatePin')).toHaveLength(1)
+    expect(replacement.posts.map((request) => request.operation)).toEqual(['open', 'pinState'])
+    expect(workerMock.instances).toHaveLength(2)
+    expect(workerMock.maxActive).toBe(1)
+  })
+
+  it('returns a definitely-not-committed Pin failure without opening a replacement', async () => {
+    const { client, instance } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const preflight = await waitForPost(instance, 1)
+    succeed(instance, preflight, {
+      pinnedCount: 0,
+      pinPosition: null,
+      detail: pinDetail(null),
+    })
+    const mutation = await waitForPost(instance, 2)
+    fail(instance, mutation, 'library_unavailable', 'definitely_not_committed')
+
+    await expect(updating).resolves.toMatchObject({
+      ok: false,
+      safeError: { code: 'library_unavailable' },
+      outcome: 'definitely_not_committed',
+    })
+    expect(posts('updatePin')).toHaveLength(1)
+    expect(workerMock.instances).toHaveLength(1)
+  })
+
+  it.each(['open', 'pinState'] as const)(
+    'bounds an unknown Pin result when the replacement %s fails',
+    async (failurePoint) => {
+      const { client, instance: first } = await openClient()
+      const updating = client.updatePin({
+        threadId,
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+      const preflight = await waitForPost(first, 1)
+      succeed(first, preflight, {
+        pinnedCount: 0,
+        pinPosition: null,
+        detail: pinDetail(null),
+      })
+      const mutation = await waitForPost(first, 2)
+      fail(first, mutation, 'library_unavailable', 'outcome_unknown')
+
+      const replacement = await waitForWorker(1)
+      const opening = await waitForPost(replacement, 0)
+      if (failurePoint === 'open') {
+        fail(replacement, opening, 'library_unavailable')
+      } else {
+        succeed(replacement, opening, { schemaVersion: 1 })
+        const canonical = await waitForPost(replacement, 1)
+        fail(replacement, canonical, 'library_unavailable')
+      }
+
+      await expect(updating).resolves.toMatchObject({
+        ok: false,
+        safeError: { code: 'library_unavailable' },
+        outcome: 'outcome_unknown',
+      })
+      expect(posts('updatePin')).toHaveLength(1)
+      expect(workerMock.instances).toHaveLength(2)
+      expect(workerMock.maxActive).toBe(1)
+    },
+  )
+
+  it.each([
+    {
+      branch: 'cross-field mismatch',
+      reply: () => ({ pinnedCount: 1, pinPosition: 1, detail: pinDetail(null) }),
+    },
+    {
+      branch: 'different target detail',
+      reply: () => ({ pinnedCount: 1, pinPosition: 1, detail: pinDetail(1, uuid(99)) }),
+    },
+  ])('fails closed on a malformed replacement Pin state: $branch', async ({ reply }) => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updatePin({
+      threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    const preflight = await waitForPost(first, 1)
+    succeed(first, preflight, {
+      pinnedCount: 0,
+      pinPosition: null,
+      detail: pinDetail(null),
+    })
+    const mutation = await waitForPost(first, 2)
+    fail(first, mutation, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    succeed(replacement, canonical, reply())
+
+    await expect(updating).resolves.toMatchObject({
+      ok: false,
+      safeError: { code: 'library_unavailable' },
+      outcome: 'outcome_unknown',
+    })
+    await vi.waitFor(() => expect(replacement.exited).toBe(true))
+    expect(posts('updatePin')).toHaveLength(1)
+    expect(workerMock.instances).toHaveLength(2)
+    expect(workerMock.maxActive).toBe(1)
   })
 
   it('canonically confirms Draft and terminal writes after reply loss without replaying them', async () => {

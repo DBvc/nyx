@@ -36,6 +36,8 @@ import type {
   NyxThreadSaveDraftInput,
   NyxThreadSaveDraftResult,
   NyxThreadSnapshot,
+  NyxThreadUpdatePinInput,
+  NyxThreadUpdatePinResult,
 } from '../threads/types'
 
 export interface NyxDesktopChatApi {
@@ -54,6 +56,7 @@ export interface NyxDesktopThreadsApi {
   saveDraft(input: NyxThreadSaveDraftInput): Promise<NyxThreadResult<NyxThreadSaveDraftResult>>
   retryOpen(input: NyxThreadRetryOpenInput): Promise<NyxThreadResult<null>>
   markSeen(input: NyxThreadMarkSeenInput): Promise<NyxThreadResult<NyxThreadMarkSeenResult>>
+  updatePin(input: NyxThreadUpdatePinInput): Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
   subscribe(listener: NyxThreadEventListener): () => void
 }
 

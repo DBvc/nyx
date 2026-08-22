@@ -105,6 +105,18 @@ const retryOpenInput = z.discriminatedUnion('scope', [
 const markSeenInput = z
   .object({ threadId: uuid, observedResultRevision: z.number().int().nonnegative() })
   .strict()
+const updatePinInput = z
+  .object({
+    threadId: uuid,
+    action: z.enum(['pin', 'unpin', 'move_up', 'move_down', 'move_top', 'move_bottom']),
+    expectedPinPosition: z.number().int().positive().nullable(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if ((input.action === 'pin') !== (input.expectedPinPosition === null)) {
+      context.addIssue({ code: 'custom', message: 'Pin action and expected position disagree.' })
+    }
+  })
 
 type UnclockedChatEvent = NyxChatEvent extends infer Event
   ? Event extends NyxChatEvent
@@ -474,6 +486,19 @@ export class ThreadLibraryService {
     if (!input.success || !this.active)
       return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
     const reply = await this.active.client.markSeen(input.data)
+    if (!reply.ok) return fail(this.publicError(reply.safeError.code))
+    return ok({
+      detail: this.toSharedDetail(reply.value),
+      eventEpoch: this.eventEpoch,
+      includedThroughCursor: this.boundaryCursor(reply.clock),
+    })
+  }
+
+  async updatePin(value: unknown) {
+    const input = updatePinInput.safeParse(value)
+    if (!input.success || !this.active)
+      return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
+    const reply = await this.active.client.updatePin(input.data)
     if (!reply.ok) return fail(this.publicError(reply.safeError.code))
     return ok({
       detail: this.toSharedDetail(reply.value),
@@ -907,7 +932,12 @@ export class ThreadLibraryService {
 
   private publicError(code: string): NyxThreadSafeError {
     if (code === 'not_found') return safeErrors.not_found
-    if (code === 'stale_revision' || code === 'already_exists' || code === 'stale_cursor')
+    if (
+      code === 'stale_revision' ||
+      code === 'stale_pin_position' ||
+      code === 'already_exists' ||
+      code === 'stale_cursor'
+    )
       return safeErrors.conflict
     if (code === 'invalid_request' || code === 'not_pending') return safeErrors.invalid_request
     if (code === 'thread_unavailable') return safeErrors.thread_unavailable

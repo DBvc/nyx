@@ -512,6 +512,27 @@ function runTransaction<T>(database: DatabaseSync, operation: () => T) {
   }
 }
 
+function runReadTransaction<T>(database: DatabaseSync, operation: () => T) {
+  try {
+    database.exec('BEGIN')
+    const value = operation()
+    database.exec('COMMIT')
+    return value
+  } catch (error) {
+    if (database.isTransaction) {
+      try {
+        database.exec('ROLLBACK')
+      } catch {
+        throw new DatabaseOperationError('library_unavailable')
+      }
+    }
+    if (error instanceof DatabaseOperationError) {
+      throw error
+    }
+    throw new DatabaseOperationError('library_unavailable')
+  }
+}
+
 type CursorValue = {
   epoch: string
   includedThroughCursor: number
@@ -1602,6 +1623,152 @@ function markSeen(database: DatabaseSync, input: ThreadLibraryOperationInput['ma
   })
 }
 
+type PinnedThread = { id: string; pinPosition: number }
+
+function readPinnedThreads(database: DatabaseSync): PinnedThread[] {
+  const rows = database
+    .prepare(
+      `SELECT id, location, pin_position AS pinPosition
+       FROM threads
+       WHERE location = 'available' AND pin_position IS NOT NULL
+       ORDER BY pin_position ASC, id ASC`,
+    )
+    .all()
+
+  try {
+    return rows.map((row, index) => {
+      const metadata = parseThreadLibraryListOrderMetadata(row)
+      if (
+        metadata.location !== 'available' ||
+        !Number.isSafeInteger(metadata.pinPosition) ||
+        metadata.pinPosition !== index + 1
+      ) {
+        throw new DatabaseOperationError('library_unavailable')
+      }
+      return { id: metadata.id, pinPosition: metadata.pinPosition }
+    })
+  } catch (error) {
+    if (error instanceof DatabaseOperationError) throw error
+    throw new DatabaseOperationError('library_unavailable')
+  }
+}
+
+function requireAvailableThread(database: DatabaseSync, threadId: string) {
+  const identity = database.prepare('SELECT location FROM threads WHERE id = ?').get(threadId)
+  if (!identity || identity.location !== 'available') {
+    throw new DatabaseOperationError('not_found')
+  }
+  const detail = queryThread(database, threadId)
+  if (!detail) throw new DatabaseOperationError('not_found')
+  return detail
+}
+
+function assertPinStateMatchesDetail(
+  pinned: ReadonlyArray<PinnedThread>,
+  detail: ThreadLibraryThreadDetail,
+) {
+  const row = pinned.find((candidate) => candidate.id === detail.summary.id)
+  if ((row?.pinPosition ?? null) !== detail.summary.pinPosition) {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+}
+
+function pinState(database: DatabaseSync, input: ThreadLibraryOperationInput['pinState']) {
+  return runReadTransaction(database, () => {
+    const pinned = readPinnedThreads(database)
+    const detail = requireAvailableThread(database, input.threadId)
+    assertPinStateMatchesDetail(pinned, detail)
+    return {
+      pinnedCount: pinned.length,
+      pinPosition: detail.summary.pinPosition,
+      detail,
+    }
+  })
+}
+
+function finalPinOrder(
+  pinned: ReadonlyArray<PinnedThread>,
+  input: ThreadLibraryOperationInput['updatePin'],
+) {
+  const ids = pinned.map((row) => row.id)
+  const currentIndex = ids.indexOf(input.threadId)
+  const actualPosition = currentIndex === -1 ? null : currentIndex + 1
+  if (actualPosition !== input.expectedPinPosition) {
+    throw new DatabaseOperationError('stale_pin_position')
+  }
+
+  if (input.action === 'pin') {
+    return [input.threadId, ...ids]
+  }
+  if (currentIndex === -1) {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+  if (input.action === 'unpin') {
+    return ids.filter((id) => id !== input.threadId)
+  }
+
+  const final = [...ids]
+  final.splice(currentIndex, 1)
+  const targetIndex =
+    input.action === 'move_up'
+      ? Math.max(0, currentIndex - 1)
+      : input.action === 'move_down'
+        ? Math.min(ids.length - 1, currentIndex + 1)
+        : input.action === 'move_top'
+          ? 0
+          : ids.length - 1
+  final.splice(targetIndex, 0, input.threadId)
+  return final
+}
+
+function rewritePinOrder(
+  database: DatabaseSync,
+  pinned: ReadonlyArray<PinnedThread>,
+  finalIds: ReadonlyArray<string>,
+) {
+  const previous = new Map(pinned.map((row) => [row.id, row.pinPosition]))
+  const final = new Map(finalIds.map((id, index) => [id, index + 1]))
+  const affected = new Set([...previous.keys(), ...final.keys()])
+  for (const id of affected) {
+    if ((previous.get(id) ?? null) === (final.get(id) ?? null)) affected.delete(id)
+  }
+  if (affected.size === 0) return false
+
+  const affectedPinned = pinned.filter((row) => affected.has(row.id))
+  const highestTemporaryPosition = pinned.length + affectedPinned.length
+  if (!Number.isSafeInteger(highestTemporaryPosition)) {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+  const update = database.prepare('UPDATE threads SET pin_position = ? WHERE id = ?')
+  affectedPinned.forEach((row, index) => {
+    const moved = update.run(pinned.length + index + 1, row.id)
+    if (moved.changes !== 1) throw new DatabaseOperationError('library_unavailable')
+  })
+  for (const id of affected) {
+    if (!final.has(id)) {
+      const cleared = update.run(null, id)
+      if (cleared.changes !== 1) throw new DatabaseOperationError('library_unavailable')
+    }
+  }
+  finalIds.forEach((id, index) => {
+    if (!affected.has(id)) return
+    const moved = update.run(index + 1, id)
+    if (moved.changes !== 1) throw new DatabaseOperationError('library_unavailable')
+  })
+  return true
+}
+
+function updatePin(database: DatabaseSync, input: ThreadLibraryOperationInput['updatePin']) {
+  return runTransaction(database, () => {
+    const detail = requireAvailableThread(database, input.threadId)
+    const pinned = readPinnedThreads(database)
+    assertPinStateMatchesDetail(pinned, detail)
+    const finalIds = finalPinOrder(pinned, input)
+    const mutated = rewritePinOrder(database, pinned, finalIds)
+    return { mutated, value: mutated ? queryThread(database, input.threadId)! : detail }
+  })
+}
+
 function discardEmptyShell(
   database: DatabaseSync,
   input: ThreadLibraryOperationInput['discardEmptyShell'],
@@ -1609,7 +1776,8 @@ function discardEmptyShell(
   return runTransaction(database, () => {
     const shell = database
       .prepare(
-        `SELECT threads.title_source, drafts.draft_revision, drafts.text,
+        `SELECT threads.location, threads.pin_position, threads.title_source,
+          drafts.draft_revision, drafts.text,
           (SELECT count(*) FROM turns WHERE thread_id = threads.id) AS turn_count,
           (SELECT count(*) FROM images WHERE thread_id = threads.id) AS image_count,
           (SELECT count(*) FROM documents WHERE thread_id = threads.id) AS document_count
@@ -1628,6 +1796,19 @@ function discardEmptyShell(
       shell.document_count === 0
     if (!exactShell) {
       return { mutated: false, value: { discarded: false } }
+    }
+    const shellPosition = shell.pin_position === null ? null : Number(shell.pin_position)
+    if (shellPosition !== null) {
+      const pinned = readPinnedThreads(database)
+      const pinnedShell = pinned.find((row) => row.id === input.threadId)
+      if (pinnedShell?.pinPosition !== shellPosition || shell.location !== 'available') {
+        throw new DatabaseOperationError('library_unavailable')
+      }
+      rewritePinOrder(
+        database,
+        pinned,
+        pinned.filter((row) => row.id !== input.threadId).map((row) => row.id),
+      )
     }
     const deleted = database.prepare('DELETE FROM threads WHERE id = ?').run(input.threadId)
     return { mutated: deleted.changes === 1, value: { discarded: deleted.changes === 1 } }
@@ -1861,6 +2042,15 @@ export class ThreadLibraryDatabase {
       }
       case 'markSeen': {
         const result = markSeen(database, request.input)
+        if (result.mutated) {
+          this.acknowledgeMutation()
+        }
+        return result.value
+      }
+      case 'pinState':
+        return pinState(database, request.input)
+      case 'updatePin': {
+        const result = updatePin(database, request.input)
         if (result.mutated) {
           this.acknowledgeMutation()
         }

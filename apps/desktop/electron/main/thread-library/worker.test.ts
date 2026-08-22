@@ -312,6 +312,21 @@ describe('ThreadLibraryDatabase', () => {
     expect(() =>
       parseThreadLibraryRequest({ id: 'test', operation: 'importV5', input: { rows } }),
     ).toThrow()
+
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'updatePin',
+        input: { threadId: uuid(19), action: 'pin', expectedPinPosition: 1 },
+      }),
+    ).toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'updatePin',
+        input: { threadId: uuid(19), action: 'move_top', expectedPinPosition: null },
+      }),
+    ).toThrow()
   })
 
   it('materializes the complete initial Draft and preserves its exact canonical state on restart', async () => {
@@ -1110,6 +1125,289 @@ describe('ThreadLibraryDatabase', () => {
 
     expect(() => execute(owner, 'materialize', input)).toThrow('This thread is unavailable.')
     expect(execute(owner, 'readThread', { threadId: input.threadId })).toBeNull()
+    owner.close()
+  })
+
+  it('applies all semantic Pin actions, preserves metadata, and persists exact order on restart', async () => {
+    const { databasePath, owner } = await createOwner()
+    const inputs = [materializeInput(101), materializeInput(102), materializeInput(103)]
+    for (const input of inputs) execute(owner, 'materialize', input)
+
+    const before = inputs.map(
+      (input) => execute(owner, 'readThread', { threadId: input.threadId })!,
+    )
+    const update = (
+      threadId: string,
+      action: ThreadLibraryOperationInput['updatePin']['action'],
+      expectedPinPosition: number | null,
+    ) => execute(owner, 'updatePin', { threadId, action, expectedPinPosition })
+    const positions = () =>
+      inputs.map(
+        (input) => execute(owner, 'readThread', { threadId: input.threadId })!.summary.pinPosition,
+      )
+
+    expect(update(uuid(101), 'pin', null).summary.pinPosition).toBe(1)
+    expect(update(uuid(102), 'pin', null).summary.pinPosition).toBe(1)
+    expect(update(uuid(103), 'pin', null).summary.pinPosition).toBe(1)
+    expect(positions()).toEqual([3, 2, 1])
+
+    expect(update(uuid(103), 'move_down', 1).summary.pinPosition).toBe(2)
+    expect(positions()).toEqual([3, 1, 2])
+    expect(update(uuid(103), 'move_up', 2).summary.pinPosition).toBe(1)
+    expect(update(uuid(103), 'move_bottom', 1).summary.pinPosition).toBe(3)
+    expect(positions()).toEqual([2, 1, 3])
+    expect(update(uuid(103), 'move_top', 3).summary.pinPosition).toBe(1)
+    expect(positions()).toEqual([3, 2, 1])
+
+    const beforeBoundary = owner.acknowledgementClock()
+    expect(update(uuid(103), 'move_top', 1).summary.pinPosition).toBe(1)
+    expect(owner.acknowledgementClock()).toEqual({
+      ...beforeBoundary,
+      actualMutation: false,
+    })
+
+    expect(update(uuid(102), 'unpin', 2).summary.pinPosition).toBeNull()
+    expect(positions()).toEqual([2, null, 1])
+    expect(() => update(uuid(101), 'move_top', 1)).toThrow(
+      'This Pin position changed. Reload it and try again.',
+    )
+    expect(positions()).toEqual([2, null, 1])
+
+    inputs.forEach((input, index) => {
+      const current = execute(owner, 'readThread', { threadId: input.threadId })!
+      expect(current.summary).toMatchObject({
+        title: before[index]!.summary.title,
+        threadRevision: before[index]!.summary.threadRevision,
+        resultRevision: before[index]!.summary.resultRevision,
+        seenResultRevision: before[index]!.summary.seenResultRevision,
+        lastUserActivityAt: before[index]!.summary.lastUserActivityAt,
+        createdAt: before[index]!.summary.createdAt,
+        updatedAt: before[index]!.summary.updatedAt,
+      })
+    })
+    expect(
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }).rows.map(
+        (row) => [row.id, row.pinPosition],
+      ),
+    ).toEqual([
+      [uuid(103), 1],
+      [uuid(101), 2],
+      [uuid(102), null],
+    ])
+
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'pinState', { threadId: uuid(103) })).toMatchObject({
+      pinnedCount: 2,
+      pinPosition: 1,
+      detail: { summary: { id: uuid(103), pinPosition: 1 } },
+    })
+    expect(execute(restarted, 'pinState', { threadId: uuid(102) })).toMatchObject({
+      pinnedCount: 2,
+      pinPosition: null,
+    })
+    restarted.close()
+  })
+
+  it('closes Pin positions when discarding an empty shell and fails closed on gaps', async () => {
+    const { databasePath, owner } = await createOwner()
+    for (const value of [201, 202, 203]) execute(owner, 'materialize', materializeInput(value))
+    for (const value of [201, 202, 203]) {
+      execute(owner, 'updatePin', {
+        threadId: uuid(value),
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+    }
+    expect(
+      execute(owner, 'saveDraft', {
+        threadId: uuid(202),
+        expectedDraftRevision: 0,
+        draft: { text: '', targetSelection, images: [], documents: [] },
+        savedAt: at(204),
+      }),
+    ).toMatchObject({ status: 'committed', detail: { draft: { draftRevision: 1 } } })
+    expect(
+      execute(owner, 'discardEmptyShell', {
+        threadId: uuid(202),
+        expectedDraftRevision: 1,
+      }),
+    ).toEqual({ discarded: true })
+    expect(execute(owner, 'readThread', { threadId: uuid(202) })).toBeNull()
+    expect(
+      execute(owner, 'listPage', { location: 'available', cursor: null, limit: 50 }).rows.map(
+        (row) => [row.id, row.pinPosition],
+      ),
+    ).toEqual([
+      [uuid(203), 1],
+      [uuid(201), 2],
+    ])
+
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(execute(restarted, 'pinState', { threadId: uuid(203) })).toMatchObject({
+      pinnedCount: 2,
+      pinPosition: 1,
+    })
+    expect(execute(restarted, 'pinState', { threadId: uuid(201) })).toMatchObject({
+      pinnedCount: 2,
+      pinPosition: 2,
+    })
+
+    rawDatabase(restarted)
+      .prepare('UPDATE threads SET pin_position = 3 WHERE id = ?')
+      .run(uuid(201))
+    expect(() => execute(restarted, 'pinState', { threadId: uuid(203) })).toThrow(
+      'The Thread Library is unavailable.',
+    )
+    expect(() =>
+      execute(restarted, 'updatePin', {
+        threadId: uuid(203),
+        action: 'move_bottom',
+        expectedPinPosition: 1,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+    restarted.close()
+  })
+
+  it.each([
+    {
+      corruption: 'duplicate',
+      apply(database: DatabaseSync) {
+        database.exec('DROP INDEX threads_pin_position')
+        database.prepare('UPDATE threads SET pin_position = 1 WHERE id = ?').run(uuid(401))
+      },
+    },
+    {
+      corruption: 'unsafe',
+      apply(database: DatabaseSync) {
+        database
+          .prepare('UPDATE threads SET pin_position = ? WHERE id = ?')
+          .run(Number.MAX_SAFE_INTEGER + 1, uuid(401))
+      },
+    },
+  ])('fails closed on a $corruption Pin pre-state without writing', async ({ apply }) => {
+    const { owner } = await createOwner()
+    for (const value of [401, 402, 403]) {
+      execute(owner, 'materialize', materializeInput(value))
+      execute(owner, 'updatePin', {
+        threadId: uuid(value),
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+    }
+    const database = rawDatabase(owner)
+    apply(database)
+    const positions = () =>
+      database
+        .prepare(
+          'SELECT id, CAST(pin_position AS TEXT) AS pinPosition FROM threads WHERE pin_position IS NOT NULL ORDER BY id',
+        )
+        .all()
+        .map((row) => [row.id, row.pinPosition])
+    const before = positions()
+
+    expect(() => execute(owner, 'pinState', { threadId: uuid(403) })).toThrow(
+      'The Thread Library is unavailable.',
+    )
+    expect(() =>
+      execute(owner, 'updatePin', {
+        threadId: uuid(403),
+        action: 'move_bottom',
+        expectedPinPosition: 1,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+    expect(positions()).toEqual(before)
+    owner.close()
+  })
+
+  it('rolls back pinned empty-shell deletion and position closure, including after restart', async () => {
+    const { databasePath, owner } = await createOwner()
+    for (const value of [501, 502, 503]) {
+      execute(owner, 'materialize', materializeInput(value))
+      execute(owner, 'updatePin', {
+        threadId: uuid(value),
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+    }
+    execute(owner, 'saveDraft', {
+      threadId: uuid(502),
+      expectedDraftRevision: 0,
+      draft: { text: '', targetSelection, images: [], documents: [] },
+      savedAt: at(504),
+    })
+    const database = rawDatabase(owner)
+    const beforeClock = owner.acknowledgementClock()
+    database.exec(`
+      CREATE TRIGGER fail_pinned_shell_delete BEFORE DELETE ON threads
+      WHEN OLD.id = '${uuid(502)}'
+      BEGIN SELECT RAISE(ABORT, 'fail pinned shell delete'); END
+    `)
+
+    expect(() =>
+      execute(owner, 'discardEmptyShell', {
+        threadId: uuid(502),
+        expectedDraftRevision: 1,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+    expect(
+      [501, 502, 503].map(
+        (value) => execute(owner, 'readThread', { threadId: uuid(value) })!.summary.pinPosition,
+      ),
+    ).toEqual([3, 2, 1])
+    expect(owner.acknowledgementClock()).toEqual({
+      ...beforeClock,
+      actualMutation: false,
+    })
+
+    database.exec('DROP TRIGGER fail_pinned_shell_delete')
+    owner.close()
+    const restarted = new ThreadLibraryDatabase()
+    restarted.open({ databasePath })
+    expect(
+      [501, 502, 503].map(
+        (value) => execute(restarted, 'pinState', { threadId: uuid(value) }).pinPosition,
+      ),
+    ).toEqual([3, 2, 1])
+    restarted.close()
+  })
+
+  it('rolls back the complete two-phase Pin rewrite when a final statement fails', async () => {
+    const { owner } = await createOwner()
+    for (const value of [301, 302, 303]) {
+      execute(owner, 'materialize', materializeInput(value))
+      execute(owner, 'updatePin', {
+        threadId: uuid(value),
+        action: 'pin',
+        expectedPinPosition: null,
+      })
+    }
+    const beforeClock = owner.acknowledgementClock()
+    rawDatabase(owner).exec(`
+      CREATE TRIGGER fail_pin_rewrite BEFORE UPDATE OF pin_position ON threads
+      WHEN NEW.pin_position = 2 AND OLD.pin_position > 3
+      BEGIN SELECT RAISE(ABORT, 'fail final Pin write'); END
+    `)
+
+    expect(() =>
+      execute(owner, 'updatePin', {
+        threadId: uuid(303),
+        action: 'move_bottom',
+        expectedPinPosition: 1,
+      }),
+    ).toThrow('The Thread Library is unavailable.')
+    expect(
+      [301, 302, 303].map(
+        (value) => execute(owner, 'readThread', { threadId: uuid(value) })!.summary.pinPosition,
+      ),
+    ).toEqual([3, 2, 1])
+    expect(owner.acknowledgementClock()).toEqual({
+      ...beforeClock,
+      actualMutation: false,
+    })
     owner.close()
   })
 

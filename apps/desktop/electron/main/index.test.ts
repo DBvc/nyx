@@ -299,6 +299,7 @@ describe('registerIpcHandlers', () => {
       saveDraft: vi.fn(),
       retryOpen: vi.fn(),
       markSeen: vi.fn(),
+      updatePin: vi.fn(),
     }
 
     registerIpcHandlers({ threads })
@@ -311,6 +312,14 @@ describe('registerIpcHandlers', () => {
 
     expect(threads.listPage).toHaveBeenCalledWith(input)
     expect(result).toBe(pagePromise)
+
+    const pinInput = {
+      threadId: '00000000-0000-4000-8000-000000000001',
+      action: 'pin' as const,
+      expectedPinPosition: null,
+    }
+    registeredHandler(NYX_THREADS_IPC_CHANNELS.updatePin)({ sender: {} as WebContents }, pinInput)
+    expect(threads.updatePin).toHaveBeenCalledWith(pinInput)
   })
 
   it('returns connection IPC handler promises to ipcRenderer.invoke callers', () => {

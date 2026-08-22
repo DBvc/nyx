@@ -19,6 +19,16 @@ const localSecond = z.iso.datetime({ local: true, precision: 0 })
 const location = z.enum(['available', 'archived', 'trash'])
 const pinPosition = z.number().int().positive().nullable()
 const position = z.number().int().nonnegative()
+const pinAction = z.enum(['pin', 'unpin', 'move_up', 'move_down', 'move_top', 'move_bottom'])
+
+const updatePinInputSchema = z
+  .object({ threadId: uuid, action: pinAction, expectedPinPosition: pinPosition })
+  .strict()
+  .superRefine((input, context) => {
+    if ((input.action === 'pin') !== (input.expectedPinPosition === null)) {
+      context.addIssue({ code: 'custom', message: 'Pin action and expected position disagree.' })
+    }
+  })
 
 export function formatThreadGenericTitle(
   localSecond: string,
@@ -420,6 +430,8 @@ const operationInputSchemas = {
       observedResultRevision: z.number().int().nonnegative(),
     })
     .strict(),
+  pinState: z.object({ threadId: uuid }).strict(),
+  updatePin: updatePinInputSchema,
   discardEmptyShell: z
     .object({
       threadId: uuid,
@@ -502,6 +514,7 @@ export const threadLibrarySafeErrorMessages = {
   not_found: 'This thread was not found.',
   stale_cursor: 'The thread list changed. Reload it and try again.',
   stale_revision: 'This draft changed. Reload it and try again.',
+  stale_pin_position: 'This Pin position changed. Reload it and try again.',
   not_pending: 'This turn is no longer pending.',
 } as const
 
@@ -669,6 +682,23 @@ const operationValueSchemas = {
   setResourceAvailability: threadDetailSchema,
   repairProviderStateRef: threadDetailSchema,
   markSeen: threadDetailSchema,
+  pinState: z
+    .object({
+      pinnedCount: z.number().int().nonnegative(),
+      pinPosition,
+      detail: threadDetailSchema,
+    })
+    .strict()
+    .superRefine((state, context) => {
+      if (
+        state.detail.summary.location !== 'available' ||
+        state.detail.summary.pinPosition !== state.pinPosition ||
+        (state.pinPosition !== null && state.pinPosition > state.pinnedCount)
+      ) {
+        context.addIssue({ code: 'custom', message: 'Thread Pin state is inconsistent.' })
+      }
+    }),
+  updatePin: threadDetailSchema,
   discardEmptyShell: z.object({ discarded: z.boolean() }).strict(),
 } as const
 

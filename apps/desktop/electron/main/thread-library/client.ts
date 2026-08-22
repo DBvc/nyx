@@ -27,6 +27,7 @@ export type ThreadLibraryAcknowledgement = {
 type PendingRequest = {
   generation: number
   operation: ThreadLibraryOperation
+  expectedThreadId: string | null
   resolve(value: ThreadLibraryReply): void
   reject(error: ThreadLibraryTransportError): void
   timer: NodeJS.Timeout
@@ -210,6 +211,38 @@ function terminalMatches(
   )
 }
 
+function expectedPinState(
+  input: ThreadLibraryOperationInput['updatePin'],
+  preState: ThreadLibraryOperationValue['pinState'],
+) {
+  const position = preState.pinPosition
+  if (input.action === 'pin') {
+    return { pinnedCount: preState.pinnedCount + 1, pinPosition: 1 }
+  }
+  if (position === null) return null
+  if (input.action === 'unpin') {
+    return { pinnedCount: preState.pinnedCount - 1, pinPosition: null }
+  }
+  return {
+    pinnedCount: preState.pinnedCount,
+    pinPosition:
+      input.action === 'move_up'
+        ? Math.max(1, position - 1)
+        : input.action === 'move_down'
+          ? Math.min(preState.pinnedCount, position + 1)
+          : input.action === 'move_top'
+            ? 1
+            : preState.pinnedCount,
+  }
+}
+
+function pinStateMatches(
+  state: ThreadLibraryOperationValue['pinState'],
+  expected: { pinnedCount: number; pinPosition: number | null },
+) {
+  return state.pinnedCount === expected.pinnedCount && state.pinPosition === expected.pinPosition
+}
+
 export class ThreadLibraryClient {
   private readonly databasePath: string
   private generation = 0
@@ -217,6 +250,7 @@ export class ThreadLibraryClient {
   private pending = new Map<string, PendingRequest>()
   private replacement: { generation: number; promise: Promise<boolean> } | null = null
   private requestCounter = 0
+  private pinMutationBarrier: Promise<void> = Promise.resolve()
   private worker: Worker | null = null
   private verifiedClock: Omit<ThreadLibraryAcknowledgementClock, 'actualMutation'> | null = null
   private observeAcknowledgement:
@@ -289,7 +323,112 @@ export class ThreadLibraryClient {
     })
   }
 
-  async discardEmptyShell(input: ThreadLibraryOperationInput['discardEmptyShell']) {
+  discardEmptyShell(input: ThreadLibraryOperationInput['discardEmptyShell']) {
+    return this.serializePinMutation(() => this.discardEmptyShellNow(input))
+  }
+
+  updatePin(input: ThreadLibraryOperationInput['updatePin']) {
+    return this.serializePinMutation(() => this.updatePinNow(input))
+  }
+
+  private async updatePinNow(input: ThreadLibraryOperationInput['updatePin']) {
+    let preflight: ThreadLibraryReply<'pinState'>
+    try {
+      preflight = await this.send('pinState', { threadId: input.threadId })
+    } catch {
+      return failure(
+        'updatePin',
+        'library_unavailable',
+        'definitely_not_committed',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    if (!preflight.ok) {
+      return preflight as ThreadLibraryReply<'updatePin'>
+    }
+    if (preflight.value.pinPosition !== input.expectedPinPosition) {
+      return failure(
+        preflight.id,
+        'stale_pin_position',
+        'definitely_not_committed',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    const expected = expectedPinState(input, preflight.value)
+    if (!expected) {
+      return failure(
+        preflight.id,
+        'library_unavailable',
+        'definitely_not_committed',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+
+    const failedGeneration = this.generation
+    let requestId = ''
+    try {
+      const reply = await this.send('updatePin', input, (id) => {
+        requestId = id
+      })
+      if (reply.ok || reply.outcome === 'definitely_not_committed') {
+        return reply
+      }
+      this.invalidateGeneration(failedGeneration, 'Thread Pin outcome is unknown.')
+    } catch (error) {
+      if (!(error instanceof ThreadLibraryTransportError)) throw error
+      if (error.outcome === 'definitely_not_committed') {
+        return failure(
+          requestId || 'updatePin',
+          'library_unavailable',
+          'definitely_not_committed',
+        ) as ThreadLibraryReply<'updatePin'>
+      }
+    }
+
+    if (!(await this.ensureReplacement(failedGeneration))) {
+      return failure(
+        requestId || 'updatePin',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    let canonical: ThreadLibraryReply<'pinState'>
+    try {
+      canonical = await this.send('pinState', { threadId: input.threadId })
+    } catch {
+      return failure(
+        requestId || 'updatePin',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    if (!canonical.ok) {
+      return failure(
+        requestId || 'updatePin',
+        'library_unavailable',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    if (pinStateMatches(canonical.value, expected)) {
+      return {
+        id: requestId || 'updatePin',
+        ok: true,
+        value: canonical.value.detail,
+        clock: this.requiredClock(),
+      } as ThreadLibraryReply<'updatePin'>
+    }
+    if (pinStateMatches(canonical.value, preflight.value)) {
+      return failure(
+        requestId || 'updatePin',
+        'stale_pin_position',
+        'outcome_unknown',
+      ) as ThreadLibraryReply<'updatePin'>
+    }
+    return failure(
+      requestId || 'updatePin',
+      'library_unavailable',
+      'outcome_unknown',
+    ) as ThreadLibraryReply<'updatePin'>
+  }
+
+  private async discardEmptyShellNow(input: ThreadLibraryOperationInput['discardEmptyShell']) {
     const failedGeneration = this.generation
     let requestId = ''
     try {
@@ -335,6 +474,15 @@ export class ThreadLibraryClient {
       value: { discarded: false },
       clock: this.requiredClock(),
     } as ThreadLibraryReply<'discardEmptyShell'>
+  }
+
+  private serializePinMutation<Value>(operation: () => Promise<Value>) {
+    const result = this.pinMutationBarrier.then(operation, operation)
+    this.pinMutationBarrier = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
   }
 
   currentClock() {
@@ -863,6 +1011,10 @@ export class ThreadLibraryClient {
       this.pending.set(id, {
         generation,
         operation,
+        expectedThreadId:
+          operation === 'pinState'
+            ? (input as ThreadLibraryOperationInput['pinState']).threadId
+            : null,
         resolve: resolve as (value: ThreadLibraryReply) => void,
         reject,
         timer,
@@ -907,6 +1059,15 @@ export class ThreadLibraryClient {
       reply = parseThreadLibraryReply(pending.operation, message)
     } catch {
       this.invalidateGeneration(generation, 'Thread Library Worker sent an invalid reply.')
+      return
+    }
+    if (
+      reply.ok &&
+      pending.operation === 'pinState' &&
+      (reply.value as ThreadLibraryOperationValue['pinState']).detail.summary.id !==
+        pending.expectedThreadId
+    ) {
+      this.invalidateGeneration(generation, 'Thread Library Worker sent an invalid Pin target.')
       return
     }
     if (reply.ok && !this.acceptsClock(pending.operation, reply.clock)) {

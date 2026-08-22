@@ -41,6 +41,7 @@ describe('preload Thread Library bridge', () => {
       'retryOpen',
       'saveDraft',
       'subscribe',
+      'updatePin',
     ])
   })
 
@@ -62,6 +63,17 @@ describe('preload Thread Library bridge', () => {
     api.threads.get({ threadId: event.threadId })
     expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:get', {
       threadId: event.threadId,
+    })
+
+    api.threads.updatePin({
+      threadId: event.threadId,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:update-pin', {
+      threadId: event.threadId,
+      action: 'pin',
+      expectedPinPosition: null,
     })
 
     unsubscribe()

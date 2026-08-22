@@ -179,3 +179,21 @@ export interface NyxThreadMarkSeenInput {
 export interface NyxThreadMarkSeenResult extends NyxThreadClock {
   detail: NyxThreadDetail
 }
+
+export type NyxThreadPinAction =
+  | 'pin'
+  | 'unpin'
+  | 'move_up'
+  | 'move_down'
+  | 'move_top'
+  | 'move_bottom'
+
+export interface NyxThreadUpdatePinInput {
+  threadId: string
+  action: NyxThreadPinAction
+  expectedPinPosition: number | null
+}
+
+export interface NyxThreadUpdatePinResult extends NyxThreadClock {
+  detail: NyxThreadDetail
+}
