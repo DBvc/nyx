@@ -214,6 +214,7 @@ export function ChatWorkspace() {
   const {
     state,
     threadCollection,
+    threadPinAction,
     currentThreadSummary,
     isBusy,
     isAccepting,
@@ -237,6 +238,7 @@ export function ChatWorkspace() {
     retryOpen,
     loadMoreThreads,
     retryThreadCollection,
+    updateThreadPin,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -380,6 +382,7 @@ export function ChatWorkspace() {
               state.settlementFailure !== null,
             )}
             libraryUnavailable={libraryUnavailable}
+            pinAction={threadPinAction}
             newThreadDisabled={state.hydrationStatus !== 'ready' || isResetting}
             onNewThread={() => {
               void startNewChat()
@@ -388,6 +391,9 @@ export function ChatWorkspace() {
             onSelectThread={(threadId) => {
               void selectThread(threadId)
               setActiveView('chat')
+            }}
+            onUpdateThreadPin={(threadId, action, expectedPinPosition) => {
+              void updateThreadPin({ threadId, action, expectedPinPosition })
             }}
             onOpenConnectionsSettings={() => {
               settingsPopoverRef.current?.hidePopover()

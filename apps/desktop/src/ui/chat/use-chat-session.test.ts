@@ -10,11 +10,14 @@ import type {
   NyxThreadMaterializeResult,
   NyxThreadResult,
   NyxThreadSaveDraftResult,
+  NyxThreadUpdatePinInput,
+  NyxThreadUpdatePinResult,
 } from '../../../shared/threads/types'
 import type { NyxConnectionsOverview } from '../../../shared/connections/types'
 import { chatReducer } from './chat-reducer'
 import { summarizeConnectionsOverview, type ConnectionStatusState } from './connection-status'
 import { initialChatState, type ChatState } from './chat-types'
+import { initialThreadPinActionState } from './thread-collection'
 import {
   canSubmitChat,
   deriveTargetCatalogAction,
@@ -293,6 +296,7 @@ function installBridge(options?: {
   materializeResult?: NyxThreadResult<NyxThreadMaterializeResult>
   saveDraftResult?: NyxThreadResult<NyxThreadSaveDraftResult>
   retryOpenResult?: NyxThreadResult<null>
+  updatePin?: (input: NyxThreadUpdatePinInput) => Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
   selectedId?: string | null
 }) {
   let chatListener: ((event: NyxChatEvent) => void) | null = null
@@ -351,6 +355,17 @@ function installBridge(options?: {
   const retryOpen = vi.fn(
     async () => options?.retryOpenResult ?? { ok: true as const, value: null },
   )
+  const updatePin = vi.fn(
+    options?.updatePin ??
+      (async (input: NyxThreadUpdatePinInput) => ({
+        ok: true as const,
+        value: {
+          detail: detail('', input.threadId),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      })),
+  )
   let storedSelectedId = options?.selectedId ?? null
   const localStorage = {
     getItem: vi.fn(() => storedSelectedId),
@@ -385,6 +400,7 @@ function installBridge(options?: {
         saveDraft,
         retryOpen,
         markSeen: vi.fn(),
+        updatePin,
         subscribe(listener: (event: NyxThreadEvent) => void) {
           threadListener = listener
           return () => {
@@ -405,6 +421,7 @@ function installBridge(options?: {
     listPage,
     get,
     retryOpen,
+    updatePin,
     localStorage,
     emitChat(event: NyxChatEvent) {
       chatListener?.(event)
@@ -1967,6 +1984,349 @@ describe('CP1 bounded Thread collection', () => {
     await expect(render().retryThreadCollection()).resolves.toBe(true)
     expect(render().threadSummaries).toEqual(firstRows)
     expect((harness.state as ChatState).hydrationStatus).toBe('ready')
+  })
+})
+
+describe('PIN1 Renderer controls', () => {
+  it('keeps one action gate and waits for the changed-event refresh without optimistic reorder', async () => {
+    const recent = detail('', 'thread-a')
+    const pinned = { ...recent, summary: { ...recent.summary, pinPosition: 1 } }
+    const update = deferred<NyxThreadResult<NyxThreadUpdatePinResult>>()
+    const refresh = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () =>
+        ++listCalls === 1 ? collectionPageResult([recent.summary], null) : refresh.promise,
+      get: async () => ({
+        ok: true,
+        value: { detail: recent, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+      updatePin: () => update.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    const updating = render().updateThreadPin({
+      threadId: recent.summary.id,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    await vi.waitFor(() => expect(bridge.updatePin).toHaveBeenCalledOnce())
+    expect(render().threadPinAction.pending).toBe(true)
+    expect(render().threadSummaries[0]?.pinPosition).toBeNull()
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    expect(bridge.updatePin).toHaveBeenCalledOnce()
+
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: pinned,
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    update.resolve({
+      ok: true,
+      value: {
+        detail: pinned,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+    await expect(updating).resolves.toBe(true)
+    expect(render().threadPinAction.pending).toBe(true)
+    expect(render().threadSummaries[0]?.pinPosition).toBeNull()
+
+    refresh.resolve(collectionPageResult([pinned.summary], null, 1))
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadSummaries[0]?.pinPosition).toBe(1)
+  })
+
+  it('performs an explicit bounded refresh for a successful boundary no-op', async () => {
+    const pinned = detail('', 'thread-a')
+    pinned.summary.pinPosition = 1
+    const bridge = installBridge({
+      list: async () => collectionPageResult([pinned.summary], null),
+      get: async () => ({
+        ok: true,
+        value: { detail: pinned, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+      updatePin: async () => ({
+        ok: true,
+        value: { detail: pinned, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([pinned.summary]))
+
+    await expect(
+      render().updateThreadPin({
+        threadId: pinned.summary.id,
+        action: 'move_up',
+        expectedPinPosition: 1,
+      }),
+    ).resolves.toBe(true)
+
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(bridge.updatePin).toHaveBeenCalledWith({
+      threadId: pinned.summary.id,
+      action: 'move_up',
+      expectedPinPosition: 1,
+    })
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    expect(render().threadSummaries).toEqual([pinned.summary])
+  })
+
+  it('preserves the projection and holds the row error until conflict recovery commits', async () => {
+    const recent = detail('', 'thread-a')
+    const recovery = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () =>
+        ++listCalls === 1 ? collectionPageResult([recent.summary], null) : recovery.promise,
+      get: async () => ({
+        ok: true,
+        value: { detail: recent, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+      updatePin: async () => ({
+        ok: false,
+        error: { code: 'conflict', message: 'Thread changed. Try again.' },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    expect(render().threadSummaries).toEqual([recent.summary])
+    expect(render().threadPinAction).toEqual({
+      pending: true,
+      error: { threadId: recent.summary.id, message: 'Thread changed. Try again.' },
+    })
+
+    recovery.resolve(collectionPageResult([recent.summary], null))
+    await vi.waitFor(() => expect(render().threadPinAction).toEqual(initialThreadPinActionState))
+    expect(render().threadSummaries).toEqual([recent.summary])
+  })
+
+  it('releases invalid input locally but routes Library failure to whole-Library fail-closed', async () => {
+    const recent = detail('', 'thread-a')
+    const bridge = installBridge({
+      ...selectedSnapshot(recent),
+      updatePin: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          error: { code: 'invalid_request', message: 'That action is not available.' },
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          error: { code: 'library_unavailable', message: "Couldn't open Thread Library" },
+        }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    expect(render().threadPinAction).toEqual({
+      pending: false,
+      error: { threadId: recent.summary.id, message: 'That action is not available.' },
+    })
+    expect(bridge.listPage).toHaveBeenCalledOnce()
+
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    expect((harness.state as ChatState).hydrationError?.code).toBe('library_unavailable')
+    expect(render().threadPinAction).toEqual(initialThreadPinActionState)
+    expect(render().threadSummaries).toEqual([recent.summary])
+  })
+
+  it('waits for replacement hydration when the response arrives before the epoch event', async () => {
+    const recent = detail('', 'thread-a')
+    const pinned = { ...recent, summary: { ...recent.summary, pinPosition: 1 } }
+    let epoch = 'epoch-1'
+    const bridge = installBridge({
+      list: async () =>
+        collectionPageResult([epoch === 'epoch-1' ? recent.summary : pinned.summary], null, 0, {
+          eventEpoch: epoch,
+        }),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: epoch === 'epoch-1' ? recent : pinned,
+          eventEpoch: epoch,
+          includedThroughCursor: 0,
+        },
+      }),
+      updatePin: async () => ({
+        ok: true,
+        value: { detail: pinned, eventEpoch: 'epoch-2', includedThroughCursor: 0 },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(true)
+    expect(render().threadPinAction.pending).toBe(true)
+    expect(bridge.listPage).toHaveBeenCalledOnce()
+
+    epoch = 'epoch-2'
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadSummaries).toEqual([pinned.summary])
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not write a late target error into a replacement projection', async () => {
+    const recent = detail('', 'thread-a')
+    const replacement = { ...recent, summary: { ...recent.summary, title: 'Replacement' } }
+    const update = deferred<NyxThreadResult<NyxThreadUpdatePinResult>>()
+    let epoch = 'epoch-1'
+    const bridge = installBridge({
+      list: async () =>
+        collectionPageResult(
+          [epoch === 'epoch-1' ? recent.summary : replacement.summary],
+          null,
+          0,
+          {
+            eventEpoch: epoch,
+          },
+        ),
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: epoch === 'epoch-1' ? recent : replacement,
+          eventEpoch: epoch,
+          includedThroughCursor: 0,
+        },
+      }),
+      updatePin: () => update.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    const updating = render().updateThreadPin({
+      threadId: recent.summary.id,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    epoch = 'epoch-2'
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([replacement.summary]))
+    expect(render().threadPinAction.pending).toBe(true)
+
+    update.resolve({
+      ok: false,
+      error: { code: 'conflict', message: 'Stale error.' },
+    })
+    await expect(updating).resolves.toBe(false)
+    expect(render().threadPinAction).toEqual(initialThreadPinActionState)
+    expect(render().threadSummaries).toEqual([replacement.summary])
+  })
+
+  it('joins an in-flight replacement hydration when a target error arrives first', async () => {
+    const recent = detail('', 'thread-a')
+    const replacement = {
+      ...recent,
+      summary: { ...recent.summary, title: 'Replacement', pinPosition: 1 },
+    }
+    const update = deferred<NyxThreadResult<NyxThreadUpdatePinResult>>()
+    const replacementDetail = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    let epoch = 'epoch-1'
+    let getCalls = 0
+    const bridge = installBridge({
+      list: async () =>
+        collectionPageResult(
+          [epoch === 'epoch-1' ? recent.summary : replacement.summary],
+          null,
+          0,
+          { eventEpoch: epoch },
+        ),
+      get: async () => {
+        getCalls += 1
+        return getCalls === 1
+          ? {
+              ok: true,
+              value: { detail: recent, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+            }
+          : replacementDetail.promise
+      },
+      updatePin: () => update.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    const updating = render().updateThreadPin({
+      threadId: recent.summary.id,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
+    epoch = 'epoch-2'
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    await vi.waitFor(() => expect(bridge.get).toHaveBeenCalledTimes(2))
+
+    update.resolve({
+      ok: false,
+      error: { code: 'conflict', message: 'Stale error.' },
+    })
+    await expect(updating).resolves.toBe(false)
+    expect(render().threadPinAction).toEqual({ pending: true, error: null })
+    expect(render().threadSummaries).toEqual([recent.summary])
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+
+    replacementDetail.resolve({
+      ok: true,
+      value: { detail: replacement, eventEpoch: 'epoch-2', includedThroughCursor: 0 },
+    })
+    await vi.waitFor(() => expect(render().threadPinAction).toEqual(initialThreadPinActionState))
+    expect(render().threadSummaries).toEqual([replacement.summary])
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
   })
 })
 

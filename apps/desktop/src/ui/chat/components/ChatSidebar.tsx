@@ -3,8 +3,12 @@ import { useMemo } from 'react'
 import type { RefObject } from 'react'
 
 import type { NyxChatRunStatus } from '../../../../shared/chat/types'
-import type { NyxThreadSummary } from '../../../../shared/threads/types'
-import type { ThreadCollectionState } from '../thread-collection'
+import type { NyxThreadPinAction, NyxThreadSummary } from '../../../../shared/threads/types'
+import {
+  threadPinBoundaries,
+  type ThreadCollectionState,
+  type ThreadPinActionState,
+} from '../thread-collection'
 
 type CurrentThreadStatus = 'idle' | 'running' | 'saving_failed'
 
@@ -16,10 +20,16 @@ interface ChatSidebarProps {
   currentThreadStatus: CurrentThreadStatus
   selectedThreadId: string | null
   collection: ThreadCollectionState
+  pinAction: ThreadPinActionState
   libraryUnavailable: boolean
   newThreadDisabled: boolean
   onNewThread: () => void
   onSelectThread: (threadId: string) => void
+  onUpdateThreadPin: (
+    threadId: string,
+    action: NyxThreadPinAction,
+    expectedPinPosition: number | null,
+  ) => void
   onLoadMoreThreads: () => void
   onRetryThreadCollection: () => Promise<boolean>
   onOpenConnectionsSettings: () => void
@@ -54,10 +64,12 @@ export function ChatSidebar({
   currentThreadStatus,
   selectedThreadId,
   collection,
+  pinAction,
   libraryUnavailable,
   newThreadDisabled,
   onNewThread,
   onSelectThread,
+  onUpdateThreadPin,
   onLoadMoreThreads,
   onRetryThreadCollection,
   onOpenConnectionsSettings,
@@ -97,30 +109,66 @@ export function ChatSidebar({
                   : ''
     const savingFailed =
       options.statusOverride === 'saving_failed' || activity?.status === 'saving_failed'
+    const pinError = pinAction.error?.threadId === thread.id ? pinAction.error.message : null
+    const boundaries = threadPinBoundaries(collection, thread)
+
+    function renderPinAction(label: string, action: NyxThreadPinAction, boundaryDisabled = false) {
+      return (
+        <button
+          className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+          disabled={pinAction.pending || boundaryDisabled}
+          onClick={() => onUpdateThreadPin(thread.id, action, thread.pinPosition)}
+          type='button'
+        >
+          {label}
+        </button>
+      )
+    }
 
     return (
-      <button
-        aria-current={selected ? 'page' : undefined}
-        className={`w-full rounded-lg px-3 py-2.5 text-left ${
-          selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
-        }`}
-        key={thread.id}
-        onClick={() => onSelectThread(thread.id)}
-        type='button'
-      >
-        <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
-          {thread.title}
-        </span>
-        {subtitle ? (
-          <span
-            className={`mt-1 block min-w-0 truncate text-[12px] ${
-              savingFailed ? 'text-nyx-danger' : 'text-nyx-muted'
-            }`}
-          >
-            {subtitle}
+      <div className='mb-0.5' key={thread.id}>
+        <button
+          aria-current={selected ? 'page' : undefined}
+          className={`w-full rounded-lg px-3 py-2.5 text-left ${
+            selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
+          }`}
+          onClick={() => onSelectThread(thread.id)}
+          type='button'
+        >
+          <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+            {thread.title}
           </span>
+          {subtitle ? (
+            <span
+              className={`mt-1 block min-w-0 truncate text-[12px] ${
+                savingFailed ? 'text-nyx-danger' : 'text-nyx-muted'
+              }`}
+            >
+              {subtitle}
+            </span>
+          ) : null}
+        </button>
+        {thread.availability === 'available' ? (
+          <div className='px-2 pb-1'>
+            <div className='flex flex-wrap gap-0.5'>
+              {thread.pinPosition === null ? (
+                renderPinAction('Pin', 'pin')
+              ) : (
+                <>
+                  {renderPinAction('Unpin', 'unpin')}
+                  {renderPinAction('Move up', 'move_up', boundaries.atTop)}
+                  {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
+                  {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
+                  {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
+                </>
+              )}
+            </div>
+            {pinError ? (
+              <p className='px-1.5 py-1 text-[11px] text-nyx-danger'>{pinError}</p>
+            ) : null}
+          </div>
         ) : null}
-      </button>
+      </div>
     )
   }
 

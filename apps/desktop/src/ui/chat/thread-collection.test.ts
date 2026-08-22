@@ -3,13 +3,18 @@ import { describe, expect, it } from 'vitest'
 import type { NyxThreadSummary } from '../../../shared/threads/types'
 import {
   appendThreadCollectionPage,
+  beginThreadPinAction,
   beginThreadCollectionLoadMore,
   buildThreadCollectionCandidate,
   commitThreadCollectionCandidate,
   currentThreadOutsideCollection,
   failThreadCollection,
+  failThreadPinAction,
   initialThreadCollectionState,
+  initialThreadPinActionState,
+  releaseThreadPinAction,
   threadCollectionGroups,
+  threadPinBoundaries,
   type ThreadCollectionPage,
 } from './thread-collection'
 
@@ -194,5 +199,50 @@ describe('thread collection selection and failure state', () => {
 
     expect(failed.rows).toBe(accepted.rows)
     expect(failed).toMatchObject({ status: 'error', errorPhase: 'load-more' })
+  })
+})
+
+describe('thread Pin action projection', () => {
+  it('tracks one transient gate and one safe row error without changing collection rows', () => {
+    const pending = beginThreadPinAction(initialThreadPinActionState)
+    const failed = failThreadPinAction(
+      pending,
+      { threadId: 'thread-1', message: 'Thread changed. Try again.' },
+      true,
+    )
+    const released = releaseThreadPinAction(failed)
+
+    expect(pending).toEqual({ pending: true, error: null })
+    expect(failed).toEqual({
+      pending: true,
+      error: { threadId: 'thread-1', message: 'Thread changed. Try again.' },
+    })
+    expect(released).toEqual({
+      pending: false,
+      error: { threadId: 'thread-1', message: 'Thread changed. Try again.' },
+    })
+  })
+
+  it('disables only boundaries known from the loaded canonical prefix', () => {
+    const first = row(1, 1)
+    const second = row(2, 2)
+    const recent = row(3)
+    const complete = {
+      ...initialThreadCollectionState,
+      rows: [first, second, recent],
+      loadedPageCount: 1,
+      status: 'ready' as const,
+    }
+
+    expect(threadPinBoundaries(complete, first)).toEqual({ atTop: true, atBottom: false })
+    expect(threadPinBoundaries(complete, second)).toEqual({ atTop: false, atBottom: true })
+    expect(threadPinBoundaries(complete, recent)).toEqual({ atTop: false, atBottom: false })
+
+    expect(
+      threadPinBoundaries(
+        { ...complete, rows: [first, second], nextCursor: 'opaque-next' },
+        second,
+      ),
+    ).toEqual({ atTop: false, atBottom: false })
   })
 })

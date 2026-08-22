@@ -8,6 +8,7 @@ import type {
   NyxThreadSafeError,
   NyxThreadSaveDraftInput,
   NyxThreadRunCapacity,
+  NyxThreadUpdatePinInput,
 } from '../../../shared/threads/types'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
@@ -35,6 +36,7 @@ import {
 } from './connection-status'
 import {
   appendThreadCollectionPage,
+  beginThreadPinAction,
   beginThreadCollectionHydration,
   beginThreadCollectionLoadMore,
   beginThreadCollectionRetry,
@@ -42,7 +44,10 @@ import {
   commitThreadCollectionCandidate,
   currentThreadOutsideCollection,
   failThreadCollection,
+  failThreadPinAction,
   initialThreadCollectionState,
+  initialThreadPinActionState,
+  releaseThreadPinAction,
   ThreadCollectionCandidateError,
   threadCollectionGroups,
   type ThreadCollectionCandidate,
@@ -264,6 +269,7 @@ export function useChatSession({
   const [threadCollection, setThreadCollection] = useState<ThreadCollectionState>(
     initialThreadCollectionState,
   )
+  const [threadPinAction, setThreadPinAction] = useState(initialThreadPinActionState)
   const threadSummaries = threadCollection.rows
   const [runCapacity, setRunCapacity] = useState<NyxThreadRunCapacity>({
     activeRuns: 0,
@@ -273,6 +279,7 @@ export function useChatSession({
   const projectionGeneration = useRef(initialChatState.projectionGeneration)
   const stateRef = useRef(state)
   const threadCollectionRef = useRef(threadCollection)
+  const threadPinActionRef = useRef(threadPinAction)
   const threadSummariesRef = useRef(threadSummaries)
   const runCapacityRef = useRef(runCapacity)
   const workerRef = useRef<Worker | null>(null)
@@ -294,10 +301,14 @@ export function useChatSession({
   >(null)
   const loadMoreThreadsRef = useRef<(() => Promise<boolean>) | null>(null)
   const retryThreadCollectionRef = useRef<(() => Promise<boolean>) | null>(null)
+  const updateThreadPinRef = useRef<((input: NyxThreadUpdatePinInput) => Promise<boolean>) | null>(
+    null,
+  )
   const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
   stateRef.current = state
   threadCollectionRef.current = threadCollection
+  threadPinActionRef.current = threadPinAction
   threadSummariesRef.current = threadSummaries
   runCapacityRef.current = runCapacity
   selectedThreadIdRef.current = state.selectedThreadId
@@ -313,6 +324,11 @@ export function useChatSession({
     updater: (current: ThreadCollectionState) => ThreadCollectionState,
   ) {
     replaceThreadCollection(updater(threadCollectionRef.current))
+  }
+
+  function replaceThreadPinAction(next: typeof threadPinAction) {
+    threadPinActionRef.current = next
+    setThreadPinAction(next)
   }
 
   function clearThreadCollectionSelection() {
@@ -658,6 +674,60 @@ export function useChatSession({
     let detailCursor = 0
     let collectionInFlight = false
     let collectionDirty = false
+    let collectionReadSerial = 0
+    let lastCollectionCommit: { epoch: string; cursor: number } | null = null
+    let lastHydrationCommit: { request: number; epoch: string } | null = null
+
+    type ActivePinActionPhase =
+      | { kind: 'dispatching' }
+      | {
+          kind: 'waiting_collection'
+          completion: { kind: 'read'; serial: number } | { kind: 'cursor'; cursor: number }
+        }
+      | { kind: 'waiting_hydration'; afterRequest: number; epoch?: string }
+
+    interface ActivePinAction {
+      hydration: number
+      epoch: string
+      listCursor: number
+      phase: ActivePinActionPhase
+    }
+
+    let activePinAction: ActivePinAction | null = null
+
+    function finishPinAction() {
+      activePinAction = null
+      replaceThreadPinAction(initialThreadPinActionState)
+    }
+
+    function completePinActionAfterCollection(
+      readSerial: number,
+      readEpoch: string,
+      readCursor: number,
+    ) {
+      lastCollectionCommit = { epoch: readEpoch, cursor: readCursor }
+      const action = activePinAction
+      if (action?.phase.kind !== 'waiting_collection' || action.epoch !== readEpoch) return
+      const completion = action.phase.completion
+      if (
+        (completion.kind === 'read' && readSerial >= completion.serial) ||
+        (completion.kind === 'cursor' && readCursor >= completion.cursor)
+      ) {
+        finishPinAction()
+      }
+    }
+
+    function completePinActionAfterHydration(request: number, epoch: string) {
+      lastHydrationCommit = { request, epoch }
+      const action = activePinAction
+      if (
+        action?.phase.kind === 'waiting_hydration' &&
+        request > action.phase.afterRequest &&
+        (!action.phase.epoch || action.phase.epoch === epoch)
+      ) {
+        finishPinAction()
+      }
+    }
 
     type CollectionCandidateOutcome =
       | { kind: 'candidate'; candidate: ThreadCollectionCandidate }
@@ -742,6 +812,7 @@ export function useChatSession({
     function failWholeLibrary(error: NyxThreadSafeError) {
       hydrated = false
       collectionDirty = false
+      finishPinAction()
       dispatch({
         type: 'thread-library-hydration-failed',
         generation: projectionGeneration.current,
@@ -836,6 +907,8 @@ export function useChatSession({
         let dirtyRebuildUsed = false
         for (;;) {
           collectionDirty = false
+          const readSerial = ++collectionReadSerial
+          const readCursor = listCursor
           const outcome = rebuild
             ? await readBoundedPrefix(pageBudget, epoch, hydration)
             : await readNextPage(accepted, epoch, hydration)
@@ -896,6 +969,7 @@ export function useChatSession({
                 )
               : commitThreadCollectionCandidate(outcome.candidate),
           )
+          completePinActionAfterCollection(readSerial, epoch, readCursor)
           return missingSelection === 'accept'
         }
       } catch {
@@ -1116,11 +1190,7 @@ export function useChatSession({
           minimumCatalogEpoch: getLatestConnectionRequestEpoch() + 1,
         })
       } else if (event.type === 'threads:library-unavailable') {
-        dispatch({
-          type: 'thread-library-hydration-failed',
-          generation: projectionGeneration.current,
-          error: event.error,
-        })
+        failWholeLibrary(event.error)
       } else if (
         event.type === 'threads:thread-unavailable' &&
         event.threadId === selectedThreadIdRef.current
@@ -1265,14 +1335,11 @@ export function useChatSession({
               unavailable: detailResult.error,
             }
           } else {
-            dispatch({
-              type: 'thread-library-hydration-failed',
-              generation,
-              error:
-                detailResult.error.code === 'thread_unavailable'
-                  ? threadLibraryBridgeError()
-                  : detailResult.error,
-            })
+            failWholeLibrary(
+              detailResult.error.code === 'thread_unavailable'
+                ? threadLibraryBridgeError()
+                : detailResult.error,
+            )
             return
           }
         }
@@ -1340,13 +1407,10 @@ export function useChatSession({
             stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
         resumeEventPump()
+        completePinActionAfterHydration(request, eventEpoch)
       } catch {
         if (!disposed && request === hydrationRef.current) {
-          dispatch({
-            type: 'thread-library-hydration-failed',
-            generation,
-            error: threadLibraryBridgeError(),
-          })
+          failWholeLibrary(threadLibraryBridgeError())
         }
       }
     }
@@ -1370,6 +1434,135 @@ export function useChatSession({
       }
       return runCollectionAction(retryMode === 'refresh' ? 'refresh' : 'explicit-load')
     }
+    updateThreadPinRef.current = async (input) => {
+      if (
+        disposed ||
+        !hydrated ||
+        !eventEpoch ||
+        activePinAction ||
+        threadPinActionRef.current.pending
+      ) {
+        return false
+      }
+
+      const target =
+        threadCollectionRef.current.rows.find((row) => row.id === input.threadId) ??
+        (stateRef.current.threadSummary?.id === input.threadId
+          ? stateRef.current.threadSummary
+          : null)
+      if (
+        target?.availability !== 'available' ||
+        target.location !== 'available' ||
+        target.pinPosition !== input.expectedPinPosition ||
+        (input.action === 'pin') !== (input.expectedPinPosition === null)
+      ) {
+        return false
+      }
+
+      const action: ActivePinAction = {
+        hydration: hydrationRef.current,
+        epoch: eventEpoch,
+        listCursor,
+        phase: { kind: 'dispatching' },
+      }
+      activePinAction = action
+      replaceThreadPinAction(beginThreadPinAction(threadPinActionRef.current))
+
+      let result
+      try {
+        result = await threads.updatePin(input)
+      } catch {
+        if (activePinAction === action) failWholeLibrary(threadLibraryBridgeError())
+        return false
+      }
+      if (activePinAction !== action) return false
+
+      if (!result.ok) {
+        if (result.error.code === 'library_unavailable') {
+          failWholeLibrary(result.error)
+          return false
+        }
+
+        const replacementStarted = hydrationRef.current > action.hydration
+        const projectionChanged = replacementStarted || eventEpoch !== action.epoch
+        if (result.error.code === 'invalid_request' && !projectionChanged) {
+          activePinAction = null
+          replaceThreadPinAction(
+            releaseThreadPinAction(
+              failThreadPinAction(
+                threadPinActionRef.current,
+                { threadId: input.threadId, message: result.error.message },
+                false,
+              ),
+            ),
+          )
+          return false
+        }
+
+        if (!projectionChanged) {
+          replaceThreadPinAction(
+            failThreadPinAction(
+              threadPinActionRef.current,
+              { threadId: input.threadId, message: result.error.message },
+              true,
+            ),
+          )
+        }
+
+        if (lastHydrationCommit && lastHydrationCommit.request > action.hydration) {
+          finishPinAction()
+          return false
+        }
+
+        action.phase = { kind: 'waiting_hydration', afterRequest: action.hydration }
+        if (replacementStarted) return false
+
+        void hydrateThreadLibrary({
+          pageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
+          preserveCollection: true,
+        })
+        return false
+      }
+
+      if (result.value.eventEpoch !== action.epoch) {
+        action.phase = {
+          kind: 'waiting_hydration',
+          afterRequest: action.hydration,
+          epoch: result.value.eventEpoch,
+        }
+        if (
+          lastHydrationCommit?.epoch === result.value.eventEpoch &&
+          lastHydrationCommit.request > action.hydration
+        ) {
+          finishPinAction()
+        }
+        return true
+      }
+
+      if (
+        result.value.includedThroughCursor > action.listCursor &&
+        lastCollectionCommit?.epoch === action.epoch &&
+        lastCollectionCommit.cursor >= result.value.includedThroughCursor
+      ) {
+        finishPinAction()
+        return true
+      }
+
+      if (result.value.includedThroughCursor > action.listCursor) {
+        action.phase = {
+          kind: 'waiting_collection',
+          completion: { kind: 'cursor', cursor: result.value.includedThroughCursor },
+        }
+      } else {
+        action.phase = {
+          kind: 'waiting_collection',
+          completion: { kind: 'read', serial: collectionReadSerial + 1 },
+        }
+      }
+      collectionDirty = true
+      if (!collectionInFlight) void runCollectionAction('refresh', true)
+      return true
+    }
     void hydrateThreadLibrary()
 
     return () => {
@@ -1377,6 +1570,7 @@ export function useChatSession({
       if (retryHydrationRef.current === hydrateThreadLibrary) retryHydrationRef.current = null
       loadMoreThreadsRef.current = null
       retryThreadCollectionRef.current = null
+      updateThreadPinRef.current = null
       unsubscribeChat()
       unsubscribeThreads()
     }
@@ -2073,6 +2267,7 @@ export function useChatSession({
     state,
     threadSummaries,
     threadCollection,
+    threadPinAction,
     pinnedThreadSummaries: threadGroups.pinned,
     recentThreadSummaries: threadGroups.recent,
     currentThreadSummary: currentThreadOutsideCollection(threadCollection, state.threadSummary),
@@ -2116,6 +2311,9 @@ export function useChatSession({
     },
     retryThreadCollection() {
       return retryThreadCollectionRef.current?.() ?? Promise.resolve(false)
+    },
+    updateThreadPin(input: NyxThreadUpdatePinInput) {
+      return updateThreadPinRef.current?.(input) ?? Promise.resolve(false)
     },
   }
 }

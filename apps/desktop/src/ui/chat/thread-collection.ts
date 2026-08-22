@@ -24,6 +24,16 @@ export interface ThreadCollectionState extends ThreadCollectionCandidate {
   retryMode: ThreadCollectionRetryMode | null
 }
 
+export interface ThreadPinActionError {
+  threadId: string
+  message: string
+}
+
+export interface ThreadPinActionState {
+  pending: boolean
+  error: ThreadPinActionError | null
+}
+
 export class ThreadCollectionCandidateError extends Error {
   constructor(
     message: string,
@@ -42,6 +52,11 @@ export const initialThreadCollectionState: ThreadCollectionState = {
   status: 'loading',
   errorPhase: null,
   retryMode: null,
+}
+
+export const initialThreadPinActionState: ThreadPinActionState = {
+  pending: false,
+  error: null,
 }
 
 function validatePageRows(
@@ -212,6 +227,38 @@ export function threadCollectionGroups(state: ThreadCollectionState) {
   return {
     pinned: state.rows.filter((row) => row.pinPosition !== null),
     recent: state.rows.filter((row) => row.pinPosition === null),
+  }
+}
+
+export function beginThreadPinAction(state: ThreadPinActionState): ThreadPinActionState {
+  return { ...state, pending: true }
+}
+
+export function failThreadPinAction(
+  state: ThreadPinActionState,
+  error: ThreadPinActionError,
+  pending: boolean,
+): ThreadPinActionState {
+  return { ...state, pending, error }
+}
+
+export function releaseThreadPinAction(state: ThreadPinActionState): ThreadPinActionState {
+  return { ...state, pending: false }
+}
+
+export function threadPinBoundaries(state: ThreadCollectionState, thread: NyxThreadSummary) {
+  if (thread.pinPosition === null) {
+    return { atTop: false, atBottom: false }
+  }
+
+  const pinned = state.rows.filter((row) => row.pinPosition !== null)
+  const targetIndex = pinned.findIndex((row) => row.id === thread.id)
+  const bottomIsKnown =
+    state.nextCursor === null || state.rows.some((row) => row.pinPosition === null)
+
+  return {
+    atTop: thread.pinPosition === 1,
+    atBottom: bottomIsKnown && targetIndex >= 0 && targetIndex === pinned.length - 1,
   }
 }
 

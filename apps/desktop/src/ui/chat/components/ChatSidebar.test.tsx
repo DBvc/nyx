@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { NyxThreadSummary } from '../../../../shared/threads/types'
-import { initialThreadCollectionState } from '../thread-collection'
+import { initialThreadCollectionState, initialThreadPinActionState } from '../thread-collection'
 import { ChatSidebar } from './ChatSidebar'
 
 function thread(id: string, title: string, pinPosition: number | null): NyxThreadSummary {
@@ -40,10 +40,12 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ChatSidebar>> = 
       loadedPageCount: 1,
       status: 'ready',
     },
+    pinAction: initialThreadPinActionState,
     libraryUnavailable: false,
     newThreadDisabled: false,
     onNewThread: vi.fn(),
     onSelectThread: vi.fn(),
+    onUpdateThreadPin: vi.fn(),
     onLoadMoreThreads: vi.fn(),
     onRetryThreadCollection: vi.fn(async () => true),
     onOpenConnectionsSettings: vi.fn(),
@@ -80,6 +82,67 @@ describe('ChatSidebar Thread Library', () => {
     expect(html.indexOf('Pinned one')).toBeLessThan(html.indexOf('Pinned two'))
     expect(html.indexOf('Pinned two')).toBeLessThan(html.indexOf('Recent one'))
     expect(html.indexOf('Recent one')).toBeLessThan(html.indexOf('Recent two'))
+  })
+
+  it('renders the six ordinary semantic actions and disables known boundaries', () => {
+    const pinnedTwo = thread('pinned-2', 'Pinned two', 2)
+    const html = renderSidebar({
+      collection: {
+        ...initialThreadCollectionState,
+        rows: [pinned, pinnedTwo, recent],
+        nextCursor: null,
+        loadedPageCount: 1,
+        status: 'ready',
+      },
+    })
+
+    expect(html).toContain('>Pin</button>')
+    expect(html).toContain('>Unpin</button>')
+    expect(html).toContain('>Move up</button>')
+    expect(html).toContain('>Move down</button>')
+    expect(html).toContain('>Move to top</button>')
+    expect(html).toContain('>Move to bottom</button>')
+    expect(html).toMatch(/disabled=""[^>]*>Move up<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Move to top<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Move down<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Move to bottom<\/button>/u)
+  })
+
+  it('disables every Pin action behind the collection-wide gate and shows a safe row error', () => {
+    const html = renderSidebar({
+      pinAction: {
+        pending: true,
+        error: { threadId: recent.id, message: 'Thread changed. Try again.' },
+      },
+    })
+
+    expect(html).toContain('Thread changed. Try again.')
+    expect(html).toMatch(/disabled=""[^>]*>Pin<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Unpin<\/button>/u)
+  })
+
+  it('keeps controls on an available Current thread fallback and hides them for unavailable rows', () => {
+    const current = thread('current-1', 'Current outside prefix', null)
+    const unavailable: NyxThreadSummary = {
+      availability: 'unavailable',
+      id: 'unavailable-1',
+      location: 'available',
+      pinPosition: null,
+      title: "Couldn't open this thread",
+      unavailable: { code: 'thread_unavailable', message: "Couldn't open this thread" },
+    }
+    const html = renderSidebar({
+      currentThread: current,
+      collection: {
+        ...initialThreadCollectionState,
+        rows: [unavailable],
+        loadedPageCount: 1,
+        status: 'ready',
+      },
+    })
+
+    expect(html).toContain('Current outside prefix')
+    expect(html.match(/>Pin<\/button>/gu)).toHaveLength(1)
   })
 
   it('hides stale collection content behind the whole-library unavailable boundary', () => {
