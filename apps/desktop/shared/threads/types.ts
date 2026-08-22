@@ -197,3 +197,13 @@ export interface NyxThreadUpdatePinInput {
 export interface NyxThreadUpdatePinResult extends NyxThreadClock {
   detail: NyxThreadDetail
 }
+
+export interface NyxThreadRenameInput {
+  threadId: string
+  title: string
+  expectedThreadRevision: number
+}
+
+export interface NyxThreadRenameResult extends NyxThreadClock {
+  detail: NyxThreadDetail
+}

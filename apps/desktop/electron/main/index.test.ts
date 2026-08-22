@@ -300,6 +300,7 @@ describe('registerIpcHandlers', () => {
       retryOpen: vi.fn(),
       markSeen: vi.fn(),
       updatePin: vi.fn(),
+      rename: vi.fn(),
     }
 
     registerIpcHandlers({ threads })
@@ -320,6 +321,14 @@ describe('registerIpcHandlers', () => {
     }
     registeredHandler(NYX_THREADS_IPC_CHANNELS.updatePin)({ sender: {} as WebContents }, pinInput)
     expect(threads.updatePin).toHaveBeenCalledWith(pinInput)
+
+    const renameInput = {
+      threadId: pinInput.threadId,
+      title: 'Renamed thread',
+      expectedThreadRevision: 1,
+    }
+    registeredHandler(NYX_THREADS_IPC_CHANNELS.rename)({ sender: {} as WebContents }, renameInput)
+    expect(threads.rename).toHaveBeenCalledWith(renameInput)
   })
 
   it('returns connection IPC handler promises to ipcRenderer.invoke callers', () => {

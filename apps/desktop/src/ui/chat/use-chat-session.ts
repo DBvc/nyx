@@ -5,11 +5,13 @@ import type { NyxThreadEvent } from '../../../shared/threads/events'
 import type {
   NyxThreadDetail,
   NyxThreadListPage,
+  NyxThreadRenameInput,
   NyxThreadSafeError,
   NyxThreadSaveDraftInput,
   NyxThreadRunCapacity,
   NyxThreadUpdatePinInput,
 } from '../../../shared/threads/types'
+import { validateNyxThreadTitle } from '../../../shared/threads/title'
 import { isNyxChatDocumentName, nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits, parseNyxChatImageHeader } from '../../../shared/chat/image-file'
 import type {
@@ -102,6 +104,8 @@ interface DocumentPreparationOperation {
 type SaveDraftOutcome =
   | { ok: true; threadId: string | null; draftRevision: number | null }
   | { ok: false }
+
+export type ThreadRenameOutcome = { ok: true } | { ok: false; message: string }
 
 function detailMatchesDraftInput(
   detail: NyxThreadDetail,
@@ -304,6 +308,9 @@ export function useChatSession({
   const updateThreadPinRef = useRef<((input: NyxThreadUpdatePinInput) => Promise<boolean>) | null>(
     null,
   )
+  const renameThreadRef = useRef<
+    ((input: NyxThreadRenameInput) => Promise<ThreadRenameOutcome>) | null
+  >(null)
   const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
   stateRef.current = state
@@ -677,9 +684,9 @@ export function useChatSession({
     let collectionReadSerial = 0
     let lastCollectionCommit: { epoch: string; cursor: number } | null = null
     let lastHydrationCommit: { request: number; epoch: string } | null = null
-    let satisfiedPinReplacementEpoch: string | null = null
+    let satisfiedCollectionReplacementEpoch: string | null = null
 
-    type ActivePinActionPhase =
+    type ActiveThreadCollectionActionPhase =
       | { kind: 'dispatching' }
       | {
           kind: 'waiting_collection'
@@ -687,61 +694,67 @@ export function useChatSession({
         }
       | { kind: 'waiting_hydration'; afterRequest: number; epoch?: string }
 
-    interface ActivePinAction {
+    interface ActiveThreadCollectionAction {
+      kind: 'pin' | 'rename'
+      threadId: string
       hydration: number
       epoch: string
+      projectionGeneration: number
       listCursor: number
       loadedPageBudget: number
       replacementHydration: { epoch: string | null; afterRequest: number } | null
-      phase: ActivePinActionPhase
+      phase: ActiveThreadCollectionActionPhase
     }
 
-    let activePinAction: ActivePinAction | null = null
+    let activeThreadCollectionAction: ActiveThreadCollectionAction | null = null
 
-    function finishPinAction() {
-      activePinAction = null
+    function finishThreadCollectionAction() {
+      activeThreadCollectionAction = null
       replaceThreadPinAction(initialThreadPinActionState)
     }
 
-    function completePinActionAfterCollection(
+    function completeThreadCollectionActionAfterCollection(
       readSerial: number,
       readEpoch: string,
       readCursor: number,
     ) {
       lastCollectionCommit = { epoch: readEpoch, cursor: readCursor }
-      const action = activePinAction
+      const action = activeThreadCollectionAction
       if (action?.phase.kind !== 'waiting_collection' || action.epoch !== readEpoch) return
       const completion = action.phase.completion
       if (
         (completion.kind === 'read' && readSerial >= completion.serial) ||
         (completion.kind === 'cursor' && readCursor >= completion.cursor)
       ) {
-        finishPinAction()
+        finishThreadCollectionAction()
       }
     }
 
-    function completePinActionAfterHydration(request: number, epoch: string) {
+    function completeThreadCollectionActionAfterHydration(request: number, epoch: string) {
       lastHydrationCommit = { request, epoch }
-      const action = activePinAction
+      const action = activeThreadCollectionAction
       if (
         action?.replacementHydration &&
         request > action.replacementHydration.afterRequest &&
         epoch !== action.epoch &&
         (!action.replacementHydration.epoch || action.replacementHydration.epoch === epoch)
       ) {
-        satisfiedPinReplacementEpoch = epoch
+        satisfiedCollectionReplacementEpoch = epoch
       }
       if (
         action?.phase.kind === 'waiting_hydration' &&
         request > action.phase.afterRequest &&
         (!action.phase.epoch || action.phase.epoch === epoch)
       ) {
-        finishPinAction()
+        finishThreadCollectionAction()
       }
     }
 
-    function requestPinReplacementHydration(action: ActivePinAction, epoch: string | null = null) {
-      if (activePinAction !== action) return
+    function requestThreadCollectionReplacementHydration(
+      action: ActiveThreadCollectionAction,
+      epoch: string | null = null,
+    ) {
+      if (activeThreadCollectionAction !== action) return
       const replacement = action.replacementHydration
       if (replacement) {
         if (epoch && !replacement.epoch) {
@@ -767,6 +780,110 @@ export function useChatSession({
         pageBudget: action.loadedPageBudget,
         preserveCollection: true,
       })
+    }
+
+    async function settleThreadCollectionAction(
+      action: ActiveThreadCollectionAction,
+      result:
+        | { ok: true; value: { eventEpoch: string; includedThroughCursor: number } }
+        | { ok: false; error: NyxThreadSafeError },
+    ) {
+      if (activeThreadCollectionAction !== action) return false
+
+      if (!result.ok) {
+        if (result.error.code === 'library_unavailable') {
+          failWholeLibrary(result.error)
+          return false
+        }
+
+        const replacementStarted = hydrationRef.current > action.hydration
+        const projectionChanged =
+          replacementStarted ||
+          eventEpoch !== action.epoch ||
+          projectionGeneration.current !== action.projectionGeneration
+        if (result.error.code === 'invalid_request' && !projectionChanged) {
+          activeThreadCollectionAction = null
+          replaceThreadPinAction(
+            releaseThreadPinAction(
+              failThreadPinAction(
+                threadPinActionRef.current,
+                { threadId: action.threadId, message: result.error.message },
+                false,
+              ),
+            ),
+          )
+          return false
+        }
+
+        if (!projectionChanged) {
+          replaceThreadPinAction(
+            failThreadPinAction(
+              threadPinActionRef.current,
+              { threadId: action.threadId, message: result.error.message },
+              true,
+            ),
+          )
+        }
+
+        const replacement = action.replacementHydration
+        if (
+          lastHydrationCommit &&
+          replacement &&
+          lastHydrationCommit.request > replacement.afterRequest &&
+          (!replacement.epoch || lastHydrationCommit.epoch === replacement.epoch)
+        ) {
+          finishThreadCollectionAction()
+          return false
+        }
+
+        action.phase = {
+          kind: 'waiting_hydration',
+          afterRequest: action.hydration,
+          ...(replacement?.epoch ? { epoch: replacement.epoch } : {}),
+        }
+        requestThreadCollectionReplacementHydration(action, replacement?.epoch ?? null)
+        return false
+      }
+
+      if (result.value.eventEpoch !== action.epoch) {
+        action.phase = {
+          kind: 'waiting_hydration',
+          afterRequest: action.hydration,
+          epoch: result.value.eventEpoch,
+        }
+        if (
+          lastHydrationCommit?.epoch === result.value.eventEpoch &&
+          lastHydrationCommit.request > action.hydration
+        ) {
+          finishThreadCollectionAction()
+        } else {
+          requestThreadCollectionReplacementHydration(action, result.value.eventEpoch)
+        }
+        return true
+      }
+
+      if (
+        result.value.includedThroughCursor > action.listCursor &&
+        lastCollectionCommit?.epoch === action.epoch &&
+        lastCollectionCommit.cursor >= result.value.includedThroughCursor
+      ) {
+        finishThreadCollectionAction()
+        return true
+      }
+
+      action.phase =
+        result.value.includedThroughCursor > action.listCursor
+          ? {
+              kind: 'waiting_collection',
+              completion: { kind: 'cursor', cursor: result.value.includedThroughCursor },
+            }
+          : {
+              kind: 'waiting_collection',
+              completion: { kind: 'read', serial: collectionReadSerial + 1 },
+            }
+      collectionDirty = true
+      if (!collectionInFlight) void runCollectionAction('refresh', true)
+      return true
     }
 
     type CollectionCandidateOutcome =
@@ -852,7 +969,7 @@ export function useChatSession({
     function failWholeLibrary(error: NyxThreadSafeError) {
       hydrated = false
       collectionDirty = false
-      finishPinAction()
+      finishThreadCollectionAction()
       dispatch({
         type: 'thread-library-hydration-failed',
         generation: projectionGeneration.current,
@@ -1009,7 +1126,7 @@ export function useChatSession({
                 )
               : commitThreadCollectionCandidate(outcome.candidate),
           )
-          completePinActionAfterCollection(readSerial, epoch, readCursor)
+          completeThreadCollectionActionAfterCollection(readSerial, epoch, readCursor)
           return missingSelection === 'accept'
         }
       } catch {
@@ -1182,12 +1299,15 @@ export function useChatSession({
 
     function handleThreadEvent(event: NyxThreadEvent) {
       if (event.type === 'threads:epoch-changed') {
-        const action = activePinAction
+        const action = activeThreadCollectionAction
         if (action && event.eventEpoch !== action.epoch) {
-          requestPinReplacementHydration(action, event.eventEpoch)
+          requestThreadCollectionReplacementHydration(action, event.eventEpoch)
           return
         }
-        if (satisfiedPinReplacementEpoch === event.eventEpoch && eventEpoch === event.eventEpoch) {
+        if (
+          satisfiedCollectionReplacementEpoch === event.eventEpoch &&
+          eventEpoch === event.eventEpoch
+        ) {
           return
         }
         void hydrateThreadLibrary()
@@ -1258,9 +1378,9 @@ export function useChatSession({
     })
     const unsubscribeThreads = threads.subscribe((event) => {
       if (!hydrated) {
-        const action = activePinAction
+        const action = activeThreadCollectionAction
         if (event.type === 'threads:epoch-changed' && action && event.eventEpoch !== action.epoch) {
-          requestPinReplacementHydration(action, event.eventEpoch)
+          requestThreadCollectionReplacementHydration(action, event.eventEpoch)
         }
         bufferedEvents.push({ kind: 'thread', event })
       } else handleThreadEvent(event)
@@ -1459,7 +1579,7 @@ export function useChatSession({
             stateRef.current.selectedThreadId === resolvedSummary?.id &&
             stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
-        completePinActionAfterHydration(request, eventEpoch)
+        completeThreadCollectionActionAfterHydration(request, eventEpoch)
         resumeEventPump()
       } catch {
         if (!disposed && request === hydrationRef.current) {
@@ -1492,7 +1612,7 @@ export function useChatSession({
         disposed ||
         !hydrated ||
         !eventEpoch ||
-        activePinAction ||
+        activeThreadCollectionAction ||
         threadPinActionRef.current.pending
       ) {
         return false
@@ -1512,118 +1632,83 @@ export function useChatSession({
         return false
       }
 
-      const action: ActivePinAction = {
+      const action: ActiveThreadCollectionAction = {
+        kind: 'pin',
+        threadId: input.threadId,
         hydration: hydrationRef.current,
         epoch: eventEpoch,
+        projectionGeneration: projectionGeneration.current,
         listCursor,
         loadedPageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
         replacementHydration: null,
         phase: { kind: 'dispatching' },
       }
-      activePinAction = action
+      activeThreadCollectionAction = action
       replaceThreadPinAction(beginThreadPinAction(threadPinActionRef.current))
 
       let result
       try {
         result = await threads.updatePin(input)
       } catch {
-        if (activePinAction === action) failWholeLibrary(threadLibraryBridgeError())
+        if (activeThreadCollectionAction === action) failWholeLibrary(threadLibraryBridgeError())
         return false
       }
-      if (activePinAction !== action) return false
-
-      if (!result.ok) {
-        if (result.error.code === 'library_unavailable') {
-          failWholeLibrary(result.error)
-          return false
-        }
-
-        const replacementStarted = hydrationRef.current > action.hydration
-        const projectionChanged = replacementStarted || eventEpoch !== action.epoch
-        if (result.error.code === 'invalid_request' && !projectionChanged) {
-          activePinAction = null
-          replaceThreadPinAction(
-            releaseThreadPinAction(
-              failThreadPinAction(
-                threadPinActionRef.current,
-                { threadId: input.threadId, message: result.error.message },
-                false,
-              ),
-            ),
-          )
-          return false
-        }
-
-        if (!projectionChanged) {
-          replaceThreadPinAction(
-            failThreadPinAction(
-              threadPinActionRef.current,
-              { threadId: input.threadId, message: result.error.message },
-              true,
-            ),
-          )
-        }
-
-        const replacement = action.replacementHydration
-        if (
-          lastHydrationCommit &&
-          replacement &&
-          lastHydrationCommit.request > replacement.afterRequest &&
-          (!replacement.epoch || lastHydrationCommit.epoch === replacement.epoch)
-        ) {
-          finishPinAction()
-          return false
-        }
-
-        action.phase = {
-          kind: 'waiting_hydration',
-          afterRequest: action.hydration,
-          ...(replacement?.epoch ? { epoch: replacement.epoch } : {}),
-        }
-        requestPinReplacementHydration(action, replacement?.epoch ?? null)
-        return false
-      }
-
-      if (result.value.eventEpoch !== action.epoch) {
-        action.phase = {
-          kind: 'waiting_hydration',
-          afterRequest: action.hydration,
-          epoch: result.value.eventEpoch,
-        }
-        if (
-          lastHydrationCommit?.epoch === result.value.eventEpoch &&
-          lastHydrationCommit.request > action.hydration
-        ) {
-          finishPinAction()
-        } else {
-          requestPinReplacementHydration(action, result.value.eventEpoch)
-        }
-        return true
-      }
-
+      return settleThreadCollectionAction(action, result)
+    }
+    renameThreadRef.current = async (input) => {
+      const title = validateNyxThreadTitle(input.title)
+      if (!title.ok) return title
       if (
-        result.value.includedThroughCursor > action.listCursor &&
-        lastCollectionCommit?.epoch === action.epoch &&
-        lastCollectionCommit.cursor >= result.value.includedThroughCursor
+        disposed ||
+        !hydrated ||
+        !eventEpoch ||
+        activeThreadCollectionAction ||
+        threadPinActionRef.current.pending
       ) {
-        finishPinAction()
-        return true
+        return { ok: false, message: 'Another thread action is still finishing.' }
       }
 
-      if (result.value.includedThroughCursor > action.listCursor) {
-        action.phase = {
-          kind: 'waiting_collection',
-          completion: { kind: 'cursor', cursor: result.value.includedThroughCursor },
-        }
-      } else {
-        action.phase = {
-          kind: 'waiting_collection',
-          completion: { kind: 'read', serial: collectionReadSerial + 1 },
-        }
+      const target =
+        threadCollectionRef.current.rows.find((row) => row.id === input.threadId) ??
+        (stateRef.current.threadSummary?.id === input.threadId
+          ? stateRef.current.threadSummary
+          : null)
+      if (
+        target?.availability !== 'available' ||
+        target.location === 'trash' ||
+        target.threadRevision !== input.expectedThreadRevision
+      ) {
+        return { ok: false, message: 'This thread changed. Reload it and try again.' }
       }
-      collectionDirty = true
-      if (!collectionInFlight) void runCollectionAction('refresh', true)
-      return true
+
+      const action: ActiveThreadCollectionAction = {
+        kind: 'rename',
+        threadId: input.threadId,
+        hydration: hydrationRef.current,
+        epoch: eventEpoch,
+        projectionGeneration: projectionGeneration.current,
+        listCursor,
+        loadedPageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
+        replacementHydration: null,
+        phase: { kind: 'dispatching' },
+      }
+      activeThreadCollectionAction = action
+      replaceThreadPinAction(beginThreadPinAction(threadPinActionRef.current))
+
+      let result
+      try {
+        result = await threads.rename({ ...input, title: title.title })
+      } catch {
+        if (activeThreadCollectionAction === action) failWholeLibrary(threadLibraryBridgeError())
+        return { ok: false, message: "Couldn't rename this thread." }
+      }
+      const accepted = await settleThreadCollectionAction(action, result)
+      return accepted
+        ? { ok: true }
+        : {
+            ok: false,
+            message: result.ok ? "Couldn't rename this thread." : result.error.message,
+          }
     }
     void hydrateThreadLibrary()
 
@@ -1633,6 +1718,7 @@ export function useChatSession({
       loadMoreThreadsRef.current = null
       retryThreadCollectionRef.current = null
       updateThreadPinRef.current = null
+      renameThreadRef.current = null
       unsubscribeChat()
       unsubscribeThreads()
     }
@@ -2376,6 +2462,12 @@ export function useChatSession({
     },
     updateThreadPin(input: NyxThreadUpdatePinInput) {
       return updateThreadPinRef.current?.(input) ?? Promise.resolve(false)
+    },
+    renameThread(input: NyxThreadRenameInput) {
+      return (
+        renameThreadRef.current?.(input) ??
+        Promise.resolve({ ok: false as const, message: 'Thread Library is not ready.' })
+      )
     },
   }
 }

@@ -46,6 +46,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ChatSidebar>> = 
     onNewThread: vi.fn(),
     onSelectThread: vi.fn(),
     onUpdateThreadPin: vi.fn(),
+    onRenameThread: vi.fn(async () => ({ ok: true as const })),
     onLoadMoreThreads: vi.fn(),
     onRetryThreadCollection: vi.fn(async () => true),
     onOpenConnectionsSettings: vi.fn(),
@@ -84,7 +85,7 @@ describe('ChatSidebar Thread Library', () => {
     expect(html.indexOf('Recent one')).toBeLessThan(html.indexOf('Recent two'))
   })
 
-  it('renders the six ordinary semantic actions and disables known boundaries', () => {
+  it('renders Rename plus the six ordinary Pin actions and disables known boundaries', () => {
     const pinnedTwo = thread('pinned-2', 'Pinned two', 2)
     const html = renderSidebar({
       collection: {
@@ -96,6 +97,7 @@ describe('ChatSidebar Thread Library', () => {
       },
     })
 
+    expect(html).toContain('>Rename</button>')
     expect(html).toContain('>Pin</button>')
     expect(html).toContain('>Unpin</button>')
     expect(html).toContain('>Move up</button>')
@@ -119,6 +121,7 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).toContain('Thread changed. Try again.')
     expect(html).toMatch(/disabled=""[^>]*>Pin<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Unpin<\/button>/u)
+    expect(html).toMatch(/disabled=""[^>]*>Rename<\/button>/u)
   })
 
   it('keeps controls on an available Current thread fallback and hides them for unavailable rows', () => {

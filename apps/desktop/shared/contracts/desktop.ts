@@ -31,6 +31,8 @@ import type {
   NyxThreadMarkSeenResult,
   NyxThreadMaterializeInput,
   NyxThreadMaterializeResult,
+  NyxThreadRenameInput,
+  NyxThreadRenameResult,
   NyxThreadResult,
   NyxThreadRetryOpenInput,
   NyxThreadSaveDraftInput,
@@ -57,6 +59,7 @@ export interface NyxDesktopThreadsApi {
   retryOpen(input: NyxThreadRetryOpenInput): Promise<NyxThreadResult<null>>
   markSeen(input: NyxThreadMarkSeenInput): Promise<NyxThreadResult<NyxThreadMarkSeenResult>>
   updatePin(input: NyxThreadUpdatePinInput): Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
+  rename(input: NyxThreadRenameInput): Promise<NyxThreadResult<NyxThreadRenameResult>>
   subscribe(listener: NyxThreadEventListener): () => void
 }
 

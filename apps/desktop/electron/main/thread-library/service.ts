@@ -16,6 +16,7 @@ import {
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
 import type { NyxThreadEvent } from '../../../shared/threads/events'
+import { validateNyxThreadTitle } from '../../../shared/threads/title'
 import type {
   NyxThreadAvailableSummary,
   NyxThreadActivity,
@@ -117,6 +118,13 @@ const updatePinInput = z
       context.addIssue({ code: 'custom', message: 'Pin action and expected position disagree.' })
     }
   })
+const renameInput = z
+  .object({
+    threadId: uuid,
+    title: z.string(),
+    expectedThreadRevision: z.number().int().positive(),
+  })
+  .strict()
 
 type UnclockedChatEvent = NyxChatEvent extends infer Event
   ? Event extends NyxChatEvent
@@ -499,6 +507,27 @@ export class ThreadLibraryService {
     if (!input.success || !this.active)
       return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
     const reply = await this.active.client.updatePin(input.data)
+    if (!reply.ok) return fail(this.publicError(reply.safeError.code))
+    return ok({
+      detail: this.toSharedDetail(reply.value),
+      eventEpoch: this.eventEpoch,
+      includedThroughCursor: this.boundaryCursor(reply.clock),
+    })
+  }
+
+  async rename(value: unknown) {
+    const input = renameInput.safeParse(value)
+    if (!input.success || !this.active) {
+      return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
+    }
+    const title = validateNyxThreadTitle(input.data.title)
+    if (!title.ok) return fail({ code: 'invalid_request', message: title.message })
+    const reply = await this.active.client.rename({
+      threadId: input.data.threadId,
+      title: title.title,
+      expectedThreadRevision: input.data.expectedThreadRevision,
+      renamedAt: (this.options.now?.() ?? new Date()).toISOString(),
+    })
     if (!reply.ok) return fail(this.publicError(reply.safeError.code))
     return ok({
       detail: this.toSharedDetail(reply.value),
@@ -934,6 +963,7 @@ export class ThreadLibraryService {
     if (code === 'not_found') return safeErrors.not_found
     if (
       code === 'stale_revision' ||
+      code === 'stale_thread_revision' ||
       code === 'stale_pin_position' ||
       code === 'already_exists' ||
       code === 'stale_cursor'

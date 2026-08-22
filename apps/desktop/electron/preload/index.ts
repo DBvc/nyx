@@ -58,6 +58,7 @@ const api: NyxDesktopApi = {
     retryOpen: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.retryOpen, input),
     markSeen: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.markSeen, input),
     updatePin: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.updatePin, input),
+    rename: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.rename, input),
     subscribe: (listener) => {
       const subscription = (_event: Electron.IpcRendererEvent, threadEvent: NyxThreadEvent) => {
         listener(threadEvent)

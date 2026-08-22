@@ -16,6 +16,7 @@ import { isMainThread, parentPort } from 'node:worker_threads'
 
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
+import { validateNyxThreadTitle } from '../../../shared/threads/title'
 import { interruptedThreadErrorMessage } from '../current-thread/schemas'
 import {
   deriveThreadDraftTitle,
@@ -1769,6 +1770,35 @@ function updatePin(database: DatabaseSync, input: ThreadLibraryOperationInput['u
   })
 }
 
+function renameThread(database: DatabaseSync, input: ThreadLibraryOperationInput['rename']) {
+  return runTransaction(database, () => {
+    const current = database.prepare('SELECT * FROM threads WHERE id = ?').get(input.threadId)
+    if (!current) throw new DatabaseOperationError('not_found')
+    if (current.location !== 'available' && current.location !== 'archived') {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (current.thread_revision !== input.expectedThreadRevision) {
+      throw new DatabaseOperationError('stale_thread_revision')
+    }
+    const title = validateNyxThreadTitle(input.title)
+    if (!title.ok || title.title !== input.title) {
+      throw new DatabaseOperationError('invalid_request')
+    }
+    if (current.title_source === 'manual' && current.title === title.title) {
+      return { mutated: false, value: queryThread(database, input.threadId)! }
+    }
+    const renamed = database
+      .prepare(
+        `UPDATE threads SET title = ?, title_source = 'manual',
+         fallback_local_second = NULL, fallback_ordinal = NULL,
+         thread_revision = thread_revision + 1, updated_at = ? WHERE id = ?`,
+      )
+      .run(title.title, input.renamedAt, input.threadId)
+    if (renamed.changes !== 1) throw new DatabaseOperationError('library_unavailable')
+    return { mutated: true, value: queryThread(database, input.threadId)! }
+  })
+}
+
 function discardEmptyShell(
   database: DatabaseSync,
   input: ThreadLibraryOperationInput['discardEmptyShell'],
@@ -2051,6 +2081,13 @@ export class ThreadLibraryDatabase {
         return pinState(database, request.input)
       case 'updatePin': {
         const result = updatePin(database, request.input)
+        if (result.mutated) {
+          this.acknowledgeMutation()
+        }
+        return result.value
+      }
+      case 'rename': {
+        const result = renameThread(database, request.input)
         if (result.mutated) {
           this.acknowledgeMutation()
         }

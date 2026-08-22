@@ -118,6 +118,21 @@ function harness() {
       observer?.(acknowledgement)
       return { id: 'update-pin', ok: true as const, ...acknowledgement }
     }),
+    rename: vi.fn(async (input: { title: string; renamedAt: string }) => {
+      const renamed = detail()
+      renamed.summary.title = input.title
+      renamed.summary.titleSource = 'manual'
+      renamed.summary.fallbackLocalSecond = null
+      renamed.summary.threadRevision = 2
+      renamed.summary.updatedAt = input.renamedAt
+      const acknowledgement = {
+        operation: 'rename' as const,
+        value: renamed,
+        clock: { generation, watermark: 1, actualMutation: true },
+      }
+      observer?.(acknowledgement)
+      return { id: 'rename', ok: true as const, ...acknowledgement }
+    }),
     recoverPending: vi.fn(async () => ({
       id: 'recover',
       ok: true as const,
@@ -267,6 +282,54 @@ describe('ThreadLibraryService', () => {
       ok: false,
       error: { code: 'conflict', message: 'This thread changed. Reload it and try again.' },
     })
+  })
+
+  it('validates, trims, and publishes one manual Rename', async () => {
+    const { client, events, service } = harness()
+    await service.initialize()
+
+    await expect(
+      service.rename({ threadId, title: '  Renamed thread  ', expectedThreadRevision: 1 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        detail: {
+          summary: {
+            title: 'Renamed thread',
+            threadRevision: 2,
+            lastUserActivityAt: createdAt,
+          },
+        },
+        eventEpoch: generation,
+        includedThroughCursor: 1,
+      },
+    })
+    expect(client.rename).toHaveBeenCalledWith({
+      threadId,
+      title: 'Renamed thread',
+      expectedThreadRevision: 1,
+      renamedAt: createdAt,
+    })
+    expect(events).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'threads:changed',
+        detail: expect.objectContaining({
+          summary: expect.objectContaining({ title: 'Renamed thread' }),
+        }),
+      }),
+    )
+
+    client.rename.mockClear()
+    await expect(
+      service.rename({ threadId, title: ' '.repeat(4), expectedThreadRevision: 1 }),
+    ).resolves.toEqual({ ok: false, error: { code: 'invalid_request', message: 'Enter a title.' } })
+    await expect(
+      service.rename({ threadId, title: '界'.repeat(49), expectedThreadRevision: 1 }),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'invalid_request', message: 'Use 48 characters or fewer.' },
+    })
+    expect(client.rename).not.toHaveBeenCalled()
   })
 
   it('keeps independent live activity for two Threads', async () => {

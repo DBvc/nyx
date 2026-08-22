@@ -239,6 +239,7 @@ export function ChatWorkspace() {
     loadMoreThreads,
     retryThreadCollection,
     updateThreadPin,
+    renameThread,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -395,6 +396,9 @@ export function ChatWorkspace() {
             onUpdateThreadPin={(threadId, action, expectedPinPosition) => {
               void updateThreadPin({ threadId, action, expectedPinPosition })
             }}
+            onRenameThread={(threadId, title, expectedThreadRevision) =>
+              renameThread({ threadId, title, expectedThreadRevision })
+            }
             onOpenConnectionsSettings={() => {
               settingsPopoverRef.current?.hidePopover()
               setActiveView('connections')

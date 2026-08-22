@@ -6,5 +6,6 @@ export const NYX_THREADS_IPC_CHANNELS = {
   retryOpen: 'nyx:threads:retry-open',
   markSeen: 'nyx:threads:mark-seen',
   updatePin: 'nyx:threads:update-pin',
+  rename: 'nyx:threads:rename',
   event: 'nyx:threads:event',
 } as const

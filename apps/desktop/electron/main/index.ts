@@ -194,7 +194,14 @@ function resolveMainServices() {
 type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'retrySettlement'>
 type ThreadLibraryController = Pick<
   ThreadLibraryService,
-  'listPage' | 'get' | 'materialize' | 'saveDraft' | 'retryOpen' | 'markSeen' | 'updatePin'
+  | 'listPage'
+  | 'get'
+  | 'materialize'
+  | 'saveDraft'
+  | 'retryOpen'
+  | 'markSeen'
+  | 'updatePin'
+  | 'rename'
 >
 
 export interface RegisterIpcHandlersOptions {
@@ -240,6 +247,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}) {
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.retryOpen, (_event, input) => threads.retryOpen(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.markSeen, (_event, input) => threads.markSeen(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.updatePin, (_event, input) => threads.updatePin(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.rename, (_event, input) => threads.rename(input))
 
   ipcMain.handle(NYX_PROVIDER_IPC_CHANNELS.status, () => providerStatusReader())
 

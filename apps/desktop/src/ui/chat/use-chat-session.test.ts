@@ -8,6 +8,8 @@ import type {
   NyxThreadListPage,
   NyxThreadListPageInput,
   NyxThreadMaterializeResult,
+  NyxThreadRenameInput,
+  NyxThreadRenameResult,
   NyxThreadResult,
   NyxThreadSaveDraftResult,
   NyxThreadUpdatePinInput,
@@ -297,6 +299,7 @@ function installBridge(options?: {
   saveDraftResult?: NyxThreadResult<NyxThreadSaveDraftResult>
   retryOpenResult?: NyxThreadResult<null>
   updatePin?: (input: NyxThreadUpdatePinInput) => Promise<NyxThreadResult<NyxThreadUpdatePinResult>>
+  rename?: (input: NyxThreadRenameInput) => Promise<NyxThreadResult<NyxThreadRenameResult>>
   selectedId?: string | null
 }) {
   let chatListener: ((event: NyxChatEvent) => void) | null = null
@@ -366,6 +369,27 @@ function installBridge(options?: {
         },
       })),
   )
+  const rename = vi.fn(
+    options?.rename ??
+      (async (input: NyxThreadRenameInput) => {
+        const current = detail('', input.threadId)
+        return {
+          ok: true as const,
+          value: {
+            detail: {
+              ...current,
+              summary: {
+                ...current.summary,
+                title: input.title,
+                threadRevision: input.expectedThreadRevision + 1,
+              },
+            },
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 0,
+          },
+        }
+      }),
+  )
   let storedSelectedId = options?.selectedId ?? null
   const localStorage = {
     getItem: vi.fn(() => storedSelectedId),
@@ -401,6 +425,7 @@ function installBridge(options?: {
         retryOpen,
         markSeen: vi.fn(),
         updatePin,
+        rename,
         subscribe(listener: (event: NyxThreadEvent) => void) {
           threadListener = listener
           return () => {
@@ -422,6 +447,7 @@ function installBridge(options?: {
     get,
     retryOpen,
     updatePin,
+    rename,
     localStorage,
     emitChat(event: NyxChatEvent) {
       chatListener?.(event)
@@ -2486,6 +2512,103 @@ describe('PIN1 Renderer controls', () => {
     await vi.waitFor(() => expect(render().threadPinAction).toEqual(initialThreadPinActionState))
     expect(render().threadSummaries).toEqual([replacement.summary])
     expect(bridge.listPage).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Rename Renderer controls', () => {
+  it('shares the collection-action gate with Pin and waits for canonical refresh', async () => {
+    const recent = detail('', 'thread-a')
+    const renamed: NyxThreadDetail = {
+      ...recent,
+      summary: {
+        ...recent.summary,
+        title: 'Renamed thread',
+        threadRevision: recent.summary.threadRevision + 1,
+      },
+    }
+    const rename = deferred<NyxThreadResult<NyxThreadRenameResult>>()
+    const refresh = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let listCalls = 0
+    const bridge = installBridge({
+      list: async () =>
+        ++listCalls === 1 ? collectionPageResult([recent.summary], null) : refresh.promise,
+      get: async () => ({
+        ok: true,
+        value: { detail: recent, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+      }),
+      rename: () => rename.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    const renaming = render().renameThread({
+      threadId: recent.summary.id,
+      title: '  Renamed thread  ',
+      expectedThreadRevision: recent.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.rename).toHaveBeenCalledOnce())
+    expect(bridge.rename).toHaveBeenCalledWith({
+      threadId: recent.summary.id,
+      title: 'Renamed thread',
+      expectedThreadRevision: recent.summary.threadRevision,
+    })
+    expect(render().threadPinAction.pending).toBe(true)
+    expect(render().threadSummaries[0]?.title).toBe('Canonical title')
+
+    await expect(
+      render().updateThreadPin({
+        threadId: recent.summary.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    expect(bridge.updatePin).not.toHaveBeenCalled()
+
+    bridge.emitThread({
+      type: 'threads:changed',
+      detail: renamed,
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+    })
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    rename.resolve({
+      ok: true,
+      value: {
+        detail: renamed,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 1,
+      },
+    })
+    await expect(renaming).resolves.toEqual({ ok: true })
+    expect(render().threadPinAction.pending).toBe(true)
+    expect(render().threadSummaries[0]?.title).toBe('Canonical title')
+
+    refresh.resolve(collectionPageResult([renamed.summary], null, 1))
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadSummaries[0]?.title).toBe('Renamed thread')
+  })
+
+  it('rejects invalid titles before crossing the bridge', async () => {
+    const recent = detail('', 'thread-a')
+    const bridge = installBridge(selectedSnapshot(recent))
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
+
+    await expect(
+      render().renameThread({
+        threadId: recent.summary.id,
+        title: '   ',
+        expectedThreadRevision: recent.summary.threadRevision,
+      }),
+    ).resolves.toEqual({ ok: false, message: 'Enter a title.' })
+    await expect(
+      render().renameThread({
+        threadId: recent.summary.id,
+        title: '界'.repeat(49),
+        expectedThreadRevision: recent.summary.threadRevision,
+      }),
+    ).resolves.toEqual({ ok: false, message: 'Use 48 characters or fewer.' })
+    expect(bridge.rename).not.toHaveBeenCalled()
   })
 })
 

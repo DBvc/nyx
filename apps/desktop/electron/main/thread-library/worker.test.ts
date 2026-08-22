@@ -327,6 +327,30 @@ describe('ThreadLibraryDatabase', () => {
         input: { threadId: uuid(19), action: 'move_top', expectedPinPosition: null },
       }),
     ).toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'rename',
+        input: {
+          threadId: uuid(19),
+          title: ' padded ',
+          expectedThreadRevision: 1,
+          renamedAt: timestamp,
+        },
+      }),
+    ).toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'rename',
+        input: {
+          threadId: uuid(19),
+          title: '界'.repeat(49),
+          expectedThreadRevision: 1,
+          renamedAt: timestamp,
+        },
+      }),
+    ).toThrow()
   })
 
   it('materializes the complete initial Draft and preserves its exact canonical state on restart', async () => {
@@ -1125,6 +1149,85 @@ describe('ThreadLibraryDatabase', () => {
 
     expect(() => execute(owner, 'materialize', input)).toThrow('This thread is unavailable.')
     expect(execute(owner, 'readThread', { threadId: input.threadId })).toBeNull()
+    owner.close()
+  })
+
+  it('renames Available and Archived Threads without changing activity order', async () => {
+    const { owner } = await createOwner()
+    const first = materializeInput(91)
+    const second = materializeInput(92)
+    const before = execute(owner, 'materialize', first)
+    execute(owner, 'materialize', second)
+
+    const renamed = execute(owner, 'rename', {
+      threadId: first.threadId,
+      title: 'Manual title',
+      expectedThreadRevision: 1,
+      renamedAt: at(100),
+    })
+    expect(renamed.summary).toMatchObject({
+      title: 'Manual title',
+      titleSource: 'manual',
+      fallbackLocalSecond: null,
+      fallbackOrdinal: null,
+      threadRevision: 2,
+      lastUserActivityAt: before.summary.lastUserActivityAt,
+      updatedAt: at(100),
+    })
+
+    const beforeNoop = owner.acknowledgementClock()
+    expect(
+      execute(owner, 'rename', {
+        threadId: first.threadId,
+        title: 'Manual title',
+        expectedThreadRevision: 2,
+        renamedAt: at(101),
+      }).summary.updatedAt,
+    ).toBe(at(100))
+    expect(owner.acknowledgementClock()).toEqual({ ...beforeNoop, actualMutation: false })
+
+    expect(
+      execute(owner, 'rename', {
+        threadId: second.threadId,
+        title: 'Manual title',
+        expectedThreadRevision: 1,
+        renamedAt: at(102),
+      }).summary.title,
+    ).toBe('Manual title')
+    expect(() =>
+      execute(owner, 'rename', {
+        threadId: first.threadId,
+        title: 'Stale title',
+        expectedThreadRevision: 1,
+        renamedAt: at(103),
+      }),
+    ).toThrow('This thread changed. Reload it and try again.')
+
+    rawDatabase(owner)
+      .prepare("UPDATE threads SET location = 'archived' WHERE id = ?")
+      .run(first.threadId)
+    expect(
+      execute(owner, 'rename', {
+        threadId: first.threadId,
+        title: 'Archived title',
+        expectedThreadRevision: 2,
+        renamedAt: at(104),
+      }).summary,
+    ).toMatchObject({ location: 'archived', title: 'Archived title', threadRevision: 3 })
+
+    rawDatabase(owner)
+      .prepare(
+        "UPDATE threads SET location = 'trash', trashed_from_location = 'archived' WHERE id = ?",
+      )
+      .run(first.threadId)
+    expect(() =>
+      execute(owner, 'rename', {
+        threadId: first.threadId,
+        title: 'Trash title',
+        expectedThreadRevision: 3,
+        renamedAt: at(105),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
     owner.close()
   })
 

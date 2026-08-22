@@ -10,6 +10,7 @@ import {
 } from '../current-thread/schemas'
 import { nyxChatDocumentLimits } from '../../../shared/chat/document-file'
 import { nyxChatImageLimits } from '../../../shared/chat/image-file'
+import { validateNyxThreadTitle } from '../../../shared/threads/title'
 
 const nonEmpty = z.string().min(1)
 const nonBlank = z.string().refine((value) => value.trim().length > 0)
@@ -432,6 +433,20 @@ const operationInputSchemas = {
     .strict(),
   pinState: z.object({ threadId: uuid }).strict(),
   updatePin: updatePinInputSchema,
+  rename: z
+    .object({
+      threadId: uuid,
+      title: z.string(),
+      expectedThreadRevision: z.number().int().positive(),
+      renamedAt: timestamp,
+    })
+    .strict()
+    .superRefine((input, context) => {
+      const result = validateNyxThreadTitle(input.title)
+      if (!result.ok || result.title !== input.title) {
+        context.addIssue({ code: 'custom', message: 'Thread title is invalid.' })
+      }
+    }),
   discardEmptyShell: z
     .object({
       threadId: uuid,
@@ -515,6 +530,7 @@ export const threadLibrarySafeErrorMessages = {
   stale_cursor: 'The thread list changed. Reload it and try again.',
   stale_revision: 'This draft changed. Reload it and try again.',
   stale_pin_position: 'This Pin position changed. Reload it and try again.',
+  stale_thread_revision: 'This thread changed. Reload it and try again.',
   not_pending: 'This turn is no longer pending.',
 } as const
 
@@ -699,6 +715,7 @@ const operationValueSchemas = {
       }
     }),
   updatePin: threadDetailSchema,
+  rename: threadDetailSchema,
   discardEmptyShell: z.object({ discarded: z.boolean() }).strict(),
 } as const
 

@@ -243,6 +243,20 @@ function pinStateMatches(
   return state.pinnedCount === expected.pinnedCount && state.pinPosition === expected.pinPosition
 }
 
+function renameMatches(
+  input: ThreadLibraryOperationInput['rename'],
+  detail: ThreadLibraryThreadDetail,
+) {
+  return (
+    detail.summary.title === input.title &&
+    detail.summary.titleSource === 'manual' &&
+    detail.summary.fallbackLocalSecond === null &&
+    detail.summary.fallbackOrdinal === null &&
+    (detail.summary.threadRevision === input.expectedThreadRevision ||
+      detail.summary.threadRevision === input.expectedThreadRevision + 1)
+  )
+}
+
 export class ThreadLibraryClient {
   private readonly databasePath: string
   private generation = 0
@@ -250,7 +264,7 @@ export class ThreadLibraryClient {
   private pending = new Map<string, PendingRequest>()
   private replacement: { generation: number; promise: Promise<boolean> } | null = null
   private requestCounter = 0
-  private pinMutationBarrier: Promise<void> = Promise.resolve()
+  private collectionMutationBarrier: Promise<void> = Promise.resolve()
   private worker: Worker | null = null
   private verifiedClock: Omit<ThreadLibraryAcknowledgementClock, 'actualMutation'> | null = null
   private observeAcknowledgement:
@@ -324,11 +338,36 @@ export class ThreadLibraryClient {
   }
 
   discardEmptyShell(input: ThreadLibraryOperationInput['discardEmptyShell']) {
-    return this.serializePinMutation(() => this.discardEmptyShellNow(input))
+    return this.serializeCollectionMutation(() => this.discardEmptyShellNow(input))
   }
 
   updatePin(input: ThreadLibraryOperationInput['updatePin']) {
-    return this.serializePinMutation(() => this.updatePinNow(input))
+    return this.serializeCollectionMutation(() => this.updatePinNow(input))
+  }
+
+  rename(input: ThreadLibraryOperationInput['rename']) {
+    return this.serializeCollectionMutation(() =>
+      this.mutateThread('rename', input, (id, canonical) => {
+        if (canonical === undefined) {
+          return failure(id, 'library_unavailable', 'outcome_unknown')
+        }
+        if (canonical === null) {
+          return failure(id, 'not_found', 'definitely_not_committed')
+        }
+        if (renameMatches(input, canonical)) {
+          return { id, ok: true, value: canonical, clock: this.requiredClock() }
+        }
+        return failure(
+          id,
+          canonical.summary.threadRevision === input.expectedThreadRevision
+            ? 'stale_thread_revision'
+            : 'library_unavailable',
+          canonical.summary.threadRevision === input.expectedThreadRevision
+            ? 'definitely_not_committed'
+            : 'outcome_unknown',
+        )
+      }),
+    )
   }
 
   private async updatePinNow(input: ThreadLibraryOperationInput['updatePin']) {
@@ -476,9 +515,9 @@ export class ThreadLibraryClient {
     } as ThreadLibraryReply<'discardEmptyShell'>
   }
 
-  private serializePinMutation<Value>(operation: () => Promise<Value>) {
-    const result = this.pinMutationBarrier.then(operation, operation)
-    this.pinMutationBarrier = result.then(
+  private serializeCollectionMutation<Value>(operation: () => Promise<Value>) {
+    const result = this.collectionMutationBarrier.then(operation, operation)
+    this.collectionMutationBarrier = result.then(
       () => undefined,
       () => undefined,
     )

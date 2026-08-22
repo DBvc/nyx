@@ -113,6 +113,12 @@ const settleInput: ThreadLibraryOperationInput['settleTurn'] = {
   providerStateRef: null,
   settledAt: '2026-08-12T00:00:02.000Z',
 }
+const renameInput: ThreadLibraryOperationInput['rename'] = {
+  threadId,
+  title: 'Renamed thread',
+  expectedThreadRevision: 1,
+  renamedAt: '2026-08-12T00:00:03.000Z',
+}
 
 function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = materializeInput) {
   return {
@@ -160,6 +166,22 @@ function materializedDetail(input: ThreadLibraryOperationInput['materialize'] = 
 function pinDetail(pinPosition: number | null, targetThreadId = threadId) {
   const detail = materializedDetail({ ...materializeInput, threadId: targetThreadId })
   return { ...detail, summary: { ...detail.summary, pinPosition } }
+}
+
+function renamedDetail(revision = 2) {
+  const detail = materializedDetail()
+  return {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      title: renameInput.title,
+      titleSource: 'manual' as const,
+      fallbackLocalSecond: null,
+      fallbackOrdinal: null,
+      threadRevision: revision,
+      updatedAt: renameInput.renamedAt,
+    },
+  }
 }
 
 function genericMaterializedDetail(
@@ -488,6 +510,61 @@ describe('ThreadLibraryClient', () => {
     await expect(boundary).resolves.toMatchObject({
       ok: true,
       clock: { watermark: 1, actualMutation: false },
+    })
+  })
+
+  it('serializes Rename with Pin and reconciles an unknown result with one read', async () => {
+    const { client, instance: first } = await openClient()
+    const updating = client.updatePin({ threadId, action: 'pin', expectedPinPosition: null })
+    const preflight = await waitForPost(first, 1)
+    const renaming = client.rename(renameInput)
+    await Promise.resolve()
+    expect(posts('rename')).toHaveLength(0)
+
+    succeed(first, preflight, {
+      pinnedCount: 0,
+      pinPosition: null,
+      detail: pinDetail(null),
+    })
+    const pin = await waitForPost(first, 2)
+    succeed(first, pin, pinDetail(1), true)
+    await updating
+
+    const rename = await waitForPost(first, 3)
+    expect(rename).toMatchObject({ operation: 'rename', input: renameInput })
+    fail(first, rename, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    expect(canonical.operation).toBe('readThread')
+    succeed(replacement, canonical, renamedDetail())
+
+    await expect(renaming).resolves.toMatchObject({
+      ok: true,
+      value: { summary: { title: renameInput.title, threadRevision: 2 } },
+    })
+    expect(posts('rename')).toHaveLength(1)
+    expect(replacement.posts.map((request) => request.operation)).toEqual(['open', 'readThread'])
+    expect(workerMock.maxActive).toBe(1)
+  })
+
+  it('accepts a canonical manual Rename no-op at the expected revision', async () => {
+    const { client, instance: first } = await openClient()
+    const renaming = client.rename(renameInput)
+    const rename = await waitForPost(first, 1)
+    fail(first, rename, 'library_unavailable', 'outcome_unknown')
+
+    const replacement = await waitForWorker(1)
+    const opening = await waitForPost(replacement, 0)
+    succeed(replacement, opening, { schemaVersion: 1 })
+    const canonical = await waitForPost(replacement, 1)
+    succeed(replacement, canonical, renamedDetail(1))
+
+    await expect(renaming).resolves.toMatchObject({
+      ok: true,
+      value: { summary: { threadRevision: 1 } },
     })
   })
 

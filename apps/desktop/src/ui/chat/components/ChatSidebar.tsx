@@ -1,9 +1,10 @@
 import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { RefObject } from 'react'
 
 import type { NyxChatRunStatus } from '../../../../shared/chat/types'
 import type { NyxThreadPinAction, NyxThreadSummary } from '../../../../shared/threads/types'
+import { validateNyxThreadTitle } from '../../../../shared/threads/title'
 import {
   threadPinBoundaries,
   type ThreadCollectionState,
@@ -30,6 +31,11 @@ interface ChatSidebarProps {
     action: NyxThreadPinAction,
     expectedPinPosition: number | null,
   ) => void
+  onRenameThread: (
+    threadId: string,
+    title: string,
+    expectedThreadRevision: number,
+  ) => Promise<{ ok: true } | { ok: false; message: string }>
   onLoadMoreThreads: () => void
   onRetryThreadCollection: () => Promise<boolean>
   onOpenConnectionsSettings: () => void
@@ -70,11 +76,17 @@ export function ChatSidebar({
   onNewThread,
   onSelectThread,
   onUpdateThreadPin,
+  onRenameThread,
   onLoadMoreThreads,
   onRetryThreadCollection,
   onOpenConnectionsSettings,
   settingsPopoverRef,
 }: ChatSidebarProps) {
+  const [rename, setRename] = useState<{
+    threadId: string
+    value: string
+    error: string | null
+  } | null>(null)
   const canonicalThreads = collection.rows
   const pinnedThreads = useMemo(
     () => canonicalThreads.filter((thread) => thread.pinPosition !== null),
@@ -111,6 +123,28 @@ export function ChatSidebar({
       options.statusOverride === 'saving_failed' || activity?.status === 'saving_failed'
     const pinError = pinAction.error?.threadId === thread.id ? pinAction.error.message : null
     const boundaries = threadPinBoundaries(collection, thread)
+    const renameDraft = rename?.threadId === thread.id ? rename : null
+
+    function beginRename() {
+      if (thread.availability !== 'available' || thread.location === 'trash' || pinAction.pending) {
+        return
+      }
+      setRename({ threadId: thread.id, value: thread.title, error: null })
+    }
+
+    async function submitRename() {
+      if (!renameDraft || thread.availability !== 'available') return
+      const validated = validateNyxThreadTitle(renameDraft.value)
+      if (!validated.ok) {
+        setRename({ ...renameDraft, error: validated.message })
+        return
+      }
+      const result = await onRenameThread(thread.id, validated.title, thread.threadRevision)
+      setRename((current) => {
+        if (current?.threadId !== thread.id) return current
+        return result.ok ? null : { ...current, error: result.message }
+      })
+    }
 
     function renderPinAction(label: string, action: NyxThreadPinAction, boundaryDisabled = false) {
       return (
@@ -127,30 +161,77 @@ export function ChatSidebar({
 
     return (
       <div className='mb-0.5' key={thread.id}>
-        <button
-          aria-current={selected ? 'page' : undefined}
-          className={`w-full rounded-lg px-3 py-2.5 text-left ${
-            selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
-          }`}
-          onClick={() => onSelectThread(thread.id)}
-          type='button'
-        >
-          <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
-            {thread.title}
-          </span>
-          {subtitle ? (
-            <span
-              className={`mt-1 block min-w-0 truncate text-[12px] ${
-                savingFailed ? 'text-nyx-danger' : 'text-nyx-muted'
-              }`}
-            >
-              {subtitle}
+        {renameDraft ? (
+          <div className={`rounded-lg px-3 py-2 ${selected ? 'bg-nyx-canvas' : ''}`}>
+            <input
+              aria-describedby={renameDraft.error ? `thread-rename-error-${thread.id}` : undefined}
+              aria-label={`Rename ${thread.title}`}
+              autoFocus
+              className='w-full rounded border border-nyx-line-strong bg-nyx-panel px-2 py-1 text-[13px] text-nyx-ink outline-none focus:border-nyx-accent'
+              disabled={pinAction.pending}
+              onChange={(event) =>
+                setRename({ threadId: thread.id, value: event.currentTarget.value, error: null })
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setRename(null)
+                } else if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void submitRename()
+                }
+              }}
+              value={renameDraft.value}
+            />
+            {renameDraft.error ? (
+              <p
+                className='mt-1 text-[11px] text-nyx-danger'
+                id={`thread-rename-error-${thread.id}`}
+              >
+                {renameDraft.error}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <button
+            aria-current={selected ? 'page' : undefined}
+            className={`w-full rounded-lg px-3 py-2.5 text-left ${
+              selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
+            }`}
+            onClick={() => onSelectThread(thread.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'F2') {
+                event.preventDefault()
+                beginRename()
+              }
+            }}
+            type='button'
+          >
+            <span className='block min-w-0 truncate text-[13px] font-medium text-nyx-ink'>
+              {thread.title}
             </span>
-          ) : null}
-        </button>
+            {subtitle ? (
+              <span
+                className={`mt-1 block min-w-0 truncate text-[12px] ${
+                  savingFailed ? 'text-nyx-danger' : 'text-nyx-muted'
+                }`}
+              >
+                {subtitle}
+              </span>
+            ) : null}
+          </button>
+        )}
         {thread.availability === 'available' ? (
           <div className='px-2 pb-1'>
             <div className='flex flex-wrap gap-0.5'>
+              <button
+                className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
+                disabled={pinAction.pending || thread.location === 'trash'}
+                onClick={beginRename}
+                type='button'
+              >
+                Rename
+              </button>
               {thread.pinPosition === null ? (
                 renderPinAction('Pin', 'pin')
               ) : (
