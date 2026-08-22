@@ -240,6 +240,37 @@ barrier or Renderer action token, mutation replay, direct response-owned
 projection update, Trash/Restore behavior, custom focus system, or
 Runtime/Provider/Responses/attachment change.
 
+## Trash / Restore — Reversible Trash collection
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-TRASH-SCOPE-20260822-01`, committed at `0b9b9ab` by
+  the user's explicit bounded lifecycle authorization.
+- Product commit: `d29249efcab7e7f0aea595b4a5cbf4366d9accf5`.
+- The exact 15-file diff from scope-lock head
+  `0b9b9ab105a43d4ef032e24a403fd57194585078` through product head had SHA-256
+  `7813cb105d067d6b48556247406c98cde046513eef73e3c551a6dd2f6f2f3e40`.
+- Worker transactions save the Available or Archived origin, save and close an
+  Available Pin position, restore it at the current bounded Pin edge, preserve
+  user-activity ordering and clear Trash metadata atomically on Restore.
+- Main extends the existing semantic location action with Trash/Restore,
+  rejects active or failed-settlement Trash, keeps Trash Draft/Send/Retry
+  read-only and never replays an unknown write.
+- Renderer adds one Trash collection mode to the existing bounded reader and
+  shared action token. Selected Trash saves an editable Draft first; Restore
+  obtains its Available or Archived destination from canonical Main detail.
+  Trash rows expose Restore only and have no Rename, Pin or Composer.
+- Required checks passed on 2026-08-22: both desktop TypeScript checks, lint,
+  format check, all 53 desktop test files (`694` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+Trash/Restore adds no schema/index, second database owner, second mutation
+barrier or Renderer action token, another bridge method, mutation replay,
+Permanent delete, Empty Trash, Undo, Search, Stop-and-move, custom focus system,
+or Runtime/Provider/Responses/attachment change. The authorized Rename,
+Archive/Unarchive and Trash/Restore sequence is complete.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

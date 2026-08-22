@@ -63,8 +63,10 @@ Rename completed at product head `2b4c393` under contract
 `NYX-MTL-RENAME-SCOPE-20260822-01`; its scope lock entered HEAD at `cf74d4b`.
 Archive/Unarchive completed at product head `7e661d0` under contract
 `NYX-MTL-ARCHIVE-SCOPE-20260822-01`; its scope lock entered HEAD at `bc79920`.
-The Trash/Restore slice below is now executable from that verified product
-head.
+Trash/Restore completed at product head `d29249e` under contract
+`NYX-MTL-TRASH-SCOPE-20260822-01`; its scope lock entered HEAD at `0b9b9ab`.
+The authorized reversible lifecycle sequence is complete and grants no further
+product slice.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -241,9 +243,12 @@ reimplementation.
 
 Contract id: `NYX-MTL-TRASH-SCOPE-20260822-01`.
 
-Status: executable by the user's bounded lifecycle authorization on 2026-08-22.
-Baseline: `7e661d0064296dff70298bee2b2cb1c846299b87`, containing completed Rename and
-Archive/Unarchive.
+Status: complete at product head `d29249efcab7e7f0aea595b4a5cbf4366d9accf5`
+by the user's bounded lifecycle authorization on 2026-08-22. Baseline:
+`7e661d0064296dff70298bee2b2cb1c846299b87`, containing completed Rename and
+Archive/Unarchive. The exact 15-file product diff from scope-lock head
+`0b9b9ab105a43d4ef032e24a403fd57194585078` through the product head had
+SHA-256 `7813cb105d067d6b48556247406c98cde046513eef73e3c551a6dd2f6f2f3e40`.
 
 This slice implements only reversible Trash and Restore. Trash accepts an
 Available or Archived Thread, records `trashed_from_location`, records the
