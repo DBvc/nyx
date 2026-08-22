@@ -677,6 +677,7 @@ export function useChatSession({
     let collectionReadSerial = 0
     let lastCollectionCommit: { epoch: string; cursor: number } | null = null
     let lastHydrationCommit: { request: number; epoch: string } | null = null
+    let satisfiedPinReplacementEpoch: string | null = null
 
     type ActivePinActionPhase =
       | { kind: 'dispatching' }
@@ -690,6 +691,8 @@ export function useChatSession({
       hydration: number
       epoch: string
       listCursor: number
+      loadedPageBudget: number
+      replacementHydration: { epoch: string | null; afterRequest: number } | null
       phase: ActivePinActionPhase
     }
 
@@ -721,12 +724,49 @@ export function useChatSession({
       lastHydrationCommit = { request, epoch }
       const action = activePinAction
       if (
+        action?.replacementHydration &&
+        request > action.replacementHydration.afterRequest &&
+        epoch !== action.epoch &&
+        (!action.replacementHydration.epoch || action.replacementHydration.epoch === epoch)
+      ) {
+        satisfiedPinReplacementEpoch = epoch
+      }
+      if (
         action?.phase.kind === 'waiting_hydration' &&
         request > action.phase.afterRequest &&
         (!action.phase.epoch || action.phase.epoch === epoch)
       ) {
         finishPinAction()
       }
+    }
+
+    function requestPinReplacementHydration(action: ActivePinAction, epoch: string | null = null) {
+      if (activePinAction !== action) return
+      const replacement = action.replacementHydration
+      if (replacement) {
+        if (epoch && !replacement.epoch) {
+          replacement.epoch = epoch
+          if (action.phase.kind === 'waiting_hydration' && !action.phase.epoch) {
+            action.phase = { ...action.phase, epoch }
+          }
+        }
+        if (!epoch || !replacement.epoch || replacement.epoch === epoch) {
+          if (lastHydrationCommit && lastHydrationCommit.request > replacement.afterRequest) {
+            if (!replacement.epoch || lastHydrationCommit.epoch === replacement.epoch) return
+          } else if (hydrationRef.current > replacement.afterRequest) {
+            return
+          }
+        }
+      }
+
+      action.replacementHydration = {
+        epoch: epoch ?? replacement?.epoch ?? null,
+        afterRequest: hydrationRef.current,
+      }
+      void hydrateThreadLibrary({
+        pageBudget: action.loadedPageBudget,
+        preserveCollection: true,
+      })
     }
 
     type CollectionCandidateOutcome =
@@ -1142,6 +1182,14 @@ export function useChatSession({
 
     function handleThreadEvent(event: NyxThreadEvent) {
       if (event.type === 'threads:epoch-changed') {
+        const action = activePinAction
+        if (action && event.eventEpoch !== action.epoch) {
+          requestPinReplacementHydration(action, event.eventEpoch)
+          return
+        }
+        if (satisfiedPinReplacementEpoch === event.eventEpoch && eventEpoch === event.eventEpoch) {
+          return
+        }
         void hydrateThreadLibrary()
         return
       }
@@ -1209,8 +1257,13 @@ export function useChatSession({
       else handleChatEvent(event)
     })
     const unsubscribeThreads = threads.subscribe((event) => {
-      if (!hydrated) bufferedEvents.push({ kind: 'thread', event })
-      else handleThreadEvent(event)
+      if (!hydrated) {
+        const action = activePinAction
+        if (event.type === 'threads:epoch-changed' && action && event.eventEpoch !== action.epoch) {
+          requestPinReplacementHydration(action, event.eventEpoch)
+        }
+        bufferedEvents.push({ kind: 'thread', event })
+      } else handleThreadEvent(event)
     })
 
     function resumeEventPump() {
@@ -1406,8 +1459,8 @@ export function useChatSession({
             stateRef.current.selectedThreadId === resolvedSummary?.id &&
             stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
-        resumeEventPump()
         completePinActionAfterHydration(request, eventEpoch)
+        resumeEventPump()
       } catch {
         if (!disposed && request === hydrationRef.current) {
           failWholeLibrary(threadLibraryBridgeError())
@@ -1463,6 +1516,8 @@ export function useChatSession({
         hydration: hydrationRef.current,
         epoch: eventEpoch,
         listCursor,
+        loadedPageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
+        replacementHydration: null,
         phase: { kind: 'dispatching' },
       }
       activePinAction = action
@@ -1509,18 +1564,23 @@ export function useChatSession({
           )
         }
 
-        if (lastHydrationCommit && lastHydrationCommit.request > action.hydration) {
+        const replacement = action.replacementHydration
+        if (
+          lastHydrationCommit &&
+          replacement &&
+          lastHydrationCommit.request > replacement.afterRequest &&
+          (!replacement.epoch || lastHydrationCommit.epoch === replacement.epoch)
+        ) {
           finishPinAction()
           return false
         }
 
-        action.phase = { kind: 'waiting_hydration', afterRequest: action.hydration }
-        if (replacementStarted) return false
-
-        void hydrateThreadLibrary({
-          pageBudget: Math.max(1, threadCollectionRef.current.loadedPageCount),
-          preserveCollection: true,
-        })
+        action.phase = {
+          kind: 'waiting_hydration',
+          afterRequest: action.hydration,
+          ...(replacement?.epoch ? { epoch: replacement.epoch } : {}),
+        }
+        requestPinReplacementHydration(action, replacement?.epoch ?? null)
         return false
       }
 
@@ -1535,6 +1595,8 @@ export function useChatSession({
           lastHydrationCommit.request > action.hydration
         ) {
           finishPinAction()
+        } else {
+          requestPinReplacementHydration(action, result.value.eventEpoch)
         }
         return true
       }

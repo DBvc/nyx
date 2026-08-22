@@ -2163,15 +2163,15 @@ describe('PIN1 Renderer controls', () => {
     expect(render().threadSummaries).toEqual([recent.summary])
   })
 
-  it('waits for replacement hydration when the response arrives before the epoch event', async () => {
+  it('starts replacement hydration from the response and coalesces the later epoch event', async () => {
     const recent = detail('', 'thread-a')
     const pinned = { ...recent, summary: { ...recent.summary, pinPosition: 1 } }
+    const replacementPage = deferred<NyxThreadResult<NyxThreadListPage>>()
     let epoch = 'epoch-1'
+    let listCalls = 0
     const bridge = installBridge({
       list: async () =>
-        collectionPageResult([epoch === 'epoch-1' ? recent.summary : pinned.summary], null, 0, {
-          eventEpoch: epoch,
-        }),
+        ++listCalls === 1 ? collectionPageResult([recent.summary], null) : replacementPage.promise,
       get: async () => ({
         ok: true,
         value: {
@@ -2180,10 +2180,13 @@ describe('PIN1 Renderer controls', () => {
           includedThroughCursor: 0,
         },
       }),
-      updatePin: async () => ({
-        ok: true,
-        value: { detail: pinned, eventEpoch: 'epoch-2', includedThroughCursor: 0 },
-      }),
+      updatePin: async () => {
+        epoch = 'epoch-2'
+        return {
+          ok: true,
+          value: { detail: pinned, eventEpoch: 'epoch-2', includedThroughCursor: 0 },
+        }
+      },
     })
     render(true)
     await vi.waitFor(() => expect(render().threadSummaries).toEqual([recent.summary]))
@@ -2196,17 +2199,173 @@ describe('PIN1 Renderer controls', () => {
       }),
     ).resolves.toBe(true)
     expect(render().threadPinAction.pending).toBe(true)
-    expect(bridge.listPage).toHaveBeenCalledOnce()
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
 
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    replacementPage.resolve(
+      collectionPageResult([pinned.summary], null, 0, { eventEpoch: 'epoch-2' }),
+    )
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadSummaries).toEqual([pinned.summary])
+    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves a two-page budget when the replacement epoch event arrives first', async () => {
+    const initialFirst = collectionRows(1, 50)
+    const initialSecond = collectionRows(51, 50)
+    const replacementFirst = collectionRows(1, 50)
+    const replacementSecond = collectionRows(51, 50)
+    const replacementSecondPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    const update = deferred<NyxThreadResult<NyxThreadUpdatePinResult>>()
+    let epoch = 'epoch-1'
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (epoch === 'epoch-1') {
+          return cursor
+            ? collectionPageResult(initialSecond, null)
+            : collectionPageResult(initialFirst, 'initial-cursor')
+        }
+        return cursor
+          ? replacementSecondPage.promise
+          : collectionPageResult(replacementFirst, 'replacement-cursor', 0, {
+              eventEpoch: 'epoch-2',
+            })
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(epoch === 'epoch-1' ? initialFirst[0]! : replacementFirst[0]!),
+          eventEpoch: epoch,
+          includedThroughCursor: 0,
+        },
+      }),
+      updatePin: () => update.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual(initialFirst))
+    await expect(render().loadMoreThreads()).resolves.toBe(true)
+
+    const updating = render().updateThreadPin({
+      threadId: initialFirst[0]!.id,
+      action: 'pin',
+      expectedPinPosition: null,
+    })
     epoch = 'epoch-2'
     bridge.emitThread({
       type: 'threads:epoch-changed',
       eventEpoch: 'epoch-2',
       includedThroughCursor: 0,
     })
-    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
-    expect(render().threadSummaries).toEqual([pinned.summary])
-    expect(bridge.listPage).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(4))
+    expect(render().threadCollection.loadedPageCount).toBe(2)
+    expect(render().threadSummaries).toEqual([...initialFirst, ...initialSecond])
+    expect(render().threadPinAction.pending).toBe(true)
+
+    update.resolve({
+      ok: false,
+      error: { code: 'conflict', message: 'Thread changed. Try again.' },
+    })
+    await expect(updating).resolves.toBe(false)
+    expect(render().threadPinAction).toEqual({ pending: true, error: null })
+    expect(bridge.listPage).toHaveBeenCalledTimes(4)
+
+    replacementSecondPage.resolve(
+      collectionPageResult(replacementSecond, null, 0, { eventEpoch: 'epoch-2' }),
+    )
+    await vi.waitFor(() => expect(render().threadPinAction).toEqual(initialThreadPinActionState))
+    expect(render().threadCollection.loadedPageCount).toBe(2)
+    expect(render().threadSummaries).toEqual([...initialFirst, ...initialSecond])
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'initial-cursor',
+      null,
+      'replacement-cursor',
+    ])
+  })
+
+  it('preserves a two-page budget when the replacement response arrives first', async () => {
+    const initialFirst = collectionRows(1, 50)
+    const initialSecond = collectionRows(51, 50)
+    const replacementFirst = collectionRows(1, 50)
+    const replacementSecond = collectionRows(51, 50)
+    const replacementSecondPage = deferred<NyxThreadResult<NyxThreadListPage>>()
+    let epoch = 'epoch-1'
+    const bridge = installBridge({
+      list: async ({ cursor }) => {
+        if (epoch === 'epoch-1') {
+          return cursor
+            ? collectionPageResult(initialSecond, null)
+            : collectionPageResult(initialFirst, 'initial-cursor')
+        }
+        return cursor
+          ? replacementSecondPage.promise
+          : collectionPageResult(replacementFirst, 'replacement-cursor', 0, {
+              eventEpoch: 'epoch-2',
+            })
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detailForSummary(epoch === 'epoch-1' ? initialFirst[0]! : replacementFirst[0]!),
+          eventEpoch: epoch,
+          includedThroughCursor: 0,
+        },
+      }),
+      updatePin: async () => {
+        epoch = 'epoch-2'
+        return {
+          ok: false,
+          error: { code: 'conflict', message: 'Thread changed. Try again.' },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().threadSummaries).toEqual(initialFirst))
+    await expect(render().loadMoreThreads()).resolves.toBe(true)
+
+    await expect(
+      render().updateThreadPin({
+        threadId: initialFirst[0]!.id,
+        action: 'pin',
+        expectedPinPosition: null,
+      }),
+    ).resolves.toBe(false)
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(4))
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    expect(render().threadCollection.loadedPageCount).toBe(2)
+    expect(render().threadSummaries).toEqual([...initialFirst, ...initialSecond])
+    expect(render().threadPinAction).toEqual({
+      pending: true,
+      error: { threadId: initialFirst[0]!.id, message: 'Thread changed. Try again.' },
+    })
+    expect(bridge.listPage).toHaveBeenCalledTimes(4)
+
+    replacementSecondPage.resolve(
+      collectionPageResult(replacementSecond, null, 0, { eventEpoch: 'epoch-2' }),
+    )
+    await vi.waitFor(() => expect(render().threadPinAction).toEqual(initialThreadPinActionState))
+    expect(render().threadCollection.loadedPageCount).toBe(2)
+    expect(render().threadSummaries).toEqual([...initialFirst, ...initialSecond])
+    bridge.emitThread({
+      type: 'threads:epoch-changed',
+      eventEpoch: 'epoch-2',
+      includedThroughCursor: 0,
+    })
+    expect(bridge.listPage.mock.calls.map(([input]) => input.cursor ?? null)).toEqual([
+      null,
+      'initial-cursor',
+      null,
+      'replacement-cursor',
+    ])
   })
 
   it('does not write a late target error into a replacement projection', async () => {
