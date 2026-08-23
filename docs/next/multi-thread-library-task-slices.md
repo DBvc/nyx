@@ -126,6 +126,8 @@ The Lifecycle-R1 product step may change exactly:
 - `apps/desktop/electron/main/thread-library/worker.ts`;
 - `apps/desktop/electron/main/thread-library/worker.test.ts`;
 - `apps/desktop/electron/main/thread-library/service.test.ts`;
+- `apps/desktop/src/ui/chat/chat-reducer.ts`;
+- `apps/desktop/src/ui/chat/chat-reducer.test.ts`;
 - `apps/desktop/src/ui/chat/use-chat-session.ts`;
 - `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
 - `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
