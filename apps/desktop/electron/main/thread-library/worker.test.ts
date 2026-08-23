@@ -1641,6 +1641,42 @@ describe('ThreadLibraryDatabase', () => {
     restarted.close()
   })
 
+  it.each(['archive', 'trash'] as const)(
+    'preserves an empty shell moved to %s before a delayed discard',
+    async (action) => {
+      const { owner } = await createOwner()
+      const input = materializeInput(204)
+      execute(owner, 'materialize', input)
+      expect(
+        execute(owner, 'saveDraft', {
+          threadId: input.threadId,
+          expectedDraftRevision: 0,
+          draft: { text: '', targetSelection, images: [], documents: [] },
+          savedAt: at(205),
+        }),
+      ).toMatchObject({ status: 'committed', detail: { draft: { draftRevision: 1 } } })
+
+      execute(owner, 'updateLocation', {
+        threadId: input.threadId,
+        action,
+        expectedThreadRevision: 1,
+        movedAt: at(206),
+      })
+
+      expect(
+        execute(owner, 'discardEmptyShell', {
+          threadId: input.threadId,
+          expectedDraftRevision: 1,
+        }),
+      ).toEqual({ discarded: false })
+      expect(execute(owner, 'readThread', { threadId: input.threadId })).toMatchObject({
+        summary: { location: action === 'archive' ? 'archived' : 'trash' },
+        draft: { draftRevision: 1, text: '' },
+      })
+      owner.close()
+    },
+  )
+
   it.each([
     {
       corruption: 'duplicate',

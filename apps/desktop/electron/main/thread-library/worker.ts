@@ -1925,6 +1925,7 @@ function discardEmptyShell(
       return { mutated: false, value: { discarded: true } }
     }
     const exactShell =
+      shell.location === 'available' &&
       shell.title_source === 'auto' &&
       shell.draft_revision === input.expectedDraftRevision &&
       shell.text === '' &&
