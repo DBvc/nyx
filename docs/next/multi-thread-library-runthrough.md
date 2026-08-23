@@ -271,6 +271,46 @@ Permanent delete, Empty Trash, Undo, Search, Stop-and-move, custom focus system,
 or Runtime/Provider/Responses/attachment change. The authorized Rename,
 Archive/Unarchive and Trash/Restore sequence is complete.
 
+## Lifecycle-R1 — Reversible lifecycle correctness repair
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01`. The initial scope
+  lock entered HEAD at `b8bfff9d82940bbbebb0ac1a79da1a743e8f5bdb`; reviewed
+  inventory corrections entered at
+  `ec3bb1824693e40af654b7f2262d758fd401be8a` and
+  `5a2ea3c56635aef7e3965e56bf0293920037270b`.
+- Product commits: `cb6c5ad7d0b4c6edef8102a8e86ea8b18f07c9c9`,
+  `04b91cabdd0a182dba56ffb17239eb4cfbc13b55`,
+  `87200213880bdd7505c02a68af8d640e1d9ba2b5` and
+  `28731f548f1af5729b5ef031c054b5434a827635`.
+- The exact 11-file `apps/desktop` product diff from the initial scope-lock
+  head through product head had SHA-256
+  `430eb845dbd3ec98506f648450f9345b729de3648914e4dc81a6b3d3a6057e35`.
+- Worker discard now deletes only an exact empty Available shell. A delayed
+  discard cannot delete a Thread after Archive or Trash commits.
+- Archived and Trash remain read-only with or without a selected Thread:
+  direct Draft, attachment, Send and Retry actions are rejected; Composer and
+  failed-message Retry stay hidden; mode changes cancel inline Rename; and
+  Trash never renders stale Rename state.
+- Archive, Unarchive, Trash and Restore hold the existing Renderer navigation
+  barrier through canonical hydration or failure. Selected and unselected
+  moves preserve the intended projection, including a dirty New placeholder
+  whose selection is `null`.
+- Focused Main and Worker tests cover all non-idle activity boundaries,
+  failed settlement and delayed empty-shell movement without adding a schema,
+  protocol, bridge method, second mutation barrier or second Renderer token.
+- Independent final review
+  `NYX-MTL-LIFECYCLE-R1-FINAL-REVIEW-20260823-01` reviewed that exact product
+  diff and returned `accept` with no S0-S2 findings.
+- Required checks passed on 2026-08-23: both desktop TypeScript checks, lint,
+  format check, all 53 desktop test files (`708` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+Lifecycle-R1 did not reopen or redo CP1, PIN1 or the accepted lifecycle model,
+and grants no follow-up product work.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

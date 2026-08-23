@@ -69,10 +69,15 @@ The authorized reversible lifecycle sequence is complete and grants no ordinary
 continuation.
 
 On 2026-08-23 the user explicitly requested a bounded correctness repair for
-the landed reversible lifecycle. Contract
-`NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01` below is the only candidate execution
-scope. Until its exact bytes receive independent review and this docs-only
-change enters HEAD, product work remains non-executable.
+the landed reversible lifecycle. Lifecycle-R1 completed at product head
+`28731f5` under contract `NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01`; its initial
+scope lock entered HEAD at `b8bfff9`, with reviewed inventory corrections at
+`ec3bb18` and `5a2ea3c`. The exact 11-file product diff from the initial
+scope-lock head through the product head had SHA-256
+`430eb845dbd3ec98506f648450f9345b729de3648914e4dc81a6b3d3a6057e35`.
+Independent final review returned `accept` with no S0-S2 findings, and all
+required checks passed. The evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -90,6 +95,11 @@ status history for traceability. This Current Status section is authoritative.
 ## multi-thread-library/Lifecycle-R1-scope-lock: Reversible lifecycle correctness repair
 
 Contract id: `NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01`.
+
+Status: complete at product head
+`28731f548f1af5729b5ef031c054b5434a827635`. Independent final review
+`NYX-MTL-LIFECYCLE-R1-FINAL-REVIEW-20260823-01` accepted the exact product
+diff with no S0-S2 findings. This subsection grants no follow-up product work.
 
 This is a bounded repair of the landed Rename, Archive/Unarchive and
 Trash/Restore behavior at product head
