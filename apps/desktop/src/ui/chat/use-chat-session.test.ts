@@ -2734,6 +2734,9 @@ describe('Archive and Unarchive Renderer controls', () => {
       expectedThreadRevision: archived.summary.threadRevision,
     })
     await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledTimes(2))
+    await expect(render().startNewChat()).resolves.toBe(false)
+    await expect(render().switchThreadCollectionLocation('available')).resolves.toBe(false)
+    expect(render().state.selectedThreadId).toBe(archived.summary.id)
     location = 'available'
     includedThroughCursor = 2
     availableProjection = restored
@@ -2900,6 +2903,107 @@ describe('Archive and Unarchive Renderer controls', () => {
       'archived',
       'available',
     ])
+  })
+
+  it.each(['archived', 'trash'] as const)(
+    'keeps an empty %s collection read-only through direct Renderer actions',
+    async (location) => {
+      const bridge = installBridge({
+        list: async () => collectionPageResult([], null),
+      })
+      render(true)
+      await vi.waitFor(() => expect(render().state.hydrationStatus).toBe('ready'))
+
+      await expect(render().switchThreadCollectionLocation(location)).resolves.toBe(true)
+      expect(render().threadCollection.location).toBe(location)
+      expect(render().state.selectedThreadId).toBeNull()
+      expect(render().canSend).toBe(false)
+      expect(render().canStartRun).toBe(false)
+
+      render().setInput('Blocked edit')
+      render().addDraftImages([new Blob(['image'])])
+      await render().sendCurrentInput()
+      await render().retryMessage('assistant')
+      await expect(render().startNewChat()).resolves.toBe(false)
+
+      expect(render().state.input).toBe('')
+      expect(render().state.draftImages).toEqual([])
+      expect(bridge.materialize).not.toHaveBeenCalled()
+      expect(bridge.saveDraft).not.toHaveBeenCalled()
+      expect(bridge.start).not.toHaveBeenCalled()
+    },
+  )
+
+  it('holds navigation while moving an unselected row and preserves the selected dirty overlay', async () => {
+    const selected = detail('', 'thread-a')
+    const targetThread = detail('', 'thread-b')
+    const archivedTarget = {
+      ...targetThread,
+      summary: {
+        ...targetThread.summary,
+        location: 'archived' as const,
+        threadRevision: targetThread.summary.threadRevision + 1,
+      },
+    }
+    const moved = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+    let committed = false
+    const bridge = installBridge({
+      selectedId: selected.summary.id,
+      list: async () =>
+        collectionPageResult(
+          committed ? [selected.summary] : [selected.summary, targetThread.summary],
+          null,
+          0,
+        ),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail:
+            threadId === selected.summary.id
+              ? selected
+              : threadId === targetThread.summary.id
+                ? targetThread
+                : null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      updateLocation: () => moved.promise,
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(selected.summary.id))
+    render().setInput('Unsaved selected draft')
+
+    const archiving = render().updateThreadLocation({
+      threadId: targetThread.summary.id,
+      action: 'archive',
+      expectedThreadRevision: targetThread.summary.threadRevision,
+    })
+    await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledOnce())
+
+    await expect(render().selectThread(targetThread.summary.id)).resolves.toBe(false)
+    await expect(render().startNewChat()).resolves.toBe(false)
+    await expect(render().switchThreadCollectionLocation('archived')).resolves.toBe(false)
+    render().setInput('Blocked while moving')
+    expect(render().state.selectedThreadId).toBe(selected.summary.id)
+    expect(render().state.input).toBe('Unsaved selected draft')
+    expect(bridge.saveDraft).not.toHaveBeenCalled()
+
+    committed = true
+    moved.resolve({
+      ok: true,
+      value: {
+        detail: archivedTarget,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await expect(archiving).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadCollection.location).toBe('available')
+    expect(render().threadSummaries).toEqual([selected.summary])
+    expect(render().state.selectedThreadId).toBe(selected.summary.id)
+    expect(render().state.input).toBe('Unsaved selected draft')
   })
 
   it('blocks Archive for a running row before crossing the bridge', async () => {
@@ -3531,6 +3635,39 @@ describe('C1 save and execution boundary', () => {
     })
     expect(bridge.start.mock.calls[0]![0]).not.toHaveProperty('messages')
   })
+
+  it.each(['archived', 'trash'] as const)(
+    'rejects a direct Retry for a selected %s Thread',
+    async (location) => {
+      const value = detail()
+      value.summary = { ...value.summary, location }
+      value.messages = [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'Partial',
+          status: 'failed',
+          error: { code: 'network_error', message: 'Network failed.', retryable: true },
+          canRetry: true,
+        },
+      ]
+      value.runStatus = 'failed'
+      value.retryableTurn = {
+        turnOrdinal: 4,
+        expectedAttemptRequestId: 'attempt-1',
+        expectedDraftRevision: 2,
+        userMessageId: 'user-1',
+        assistantMessageId: 'assistant-1',
+      }
+      reset(readyThreadState(value))
+      const bridge = installBridge()
+
+      await render().retryMessage('assistant-1')
+
+      expect(bridge.start).not.toHaveBeenCalled()
+      expect(bridge.retrySettlement).not.toHaveBeenCalled()
+    },
+  )
 
   it('routes settlement Retry to retrySettlement without another start', async () => {
     const failedDetail = detail()

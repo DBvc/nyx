@@ -8,7 +8,7 @@ import { useAutoScroll } from '../use-auto-scroll'
 import { useChatSession } from '../use-chat-session'
 import { useConnectionStatus } from '../use-connection-status'
 import { chatTargetSelectionKey } from '../connection-status'
-import type { NyxChatTargetSelection } from '../../../../shared/chat/types'
+import type { NyxChatMessage, NyxChatTargetSelection } from '../../../../shared/chat/types'
 import type { NyxConnectionsOverview } from '../../../../shared/connections/types'
 import { ChatComposer } from './ChatComposer'
 import { ChatHeader } from './ChatHeader'
@@ -43,6 +43,15 @@ interface ComposerTargetOption {
   disambiguation: string
   selection: NyxChatTargetSelection
   disabled?: boolean
+}
+
+export function messagesForThreadSurface(
+  messages: ReadonlyArray<NyxChatMessage>,
+  readOnly: boolean,
+) {
+  return readOnly
+    ? messages.map((message) => (message.canRetry ? { ...message, canRetry: false } : message))
+    : messages
 }
 
 export function buildComposerTargetOptions(
@@ -264,7 +273,17 @@ export function ChatWorkspace() {
     availableOptionCount: targetOptions.filter((option) => !option.disabled).length,
   })
 
-  const threadItems = useMemo(() => toThreadStreamItems(state.messages), [state.messages])
+  const readOnlyLocation =
+    threadCollection.location !== 'available'
+      ? threadCollection.location
+      : state.threadSummary?.location === 'archived' || state.threadSummary?.location === 'trash'
+        ? state.threadSummary.location
+        : null
+  const threadSurfaceReadOnly = readOnlyLocation !== null
+  const threadItems = useMemo(
+    () => toThreadStreamItems(messagesForThreadSurface(state.messages, threadSurfaceReadOnly)),
+    [state.messages, threadSurfaceReadOnly],
+  )
   const latestMessageItem = threadItems.at(-1)
   const currentThreadTitle =
     state.threadSummary?.title ??
@@ -338,8 +357,7 @@ export function ChatWorkspace() {
     const settlementRetry = state.settlementFailure?.assistantMessageId === messageId
     if (
       state.hydrationStatus !== 'ready' ||
-      state.threadSummary?.location === 'archived' ||
-      state.threadSummary?.location === 'trash' ||
+      threadSurfaceReadOnly ||
       isBusy ||
       isResetting ||
       (!settlementRetry && !canStartRun) ||
@@ -481,10 +499,9 @@ export function ChatWorkspace() {
                   onScroll={handleScroll}
                 />
               )}
-              {state.hydrationStatus === 'error' ? null : state.threadSummary?.location ===
-                  'archived' || state.threadSummary?.location === 'trash' ? (
+              {state.hydrationStatus === 'error' ? null : readOnlyLocation ? (
                 <div className='border-t border-nyx-line px-5 py-4 text-center text-[12px] text-nyx-muted'>
-                  {state.threadSummary.location === 'trash'
+                  {readOnlyLocation === 'trash'
                     ? 'Trash threads are read-only. Restore this thread to continue chatting.'
                     : 'Archived threads are read-only. Unarchive this thread to continue chatting.'}
                 </div>

@@ -6,6 +6,7 @@ import {
   buildComposerTargetOptions,
   composerTargetPresentation,
   isSidebarShortcut,
+  messagesForThreadSurface,
   readSidebarCollapsed,
 } from './ChatWorkspace'
 import { currentThreadOutsidePage, currentThreadSidebarStatus } from './ChatSidebar'
@@ -196,6 +197,24 @@ describe('Composer target options', () => {
 })
 
 describe('sidebar workspace helpers', () => {
+  it('hides message Retry on a read-only Thread surface without mutating canonical messages', () => {
+    const messages = [
+      {
+        id: 'assistant',
+        role: 'assistant' as const,
+        content: '',
+        status: 'failed' as const,
+        canRetry: true,
+      },
+    ]
+
+    expect(messagesForThreadSurface(messages, true)).toEqual([
+      expect.objectContaining({ id: 'assistant', canRetry: false }),
+    ])
+    expect(messagesForThreadSurface(messages, false)).toBe(messages)
+    expect(messages[0]?.canRetry).toBe(true)
+  })
+
   it('keeps a selected Thread outside the canonical first page separate', () => {
     const first = {
       availability: 'available' as const,

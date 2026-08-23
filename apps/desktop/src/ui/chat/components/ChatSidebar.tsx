@@ -110,6 +110,11 @@ export function ChatSidebar({
     [canonicalThreads],
   )
 
+  function switchCollection(location: ThreadCollectionLocation) {
+    setRename(null)
+    onSwitchThreadCollection(location)
+  }
+
   function renderThread(
     thread: NyxThreadSummary,
     options: {
@@ -140,7 +145,8 @@ export function ChatSidebar({
       activity?.status === 'saving_failed'
     const pinError = pinAction.error?.threadId === thread.id ? pinAction.error.message : null
     const boundaries = threadPinBoundaries(collection, thread)
-    const renameDraft = rename?.threadId === thread.id ? rename : null
+    const renameDraft =
+      thread.location !== 'trash' && rename?.threadId === thread.id ? rename : null
 
     function beginRename() {
       if (thread.availability !== 'available' || thread.location === 'trash' || pinAction.pending) {
@@ -161,6 +167,12 @@ export function ChatSidebar({
         if (current?.threadId !== thread.id) return current
         return result.ok ? null : { ...current, error: result.message }
       })
+    }
+
+    function updateLocation(action: NyxThreadLocationAction) {
+      if (thread.availability !== 'available') return
+      setRename(null)
+      onUpdateThreadLocation(thread.id, action, thread.threadRevision)
     }
 
     function renderPinAction(label: string, action: NyxThreadPinAction, boundaryDisabled = false) {
@@ -245,9 +257,7 @@ export function ChatSidebar({
                 <button
                   className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
                   disabled={pinAction.pending}
-                  onClick={() =>
-                    onUpdateThreadLocation(thread.id, 'restore', thread.threadRevision)
-                  }
+                  onClick={() => updateLocation('restore')}
                   type='button'
                 >
                   Restore
@@ -266,9 +276,7 @@ export function ChatSidebar({
                     <button
                       className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
                       disabled={pinAction.pending || locationBlocked}
-                      onClick={() =>
-                        onUpdateThreadLocation(thread.id, 'unarchive', thread.threadRevision)
-                      }
+                      onClick={() => updateLocation('unarchive')}
                       type='button'
                     >
                       Unarchive
@@ -288,9 +296,7 @@ export function ChatSidebar({
                     <button
                       className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
                       disabled={pinAction.pending || locationBlocked}
-                      onClick={() =>
-                        onUpdateThreadLocation(thread.id, 'archive', thread.threadRevision)
-                      }
+                      onClick={() => updateLocation('archive')}
                       type='button'
                     >
                       Archive
@@ -299,9 +305,7 @@ export function ChatSidebar({
                   <button
                     className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
                     disabled={pinAction.pending || locationBlocked}
-                    onClick={() =>
-                      onUpdateThreadLocation(thread.id, 'trash', thread.threadRevision)
-                    }
+                    onClick={() => updateLocation('trash')}
                     type='button'
                   >
                     Trash
@@ -358,7 +362,7 @@ export function ChatSidebar({
           <button
             className='mb-3 rounded-lg px-3 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
             disabled={pinAction.pending}
-            onClick={() => onSwitchThreadCollection('available')}
+            onClick={() => switchCollection('available')}
             type='button'
           >
             Back to threads
@@ -510,7 +514,7 @@ export function ChatSidebar({
           <button
             className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
             disabled={libraryUnavailable || pinAction.pending}
-            onClick={() => onSwitchThreadCollection('archived')}
+            onClick={() => switchCollection('archived')}
             type='button'
           >
             Archived
@@ -518,7 +522,7 @@ export function ChatSidebar({
           <button
             className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
             disabled={libraryUnavailable || pinAction.pending}
-            onClick={() => onSwitchThreadCollection('trash')}
+            onClick={() => switchCollection('trash')}
             type='button'
           >
             Trash
