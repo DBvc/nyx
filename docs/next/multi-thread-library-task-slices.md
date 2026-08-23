@@ -104,6 +104,13 @@ All required checks and manual UI inspection passed. Evidence is recorded in
 Actions-UI-R1 does not reopen CP1, PIN1 or the completed lifecycle sequence and
 grants no follow-up product work.
 
+On 2026-08-23 the user explicitly requested the bounded `Actions-UI-R2`
+test-only follow-up below after code-ratchet review identified that native
+Popover focus, dismissal and viewport placement were covered manually but not
+by a real Chromium regression test. The slice adds only a focused Electron
+renderer test using existing dependencies. It does not reopen Actions-UI-R1
+product behavior, CP1, PIN1 or the completed lifecycle sequence.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -116,6 +123,58 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
+
+Contract id: `NYX-MTL-ACTIONS-UI-R2-SCOPE-20260823-01`.
+
+Status: authorized. This test-only step becomes executable only after this
+exact docs-only scope lock enters HEAD. Completion grants no follow-up product
+work.
+
+Actions-UI-R2 may add one focused Electron/Chromium regression harness for the
+landed Thread row actions. It must prove:
+
+- the selection and actions trigger are sibling controls and focusing a hidden
+  non-selected trigger reveals it;
+- opening the native Popover focuses its first enabled action;
+- Escape closes the Popover and returns focus to its trigger;
+- invoking an action calls its existing callback once, does not select the
+  Thread and closes the Popover; and
+- a Popover opened from the last visible row remains inside the viewport.
+
+The test-only step may change exactly:
+
+- `apps/desktop/src/ui/chat/components/ChatSidebar.browser-test.tsx`;
+- `apps/desktop/scripts/thread-actions-browser-test.mjs`;
+- `apps/desktop/package.json`;
+- `mise.toml`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final completion record only.
+
+No other file is allowed. Actions-UI-R2 must use the existing Electron, Vite,
+React and Tailwind dependencies. It must not change `ChatSidebar.tsx`, product
+behavior, a callback, shared contract, IPC, schema, runtime or lifecycle rule;
+add a dependency or general E2E framework; or reuse the user's development
+profile.
+
+Before final evidence, run:
+
+```text
+mise run desktop:test:thread-actions-browser
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run docs:check
+git diff --check
+```
+
+Actions-UI-R2 stops if the test needs product-only test hooks, another product
+file, a new dependency, an external browser download, or a reusable automation
+framework.
 
 ## multi-thread-library/Actions-UI-R1-scope-lock: Thread row action presentation
 
