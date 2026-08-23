@@ -24,6 +24,8 @@ import {
   importedV5RowsSchema,
   parseThreadLibraryListOrderMetadata,
   parseThreadLibraryListRow,
+  parseThreadLibrarySearchCandidate,
+  parseThreadLibrarySearchOrderMetadata,
   parseThreadLibraryThreadDetail,
   parseThreadLibraryRequest,
   threadLibrarySafeErrorMessages,
@@ -34,6 +36,7 @@ import {
   type ThreadLibraryRequest,
   type ThreadLibrarySafeErrorCode,
   type ThreadLibraryListRow,
+  type ThreadLibrarySearchCandidate,
   type ThreadLibraryThreadDetail,
 } from './protocol'
 
@@ -710,6 +713,200 @@ function listPage(
       : null,
     includedThroughCursor: mutationCursor,
   }
+}
+
+function searchOrderMetadata(row: Record<string, unknown>) {
+  try {
+    return parseThreadLibrarySearchOrderMetadata({
+      id: row.id,
+      location: row.location,
+      lastUserActivityAt: row.last_user_activity_at,
+      createdAt: row.created_at,
+    })
+  } catch {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+}
+
+function searchCandidate(
+  row: Record<string, unknown>,
+  turns: Array<Record<string, unknown>>,
+): ThreadLibrarySearchCandidate | null {
+  try {
+    return parseThreadLibrarySearchCandidate({
+      thread: threadValue(row),
+      draft: {
+        threadId: row.draft_thread_id,
+        draftRevision: row.draft_revision,
+        text: row.draft_text,
+        targetSelection: parseJson(row.draft_target_selection_json),
+        updatedAt: row.draft_updated_at,
+      },
+      turns: turns.map((turn) => ({
+        threadId: turn.turn_thread_id,
+        ...turnValue({
+          ordinal: turn.turn_ordinal,
+          attempt_request_id: turn.turn_attempt_request_id,
+          user_message_id: turn.turn_user_message_id,
+          assistant_message_id: turn.turn_assistant_message_id,
+          user_content: turn.turn_user_content,
+          assistant_content: turn.turn_assistant_content,
+          assistant_status: turn.turn_assistant_status,
+          error_json: turn.turn_error_json,
+          target_selection_json: turn.turn_target_selection_json,
+          target_attribution_json: turn.turn_target_attribution_json,
+          provider_state_id: turn.turn_provider_state_id,
+          created_at: turn.turn_created_at,
+          updated_at: turn.turn_updated_at,
+        }),
+      })),
+    })
+  } catch {
+    return null
+  }
+}
+
+function normalizedSearchText(value: string) {
+  return value.normalize('NFKC').toLowerCase()
+}
+
+function searchSnippet(value: string) {
+  return Array.from(value).slice(0, 160).join('')
+}
+
+function candidateMatch(
+  candidate: ThreadLibrarySearchCandidate,
+  normalizedQuery: string,
+): ThreadLibraryOperationValue['search']['results'][number] | null {
+  const matches = (value: string) => normalizedSearchText(value).includes(normalizedQuery)
+  if (matches(candidate.thread.title)) {
+    return {
+      threadId: candidate.thread.id,
+      title: candidate.thread.title,
+      location: candidate.thread.location as 'available' | 'archived',
+      source: 'title',
+      snippet: searchSnippet(candidate.thread.title),
+      messageId: null,
+    }
+  }
+
+  for (let index = candidate.turns.length - 1; index >= 0; index -= 1) {
+    const turn = candidate.turns[index]!
+    if (matches(turn.userContent)) {
+      return {
+        threadId: candidate.thread.id,
+        title: candidate.thread.title,
+        location: candidate.thread.location as 'available' | 'archived',
+        source: 'user_message',
+        snippet: searchSnippet(turn.userContent),
+        messageId: turn.userMessageId,
+      }
+    }
+    if (
+      turn.assistantStatus !== 'pending' &&
+      turn.assistantContent.length > 0 &&
+      matches(turn.assistantContent)
+    ) {
+      return {
+        threadId: candidate.thread.id,
+        title: candidate.thread.title,
+        location: candidate.thread.location as 'available' | 'archived',
+        source: 'assistant_message',
+        snippet: searchSnippet(turn.assistantContent),
+        messageId: turn.assistantMessageId,
+      }
+    }
+  }
+  return null
+}
+
+function searchThreads(
+  database: DatabaseSync,
+  input: ThreadLibraryOperationInput['search'],
+): ThreadLibraryOperationValue['search'] {
+  if (
+    database
+      .prepare(
+        "SELECT 1 AS invalid FROM threads WHERE location NOT IN ('available', 'archived', 'trash') LIMIT 1",
+      )
+      .get()
+  ) {
+    throw new DatabaseOperationError('library_unavailable')
+  }
+
+  const rows = database
+    .prepare(
+      `SELECT threads.*,
+         drafts.thread_id AS draft_thread_id,
+         drafts.draft_revision AS draft_revision,
+         drafts.text AS draft_text,
+         drafts.target_selection_json AS draft_target_selection_json,
+         drafts.updated_at AS draft_updated_at,
+         turns.thread_id AS turn_thread_id,
+         turns.ordinal AS turn_ordinal,
+         turns.attempt_request_id AS turn_attempt_request_id,
+         turns.user_message_id AS turn_user_message_id,
+         turns.assistant_message_id AS turn_assistant_message_id,
+         turns.user_content AS turn_user_content,
+         turns.assistant_content AS turn_assistant_content,
+         turns.assistant_status AS turn_assistant_status,
+         turns.error_json AS turn_error_json,
+         turns.target_selection_json AS turn_target_selection_json,
+         turns.target_attribution_json AS turn_target_attribution_json,
+         turns.created_at AS turn_created_at,
+         turns.updated_at AS turn_updated_at,
+         provider_state_refs.state_id AS turn_provider_state_id
+       FROM threads
+       LEFT JOIN drafts ON drafts.thread_id = threads.id
+       LEFT JOIN turns ON turns.thread_id = threads.id
+       LEFT JOIN provider_state_refs
+         ON provider_state_refs.thread_id = turns.thread_id
+        AND provider_state_refs.turn_ordinal = turns.ordinal
+       WHERE threads.location IN ('available', 'archived')
+       ORDER BY threads.last_user_activity_at DESC, threads.created_at DESC, threads.id ASC,
+                turns.ordinal ASC`,
+    )
+    .iterate()
+
+  const normalizedQuery = normalizedSearchText(input.query)
+  const results: ThreadLibraryOperationValue['search']['results'] = []
+  const seenThreadIds = new Set<string>()
+  let groupRow: Record<string, unknown> | null = null
+  let groupOrder: ReturnType<typeof searchOrderMetadata> | null = null
+  let groupTurns: Array<Record<string, unknown>> = []
+
+  const finishGroup = () => {
+    if (!groupRow || !groupOrder) return false
+    const candidate = searchCandidate(groupRow, groupTurns)
+    if (!candidate) return false
+    const match = candidateMatch(candidate, normalizedQuery)
+    if (!match) return false
+    if (results.length === 50) return true
+    results.push(match)
+    return false
+  }
+
+  for (const row of rows) {
+    const order = searchOrderMetadata(row)
+    if (order.location !== 'available' && order.location !== 'archived') {
+      throw new DatabaseOperationError('library_unavailable')
+    }
+    if (groupOrder?.id !== order.id) {
+      if (finishGroup()) return { results, truncated: true }
+      if (seenThreadIds.has(order.id)) {
+        throw new DatabaseOperationError('library_unavailable')
+      }
+      if (groupOrder) seenThreadIds.add(groupOrder.id)
+      groupRow = row
+      groupOrder = order
+      groupTurns = []
+    } else if (!isDeepStrictEqual(groupOrder, order)) {
+      throw new DatabaseOperationError('library_unavailable')
+    }
+    if (row.turn_ordinal !== null) groupTurns.push(row)
+  }
+
+  return { results, truncated: finishGroup() }
 }
 
 function assertImportCoherent(rows: ImportedV5Rows) {
@@ -2123,6 +2320,8 @@ export class ThreadLibraryDatabase {
         }
       case 'listPage':
         return listPage(database, request.input, this.mutationCursor, this.cursorEpoch)
+      case 'search':
+        return runReadTransaction(database, () => searchThreads(database, request.input))
       case 'importV5': {
         const result = importRows(database, request.input.rows)
         if (result.imported) {

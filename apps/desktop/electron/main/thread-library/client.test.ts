@@ -1095,11 +1095,56 @@ describe('ThreadLibraryClient', () => {
     })
     await expect(listing).resolves.toMatchObject({ ok: true, value: { rows: [] } })
 
+    const searching = client.search({ query: 'needle' })
+    const searchRequest = await waitForPost(instance, 2)
+    expect(searchRequest).toMatchObject({ operation: 'search', input: { query: 'needle' } })
+    succeed(instance, searchRequest, {
+      results: [
+        {
+          threadId,
+          title: 'First thread',
+          location: 'available',
+          source: 'user_message',
+          snippet: 'needle',
+          messageId: 'user-1',
+        },
+      ],
+      truncated: false,
+    })
+    await expect(searching).resolves.toMatchObject({
+      ok: true,
+      value: { results: [{ threadId, messageId: 'user-1' }], truncated: false },
+      clock: { watermark: 0, actualMutation: false },
+    })
+
     const closing = client.close()
-    const closeRequest = await waitForPost(instance, 2)
+    const closeRequest = await waitForPost(instance, 3)
     succeed(instance, closeRequest, { closed: true })
     instance.exit(0)
     await expect(closing).resolves.toMatchObject({ ok: true, value: { closed: true } })
+    expect(workerMock.instances).toHaveLength(1)
+  })
+
+  it('rejects a malformed bounded Search reply on the existing Worker transport', async () => {
+    const { client, instance } = await openClient()
+    const searching = client.search({ query: 'needle' })
+    const request = await waitForPost(instance, 1)
+    succeed(instance, request, {
+      results: [
+        {
+          threadId,
+          title: 'First thread',
+          location: 'available',
+          source: 'title',
+          snippet: 'x'.repeat(161),
+          messageId: 'must-be-null-for-title',
+        },
+      ],
+      truncated: false,
+    })
+
+    await expect(searching).rejects.toBeInstanceOf(ThreadLibraryTransportError)
+    await vi.waitFor(() => expect(instance.exited).toBe(true))
     expect(workerMock.instances).toHaveLength(1)
   })
 

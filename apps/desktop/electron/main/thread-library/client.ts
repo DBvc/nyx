@@ -357,6 +357,10 @@ export class ThreadLibraryClient {
     return this.send('listPage', input)
   }
 
+  search(input: ThreadLibraryOperationInput['search']) {
+    return this.send('search', input)
+  }
+
   markSeen(input: ThreadLibraryOperationInput['markSeen']) {
     return this.mutateThread('markSeen', input, (id, canonical) => {
       if (canonical === undefined) {

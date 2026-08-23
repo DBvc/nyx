@@ -248,6 +248,84 @@ function rawDatabase(owner: Owner) {
   return (owner as unknown as { database: DatabaseSync }).database
 }
 
+type SearchTurn = {
+  ordinal?: number
+  userContent: string
+  assistantContent?: string
+  assistantStatus?: 'pending' | 'completed' | 'cancelled' | 'failed'
+  userMessageId?: string
+  assistantMessageId?: string
+}
+
+function insertSearchThread(
+  owner: Owner,
+  value: number,
+  options: {
+    title?: string
+    location?: 'available' | 'archived' | 'trash'
+    draftText?: string
+    activityOffset?: number
+    createdOffset?: number
+    turns?: SearchTurn[]
+  } = {},
+) {
+  const database = rawDatabase(owner)
+  const threadId = uuid(value)
+  const location = options.location ?? 'available'
+  const occurredAt = at(options.activityOffset ?? value)
+  const createdAt = at(options.createdOffset ?? options.activityOffset ?? value)
+  database
+    .prepare('INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(
+      threadId,
+      location,
+      location === 'trash' ? 'available' : null,
+      null,
+      null,
+      options.title ?? `Search ${value}`,
+      'auto',
+      null,
+      null,
+      1,
+      occurredAt,
+      0,
+      0,
+      createdAt,
+      occurredAt,
+    )
+  database
+    .prepare('INSERT INTO drafts VALUES (?, 0, ?, ?, ?)')
+    .run(threadId, options.draftText ?? '', JSON.stringify(targetSelection), occurredAt)
+  const insertTurn = database.prepare(
+    `INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  for (const [ordinal, turn] of (options.turns ?? []).entries()) {
+    const assistantStatus = turn.assistantStatus ?? 'completed'
+    insertTurn.run(
+      threadId,
+      turn.ordinal ?? ordinal,
+      `search-request-${value}-${ordinal}`,
+      turn.userMessageId ?? `search-user-${value}-${ordinal}`,
+      turn.assistantMessageId ?? `search-assistant-${value}-${ordinal}`,
+      turn.userContent,
+      turn.assistantContent ?? '',
+      assistantStatus,
+      assistantStatus === 'failed'
+        ? JSON.stringify({
+            code: 'unknown',
+            message: 'The response failed unexpectedly.',
+            retryable: true,
+          })
+        : null,
+      JSON.stringify(targetSelection),
+      null,
+      occurredAt,
+      occurredAt,
+    )
+  }
+  return threadId
+}
+
 function mutationOutcome(operation: () => unknown) {
   try {
     operation()
@@ -361,6 +439,33 @@ describe('ThreadLibraryDatabase', () => {
           expectedThreadRevision: 1,
           movedAt: timestamp,
         },
+      }),
+    ).toThrow()
+  })
+
+  it('trims Search queries and enforces Unicode code-point bounds', () => {
+    expect(
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'search',
+        input: { query: '  Abc  ' },
+      }),
+    ).toMatchObject({ operation: 'search', input: { query: 'Abc' } })
+    expect(() =>
+      parseThreadLibraryRequest({ id: 'test', operation: 'search', input: { query: '  ' } }),
+    ).toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'search',
+        input: { query: '界'.repeat(256) },
+      }),
+    ).not.toThrow()
+    expect(() =>
+      parseThreadLibraryRequest({
+        id: 'test',
+        operation: 'search',
+        input: { query: '界'.repeat(257) },
       }),
     ).toThrow()
   })
@@ -1867,6 +1972,246 @@ describe('ThreadLibraryDatabase', () => {
         limit: 50,
       }),
     ).toThrow('The thread list changed. Reload it and try again.')
+    owner.close()
+  })
+
+  it('searches only canonical committed text with frozen normalization, ranking, and order', async () => {
+    const { owner } = await createOwner()
+    const fullWidthTitle = insertSearchThread(owner, 1_000, {
+      title: 'ＦＯＯ 标题',
+      activityOffset: 100,
+    })
+    const archivedCjk = insertSearchThread(owner, 1_001, {
+      title: 'Archived',
+      location: 'archived',
+      activityOffset: 90,
+      turns: [{ userContent: '很短的中文命中' }],
+    })
+    const ranked = insertSearchThread(owner, 1_002, {
+      title: 'Ranked',
+      activityOffset: 80,
+      turns: [
+        { userContent: 'rank-hit older user', assistantContent: 'rank-hit older assistant' },
+        { userContent: 'rank-hit latest user', assistantContent: 'rank-hit latest assistant' },
+      ],
+    })
+    const titlePriority = insertSearchThread(owner, 1_003, {
+      title: 'priority-hit title',
+      activityOffset: 70,
+      turns: [{ userContent: 'priority-hit message' }],
+    })
+    const completed = insertSearchThread(owner, 1_004, {
+      title: 'Completed',
+      activityOffset: 60,
+      turns: [{ userContent: 'plain', assistantContent: 'terminal-hit completed' }],
+    })
+    const cancelled = insertSearchThread(owner, 1_005, {
+      title: 'Cancelled',
+      activityOffset: 50,
+      turns: [
+        {
+          userContent: 'plain',
+          assistantContent: 'terminal-hit cancelled',
+          assistantStatus: 'cancelled',
+        },
+      ],
+    })
+    const failed = insertSearchThread(owner, 1_006, {
+      title: 'Failed',
+      activityOffset: 40,
+      turns: [
+        {
+          userContent: 'plain',
+          assistantContent: 'terminal-hit failed',
+          assistantStatus: 'failed',
+        },
+      ],
+    })
+    const pending = insertSearchThread(owner, 1_007, {
+      title: 'Pending',
+      activityOffset: 30,
+      turns: [{ userContent: 'pending-user-hit', assistantStatus: 'pending' }],
+    })
+    insertSearchThread(owner, 1_008, {
+      title: 'Draft only',
+      draftText: 'draft-secret',
+      activityOffset: 20,
+    })
+    insertSearchThread(owner, 1_009, {
+      title: 'trash-secret',
+      location: 'trash',
+      activityOffset: 10,
+      turns: [{ userContent: 'trash-secret' }],
+    })
+    const snippetThread = insertSearchThread(owner, 1_010, {
+      title: 'Snippet',
+      turns: [{ userContent: `${'前'.repeat(170)}snippet-needle` }],
+    })
+
+    expect(execute(owner, 'search', { query: 'foo' })).toEqual({
+      results: [
+        {
+          threadId: fullWidthTitle,
+          title: 'ＦＯＯ 标题',
+          location: 'available',
+          source: 'title',
+          snippet: 'ＦＯＯ 标题',
+          messageId: null,
+        },
+      ],
+      truncated: false,
+    })
+    expect(execute(owner, 'search', { query: '中文' }).results).toMatchObject([
+      {
+        threadId: archivedCjk,
+        location: 'archived',
+        source: 'user_message',
+        messageId: 'search-user-1001-0',
+      },
+    ])
+    expect(execute(owner, 'search', { query: 'RANK-HIT' }).results).toMatchObject([
+      {
+        threadId: ranked,
+        source: 'user_message',
+        snippet: 'rank-hit latest user',
+        messageId: 'search-user-1002-1',
+      },
+    ])
+    expect(execute(owner, 'search', { query: 'priority-hit' }).results).toMatchObject([
+      { threadId: titlePriority, source: 'title', messageId: null },
+    ])
+    expect(execute(owner, 'search', { query: 'terminal-hit' }).results).toMatchObject([
+      {
+        threadId: completed,
+        source: 'assistant_message',
+        messageId: 'search-assistant-1004-0',
+      },
+      {
+        threadId: cancelled,
+        source: 'assistant_message',
+        messageId: 'search-assistant-1005-0',
+      },
+      {
+        threadId: failed,
+        source: 'assistant_message',
+        messageId: 'search-assistant-1006-0',
+      },
+    ])
+    expect(execute(owner, 'search', { query: 'pending-user-hit' }).results).toMatchObject([
+      { threadId: pending, source: 'user_message', messageId: 'search-user-1007-0' },
+    ])
+    expect(execute(owner, 'search', { query: 'draft-secret' })).toEqual({
+      results: [],
+      truncated: false,
+    })
+    expect(execute(owner, 'search', { query: 'trash-secret' })).toEqual({
+      results: [],
+      truncated: false,
+    })
+    const snippet = execute(owner, 'search', { query: 'snippet-needle' }).results[0]
+    expect(snippet).toMatchObject({
+      threadId: snippetThread,
+      source: 'user_message',
+      messageId: 'search-user-1010-0',
+    })
+    expect(Array.from(snippet!.snippet)).toHaveLength(160)
+
+    const orderedIds = [
+      insertSearchThread(owner, 1_011, {
+        title: 'order-hit oldest',
+        activityOffset: 200,
+        createdOffset: 110,
+      }),
+      insertSearchThread(owner, 1_012, {
+        title: 'order-hit newest',
+        location: 'archived',
+        activityOffset: 200,
+        createdOffset: 130,
+      }),
+      insertSearchThread(owner, 1_013, {
+        title: 'order-hit middle',
+        activityOffset: 200,
+        createdOffset: 130,
+      }),
+    ]
+    expect(
+      execute(owner, 'search', { query: 'order-hit' }).results.map((row) => row.threadId),
+    ).toEqual([orderedIds[1], orderedIds[2], orderedIds[0]])
+
+    const rows = importedRows(2_000)
+    execute(owner, 'importV5', { rows })
+    rawDatabase(owner)
+      .prepare("UPDATE documents SET extracted_text = 'damaged resource text' WHERE thread_id = ?")
+      .run(rows.thread.id)
+    const beforeSearch = owner.acknowledgementClock()
+    expect(execute(owner, 'search', { query: 'imported 2000' }).results).toMatchObject([
+      { threadId: rows.thread.id, source: 'title' },
+    ])
+    expect(owner.acknowledgementClock()).toEqual({ ...beforeSearch, actualMutation: false })
+    owner.close()
+  })
+
+  it('uses 50-plus-one truncation and still finds the oldest match among 129 Threads', async () => {
+    const { owner } = await createOwner()
+    for (let value = 1; value <= 51; value += 1) {
+      insertSearchThread(owner, value, { title: `broad-hit ${value}` })
+    }
+    const broad = execute(owner, 'search', { query: 'broad-hit' })
+    expect(broad.results).toHaveLength(50)
+    expect(broad.truncated).toBe(true)
+    expect(new Set(broad.results.map((row) => row.threadId)).size).toBe(50)
+    owner.close()
+
+    const { owner: deepOwner } = await createOwner()
+    for (let value = 1; value <= 129; value += 1) {
+      insertSearchThread(deepOwner, value, {
+        title: value === 1 ? 'oldest-only-marker' : `ordinary ${value}`,
+      })
+    }
+    expect(execute(deepOwner, 'search', { query: 'oldest-only-marker' })).toMatchObject({
+      results: [{ threadId: uuid(1), source: 'title' }],
+      truncated: false,
+    })
+    deepOwner.close()
+  })
+
+  it('isolates malformed candidate content but fails the whole Search on unsafe order or location', async () => {
+    const { owner } = await createOwner()
+    const good = insertSearchThread(owner, 3_000, { title: 'isolated-hit good' })
+    const missingDraft = insertSearchThread(owner, 3_001, { title: 'isolated-hit missing' })
+    insertSearchThread(owner, 3_002, {
+      title: 'isolated-hit sequence',
+      turns: [{ ordinal: 2, userContent: 'plain' }],
+    })
+    insertSearchThread(owner, 3_003, {
+      title: 'isolated-hit identity',
+      turns: [
+        {
+          userContent: 'plain',
+          userMessageId: 'duplicate-message',
+          assistantMessageId: 'duplicate-message',
+        },
+      ],
+    })
+    const database = rawDatabase(owner)
+    database.prepare('DELETE FROM drafts WHERE thread_id = ?').run(missingDraft)
+
+    expect(execute(owner, 'search', { query: 'isolated-hit' }).results).toMatchObject([
+      { threadId: good },
+    ])
+
+    database.exec('PRAGMA ignore_check_constraints = ON')
+    database.prepare("UPDATE threads SET last_user_activity_at = 'unsafe' WHERE id = ?").run(good)
+    expect(() => execute(owner, 'search', { query: 'isolated-hit' })).toThrow(
+      'The Thread Library is unavailable.',
+    )
+    database
+      .prepare('UPDATE threads SET last_user_activity_at = ? WHERE id = ?')
+      .run(at(3_000), good)
+    database.prepare("UPDATE threads SET location = 'unsafe' WHERE id = ?").run(good)
+    expect(() => execute(owner, 'search', { query: 'isolated-hit' })).toThrow(
+      'The Thread Library is unavailable.',
+    )
     owner.close()
   })
 

@@ -22,6 +22,8 @@ const pinPosition = z.number().int().positive().nullable()
 const position = z.number().int().nonnegative()
 const pinAction = z.enum(['pin', 'unpin', 'move_up', 'move_down', 'move_top', 'move_bottom'])
 const locationAction = z.enum(['archive', 'unarchive', 'trash', 'restore'])
+const searchLocation = z.enum(['available', 'archived'])
+const searchSource = z.enum(['title', 'user_message', 'assistant_message'])
 
 const updatePinInputSchema = z
   .object({ threadId: uuid, action: pinAction, expectedPinPosition: pinPosition })
@@ -361,6 +363,17 @@ const operationInputSchemas = {
   listPage: z
     .object({ location, cursor: z.string().max(1024).nullable(), limit: z.literal(50) })
     .strict(),
+  search: z
+    .object({
+      query: z
+        .string()
+        .transform((value) => value.trim())
+        .refine((value) => {
+          const length = Array.from(value).length
+          return length >= 1 && length <= 256
+        }),
+    })
+    .strict(),
   importV5: z.object({ rows: importedV5InputRowsSchema }).strict(),
   saveDraft: z
     .object({
@@ -576,6 +589,14 @@ const threadListOrderIdentitySchema = z
       context.addIssue({ code: 'custom', message: 'Thread Pin grouping is inconsistent.' })
     }
   })
+const threadSearchOrderMetadataSchema = z
+  .object({
+    id: uuid,
+    location,
+    lastUserActivityAt: timestamp,
+    createdAt: timestamp,
+  })
+  .passthrough()
 const threadSummarySchema = z
   .object({
     id: uuid,
@@ -670,6 +691,48 @@ const threadDetailSchema = z
     }
   })
 
+const threadSearchCandidateSchema = z
+  .object({
+    thread: threadRowSchema,
+    draft: draftRowSchema,
+    turns: z.array(turnRowSchema),
+  })
+  .strict()
+  .superRefine((candidate, context) => {
+    const messageIds = candidate.turns.flatMap((turn) => [
+      turn.userMessageId,
+      turn.assistantMessageId,
+    ])
+    if (
+      candidate.draft.threadId !== candidate.thread.id ||
+      candidate.turns.some(
+        (turn, index) =>
+          turn.threadId !== candidate.thread.id ||
+          turn.ordinal !== index ||
+          (turn.assistantStatus === 'pending' && index !== candidate.turns.length - 1),
+      ) ||
+      duplicate(messageIds)
+    ) {
+      context.addIssue({ code: 'custom', message: 'Thread Search candidate is inconsistent.' })
+    }
+  })
+
+const threadSearchResultSchema = z
+  .object({
+    threadId: uuid,
+    title: nonBlank,
+    location: searchLocation,
+    source: searchSource,
+    snippet: z.string().refine((value) => Array.from(value).length <= 160),
+    messageId: nonEmpty.nullable(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if ((result.source === 'title') !== (result.messageId === null)) {
+      context.addIssue({ code: 'custom', message: 'Thread Search result identity is invalid.' })
+    }
+  })
+
 const draftMutationValueSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('committed'), detail: threadDetailSchema }).strict(),
   z
@@ -698,6 +761,20 @@ const operationValueSchemas = {
       includedThroughCursor: z.number().int().nonnegative(),
     })
     .strict(),
+  search: z
+    .object({
+      results: z.array(threadSearchResultSchema).max(50),
+      truncated: z.boolean(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        duplicate(value.results.map((result) => result.threadId)) ||
+        (value.truncated && value.results.length !== 50)
+      ) {
+        context.addIssue({ code: 'custom', message: 'Thread Search result set is invalid.' })
+      }
+    }),
   importV5: z.object({ threadId: uuid, imported: z.boolean() }).strict(),
   saveDraft: draftMutationValueSchema,
   startTurn: draftMutationValueSchema,
@@ -747,6 +824,7 @@ export type ThreadLibraryOperationValue = {
 }
 export type ThreadLibraryThreadDetail = ThreadLibraryOperationValue['materialize']
 export type ThreadLibraryListRow = ThreadLibraryOperationValue['listPage']['rows'][number]
+export type ThreadLibrarySearchCandidate = z.infer<typeof threadSearchCandidateSchema>
 
 const acknowledgementClockSchema = z
   .object({
@@ -781,6 +859,20 @@ export function parseThreadLibraryListOrderMetadata(value: unknown) {
     createdAt: usesActivityOrder || usesTrashOrder ? timestamp.parse(metadata.createdAt) : '',
     updatedAt: usesTrashOrder ? timestamp.parse(metadata.updatedAt) : '',
   }
+}
+
+export function parseThreadLibrarySearchOrderMetadata(value: unknown) {
+  const metadata = threadSearchOrderMetadataSchema.parse(value)
+  return {
+    id: metadata.id,
+    location: metadata.location,
+    lastUserActivityAt: metadata.lastUserActivityAt,
+    createdAt: metadata.createdAt,
+  }
+}
+
+export function parseThreadLibrarySearchCandidate(value: unknown): ThreadLibrarySearchCandidate {
+  return threadSearchCandidateSchema.parse(value)
 }
 
 export function parseThreadLibraryThreadDetail(value: unknown): ThreadLibraryThreadDetail {
