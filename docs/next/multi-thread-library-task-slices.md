@@ -120,7 +120,9 @@ On 2026-08-23 the user explicitly authorized the exact docs-only
 `multi-thread-library/SEARCH1/P0` step below. SEARCH1/P0 records a new bounded
 committed-text Search direction and its later gates. It does not make T1a or
 any product slice executable, and it grants no permission to modify product
-code.
+code. Later that day the user authorized a narrow evidence-contract amendment:
+bind T1a to the intended Worker scan shape and correct its invalid rerun
+wording, without changing scope, thresholds, slice order or execution status.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -244,18 +246,23 @@ product files may change. Passing one step does not authorize the next.
 
 SEARCH1/T1a, if later authorized, is a non-landing release-shape
 Electron/Node Worker feasibility preflight under an OS temporary directory. It
-must leave no tracked repository change or product commit. Its fixed corpus is
-128, 512 and 2,048 Thread tiers, 16 committed Turns per Thread and 2 KiB of
-searchable text per Turn split evenly between user and assistant content. Each
-tier runs no-hit, oldest-Thread rare-hit and 51-or-more broad-hit queries with
-five warmups and 20 measured repetitions. It records hardware, Electron, Node,
-build mode, Worker p50/p95/max elapsed time and the maximum added wait for a
-queued test write or equivalent settlement-shaped command.
+must leave no tracked repository change or product commit. The temporary
+harness must use the current Thread Library schema and the intended single
+Worker command shape: ordered Thread scanning, candidate-group validation,
+NFKC/lowercase literal matching, one result per Thread and 50-plus-one
+truncation. A toy in-memory scan is not valid evidence. Its fixed corpus is 128,
+512 and 2,048 Thread tiers, 16 committed Turns per Thread and 2 KiB of searchable
+text per Turn split evenly between user and assistant content. Each tier runs
+no-hit, oldest-Thread rare-hit and 51-or-more broad-hit queries with five
+warmups and 20 measured repetitions. It records hardware, Electron, Node, build
+mode, Worker p50/p95/max elapsed time and the maximum added wait for a queued
+test write or equivalent settlement-shaped command.
 
 T1a has one valid recorded run per declared environment. A rerun is allowed
 only for a documented harness or environment invalidity identified before the
-result is classified; a performance failure may not be rerun until it passes,
-and no threshold may be relaxed inside the run. Its decisions are fixed:
+result is classified. A valid performance failure enters the fixed decision
+branch immediately and must not be repeatedly rerun to obtain a PASS. No
+threshold may be relaxed inside the run. Its decisions are fixed:
 
 - if the 128-Thread Worker max or added wait exceeds 50 ms, record
   `VALID_STOP`, reject literal SEARCH1 and make no product or bridge change;
@@ -270,8 +277,9 @@ The later candidate product inventories are bounded as follows and grant no
 current permission:
 
 - T1b: `apps/desktop/electron/main/thread-library/protocol.ts`, `client.ts`,
-  `worker.ts` and their focused tests only; no shared bridge, Renderer or
-  schema;
+  `worker.ts` and their focused tests only. Before any product commit, the real
+  Worker Search operation must pass the same 128/512 corpus and thresholds; no
+  shared bridge, Renderer or schema;
 - T2: `apps/desktop/shared/threads`, the shared desktop contract, preload,
   Main IPC/service and their focused tests only; no general scheduler or new
   error system;
