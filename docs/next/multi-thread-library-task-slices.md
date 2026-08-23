@@ -131,7 +131,7 @@ The Lifecycle-R1 product step may change exactly:
 - `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
 - `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx`;
 - `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`;
-- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`;
 - `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
 - this status owner for the final reviewed completion record only.
 
