@@ -311,6 +311,39 @@ Result: complete.
 Lifecycle-R1 did not reopen or redo CP1, PIN1 or the accepted lifecycle model,
 and grants no follow-up product work.
 
+## Lifecycle-R2 — Autosave and location race repair
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-LIFECYCLE-R2-SCOPE-20260823-01`, committed at
+  `d38114ec42316d47eafaee44cde38b95c034107b` by the user's explicit repair
+  request.
+- Product commit: `1e2d216b24dbc0b53585005d17a73504a225d63f`.
+- The exact two-file `apps/desktop` diff from scope-lock head through product
+  head had SHA-256
+  `c3510498be7c5a3d4c30bb47f7a65841564223fe5c8596535b4db15d88e545f5`.
+- Autosave now observes the existing navigation state before scheduling and
+  again before entering the save queue. Navigation release reschedules an
+  unchanged dirty Draft through the ordinary effect path.
+- Draft save start updates the existing synchronous state projection before
+  its first await. A location action therefore cannot dispatch while Draft
+  save or New materialization is already in flight.
+- Parameterized Archive/Trash coverage proves the queued-timer ordering,
+  replacement hydration, dirty New preservation and post-navigation autosave;
+  separate coverage proves an in-flight materialization blocks location
+  dispatch and keeps the materialized Thread selected.
+- Independent reviews `NYX-MTL-LIFECYCLE-R2-DIFF-REVIEW-20260823-01` and
+  `NYX-MTL-LIFECYCLE-R2-PRAGMATIC-REVIEW-20260823-01` both returned `accept`
+  with no findings against the exact product diff.
+- Required checks passed on 2026-08-23: both desktop TypeScript checks, lint,
+  format check, all 53 desktop test files (`711` passed, `14` skipped), desktop
+  production build, six runtime-backed chat-state checks, documentation check,
+  workspace format check and `git diff --check`.
+
+Lifecycle-R2 reused the existing navigation lock, save status and save queue.
+It added no protocol, schema, shared contract, state owner, action token or
+general reconciliation machinery, and grants no follow-up product work.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

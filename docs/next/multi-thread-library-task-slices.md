@@ -86,6 +86,14 @@ action's earlier `null` selection snapshot. On 2026-08-23 the user explicitly
 requested the bounded `Lifecycle-R2` correction below. No other lifecycle,
 CP1 or PIN1 continuation is executable.
 
+Lifecycle-R2 completed at product head `1e2d216` under contract
+`NYX-MTL-LIFECYCLE-R2-SCOPE-20260823-01`; its scope lock entered HEAD at
+`d38114e`. The exact two-file product diff had SHA-256
+`c3510498be7c5a3d4c30bb47f7a65841564223fe5c8596535b4db15d88e545f5`.
+Independent diff and strict-pragmatic reviews both returned `accept` with no
+findings, and all required checks passed. Evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -103,8 +111,11 @@ status history for traceability. This Current Status section is authoritative.
 
 Contract id: `NYX-MTL-LIFECYCLE-R2-SCOPE-20260823-01`.
 
-Status: executable after this docs-only scope enters HEAD. The user's explicit
-2026-08-23 repair request authorizes only the exact work below.
+Status: complete at product head
+`1e2d216b24dbc0b53585005d17a73504a225d63f`. Independent reviews
+`NYX-MTL-LIFECYCLE-R2-DIFF-REVIEW-20260823-01` and
+`NYX-MTL-LIFECYCLE-R2-PRAGMATIC-REVIEW-20260823-01` accepted the exact product
+diff with no findings. This subsection grants no follow-up product work.
 
 Lifecycle-R2 closes one Renderer race without changing the accepted lifecycle
 model:
