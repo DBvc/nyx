@@ -344,6 +344,41 @@ Lifecycle-R2 reused the existing navigation lock, save status and save queue.
 It added no protocol, schema, shared contract, state owner, action token or
 general reconciliation machinery, and grants no follow-up product work.
 
+## Actions-UI-R1 — Thread row action presentation
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-ACTIONS-UI-R1-SCOPE-20260823-01`, committed at
+  `7cbbb6a898e36140b65eb009950a61a34bdd4511` by the user's explicit repair
+  request.
+- Product commit: `7d98a888d577238fa77e1ffc8d742bdcea832bac`.
+- The exact three-file product diff from the scope-lock head through product
+  head had SHA-256
+  `baa146f9029862cc610d4d9ac047c9817d871e6c38c2969fd053820f3838a307`.
+- Available and Archived rows now keep selection separate from a native
+  Popover actions trigger. The selected row always shows the trigger; other
+  rows reveal it on hover or keyboard focus. The surface uses ordinary buttons
+  with dialog-like semantics and keeps the accepted action sets unchanged.
+- Trash rows keep a direct, always-visible Restore control. Move to Trash is
+  visually separated as the destructive action, and pinned movement keeps its
+  accepted boundary-disabled behavior.
+- Component coverage proves sibling controls, exact action sets, direct Trash
+  Restore, pending/error behavior and movement boundaries. Existing selection,
+  Rename, Pin, pagination and reversible lifecycle coverage remains green.
+- Manual inspection in the existing development profile confirmed clean
+  default rows, anchored and unclipped Popovers near both list boundaries,
+  mouse access, first-action focus on keyboard open, Escape close and trigger
+  focus return. The profile had no Trash rows, so direct Restore was verified
+  by focused component coverage rather than a populated manual sample.
+- Required checks passed on 2026-08-23: all 53 desktop test files (`712` passed,
+  `14` skipped), both desktop TypeScript checks, lint, format check, desktop
+  production build, documentation check and `git diff --check`.
+
+Actions-UI-R1 added no dependency, Portal, global menu state, custom keyboard
+system, shared contract, IPC, schema, runtime or lifecycle change. It does not
+reopen CP1, PIN1 or any completed lifecycle slice and grants no follow-up
+product work.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

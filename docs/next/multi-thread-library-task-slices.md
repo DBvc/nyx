@@ -95,11 +95,14 @@ findings, and all required checks passed. Evidence is recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
 On 2026-08-23 the user explicitly authorized the bounded `Actions-UI-R1`
-presentation repair below. It replaces the always-visible flat row action strip
-with progressive disclosure while preserving every accepted Rename, Pin and
-reversible lifecycle behavior. Its exact product scope becomes executable only
-after this docs-only scope lock enters HEAD. It does not reopen CP1, PIN1 or the
-completed lifecycle sequence.
+presentation repair below. It completed at product head `7d98a88` under contract
+`NYX-MTL-ACTIONS-UI-R1-SCOPE-20260823-01`; its scope lock entered HEAD at
+`7cbbb6a`. The exact three-file product diff had SHA-256
+`baa146f9029862cc610d4d9ac047c9817d871e6c38c2969fd053820f3838a307`.
+All required checks and manual UI inspection passed. Evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+Actions-UI-R1 does not reopen CP1, PIN1 or the completed lifecycle sequence and
+grants no follow-up product work.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -118,8 +121,10 @@ status history for traceability. This Current Status section is authoritative.
 
 Contract id: `NYX-MTL-ACTIONS-UI-R1-SCOPE-20260823-01`.
 
-Status: authorized. This product step becomes executable only after this exact
-docs-only scope lock enters HEAD. Completion grants no follow-up product work.
+Status: complete at product head
+`7d98a888d577238fa77e1ffc8d742bdcea832bac`. The scope lock entered HEAD at
+`7cbbb6a898e36140b65eb009950a61a34bdd4511`. Completion grants no follow-up
+product work.
 
 Actions-UI-R1 changes only how accepted Thread actions are presented:
 
