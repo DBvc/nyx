@@ -379,6 +379,36 @@ system, shared contract, IPC, schema, runtime or lifecycle change. It does not
 reopen CP1, PIN1 or any completed lifecycle slice and grants no follow-up
 product work.
 
+## Actions-UI-R2 — Native Popover browser regression
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-ACTIONS-UI-R2-SCOPE-20260823-01`, committed at
+  `5adfee5d0c0474cf4aaadf75f87f4abca4b9a0fa` by the user's explicit request to
+  close the code-ratchet residual test gap.
+- Test commit: `88231483a54938e7c4690c19e836e14098b503af`.
+- The exact four-file test diff from the scope-lock head through test head had
+  SHA-256
+  `5bbed3c204907ccc536b7bb50dbf0e00d8402d6fad896c35f8d863abb0cc56f2`.
+- A focused real Electron 41 Chromium harness now renders the landed
+  `ChatSidebar` through Vite and Tailwind, using only existing dependencies and
+  an isolated temporary profile.
+- The browser test proves direct sibling controls, keyboard reveal of a hidden
+  non-selected trigger, first-action focus on open, Escape close with trigger
+  focus return, one callback without Thread selection, action close and
+  last-visible-row viewport containment.
+- The Node parent enforces a 20-second timeout, requires an explicit child
+  result and removes the complete temporary profile after Electron exits. The
+  harness does not use the development profile or leave test directories.
+- Required checks passed on 2026-08-23: the focused Electron/Chromium test, all
+  53 desktop test files (`712` passed, `14` skipped), both desktop TypeScript
+  checks, lint, format check, desktop production build, documentation check and
+  `git diff --check`.
+
+Actions-UI-R2 added no dependency or general E2E framework and changed no
+product component, callback, state owner, shared contract, IPC, schema, runtime
+or lifecycle behavior. It grants no follow-up product work.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

@@ -107,9 +107,14 @@ grants no follow-up product work.
 On 2026-08-23 the user explicitly requested the bounded `Actions-UI-R2`
 test-only follow-up below after code-ratchet review identified that native
 Popover focus, dismissal and viewport placement were covered manually but not
-by a real Chromium regression test. The slice adds only a focused Electron
-renderer test using existing dependencies. It does not reopen Actions-UI-R1
-product behavior, CP1, PIN1 or the completed lifecycle sequence.
+by a real Chromium regression test. It completed at test head `8823148` under
+contract `NYX-MTL-ACTIONS-UI-R2-SCOPE-20260823-01`; its scope lock entered HEAD
+at `5adfee5`. The exact four-file test diff had SHA-256
+`5bbed3c204907ccc536b7bb50dbf0e00d8402d6fad896c35f8d863abb0cc56f2`.
+All required checks passed. Evidence is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+Actions-UI-R2 does not reopen Actions-UI-R1 product behavior, CP1, PIN1 or the
+completed lifecycle sequence and grants no follow-up product work.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -128,9 +133,10 @@ status history for traceability. This Current Status section is authoritative.
 
 Contract id: `NYX-MTL-ACTIONS-UI-R2-SCOPE-20260823-01`.
 
-Status: authorized. This test-only step becomes executable only after this
-exact docs-only scope lock enters HEAD. Completion grants no follow-up product
-work.
+Status: complete at test head
+`88231483a54938e7c4690c19e836e14098b503af`. The scope lock entered HEAD at
+`5adfee5d0c0474cf4aaadf75f87f4abca4b9a0fa`. Completion grants no follow-up
+product work.
 
 Actions-UI-R2 may add one focused Electron/Chromium regression harness for the
 landed Thread row actions. It must prove:
