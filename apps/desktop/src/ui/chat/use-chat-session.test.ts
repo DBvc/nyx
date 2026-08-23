@@ -3006,6 +3006,75 @@ describe('Archive and Unarchive Renderer controls', () => {
     expect(render().state.input).toBe('Unsaved selected draft')
   })
 
+  it('preserves a dirty New placeholder through unselected move epoch replacement', async () => {
+    const previous = detail('', 'thread-a')
+    previous.messages = [
+      { id: 'assistant-a', role: 'assistant', content: 'Done', status: 'completed' },
+    ]
+    const targetThread = detail('', 'thread-b')
+    const archivedTarget = {
+      ...targetThread,
+      summary: {
+        ...targetThread.summary,
+        location: 'archived' as const,
+        threadRevision: targetThread.summary.threadRevision + 1,
+      },
+    }
+    let replacement = false
+    const bridge = installBridge({
+      selectedId: previous.summary.id,
+      list: async () =>
+        collectionPageResult(
+          replacement ? [previous.summary] : [previous.summary, targetThread.summary],
+          null,
+          0,
+          { eventEpoch: replacement ? 'epoch-2' : 'epoch-1' },
+        ),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === previous.summary.id ? previous : null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      updateLocation: async () => {
+        replacement = true
+        return {
+          ok: true,
+          value: {
+            detail: archivedTarget,
+            eventEpoch: 'epoch-2',
+            includedThroughCursor: 0,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(previous.summary.id))
+    await expect(render().startNewChat()).resolves.toBe(true)
+    render().setInput('Unmaterialized draft')
+    expect(render().state.selectedThreadId).toBeNull()
+
+    await expect(
+      render().updateThreadLocation({
+        threadId: targetThread.summary.id,
+        action: 'archive',
+        expectedThreadRevision: targetThread.summary.threadRevision,
+      }),
+    ).resolves.toBe(true)
+
+    await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+    expect(render().threadCollection.location).toBe('available')
+    expect(render().threadSummaries).toEqual([previous.summary])
+    expect(render().state.selectedThreadId).toBeNull()
+    expect(render().state.threadSummary).toBeNull()
+    expect(render().state.input).toBe('Unmaterialized draft')
+    expect(render().state.eventEpoch).toBe('epoch-2')
+    expect(bridge.get).toHaveBeenCalledTimes(2)
+    expect(bridge.materialize).not.toHaveBeenCalled()
+  })
+
   it('blocks Archive for a running row before crossing the bridge', async () => {
     const running = detail('', 'thread-a')
     const runningSummary = {

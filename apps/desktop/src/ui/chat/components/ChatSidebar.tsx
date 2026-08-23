@@ -109,6 +109,8 @@ export function ChatSidebar({
     () => canonicalThreads.filter((thread) => thread.pinPosition === null),
     [canonicalThreads],
   )
+  const visibleCurrentThread =
+    currentThread?.location === collection.location ? currentThread : null
 
   function switchCollection(location: ThreadCollectionLocation) {
     setRename(null)
@@ -375,7 +377,7 @@ export function ChatSidebar({
           </div>
         ) : (
           <>
-            {currentThread ? (
+            {visibleCurrentThread ? (
               <section className='pb-3' aria-labelledby='current-thread-heading'>
                 <h2
                   className='px-2 pb-1 text-[12px] font-medium text-nyx-subtle'
@@ -384,8 +386,8 @@ export function ChatSidebar({
                   Current thread
                 </h2>
                 {currentThreadStatus === 'idle'
-                  ? renderThread(currentThread)
-                  : renderThread(currentThread, { statusOverride: currentThreadStatus })}
+                  ? renderThread(visibleCurrentThread)
+                  : renderThread(visibleCurrentThread, { statusOverride: currentThreadStatus })}
               </section>
             ) : null}
 

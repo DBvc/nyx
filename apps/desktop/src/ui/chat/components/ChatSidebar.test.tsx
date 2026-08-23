@@ -171,6 +171,21 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).not.toContain('>Trash</button>')
   })
 
+  it('hides a stale Available Current row while Trash hydration is pending', () => {
+    const html = renderSidebar({
+      currentThread: recent,
+      collection: {
+        ...initialThreadCollectionState,
+        location: 'trash',
+        status: 'loading',
+      },
+    })
+
+    expect(html).not.toContain('Recent one')
+    expect(html).not.toContain('Current thread')
+    expect(html).not.toContain('>Rename</button>')
+  })
+
   it('keeps controls on an available Current thread fallback and hides them for unavailable rows', () => {
     const current = thread('current-1', 'Current outside prefix', null)
     const unavailable: NyxThreadSummary = {

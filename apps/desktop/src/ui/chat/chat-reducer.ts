@@ -309,6 +309,19 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         }
         return { ...ready, ...detailState(action.detail, state), targetInitialized: false }
       }
+      if (action.preserveOverlay && action.summary === null && state.selectedThreadId === null) {
+        return {
+          ...state,
+          hydrationStatus: 'ready',
+          hydrationError: null,
+          hydrationErrorThreadId: null,
+          hydrationRetrying: false,
+          eventEpoch: action.eventEpoch,
+          listCursor: action.listCursor,
+          detailCursor: action.detailCursor,
+          threadSummary: null,
+        }
+      }
       if (action.summary?.availability === 'unavailable') {
         return {
           ...ready,

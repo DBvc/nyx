@@ -718,6 +718,7 @@ export function useChatSession({
       kind: 'pin' | 'rename' | 'location'
       threadId: string
       holdsNavigation: boolean
+      navigationSelection?: string | null
       hydration: number
       epoch: string
       projectionGeneration: number
@@ -1512,7 +1513,13 @@ export function useChatSession({
           // A blocked UI preference does not block canonical hydration.
         }
 
-        let selectedId = storedId ?? firstSummary?.id ?? null
+        const navigationSelection = activeThreadCollectionAction?.holdsNavigation
+          ? activeThreadCollectionAction.navigationSelection
+          : undefined
+        let selectedId =
+          navigationSelection !== undefined
+            ? navigationSelection
+            : (storedId ?? firstSummary?.id ?? null)
         let summary =
           pageResult.rows.find((row) => row.id === selectedId) ??
           (selectedId === firstSummary?.id ? firstSummary : null)
@@ -1612,7 +1619,7 @@ export function useChatSession({
           listCursor,
           detailCursor,
           preserveOverlay:
-            stateRef.current.selectedThreadId === resolvedSummary?.id &&
+            stateRef.current.selectedThreadId === (resolvedSummary?.id ?? null) &&
             stateRef.current.draftEditVersion > stateRef.current.savedEditVersion,
         })
         completeThreadCollectionActionAfterHydration(request, eventEpoch)
@@ -1793,6 +1800,7 @@ export function useChatSession({
         kind: 'location',
         threadId: input.threadId,
         holdsNavigation: true,
+        navigationSelection: selectedThreadIdRef.current,
         hydration: hydrationRef.current,
         epoch: eventEpoch,
         projectionGeneration: projectionGeneration.current,

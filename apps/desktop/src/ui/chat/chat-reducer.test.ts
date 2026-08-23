@@ -310,6 +310,38 @@ describe('chatReducer C1 projection', () => {
     expect(stale.selectedThreadId).toBeNull()
   })
 
+  it('keeps a dirty placeholder while a replacement hydration advances Library clocks', () => {
+    const placeholder = chatReducer(
+      chatReducer(hydrated(), {
+        type: 'show-placeholder',
+        generation: 1,
+        minimumCatalogEpoch: 3,
+      }),
+      { type: 'set-input', value: 'Unmaterialized draft' },
+    )
+    const refreshed = chatReducer(placeholder, {
+      type: 'thread-library-hydrated',
+      generation: 1,
+      summary: null,
+      detail: null,
+      eventEpoch: 'epoch-2',
+      listCursor: 9,
+      detailCursor: 9,
+      preserveOverlay: true,
+    })
+
+    expect(refreshed).toMatchObject({
+      selectedThreadId: null,
+      threadSummary: null,
+      input: 'Unmaterialized draft',
+      eventEpoch: 'epoch-2',
+      listCursor: 9,
+      detailCursor: 9,
+      hydrationStatus: 'ready',
+    })
+    expect(refreshed.draftEditVersion).toBe(placeholder.draftEditVersion)
+  })
+
   it('keeps the selected overlay but hides it behind Thread unavailable Retry', () => {
     const dirty = chatReducer(hydrated(), { type: 'set-input', value: 'local edit' })
     const unavailable = chatReducer(dirty, {
