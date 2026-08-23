@@ -124,6 +124,13 @@ code. Later that day the user authorized a narrow evidence-contract amendment:
 bind T1a to the intended Worker scan shape and correct its invalid rerun
 wording, without changing scope, thresholds, slice order or execution status.
 
+The user then authorized SEARCH1/T1a. Its single valid release-shape run passed
+the 128-Thread gate and failed the 512-Thread gate, producing the fixed
+`needs-decision` branch. The user explicitly chose the smaller supported
+envelope and then authorized the exact docs-only
+`multi-thread-library/SEARCH1/T1b-scope-lock` step below. This choice does not
+authorize T1b product code or silently truncate Search to 128 Threads.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -300,6 +307,133 @@ safe Thread grouping cannot be established, a schema or second corpus becomes
 necessary, a second database/queue owner is required, or implementation needs
 Draft/document/Trash search, FTS, semantic search, automatic paging, broader
 focus infrastructure, CP1/PIN1/lifecycle changes or an OCaml Thread model.
+
+## multi-thread-library/SEARCH1-T1b-scope-lock: Small-envelope Worker Search core
+
+Contract id: `NYX-MTL-SEARCH1-T1B-SCOPE-20260823-01`.
+
+Status: authorized for this docs-only step. SEARCH1/T1b-scope-lock may change
+exactly this status owner and is complete when this exact one-file scope lock
+enters HEAD. Completion grants no T1b product-code or follow-up execution
+permission. Before product work, this exact scope lock requires independent
+strict review and the user must explicitly authorize
+`multi-thread-library/SEARCH1/T1b`.
+
+T1a ran once at repository head
+`985bf86a5bfb77ca4541ebd8644dfc2937d68436` on an Apple M4 Pro with 12 logical
+CPUs and 48 GiB memory, using Electron 41.7.2, Node 24.15.0 and SQLite 3.51.3.
+The declared pre-run load averages were 8.76, 9.21 and 7.53. The current schema
+SHA-256 was
+`fdeb330b0257afd7cfd8f8a10083fd4c07f3e6b559219aac1077b51e78e848a1`, and the
+current Worker source SHA-256 was
+`da8ce84d6de819118f304169df3c4603ce95291a9326a633784649fb3abc595f`.
+The harness used the fixed T1a corpus, five warmups and 20 measured repetitions
+per query and tier. It recorded this valid evidence:
+
+| Threads | Query             | Worker p50 | Worker p95 | Worker max | Queued-write max wait |
+| ------: | ----------------- | ---------: | ---------: | ---------: | --------------------: |
+|     128 | no hit            |  17.939 ms |  19.021 ms |  19.210 ms |             19.254 ms |
+|     128 | oldest rare hit   |  17.656 ms |  19.895 ms |  23.776 ms |             23.852 ms |
+|     128 | 51-plus broad hit |  12.014 ms |  12.536 ms |  12.767 ms |             12.806 ms |
+|     512 | no hit            |  68.475 ms |  87.835 ms |  93.064 ms |             93.132 ms |
+|     512 | oldest rare hit   |  68.454 ms |  80.225 ms | 118.528 ms |            118.769 ms |
+|     512 | 51-plus broad hit |  34.120 ms |  39.147 ms |  41.052 ms |             41.102 ms |
+|   2,048 | no hit            | 314.157 ms | 328.307 ms | 332.456 ms |            332.508 ms |
+|   2,048 | oldest rare hit   | 331.036 ms | 426.059 ms | 431.944 ms |            431.996 ms |
+|   2,048 | 51-plus broad hit | 123.569 ms | 144.617 ms | 145.596 ms |            145.652 ms |
+
+The 128-Thread gate therefore passed with a 23.776 ms Worker maximum and a
+23.852 ms queued-write maximum wait. The 512-Thread gate failed, while the
+2,048-Thread tier remains trend evidence only. The valid result is not rerun or
+reclassified.
+
+The selected small envelope narrowly supersedes only the earlier candidate T1b
+performance gate and eligibility wording:
+
+- the supported performance envelope is at most 128 searchable Available plus
+  Archived Threads, with the same reference density of 16 committed Turns per
+  Thread and 2 KiB searchable text per Turn used by T1a;
+- this is a measured support envelope, not a storage, creation, Turn-count or
+  query-result cap. Worker Search must still scan every eligible Thread and
+  preserve correct results above the envelope, but no 50 ms latency guarantee
+  applies there;
+- implementation must not search only the newest 128 Threads, reject a library
+  above 128 Threads, hide an older match or claim that 512 Threads passed;
+- before any T1b product commit, the real Worker `search` operation must run the
+  same 128-Thread corpus, queries, warmups, repetitions and 50 ms Worker/queued
+  write gates in one valid release-shape run. The 512 and 2,048 tiers are not
+  product gates and cannot be used to relax the 128-Thread gate; and
+- any valid 128-Thread Worker maximum or queued-write wait above 50 ms is
+  `VALID_STOP`. T1b then makes no product commit and returns to a separate FTS
+  decision rather than raising the threshold or truncating the corpus.
+
+If later separately authorized, SEARCH1/T1b may add exactly one Main-local,
+read-only `search` operation to the existing single Thread Library Worker
+protocol and Client. It may change exactly:
+
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/client.ts`;
+- `apps/desktop/electron/main/thread-library/worker.ts`;
+- `apps/desktop/electron/main/thread-library/client.test.ts`;
+- `apps/desktop/electron/main/thread-library/worker.test.ts`;
+- [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md)
+  for T1b final evidence only; and
+- this status owner for the T1b final completion record only.
+
+No other file is allowed. In particular T1b does not change the shared desktop
+contract, preload, Main service or IPC, Renderer, schema, database owner,
+Worker count, lifecycle mutation, Runtime or OCaml. It adds no FTS, normalized
+corpus, cache, index, second queue, new dependency or reusable benchmark
+framework. The operation remains unreachable from product UI until a later
+T2 bridge slice is independently scoped, reviewed and authorized.
+
+The T1b operation must preserve the complete SEARCH1/P0 matching contract. It
+must:
+
+- validate and normalize the bounded query, scan Available and Archived rows
+  in the frozen Thread order and return at most one result per Thread with
+  50-plus-one truncation;
+- validate candidate grouping from the existing private Thread, Draft and Turn
+  schemas without calling the resource-loading `queryThread` once per
+  candidate;
+- prefer title, otherwise the highest matching Turn ordinal, then user before
+  assistant content in that Turn, and return the exact nullable message id;
+- produce a snippet from the selected original candidate, capped at 160 Unicode
+  code points and including the first literal match when truncation is needed;
+- exclude a whole safely identified Thread when its Draft or Turn content is
+  invalid, fail the whole Search when identity, location, ordering or grouping
+  is unsafe, and never return Trash, Draft, document or resource content; and
+- remain a read operation on the existing Worker FIFO. Its reply uses the
+  existing acknowledgement clock with `actualMutation=false`; the Client adds
+  no retry, coalescer or mutation serialization policy.
+
+Focused tests must cover input bounds, NFKC/lowercase and short CJK literal
+matching, title/message priority, terminal assistant eligibility, Thread order,
+exact message identity, 160-code-point snippets, 50-plus-one truncation,
+Available/Archived inclusion, Trash and Draft exclusion, malformed candidate
+isolation versus whole-Search failure, a match in the oldest of 129 Threads to
+prove there is no hidden 128-Thread scan cap, protocol reply rejection and the
+unchanged single-Worker Client command path.
+
+Before T1b final evidence, run:
+
+```text
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+git diff --check
+```
+
+T1b stops without expanding if the real 128-Thread gate fails, correct full
+scanning requires a second corpus or schema, safe grouping cannot be preserved,
+another Worker/database/queue owner is needed, or implementation reaches any
+T2/T3 surface or needs FTS, automatic paging, Draft/document/Trash search or a
+general focus/error system.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 
