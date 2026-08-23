@@ -319,12 +319,13 @@ focus infrastructure, CP1/PIN1/lifecycle changes or an OCaml Thread model.
 
 Contract id: `NYX-MTL-SEARCH1-T1B-SCOPE-20260823-01`.
 
-Status: authorized for this docs-only step. SEARCH1/T1b-scope-lock may change
-exactly this status owner and is complete when this exact one-file scope lock
-enters HEAD. Completion grants no T1b product-code or follow-up execution
-permission. Before product work, this exact scope lock requires independent
-strict review and the user must explicitly authorize
-`multi-thread-library/SEARCH1/T1b`.
+Status: complete at product head
+`55f478ddb1dd62ed2043e9a17ad7e895b8733764`. The adjusted scope lock entered
+HEAD at `bc33f7edde1ea7ae95a525a84ab119c088ac40ce`. Independent strict review
+`NYX-MTL-SEARCH1-T1B-SCOPE-REVIEW-20260823-01` accepted the exact scope bytes
+with SHA-256
+`c68e4995b5ff7636d929a95e54531d3806c83c87ba0423d506c717e898740bfc`, after
+which the user explicitly authorized `multi-thread-library/SEARCH1/T1b`.
 
 T1a ran once at repository head
 `985bf86a5bfb77ca4541ebd8644dfc2937d68436`. The 128-Thread gate passed with a
@@ -354,9 +355,9 @@ performance gate and eligibility wording:
   `VALID_STOP`. T1b then makes no product commit and returns to a separate FTS
   decision rather than raising the threshold or truncating the corpus.
 
-If later separately authorized, SEARCH1/T1b may add exactly one Main-local,
+The authorized SEARCH1/T1b implementation added exactly one Main-local,
 read-only `search` operation to the existing single Thread Library Worker
-protocol and Client. It may change exactly:
+protocol and Client. Its product scope was exactly:
 
 - `apps/desktop/electron/main/thread-library/protocol.ts`;
 - `apps/desktop/electron/main/thread-library/client.ts`;
@@ -421,6 +422,18 @@ scanning requires a second corpus or schema, safe grouping cannot be preserved,
 another Worker/database/queue owner is needed, or implementation reaches any
 T2/T3 surface or needs FTS, automatic paging, Draft/document/Trash search or a
 general focus/error system.
+
+T1b completed without hitting a Stop condition. The real release-shape
+128-Thread gate passed in one valid run: the three Worker maxima were 41.717,
+33.945 and 30.638 ms; their queued `saveDraft` maxima were 42.749, 34.874 and
+31.838 ms. Focused correctness and transport coverage entered the product
+commit, and all required checks passed. Detailed identities and measurements
+are recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+T1b changed no schema, shared/preload/Main service/IPC/Renderer surface,
+database or Worker owner, Runtime or OCaml boundary. SEARCH1/T2 and T3 remain
+non-executable and require their own reviewed scope locks and explicit user
+authorization.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 

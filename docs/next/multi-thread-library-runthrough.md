@@ -442,6 +442,69 @@ trend evidence only. The valid result was not rerun or reclassified. T1a left
 no tracked repository change or product commit, and its 184 MiB temporary
 directory was removed after the result and repository state were verified.
 
+## SEARCH1/T1b — Small-envelope Worker Search core
+
+Result: complete.
+
+- Scope contract: `NYX-MTL-SEARCH1-T1B-SCOPE-20260823-01`; adjusted scope-lock
+  head `bc33f7edde1ea7ae95a525a84ab119c088ac40ce`.
+- Independent review receipt:
+  `NYX-MTL-SEARCH1-T1B-SCOPE-REVIEW-20260823-01`, run
+  `nyx-search1-t1b-20260823-01`, grant `initial`, purpose `initial`, provider
+  `dbx-linus-review`, capability `strict_pragmatic_plan_review`, independence
+  `independent`, judgment `accept`, no findings. It reviewed the full exact
+  scope-lock artifact at version
+  `bc33f7edde1ea7ae95a525a84ab119c088ac40ce`, whose bytes had SHA-256
+  `c68e4995b5ff7636d929a95e54531d3806c83c87ba0423d506c717e898740bfc`.
+- Product commit: `55f478ddb1dd62ed2043e9a17ad7e895b8733764`.
+- The implementation adds one typed Main-local `search` command on the existing
+  single Thread Library Worker and Client. It streams one ordered SQLite join
+  inside a consistent read, validates grouped Thread/Draft/Turn rows, performs
+  NFKC plus default lowercase literal matching, stops after a 51st distinct
+  hit, and returns bounded safe results with exact message identity.
+- Focused tests cover query bounds, NFKC/lowercase and short CJK, title/Turn
+  priority, terminal assistant text, complete Thread ordering, exact message
+  ids, 160-code-point snippets, 50-plus-one truncation, Available/Archived and
+  Trash/Draft boundaries, resource-independent text Search, malformed-candidate
+  isolation, whole-Search failure, an oldest-only hit among 129 Threads, reply
+  rejection, acknowledgement clock and the unchanged single-Worker Client
+  path.
+
+The mandatory product gate ran once on the release build on macOS 27.0 arm64
+with Electron 41.7.2, Node 24.15.0 and SQLite 3.51.3. The corpus contained 128
+Threads split evenly between Available and Archived, 16 committed Turns per
+Thread and exactly 1,024 bytes each of user and assistant text per Turn. Each
+query used five warmups and 20 measured repetitions. One real `saveDraft` was
+queued directly behind every Search to measure Worker FIFO write wait.
+
+| Query             | Worker p50 | Worker p95 | Worker max | Queued `saveDraft` max |
+| ----------------- | ---------: | ---------: | ---------: | ---------------------: |
+| no hit            |  24.740 ms |  27.971 ms |  41.717 ms |              42.749 ms |
+| oldest rare hit   |  24.319 ms |  27.409 ms |  33.945 ms |              34.874 ms |
+| 51-plus broad hit |  15.597 ms |  24.146 ms |  30.638 ms |              31.838 ms |
+
+Every mandatory maximum was below 50 ms. The exact identities were:
+
+- Worker source SHA-256:
+  `beb6d19a7f15e04451fcb56688876dfb1cf381e6d77840274ba0b2c3fb2e53bb`;
+- protocol source SHA-256:
+  `9c51baba1a84b3591b71547b3f95423d007c2c0e292a49cbbd2979ce7f2038c3`;
+- release Worker bundle SHA-256:
+  `3ee0b9311797ed1e662ff197f3120aa6bd6b0540debdc5700e71ad4ae6bb6ab9`;
+- release protocol chunk SHA-256:
+  `811b8196544544191e5f6c435e1f173c6bc74bbc16ef8515af7fccfb6c786bcf`;
+  and
+- temporary gate harness SHA-256:
+  `1c9cff30bfb066945c30b7017426a8efb2ee17c7e5424692ed5a6d76bc16014c`.
+
+Required validation passed on 2026-08-23: all 53 desktop test files (`717`
+passed, `14` skipped), both desktop TypeScript checks, lint, format check,
+desktop production build, runtime chat-state check, documentation check and
+`git diff --check`. The temporary gate directory was removed. T1b added no
+schema, FTS/index/cache, second database/Worker/queue owner, shared/preload/Main
+service/IPC/Renderer contract, Runtime or OCaml change. It grants no T2/T3
+execution permission.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
