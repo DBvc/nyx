@@ -116,6 +116,12 @@ All required checks passed. Evidence is recorded in
 Actions-UI-R2 does not reopen Actions-UI-R1 product behavior, CP1, PIN1 or the
 completed lifecycle sequence and grants no follow-up product work.
 
+On 2026-08-23 the user explicitly authorized the exact docs-only
+`multi-thread-library/SEARCH1/P0` step below. SEARCH1/P0 records a new bounded
+committed-text Search direction and its later gates. It does not make T1a or
+any product slice executable, and it grants no permission to modify product
+code.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -128,6 +134,164 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/SEARCH1-P0-scope-lock: Bounded committed-text Search
+
+Contract id: `NYX-MTL-SEARCH1-P0-SCOPE-20260823-01`.
+
+Status: authorized for this docs-only step. SEARCH1/P0 may change exactly this
+status owner and is complete when this exact one-file scope lock enters HEAD.
+Completion grants no T1a, product-code or follow-up execution permission.
+
+SEARCH1 is a fresh bounded direction over the landed Thread Library. It may
+search Available and Archived Thread titles plus canonical committed user and
+assistant message text. It excludes Trash, Draft text, document extracted
+text, images, attachments, Renderer dirty overlays and preparing bytes.
+
+SEARCH1/P0 narrowly supersedes the old Q1 and Search wording in
+[multi-thread-library-technical-plan.md](./multi-thread-library-technical-plan.md)
+only as follows:
+
+- Search entry and Cancel do not cross the Draft navigation-save barrier and
+  do not change the underlying collection, selection, detail, Draft or Runs;
+- Search is Renderer-local feature state, not a fourth persisted location or
+  a new `NyxThreadLocation` value;
+- the corpus excludes Main-acked Draft text and all Draft/Turn document text,
+  so old Draft, attachment and document-result anchors are not inherited;
+- Renderer owns the 120 ms IME-aware debounce, one in-flight request and one
+  latest pending query; Main owns only process-wide concurrent-Search
+  rejection and does not add another pending-query queue; and
+- no other old Q1 corpus, ranking, focus branch, evidence, PASS state or
+  execution permission is inherited. Unaffected landed Thread Library
+  behavior remains the compatibility baseline.
+
+The bounded SEARCH1 contract is:
+
+- trim the query, require 1 through 256 Unicode code points, normalize query
+  and candidates with Unicode NFKC plus default non-locale lowercase, then use
+  literal substring matching;
+- return at most one result per Thread and at most 50 Threads. Read a 51st
+  distinct match only to set `truncated=true`; never return its content;
+- cap each snippet at 160 Unicode code points;
+- prefer a title match. Otherwise prefer the highest matching Turn ordinal;
+  within the same Turn retain the old planned priority of user message before
+  assistant message. User content belongs to the canonical Turn immediately;
+  non-empty assistant content is searchable only after the Turn reaches a
+  terminal `completed`, `cancelled` or `failed` state;
+- order Threads by `last_user_activity_at DESC, created_at DESC, id ASC`; and
+- return a safe Thread id, full title, actual `available | archived` location,
+  `title | user_message | assistant_message` source, bounded snippet and exact
+  nullable message id together with the existing Thread clock and a bounded
+  `truncated` boolean.
+
+The eventual additive shared contract is limited to the following shape:
+
+```text
+NyxThreadSearchInput { query }
+NyxThreadSearchResult {
+  threadId, title, location, source, snippet, messageId
+}
+NyxThreadSearchResponse extends NyxThreadClock { results, truncated }
+```
+
+Search remains a projection of Worker-owned SQLite state. It adds no schema,
+FTS table, normalized corpus, cache owner, database connection, raw-SQL IPC,
+Worker pool, Main synchronous fallback or OCaml Thread domain. A new query
+epoch immediately invalidates old Renderer results. Any later accepted Thread
+event clears the whole visible result set and coalesces one requery for the
+latest non-empty query. A late response cannot restore results, busy state,
+errors or announcements for an older epoch or after Search exit.
+
+Before matching, Worker Search must validate each candidate Thread group with
+an internal parser built from the existing private Thread, Draft and Turn row
+schemas. If safe Thread identity, location, title and ordering survive but its
+Draft is missing or a Turn sequence, state or message identity is invalid,
+exclude the whole Thread without returning even a title hit. If identity,
+location, ordering or safe row grouping cannot be established, fail the whole
+Search as Library unavailable. Resource defects do not suppress title/message
+Search because resources are outside the corpus. Search must not call the full
+resource-loading `queryThread` once per candidate.
+
+Opening a result is the only Search action that may navigate. A result for the
+already selected Thread closes Search only after its exact message still
+exists in the current committed detail; a title hit uses the existing Thread
+heading. A different result first crosses the existing Draft save barrier,
+then calls the existing `threads.get(threadId)`. Only the latest navigation
+generation and an actual Available/Archived result may commit the selected
+detail, id, real collection location and local selection preference. Search
+closes only after that atomic commit. A late or stale get must run the existing
+full hydration before navigation unlocks. Trash, not-found and
+Thread-unavailable targets leave Search open, clear stale results and focus the
+query input without exposing target content. Message hits use a one-shot
+programmatic anchor; a missing anchor falls back to the Thread heading. Search
+does not add automatic paging, an around-page API or a general focus system.
+
+The only candidate dependency order after SEARCH1/P0 is:
+
+```text
+SEARCH1/P0 [this docs-only step]
+  -> SEARCH1/T1a [non-landing feasibility preflight]
+  -> SEARCH1/T1b [Worker Search core]
+  -> SEARCH1/T2  [shared/Main/preload bridge]
+  -> SEARCH1/T3  [Renderer Search UI]
+  -> SEARCH1/T4  [full validation and evidence]
+```
+
+Every later step is currently non-executable. Each requires an explicit user
+request naming that exact step. Every tracked product step also requires its
+own independently reviewed one-file scope lock in this status owner before its
+product files may change. Passing one step does not authorize the next.
+
+SEARCH1/T1a, if later authorized, is a non-landing release-shape
+Electron/Node Worker feasibility preflight under an OS temporary directory. It
+must leave no tracked repository change or product commit. Its fixed corpus is
+128, 512 and 2,048 Thread tiers, 16 committed Turns per Thread and 2 KiB of
+searchable text per Turn split evenly between user and assistant content. Each
+tier runs no-hit, oldest-Thread rare-hit and 51-or-more broad-hit queries with
+five warmups and 20 measured repetitions. It records hardware, Electron, Node,
+build mode, Worker p50/p95/max elapsed time and the maximum added wait for a
+queued test write or equivalent settlement-shaped command.
+
+T1a has one valid recorded run per declared environment. A rerun is allowed
+only for a documented harness or environment invalidity identified before the
+result is classified; a performance failure may not be rerun until it passes,
+and no threshold may be relaxed inside the run. Its decisions are fixed:
+
+- if the 128-Thread Worker max or added wait exceeds 50 ms, record
+  `VALID_STOP`, reject literal SEARCH1 and make no product or bridge change;
+- if 128 passes but 512 fails, record `needs-decision`, stop before product
+  code and ask the user to choose a smaller supported envelope or a separate
+  FTS plan;
+- if 512 passes, T1b becomes eligible for a separately authorized scope lock;
+  and
+- the 2,048 tier is trend evidence only and cannot relax either gate.
+
+The later candidate product inventories are bounded as follows and grant no
+current permission:
+
+- T1b: `apps/desktop/electron/main/thread-library/protocol.ts`, `client.ts`,
+  `worker.ts` and their focused tests only; no shared bridge, Renderer or
+  schema;
+- T2: `apps/desktop/shared/threads`, the shared desktop contract, preload,
+  Main IPC/service and their focused tests only; no general scheduler or new
+  error system;
+- T3: feature-local `apps/desktop/src/ui/chat/thread-search.ts` plus its test,
+  `use-chat-session.ts`, `ChatSidebar.tsx`, and only the necessary
+  `ChatWorkspace`/`ChatMessage` files and focused tests; and
+- T4: required validation plus final evidence in
+  [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md)
+  and this status owner only.
+
+Any future SEARCH1 product scope must require desktop typecheck,
+compatibility typecheck, lint and build. Electron/Main protocol boundary work
+also requires `runtime:chat-state:check`. Documentation changes require
+`mise run docs:check`, `mise run format-check` and `git diff --check`.
+
+SEARCH1 stops rather than expanding if literal scan misses its fixed gate,
+safe Thread grouping cannot be established, a schema or second corpus becomes
+necessary, a second database/queue owner is required, or implementation needs
+Draft/document/Trash search, FTS, semantic search, automatic paging, broader
+focus infrastructure, CP1/PIN1/lifecycle changes or an OCaml Thread model.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 
