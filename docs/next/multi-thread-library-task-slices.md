@@ -79,6 +79,13 @@ Independent final review returned `accept` with no S0-S2 findings, and all
 required checks passed. The evidence is recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
+A later independent standalone audit found one material race inside that exact
+product artifact: a scheduled or in-flight New Draft materialization can cross
+an unselected Archive/Trash action and be overwritten in the Renderer by the
+action's earlier `null` selection snapshot. On 2026-08-23 the user explicitly
+requested the bounded `Lifecycle-R2` correction below. No other lifecycle,
+CP1 or PIN1 continuation is executable.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -91,6 +98,65 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/Lifecycle-R2-scope-lock: Autosave and location race repair
+
+Contract id: `NYX-MTL-LIFECYCLE-R2-SCOPE-20260823-01`.
+
+Status: executable after this docs-only scope enters HEAD. The user's explicit
+2026-08-23 repair request authorizes only the exact work below.
+
+Lifecycle-R2 closes one Renderer race without changing the accepted lifecycle
+model:
+
+- a pending autosave timer must not enter Draft materialization after an
+  Archive or Trash action has acquired the existing navigation lock;
+- a location action must not dispatch while a Draft save or materialization is
+  already in flight; and
+- after the location action releases navigation, an unchanged dirty Draft may
+  resume the ordinary autosave path.
+
+The product step may change exactly:
+
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final reviewed completion record only.
+
+No other file is allowed. Lifecycle-R2 does not add or change a shared
+contract, IPC method, Worker protocol, schema, migration, database owner,
+navigation barrier, collection action token or persistent state. It does not
+reopen CP1, PIN1, Rename, location semantics or any broader lifecycle feature.
+
+Required focused evidence:
+
+- parameterized Archive and Trash coverage proves a scheduled dirty-New
+  autosave cannot materialize while an unselected location action is pending,
+  the dirty projection survives matching replacement hydration, and autosave
+  can run after navigation releases;
+- an already in-flight materialization prevents location dispatch and keeps
+  its resulting Thread selected; and
+- the existing selected/unselected move, dirty overlay, replacement hydration,
+  Draft-save and read-only tests remain green.
+
+Before final evidence, run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+mise run format-check
+git diff --check
+```
+
+Lifecycle-R2 stops if implementation needs another file, another lock/token,
+new reconciliation or preflight machinery, or any behavior beyond closing the
+listed race. Completion grants no follow-up product work.
 
 ## multi-thread-library/Lifecycle-R1-scope-lock: Reversible lifecycle correctness repair
 
