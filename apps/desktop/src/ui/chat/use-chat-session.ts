@@ -1763,6 +1763,7 @@ export function useChatSession({
         activeThreadCollectionAction ||
         threadPinActionRef.current.pending ||
         stateRef.current.newThreadPending ||
+        stateRef.current.saveStatus === 'saving' ||
         navigationRef.current
       ) {
         return false
@@ -2156,7 +2157,9 @@ export function useChatSession({
             }
           }
 
-          dispatch({ type: 'save-started' })
+          const saveStarted = { type: 'save-started' as const }
+          stateRef.current = chatReducer(stateRef.current, saveStarted)
+          dispatch(saveStarted)
           const submittedVersion = current.draftEditVersion
           let threadId = selectedThreadIdRef.current
           let expectedDraftRevision = current.draftRevision
@@ -2306,6 +2309,7 @@ export function useChatSession({
       state.hydrationStatus !== 'ready' ||
       threadSurfaceIsReadOnly(state, threadCollection.location) ||
       state.activeRequestId ||
+      navigating ||
       state.draftEditVersion <= state.savedEditVersion
     )
       return
@@ -2315,7 +2319,9 @@ export function useChatSession({
       state.draftDocuments.some((document) => document.status === 'ready')
     if (!state.selectedThreadId && state.input.trim().length === 0 && !hasReadyAttachment) return
 
-    const timeout = window.setTimeout(() => void queueSaveDraft(), 250)
+    const timeout = window.setTimeout(() => {
+      if (!navigationRef.current) void queueSaveDraft()
+    }, 250)
     return () => window.clearTimeout(timeout)
   }, [
     state.activeRequestId,
@@ -2323,6 +2329,7 @@ export function useChatSession({
     state.hydrationStatus,
     state.savedEditVersion,
     state.threadSummary?.location,
+    navigating,
     threadCollection.location,
   ])
 

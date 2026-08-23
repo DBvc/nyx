@@ -36,6 +36,8 @@ const harness = vi.hoisted(() => ({
   refIndex: 0,
   states: [] as unknown[],
   stateIndex: 0,
+  effects: [] as Array<() => void | (() => void)>,
+  effectIndex: 0,
   runEffects: false,
   cleanups: [] as Array<() => void>,
 }))
@@ -72,6 +74,8 @@ vi.mock('react', async (importOriginal) => {
       ]
     },
     useEffect(effect: () => void | (() => void)) {
+      const index = harness.effectIndex++
+      harness.effects[index] = effect
       if (!harness.runEffects) return
       const cleanup = effect()
       if (cleanup) harness.cleanups.push(cleanup)
@@ -262,6 +266,8 @@ function reset(state: ChatState = initialChatState) {
   harness.refIndex = 0
   harness.states = []
   harness.stateIndex = 0
+  harness.effects = []
+  harness.effectIndex = 0
   harness.runEffects = false
   TestWorker.instances = []
   TestWorker.constructorError = null
@@ -278,6 +284,7 @@ function render(
 ) {
   harness.refIndex = 0
   harness.stateIndex = 0
+  harness.effectIndex = 0
   harness.runEffects = runEffects
   const session = useChatSession({
     connectionStatus: options.connectionStatus ?? readyStatus(),
@@ -286,6 +293,25 @@ function render(
   })
   harness.runEffects = false
   return session
+}
+
+function runAutosaveEffect() {
+  const effect = harness.effects.find(
+    (candidate) =>
+      candidate.toString().includes('setTimeout') &&
+      candidate.toString().includes('queueSaveDraft'),
+  )
+  if (!effect) throw new Error('Autosave effect was not captured')
+  const cleanup = effect()
+  if (cleanup) harness.cleanups.push(cleanup)
+}
+
+function runTargetCatalogEffect() {
+  const effect = harness.effects.find((candidate) =>
+    candidate.toString().includes('deriveTargetCatalogAction'),
+  )
+  if (!effect) throw new Error('Target catalog effect was not captured')
+  effect()
 }
 
 function installBridge(options?: {
@@ -348,8 +374,11 @@ function installBridge(options?: {
           ok: true as const,
           value: {
             detail: {
-              ...detail(input.text),
-              draft: { ...detail(input.text).draft, revision: input.expectedDraftRevision + 1 },
+              ...detail(input.text, input.threadId),
+              draft: {
+                ...detail(input.text, input.threadId).draft,
+                revision: input.expectedDraftRevision + 1,
+              },
             },
             eventEpoch: 'epoch-1',
             includedThroughCursor: 3,
@@ -2832,6 +2861,7 @@ describe('Archive and Unarchive Renderer controls', () => {
     render().setInput('Ignored in Trash')
     expect(render().state.input).toBe('Keep this draft')
     expect(render().state.selectedThreadId).toBe(trashed.summary.id)
+    expect(render().state.saveStatus).toBe('idle')
     expect(render().threadSummaries[0]).toMatchObject({
       id: trashed.summary.id,
       location: 'trash',
@@ -3073,6 +3103,146 @@ describe('Archive and Unarchive Renderer controls', () => {
     expect(render().state.eventEpoch).toBe('epoch-2')
     expect(bridge.get).toHaveBeenCalledTimes(2)
     expect(bridge.materialize).not.toHaveBeenCalled()
+  })
+
+  it.each(['archive', 'trash'] as const)(
+    'does not autosave a dirty New draft while an unselected %s holds navigation',
+    async (locationAction) => {
+      vi.useFakeTimers()
+      const previous = detail('', 'thread-a')
+      const targetThread = detail('', 'thread-b')
+      const materializedDraft = detail('Unmaterialized draft', 'thread-new')
+      const movedTarget = {
+        ...targetThread,
+        summary: {
+          ...targetThread.summary,
+          location: locationAction === 'archive' ? ('archived' as const) : ('trash' as const),
+          threadRevision: targetThread.summary.threadRevision + 1,
+        },
+      }
+      const moved = deferred<NyxThreadResult<NyxThreadUpdateLocationResult>>()
+      let replacement = false
+      const bridge = installBridge({
+        selectedId: previous.summary.id,
+        list: async () =>
+          collectionPageResult(
+            replacement ? [previous.summary] : [previous.summary, targetThread.summary],
+            null,
+            0,
+            { eventEpoch: replacement ? 'epoch-2' : 'epoch-1' },
+          ),
+        get: async ({ threadId }) => ({
+          ok: true,
+          value: {
+            detail: threadId === previous.summary.id ? previous : null,
+            eventEpoch: replacement ? 'epoch-2' : 'epoch-1',
+            includedThroughCursor: 0,
+          },
+        }),
+        materializeResult: {
+          ok: true,
+          value: {
+            detail: materializedDraft,
+            eventEpoch: 'epoch-3',
+            includedThroughCursor: 1,
+          },
+        },
+        updateLocation: () => moved.promise,
+      })
+      render(true)
+      await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(previous.summary.id))
+      await expect(render().startNewChat()).resolves.toBe(true)
+      render(false, { connectionStatus: { ...readyStatus(), requestEpoch: 2 } })
+      runTargetCatalogEffect()
+      render().setInput('Unmaterialized draft')
+      render()
+      runAutosaveEffect()
+
+      const moving = render().updateThreadLocation({
+        threadId: targetThread.summary.id,
+        action: locationAction,
+        expectedThreadRevision: targetThread.summary.threadRevision,
+      })
+      await vi.waitFor(() => expect(bridge.updateLocation).toHaveBeenCalledOnce())
+      await vi.advanceTimersByTimeAsync(250)
+
+      expect(bridge.materialize).not.toHaveBeenCalled()
+      expect(render().state.selectedThreadId).toBeNull()
+      expect(render().state.input).toBe('Unmaterialized draft')
+
+      replacement = true
+      moved.resolve({
+        ok: true,
+        value: {
+          detail: movedTarget,
+          eventEpoch: 'epoch-2',
+          includedThroughCursor: 0,
+        },
+      })
+      await expect(moving).resolves.toBe(true)
+      await vi.waitFor(() => expect(render().threadPinAction.pending).toBe(false))
+      expect(render().state.selectedThreadId).toBeNull()
+      expect(render().state.input).toBe('Unmaterialized draft')
+
+      render()
+      runAutosaveEffect()
+      await vi.advanceTimersByTimeAsync(250)
+      await vi.waitFor(() =>
+        expect(render().state.selectedThreadId).toBe(materializedDraft.summary.id),
+      )
+      expect(render().state.input).toBe('Unmaterialized draft')
+    },
+  )
+
+  it('does not dispatch a location move while New Draft materialization is in flight', async () => {
+    vi.useFakeTimers()
+    const previous = detail('', 'thread-a')
+    const targetThread = detail('', 'thread-b')
+    const materializedDraft = detail('Unmaterialized draft', 'thread-new')
+    const pendingMaterialize = deferred<NyxThreadResult<NyxThreadMaterializeResult>>()
+    const bridge = installBridge({
+      selectedId: previous.summary.id,
+      list: async () => collectionPageResult([previous.summary, targetThread.summary], null),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === previous.summary.id ? previous : null,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    bridge.materialize.mockImplementationOnce(() => pendingMaterialize.promise)
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(previous.summary.id))
+    await expect(render().startNewChat()).resolves.toBe(true)
+    render(false, { connectionStatus: { ...readyStatus(), requestEpoch: 2 } })
+    runTargetCatalogEffect()
+    render().setInput('Unmaterialized draft')
+    render()
+    runAutosaveEffect()
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.waitFor(() => expect(bridge.materialize).toHaveBeenCalledOnce())
+
+    await expect(
+      render().updateThreadLocation({
+        threadId: targetThread.summary.id,
+        action: 'archive',
+        expectedThreadRevision: targetThread.summary.threadRevision,
+      }),
+    ).resolves.toBe(false)
+    expect(bridge.updateLocation).not.toHaveBeenCalled()
+
+    pendingMaterialize.resolve({
+      ok: true,
+      value: {
+        detail: materializedDraft,
+        eventEpoch: 'epoch-2',
+        includedThroughCursor: 1,
+      },
+    })
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe('thread-new'))
+    expect(render().state.input).toBe('Unmaterialized draft')
   })
 
   it('blocks Archive for a running row before crossing the bridge', async () => {
