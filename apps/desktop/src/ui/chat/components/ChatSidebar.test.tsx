@@ -59,6 +59,27 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ChatSidebar>> = 
   return renderToStaticMarkup(<ChatSidebar {...props} />)
 }
 
+function openingTagWithAriaLabel(html: string, label: string) {
+  const labelIndex = html.indexOf(`aria-label="${label}"`)
+  const start = html.lastIndexOf('<button', labelIndex)
+  const end = html.indexOf('>', labelIndex)
+
+  expect(labelIndex).toBeGreaterThanOrEqual(0)
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(labelIndex)
+  return html.slice(start, end + 1)
+}
+
+function expectSiblingThreadControls(html: string, title: string) {
+  const titleIndex = html.indexOf(`>${title}</span>`)
+  const selectionCloseIndex = html.indexOf('</button>', titleIndex)
+  const actionTriggerIndex = html.indexOf(`aria-label="Actions for ${title}"`)
+
+  expect(titleIndex).toBeGreaterThanOrEqual(0)
+  expect(selectionCloseIndex).toBeGreaterThan(titleIndex)
+  expect(actionTriggerIndex).toBeGreaterThan(selectionCloseIndex)
+}
+
 describe('ChatSidebar Thread Library', () => {
   it('renders Current, Pinned, and Recent without merging the current fallback', () => {
     const current = thread('current-1', 'Current outside prefix', null)
@@ -87,20 +108,32 @@ describe('ChatSidebar Thread Library', () => {
     expect(html.indexOf('Recent one')).toBeLessThan(html.indexOf('Recent two'))
   })
 
-  it('renders Rename plus the six ordinary Pin actions and disables known boundaries', () => {
+  it('moves the accepted actions into sibling dialog popovers and disables Pin boundaries', () => {
     const pinnedTwo = thread('pinned-2', 'Pinned two', 2)
     const html = renderSidebar({
       collection: {
         ...initialThreadCollectionState,
-        rows: [pinned, pinnedTwo, recent],
+        rows: [pinned, pinnedTwo],
         nextCursor: null,
         loadedPageCount: 1,
         status: 'ready',
       },
     })
 
+    expectSiblingThreadControls(html, pinned.title)
+    expect(openingTagWithAriaLabel(html, `Actions for ${pinned.title}`)).toContain(
+      'aria-haspopup="dialog"',
+    )
+    expect(openingTagWithAriaLabel(html, `Actions for ${pinned.title}`)).toContain(
+      'popoverTarget="thread-actions-pinned-1"',
+    )
+    expect(html).toContain('aria-label="Thread actions for Pinned one"')
+    expect(html).toContain('popover="auto"')
+    expect(html).toContain('role="dialog"')
+    expect(html).not.toContain('role="menu"')
+    expect(html).not.toContain('flex flex-wrap gap-0.5')
     expect(html).toContain('>Rename</button>')
-    expect(html).toContain('>Pin</button>')
+    expect(html).not.toContain('>Pin</button>')
     expect(html).toContain('>Unpin</button>')
     expect(html).toContain('>Move up</button>')
     expect(html).toContain('>Move down</button>')
@@ -112,6 +145,28 @@ describe('ChatSidebar Thread Library', () => {
     expect(html).toMatch(/disabled=""[^>]*>Move to bottom<\/button>/u)
   })
 
+  it('exposes only the accepted actions for an unpinned Available row', () => {
+    const html = renderSidebar({
+      selectedThreadId: recent.id,
+      collection: {
+        ...initialThreadCollectionState,
+        rows: [recent],
+        loadedPageCount: 1,
+        status: 'ready',
+      },
+    })
+
+    expectSiblingThreadControls(html, recent.title)
+    expect(html).toContain('>Rename</button>')
+    expect(html).toContain('>Pin</button>')
+    expect(html).toContain('>Archive</button>')
+    expect(html).toContain('>Move to Trash</button>')
+    expect(html).not.toContain('>Unpin</button>')
+    expect(html).not.toContain('>Move up</button>')
+    expect(html).not.toContain('>Unarchive</button>')
+    expect(html).not.toContain('>Restore</button>')
+  })
+
   it('disables every Pin action behind the collection-wide gate and shows a safe row error', () => {
     const html = renderSidebar({
       pinAction: {
@@ -121,13 +176,14 @@ describe('ChatSidebar Thread Library', () => {
     })
 
     expect(html).toContain('Thread changed. Try again.')
+    expect(openingTagWithAriaLabel(html, `Actions for ${recent.title}`)).toContain('disabled=""')
     expect(html).toMatch(/disabled=""[^>]*>Pin<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Unpin<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Rename<\/button>/u)
     expect(html).toMatch(/disabled=""[^>]*>Archive<\/button>/u)
   })
 
-  it('renders the simple Archived mode with Rename, Unarchive and Trash', () => {
+  it('renders Archived actions in the row popover', () => {
     const archived = { ...recent, location: 'archived' as const }
     const html = renderSidebar({
       selectedThreadId: archived.id,
@@ -142,15 +198,16 @@ describe('ChatSidebar Thread Library', () => {
     })
 
     expect(html).toContain('Back to threads')
+    expectSiblingThreadControls(html, archived.title)
     expect(html).toContain('>Rename</button>')
     expect(html).toContain('>Unarchive</button>')
-    expect(html).toContain('>Trash</button>')
+    expect(html).toContain('>Move to Trash</button>')
     expect(html).not.toContain('>Pin</button>')
     expect(html).not.toContain('>Archive</button>')
     expect(html.indexOf('disabled=""')).toBeLessThan(html.indexOf('New thread'))
   })
 
-  it('renders Trash as read-only Restore-only rows without Rename or Pin', () => {
+  it('renders Trash as read-only rows with an always-visible sibling Restore action', () => {
     const trashed = { ...recent, location: 'trash' as const }
     const html = renderSidebar({
       selectedThreadId: trashed.id,
@@ -164,7 +221,14 @@ describe('ChatSidebar Thread Library', () => {
     })
 
     expect(html).toContain('Back to threads')
+    const titleIndex = html.indexOf(`>${trashed.title}</span>`)
+    const selectionCloseIndex = html.indexOf('</button>', titleIndex)
+    const restoreIndex = html.indexOf(`aria-label="Restore ${trashed.title}"`)
+    expect(selectionCloseIndex).toBeGreaterThan(titleIndex)
+    expect(restoreIndex).toBeGreaterThan(selectionCloseIndex)
     expect(html).toContain('>Restore</button>')
+    expect(html).not.toContain(`aria-label="Actions for ${trashed.title}"`)
+    expect(html).not.toContain(`aria-label="Thread actions for ${trashed.title}"`)
     expect(html).not.toContain('>Rename</button>')
     expect(html).not.toContain('>Pin</button>')
     expect(html).not.toContain('>Archive</button>')

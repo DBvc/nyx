@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
+import { ChevronDown, Ellipsis, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { RefObject } from 'react'
 
@@ -149,6 +149,7 @@ export function ChatSidebar({
     const boundaries = threadPinBoundaries(collection, thread)
     const renameDraft =
       thread.location !== 'trash' && rename?.threadId === thread.id ? rename : null
+    const actionPopoverId = `thread-actions-${thread.id}`
 
     function beginRename() {
       if (thread.availability !== 'available' || thread.location === 'trash' || pinAction.pending) {
@@ -177,12 +178,24 @@ export function ChatSidebar({
       onUpdateThreadLocation(thread.id, action, thread.threadRevision)
     }
 
-    function renderPinAction(label: string, action: NyxThreadPinAction, boundaryDisabled = false) {
+    function renderAction(
+      label: string,
+      onAction: () => void,
+      options: { danger?: boolean; disabled?: boolean } = {},
+    ) {
       return (
         <button
-          className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-          disabled={pinAction.pending || boundaryDisabled}
-          onClick={() => onUpdateThreadPin(thread.id, action, thread.pinPosition)}
+          className={`flex h-8 w-full items-center rounded-lg px-2 text-left text-[13px] disabled:text-nyx-subtle ${
+            options.danger
+              ? 'text-nyx-danger hover:bg-nyx-danger-soft'
+              : 'text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink'
+          }`}
+          disabled={options.disabled}
+          onClick={() => {
+            const popover = document.getElementById(actionPopoverId)
+            onAction()
+            popover?.hidePopover()
+          }}
           type='button'
         >
           {label}
@@ -190,8 +203,82 @@ export function ChatSidebar({
       )
     }
 
+    function renderPinAction(label: string, action: NyxThreadPinAction, boundaryDisabled = false) {
+      return renderAction(label, () => onUpdateThreadPin(thread.id, action, thread.pinPosition), {
+        disabled: pinAction.pending || boundaryDisabled,
+      })
+    }
+
+    function renderActionPopover() {
+      return (
+        <>
+          <button
+            aria-haspopup='dialog'
+            aria-label={`Actions for ${thread.title}`}
+            className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink disabled:text-nyx-subtle ${
+              selected
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+            }`}
+            disabled={pinAction.pending}
+            popoverTarget={actionPopoverId}
+            title='Thread actions'
+            type='button'
+          >
+            <Ellipsis aria-hidden='true' className='h-4 w-4' strokeWidth={1.75} />
+          </button>
+
+          <div
+            aria-label={`Thread actions for ${thread.title}`}
+            className='thread-actions-popover nyx-scrollbar rounded-xl border border-nyx-line-strong bg-nyx-panel p-1.5 text-nyx-ink shadow-2xl'
+            id={actionPopoverId}
+            onToggle={(event) => {
+              if (event.currentTarget.matches(':popover-open')) {
+                event.currentTarget
+                  .querySelector<HTMLButtonElement>('button:not(:disabled)')
+                  ?.focus()
+              }
+            }}
+            popover='auto'
+            role='dialog'
+          >
+            {renderAction('Rename', beginRename, { disabled: pinAction.pending })}
+            {thread.location === 'archived' ? (
+              renderAction('Unarchive', () => updateLocation('unarchive'), {
+                disabled: pinAction.pending || locationBlocked,
+              })
+            ) : thread.pinPosition === null ? (
+              renderPinAction('Pin', 'pin')
+            ) : (
+              <>
+                {renderPinAction('Unpin', 'unpin')}
+                <div className='my-1 h-px bg-nyx-line' />
+                <div className='px-2 py-1 text-[11px] font-medium text-nyx-subtle'>
+                  Reorder pinned
+                </div>
+                {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
+                {renderPinAction('Move up', 'move_up', boundaries.atTop)}
+                {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
+                {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
+              </>
+            )}
+            <div className='my-1 h-px bg-nyx-line' />
+            {thread.location === 'available'
+              ? renderAction('Archive', () => updateLocation('archive'), {
+                  disabled: pinAction.pending || locationBlocked,
+                })
+              : null}
+            {renderAction('Move to Trash', () => updateLocation('trash'), {
+              danger: true,
+              disabled: pinAction.pending || locationBlocked,
+            })}
+          </div>
+        </>
+      )
+    }
+
     return (
-      <div className='mb-0.5' key={thread.id}>
+      <div className='group relative mb-0.5' key={thread.id}>
         {renameDraft ? (
           <div className={`rounded-lg px-3 py-2 ${selected ? 'bg-nyx-canvas' : ''}`}>
             <input
@@ -226,9 +313,13 @@ export function ChatSidebar({
         ) : (
           <button
             aria-current={selected ? 'page' : undefined}
-            className={`w-full rounded-lg px-3 py-2.5 text-left ${
-              selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'
-            }`}
+            className={`w-full rounded-lg py-2.5 pl-3 text-left ${
+              thread.availability !== 'available'
+                ? 'pr-3'
+                : thread.location === 'trash'
+                  ? 'pr-20'
+                  : 'pr-10'
+            } ${selected ? 'bg-nyx-canvas' : 'hover:bg-nyx-canvas'}`}
             onClick={() => onSelectThread(thread.id)}
             onKeyDown={(event) => {
               if (event.key === 'F2') {
@@ -252,74 +343,22 @@ export function ChatSidebar({
             ) : null}
           </button>
         )}
-        {thread.availability === 'available' ? (
-          <div className='px-2 pb-1'>
-            <div className='flex flex-wrap gap-0.5'>
-              {thread.location === 'trash' ? (
-                <button
-                  className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                  disabled={pinAction.pending}
-                  onClick={() => updateLocation('restore')}
-                  type='button'
-                >
-                  Restore
-                </button>
-              ) : (
-                <>
-                  <button
-                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                    disabled={pinAction.pending}
-                    onClick={beginRename}
-                    type='button'
-                  >
-                    Rename
-                  </button>
-                  {thread.location === 'archived' ? (
-                    <button
-                      className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                      disabled={pinAction.pending || locationBlocked}
-                      onClick={() => updateLocation('unarchive')}
-                      type='button'
-                    >
-                      Unarchive
-                    </button>
-                  ) : thread.pinPosition === null ? (
-                    renderPinAction('Pin', 'pin')
-                  ) : (
-                    <>
-                      {renderPinAction('Unpin', 'unpin')}
-                      {renderPinAction('Move up', 'move_up', boundaries.atTop)}
-                      {renderPinAction('Move down', 'move_down', boundaries.atBottom)}
-                      {renderPinAction('Move to top', 'move_top', boundaries.atTop)}
-                      {renderPinAction('Move to bottom', 'move_bottom', boundaries.atBottom)}
-                    </>
-                  )}
-                  {thread.location === 'available' ? (
-                    <button
-                      className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                      disabled={pinAction.pending || locationBlocked}
-                      onClick={() => updateLocation('archive')}
-                      type='button'
-                    >
-                      Archive
-                    </button>
-                  ) : null}
-                  <button
-                    className='rounded px-1.5 py-1 text-[11px] text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink disabled:text-nyx-subtle'
-                    disabled={pinAction.pending || locationBlocked}
-                    onClick={() => updateLocation('trash')}
-                    type='button'
-                  >
-                    Trash
-                  </button>
-                </>
-              )}
-            </div>
-            {pinError ? (
-              <p className='px-1.5 py-1 text-[11px] text-nyx-danger'>{pinError}</p>
-            ) : null}
-          </div>
+        {thread.availability === 'available' && !renameDraft ? (
+          thread.location === 'trash' ? (
+            <button
+              aria-label={`Restore ${thread.title}`}
+              className='absolute right-2 top-2 flex h-7 items-center rounded-lg px-2 text-[12px] font-medium text-nyx-muted hover:bg-nyx-solid hover:text-nyx-ink disabled:text-nyx-subtle'
+              disabled={pinAction.pending}
+              onClick={() => updateLocation('restore')}
+              type='button'
+            >
+              Restore
+            </button>
+          ) : (
+            renderActionPopover()
+          )
         ) : null}
+        {pinError ? <p className='px-3 py-1 text-[11px] text-nyx-danger'>{pinError}</p> : null}
       </div>
     )
   }
