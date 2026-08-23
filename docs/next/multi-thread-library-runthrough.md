@@ -409,6 +409,39 @@ Actions-UI-R2 added no dependency or general E2E framework and changed no
 product component, callback, state owner, shared contract, IPC, schema, runtime
 or lifecycle behavior. It grants no follow-up product work.
 
+## SEARCH1/T1a — Literal scan feasibility preflight
+
+Result: `needs-decision`, resolved by the user's smaller-envelope choice.
+
+- T1a ran once at repository head
+  `985bf86a5bfb77ca4541ebd8644dfc2937d68436` on an Apple M4 Pro with 12 logical
+  CPUs and 48 GiB memory, using Electron 41.7.2, Node 24.15.0 and SQLite 3.51.3.
+  The declared pre-run load averages were 8.76, 9.21 and 7.53.
+- The current schema SHA-256 was
+  `fdeb330b0257afd7cfd8f8a10083fd4c07f3e6b559219aac1077b51e78e848a1`; the
+  current Worker source SHA-256 was
+  `da8ce84d6de819118f304169df3c4603ce95291a9326a633784649fb3abc595f`.
+- The release-shape temporary harness used the fixed T1a corpus, five warmups
+  and 20 measured repetitions per query and tier. It recorded:
+
+| Threads | Query             | Worker p50 | Worker p95 | Worker max | Queued-write max wait |
+| ------: | ----------------- | ---------: | ---------: | ---------: | --------------------: |
+|     128 | no hit            |  17.939 ms |  19.021 ms |  19.210 ms |             19.254 ms |
+|     128 | oldest rare hit   |  17.656 ms |  19.895 ms |  23.776 ms |             23.852 ms |
+|     128 | 51-plus broad hit |  12.014 ms |  12.536 ms |  12.767 ms |             12.806 ms |
+|     512 | no hit            |  68.475 ms |  87.835 ms |  93.064 ms |             93.132 ms |
+|     512 | oldest rare hit   |  68.454 ms |  80.225 ms | 118.528 ms |            118.769 ms |
+|     512 | 51-plus broad hit |  34.120 ms |  39.147 ms |  41.052 ms |             41.102 ms |
+|   2,048 | no hit            | 314.157 ms | 328.307 ms | 332.456 ms |            332.508 ms |
+|   2,048 | oldest rare hit   | 331.036 ms | 426.059 ms | 431.944 ms |            431.996 ms |
+|   2,048 | 51-plus broad hit | 123.569 ms | 144.617 ms | 145.596 ms |            145.652 ms |
+
+The 128-Thread gate passed with a 23.776 ms Worker maximum and a 23.852 ms
+queued-write maximum wait. The 512-Thread gate failed; the 2,048-Thread tier is
+trend evidence only. The valid result was not rerun or reclassified. T1a left
+no tracked repository change or product commit, and its 184 MiB temporary
+directory was removed after the result and repository state were verified.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

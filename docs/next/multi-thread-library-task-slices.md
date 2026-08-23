@@ -130,6 +130,13 @@ the 128-Thread gate and failed the 512-Thread gate, producing the fixed
 envelope and then authorized the exact docs-only
 `multi-thread-library/SEARCH1/T1b-scope-lock` step below. This choice does not
 authorize T1b product code or silently truncate Search to 128 Threads.
+A later strict review required two narrow documentation corrections: keep the
+detailed T1a experiment in the runthrough evidence owner and remove an added
+snippet rule that was ambiguous under NFKC matching. The user explicitly
+authorized those corrections. They do not change the selected envelope,
+performance gate, product inventory, dependency order or execution authority.
+This correction may change only this status owner and the runthrough evidence
+owner and grants no product-code permission.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -320,32 +327,12 @@ strict review and the user must explicitly authorize
 `multi-thread-library/SEARCH1/T1b`.
 
 T1a ran once at repository head
-`985bf86a5bfb77ca4541ebd8644dfc2937d68436` on an Apple M4 Pro with 12 logical
-CPUs and 48 GiB memory, using Electron 41.7.2, Node 24.15.0 and SQLite 3.51.3.
-The declared pre-run load averages were 8.76, 9.21 and 7.53. The current schema
-SHA-256 was
-`fdeb330b0257afd7cfd8f8a10083fd4c07f3e6b559219aac1077b51e78e848a1`, and the
-current Worker source SHA-256 was
-`da8ce84d6de819118f304169df3c4603ce95291a9326a633784649fb3abc595f`.
-The harness used the fixed T1a corpus, five warmups and 20 measured repetitions
-per query and tier. It recorded this valid evidence:
-
-| Threads | Query             | Worker p50 | Worker p95 | Worker max | Queued-write max wait |
-| ------: | ----------------- | ---------: | ---------: | ---------: | --------------------: |
-|     128 | no hit            |  17.939 ms |  19.021 ms |  19.210 ms |             19.254 ms |
-|     128 | oldest rare hit   |  17.656 ms |  19.895 ms |  23.776 ms |             23.852 ms |
-|     128 | 51-plus broad hit |  12.014 ms |  12.536 ms |  12.767 ms |             12.806 ms |
-|     512 | no hit            |  68.475 ms |  87.835 ms |  93.064 ms |             93.132 ms |
-|     512 | oldest rare hit   |  68.454 ms |  80.225 ms | 118.528 ms |            118.769 ms |
-|     512 | 51-plus broad hit |  34.120 ms |  39.147 ms |  41.052 ms |             41.102 ms |
-|   2,048 | no hit            | 314.157 ms | 328.307 ms | 332.456 ms |            332.508 ms |
-|   2,048 | oldest rare hit   | 331.036 ms | 426.059 ms | 431.944 ms |            431.996 ms |
-|   2,048 | 51-plus broad hit | 123.569 ms | 144.617 ms | 145.596 ms |            145.652 ms |
-
-The 128-Thread gate therefore passed with a 23.776 ms Worker maximum and a
-23.852 ms queued-write maximum wait. The 512-Thread gate failed, while the
-2,048-Thread tier remains trend evidence only. The valid result is not rerun or
-reclassified.
+`985bf86a5bfb77ca4541ebd8644dfc2937d68436`. The 128-Thread gate passed with a
+23.776 ms Worker maximum and a 23.852 ms queued-write maximum wait. The
+512-Thread gate failed, while the 2,048-Thread tier remains trend evidence only.
+The valid result is not rerun or reclassified. The declared environment, source
+identity and complete measurements are recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
 The selected small envelope narrowly supersedes only the earlier candidate T1b
 performance gate and eligibility wording:
@@ -399,7 +386,7 @@ must:
 - prefer title, otherwise the highest matching Turn ordinal, then user before
   assistant content in that Turn, and return the exact nullable message id;
 - produce a snippet from the selected original candidate, capped at 160 Unicode
-  code points and including the first literal match when truncation is needed;
+  code points;
 - exclude a whole safely identified Thread when its Draft or Turn content is
   invalid, fail the whole Search when identity, location, ordering or grouping
   is unsafe, and never return Trash, Draft, document or resource content; and
