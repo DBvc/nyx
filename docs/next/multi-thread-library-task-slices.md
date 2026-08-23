@@ -65,8 +65,14 @@ Archive/Unarchive completed at product head `7e661d0` under contract
 `NYX-MTL-ARCHIVE-SCOPE-20260822-01`; its scope lock entered HEAD at `bc79920`.
 Trash/Restore completed at product head `d29249e` under contract
 `NYX-MTL-TRASH-SCOPE-20260822-01`; its scope lock entered HEAD at `0b9b9ab`.
-The authorized reversible lifecycle sequence is complete and grants no further
-product slice.
+The authorized reversible lifecycle sequence is complete and grants no ordinary
+continuation.
+
+On 2026-08-23 the user explicitly requested a bounded correctness repair for
+the landed reversible lifecycle. Contract
+`NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01` below is the only candidate execution
+scope. Until its exact bytes receive independent review and this docs-only
+change enters HEAD, product work remains non-executable.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -80,6 +86,99 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/Lifecycle-R1-scope-lock: Reversible lifecycle correctness repair
+
+Contract id: `NYX-MTL-LIFECYCLE-R1-SCOPE-20260823-01`.
+
+This is a bounded repair of the landed Rename, Archive/Unarchive and
+Trash/Restore behavior at product head
+`d29249efcab7e7f0aea595b4a5cbf4366d9accf5`. It does not reopen or redo CP1,
+PIN1 or the completed lifecycle sequence. If the exact bytes of this section
+receive independent scope review and this docs-only change enters HEAD, the
+user's explicit implementation request authorizes only the product work below.
+
+Lifecycle-R1 closes three correctness defects without changing the accepted
+product model:
+
+- Worker empty-shell discard must require the Thread to still be Available in
+  the same conditional delete that checks the exact empty-shell state. A queued
+  Archive or Trash that commits before discard must therefore preserve the
+  Thread and all of its data;
+- Archived and Trash are read-only even when their collection is empty or no
+  Thread is selected. Composer, attachment mutation, Draft materialization,
+  Send and Retry must be unavailable from both visible UI and direct Renderer
+  action entry points. Entering a read-only mode also cancels stale inline
+  Rename state, and failed messages there do not expose Retry;
+- every Archive, Unarchive, Trash and Restore holds the existing Renderer
+  navigation barrier from preflight through matching canonical hydration or
+  failure. New, mode changes and Thread selection cannot race that interval.
+  The action may use its captured selected state only while that barrier proves
+  selection cannot change. Pin and Rename retain their accepted PIN1/lifecycle
+  behavior and do not gain a global navigation lock.
+
+Main remains the final guard for Archive and Trash. Focused service tests must
+prove that `accepted`, `streaming`, durable pending Turn and
+`settlement_failed` states reject those actions without a Worker mutation.
+
+The Lifecycle-R1 product step may change exactly:
+
+- `apps/desktop/electron/main/thread-library/worker.ts`;
+- `apps/desktop/electron/main/thread-library/worker.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.tsx`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final reviewed completion record only.
+
+No other file is allowed. In particular Lifecycle-R1 does not add or change a
+public bridge method, shared contract, Worker protocol, schema, migration,
+database owner, Main collection mutation barrier or Renderer collection action
+token. It does not add a location preflight, general reconciliation framework,
+mutation replay, Search, Undo, Permanent delete, Empty Trash, automatic
+unarchive, Stop-and-move, custom focus system, or CP1/PIN1 cleanup.
+
+Required focused evidence:
+
+- delayed empty-shell discard after Archive and after Trash preserves the
+  moved Thread; ordinary exact Available empty-shell discard still succeeds;
+- empty and selected Archived/Trash modes cannot materialize a Thread, save a
+  Draft, attach, Send or Retry; Available behavior remains unchanged;
+- changing mode cancels inline Rename, and Trash never renders a Rename input
+  or a failed-message Retry action;
+- selected and unselected location mutations reject concurrent New, mode
+  changes and Thread selection until canonical hydration settles; success keeps
+  the intended selection/mode, while failure preserves the old projection and
+  dirty overlay;
+- Archive and Trash reject every non-idle activity boundary and settlement
+  failure without dispatching a Worker mutation; and
+- existing Pin, Rename, pagination, Draft-save and reversible location tests
+  remain green.
+
+Before final evidence, run:
+
+```text
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:test
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+mise run format-check
+git diff --check
+```
+
+Lifecycle-R1 stops and returns to planning if implementation needs a file
+outside the inventory above; a schema, protocol or shared-contract change; a
+second Main barrier or Renderer token; response-owned projection writes; a
+location preflight; or any product behavior beyond closing the listed defects.
+One successful repair grants no further lifecycle slice.
 
 ## multi-thread-library/Rename-scope-lock: Manual Thread rename
 
