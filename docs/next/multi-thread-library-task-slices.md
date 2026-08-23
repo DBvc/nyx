@@ -94,6 +94,13 @@ Independent diff and strict-pragmatic reviews both returned `accept` with no
 findings, and all required checks passed. Evidence is recorded in
 [multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
 
+On 2026-08-23 the user explicitly authorized the bounded `Actions-UI-R1`
+presentation repair below. It replaces the always-visible flat row action strip
+with progressive disclosure while preserving every accepted Rename, Pin and
+reversible lifecycle behavior. Its exact product scope becomes executable only
+after this docs-only scope lock enters HEAD. It does not reopen CP1, PIN1 or the
+completed lifecycle sequence.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -106,6 +113,87 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/Actions-UI-R1-scope-lock: Thread row action presentation
+
+Contract id: `NYX-MTL-ACTIONS-UI-R1-SCOPE-20260823-01`.
+
+Status: authorized. This product step becomes executable only after this exact
+docs-only scope lock enters HEAD. Completion grants no follow-up product work.
+
+Actions-UI-R1 changes only how accepted Thread actions are presented:
+
+- Available and Archived rows show their title, existing status and one
+  contextual actions trigger instead of an always-visible action strip. The
+  trigger is always visible on the selected row and becomes visible on hover or
+  keyboard focus for other rows while remaining reachable by ordinary Tab
+  navigation;
+- the Thread-selection button and actions trigger are sibling controls. The
+  trigger must never be nested inside the selection button and activating it
+  must not select the Thread;
+- the actions surface uses the existing native auto Popover pattern with
+  ordinary buttons and dialog-like semantics. It does not claim menu semantics,
+  add custom arrow-key navigation or add another focus system;
+- an unpinned Available row offers Rename, Pin, Archive and Move to Trash. A
+  Pinned row offers Rename, Unpin, the existing four deterministic movement
+  actions, Archive and Move to Trash. An Archived row offers Rename, Unarchive
+  and Move to Trash;
+- movement actions keep their accepted boundary-disabled behavior. Move to
+  Trash is visually separated and uses the existing danger treatment;
+- every available Trash row keeps one always-visible compact Restore control in
+  the row. Trash does not gain Rename, Pin or another actions surface; and
+- the existing callbacks, collection-action gate, location/run guards, inline
+  Rename validation, row-scoped safe error, canonical hydration and action
+  semantics remain unchanged.
+
+The product step may change exactly:
+
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx`;
+- `apps/desktop/src/styles/index.css`;
+- `docs/next/multi-thread-library-runthrough.md` for final evidence only; and
+- this status owner for the final completion record only.
+
+No other file is allowed. In particular Actions-UI-R1 does not add or change a
+shared contract, IPC method, Worker protocol, Renderer collection state,
+database/schema, runtime behavior, action token or lifecycle rule. It does not
+add a dependency, Portal, global menu manager, right-click menu, drag-and-drop,
+Search, Undo, Permanent delete, Empty Trash, custom roving navigation or manual
+VoiceOver evidence.
+
+Required focused evidence:
+
+- component coverage proves the selection and action controls are siblings,
+  each location/pin state exposes exactly its accepted actions, Trash exposes
+  only the direct Restore action, and pending/error/boundary states remain;
+- the native Popover trigger and action surface retain ordinary accessible
+  labels, focus entry, Escape/light-dismiss and trigger return behavior without
+  menu semantics;
+- manual inspection in the existing development profile proves the default
+  Thread list no longer repeats action text, first/middle/last-row Popovers are
+  not clipped at the minimum window, and mouse plus ordinary keyboard paths can
+  still reach every accepted action; and
+- existing selection, Rename, Pin, pagination and reversible lifecycle tests
+  remain green.
+
+Before final evidence, run:
+
+```text
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run docs:check
+git diff --check
+```
+
+Actions-UI-R1 stops if implementation needs another product file, a new
+dependency, Portal or shared/global overlay state, changes to an action callback
+or accepted lifecycle behavior, or a custom focus/navigation system. If the
+native Popover cannot remain anchored and unclipped for first, middle and last
+visible rows, stop instead of building a replacement overlay framework.
 
 ## multi-thread-library/Lifecycle-R2-scope-lock: Autosave and location race repair
 
