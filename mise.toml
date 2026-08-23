@@ -56,6 +56,10 @@ run = "pnpm --dir apps/desktop preview"
 description = "Run desktop unit tests"
 run = "pnpm --dir apps/desktop test"
 
+[tasks."desktop:test:thread-actions-browser"]
+description = "Run the Thread actions browser regression test"
+run = "pnpm --dir apps/desktop test:thread-actions:browser"
+
 [tasks."desktop:typecheck"]
 description = "Typecheck the desktop app with TypeScript native preview"
 run = "pnpm --dir apps/desktop typecheck"
