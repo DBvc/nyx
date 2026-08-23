@@ -1356,6 +1356,14 @@ describe('ThreadLibraryDatabase', () => {
         movedAt: at(204),
       }),
     ).toThrow('The Thread Library request is invalid.')
+    expect(() =>
+      execute(owner, 'updateLocation', {
+        threadId: running.threadId,
+        action: 'trash',
+        expectedThreadRevision: 1,
+        movedAt: at(205),
+      }),
+    ).toThrow('The Thread Library request is invalid.')
 
     owner.close()
     const restarted = new ThreadLibraryDatabase()

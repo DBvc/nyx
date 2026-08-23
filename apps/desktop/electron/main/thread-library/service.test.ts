@@ -406,6 +406,48 @@ describe('ThreadLibraryService', () => {
     expect(client.updateLocation).not.toHaveBeenCalled()
   })
 
+  it.each(['submitting', 'streaming', 'saving_failed'] as const)(
+    'rejects Archive and Trash while Thread activity is %s',
+    async (activity) => {
+      const { client, service } = harness()
+      await service.initialize()
+      const sender = { send: vi.fn() }
+
+      if (activity === 'saving_failed') {
+        vi.spyOn(service.resolveCoordinator(), 'settlementFailureRequestId').mockReturnValue(
+          'request',
+        )
+      } else {
+        service.publishChatEvent(sender as never, {
+          type: 'chat:accepted',
+          threadId,
+          requestId: 'request',
+          userMessageId: 'user',
+          assistantMessageId: 'assistant',
+          turnIntent: 'new_user_message',
+          attachmentBearing: false,
+        })
+        if (activity === 'streaming') {
+          service.publishChatEvent(sender as never, {
+            type: 'chat:delta',
+            threadId,
+            requestId: 'request',
+            assistantMessageId: 'assistant',
+            delta: 'Live',
+            snapshot: 'Live',
+          })
+        }
+      }
+
+      for (const action of ['archive', 'trash'] as const) {
+        await expect(
+          service.updateLocation({ threadId, action, expectedThreadRevision: 1 }),
+        ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      }
+      expect(client.updateLocation).not.toHaveBeenCalled()
+    },
+  )
+
   it.each(['archived', 'trash'] as const)(
     'rejects a %s Draft before invoking the save coordinator',
     async (location) => {
