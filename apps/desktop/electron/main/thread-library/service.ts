@@ -105,8 +105,12 @@ const searchInput = z
       .string()
       .transform((value) => value.trim())
       .refine((value) => {
-        const length = Array.from(value).length
-        return length >= 1 && length <= 256
+        let length = 0
+        for (const _codePoint of value) {
+          length += 1
+          if (length > 256) return false
+        }
+        return length >= 1
       }),
   })
   .strict()

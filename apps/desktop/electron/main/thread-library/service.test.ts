@@ -279,6 +279,10 @@ describe('ThreadLibraryService', () => {
       ok: false,
       error: { code: 'invalid_request' },
     })
+    await expect(service.search({ query: 'x'.repeat(1_000_000) })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
     await expect(service.search({ query: 'needle', extra: true })).resolves.toMatchObject({
       ok: false,
       error: { code: 'invalid_request' },
