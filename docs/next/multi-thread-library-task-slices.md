@@ -141,8 +141,11 @@ owner and grants no product-code permission.
 On 2026-08-24 the user explicitly authorized the exact docs-only
 `multi-thread-library/SEARCH1/T2-scope-lock` step below. It freezes the additive
 shared/Main/preload Search bridge boundary over the completed T1b Worker
-operation. It does not authorize T2 product code, Renderer Search UI or any
-follow-up step.
+operation. Its scope lock entered HEAD at `3e659d3`. Independent strict review
+`NYX-MTL-SEARCH1-T2-SCOPE-REVIEW-20260824-01` accepted the exact artifact with
+no findings, after which the user explicitly authorized
+`multi-thread-library/SEARCH1/T2`. T2 completed at product head `f06105a`.
+It adds no Renderer Search UI and grants no follow-up step.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -445,12 +448,14 @@ authorization.
 
 Contract id: `NYX-MTL-SEARCH1-T2-SCOPE-20260824-01`.
 
-Status: authorized for this docs-only step. This step may change exactly this
-status owner and is complete when this exact one-file scope lock enters HEAD.
-Completion grants no product-code or follow-up execution permission. Before
-any T2 product file changes, an independent strict review must accept this
-scope lock and the user must explicitly authorize
-`multi-thread-library/SEARCH1/T2`.
+Status: complete at product head
+`f06105a566d43ddfdad31d6b8ccb0a09175320c8`. The scope lock entered HEAD at
+`3e659d336b7dd879de8ed80e2603708ee4c2e5a0`. Independent strict review
+`NYX-MTL-SEARCH1-T2-SCOPE-REVIEW-20260824-01` accepted the exact scope-lock
+artifact with SHA-256
+`a06f749384305d35c8a2b71d67d732fdd986341ffe45fd8121553b6f528ab8d0`, after
+which the user explicitly authorized `multi-thread-library/SEARCH1/T2`.
+Completion grants no follow-up execution permission.
 
 T2 depends on the completed T1b Worker Search product head
 `55f478ddb1dd62ed2043e9a17ad7e895b8733764` and its completion record at
@@ -551,6 +556,15 @@ event, location, lifecycle or Run behavior; or implementing debounce, pending
 query policy, result invalidation, navigation, focus or Search UI. Reverting the
 eventual additive T2 product commit must restore the exact pre-T2 bridge without
 data migration or cleanup.
+
+T2 completed without hitting a Stop condition. The exact nine-file product
+diff from the scope-lock head through the product head had SHA-256
+`edf8756afb0f8d7c15d7bcc0584baafd43183c04e8d3b9bf55e58935ad45672f`.
+Desktop tests passed with 720 tests and 14 expected skips; typecheck,
+compatibility typecheck, lint, format check, build, runtime chat-state check,
+docs check and diff check all passed. T2 changed no Worker/Client, schema,
+database, Renderer, Runtime or OCaml surface. SEARCH1/T3 and T4 remain
+non-executable and require their own exact authorization.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 
