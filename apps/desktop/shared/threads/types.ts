@@ -123,6 +123,24 @@ export interface NyxThreadListPage extends NyxThreadClock {
   capacity: NyxThreadRunCapacity
 }
 
+export interface NyxThreadSearchInput {
+  query: string
+}
+
+export interface NyxThreadSearchResult {
+  threadId: string
+  title: string
+  location: 'available' | 'archived'
+  source: 'title' | 'user_message' | 'assistant_message'
+  snippet: string
+  messageId: string | null
+}
+
+export interface NyxThreadSearchResponse extends NyxThreadClock {
+  results: ReadonlyArray<NyxThreadSearchResult>
+  truncated: boolean
+}
+
 export interface NyxThreadGetInput {
   threadId: string | null
 }

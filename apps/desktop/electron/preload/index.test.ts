@@ -24,7 +24,7 @@ describe('preload Thread Library bridge', () => {
     await import('./index')
   })
 
-  it('exposes only the C1 Thread and chat methods', () => {
+  it('exposes only the landed Thread and chat methods plus Search', () => {
     const api = electron.exposeInMainWorld.mock.calls[0]?.[1]
 
     expect(Object.keys(api.chat).sort()).toEqual([
@@ -41,6 +41,7 @@ describe('preload Thread Library bridge', () => {
       'rename',
       'retryOpen',
       'saveDraft',
+      'search',
       'subscribe',
       'updateLocation',
       'updatePin',
@@ -66,6 +67,9 @@ describe('preload Thread Library bridge', () => {
     expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:get', {
       threadId: event.threadId,
     })
+
+    api.threads.search({ query: 'needle' })
+    expect(electron.invoke).toHaveBeenCalledWith('nyx:threads:search', { query: 'needle' })
 
     api.threads.updatePin({
       threadId: event.threadId,

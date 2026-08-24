@@ -52,6 +52,7 @@ const api: NyxDesktopApi = {
   },
   threads: {
     listPage: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.listPage, input),
+    search: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.search, input),
     get: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.get, input),
     materialize: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.materialize, input),
     saveDraft: (input) => ipcRenderer.invoke(NYX_THREADS_IPC_CHANNELS.saveDraft, input),

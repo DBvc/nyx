@@ -195,6 +195,7 @@ type ChatSessionController = Pick<ChatSessionManager, 'start' | 'cancel' | 'retr
 type ThreadLibraryController = Pick<
   ThreadLibraryService,
   | 'listPage'
+  | 'search'
   | 'get'
   | 'materialize'
   | 'saveDraft'
@@ -240,6 +241,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions = {}) {
   })
 
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.listPage, (_event, input) => threads.listPage(input))
+  ipcMain.handle(NYX_THREADS_IPC_CHANNELS.search, (_event, input) => threads.search(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.get, (_event, input) => threads.get(input))
   ipcMain.handle(NYX_THREADS_IPC_CHANNELS.materialize, (_event, input) =>
     threads.materialize(input),

@@ -1,5 +1,6 @@
 export const NYX_THREADS_IPC_CHANNELS = {
   listPage: 'nyx:threads:list-page',
+  search: 'nyx:threads:search',
   get: 'nyx:threads:get',
   materialize: 'nyx:threads:materialize',
   saveDraft: 'nyx:threads:save-draft',

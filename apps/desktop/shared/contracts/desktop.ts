@@ -37,6 +37,8 @@ import type {
   NyxThreadRetryOpenInput,
   NyxThreadSaveDraftInput,
   NyxThreadSaveDraftResult,
+  NyxThreadSearchInput,
+  NyxThreadSearchResponse,
   NyxThreadSnapshot,
   NyxThreadUpdatePinInput,
   NyxThreadUpdatePinResult,
@@ -53,6 +55,7 @@ export interface NyxDesktopChatApi {
 
 export interface NyxDesktopThreadsApi {
   listPage(input: NyxThreadListPageInput): Promise<NyxThreadResult<NyxThreadListPage>>
+  search(input: NyxThreadSearchInput): Promise<NyxThreadResult<NyxThreadSearchResponse>>
   get(input: NyxThreadGetInput): Promise<NyxThreadResult<NyxThreadSnapshot>>
   materialize(
     input: NyxThreadMaterializeInput,

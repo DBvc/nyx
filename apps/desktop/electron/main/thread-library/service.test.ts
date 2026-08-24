@@ -95,6 +95,24 @@ function harness() {
       },
       clock: { ...clock, actualMutation: false },
     })),
+    search: vi.fn(async () => ({
+      id: 'search',
+      ok: true as const,
+      value: {
+        results: [
+          {
+            threadId,
+            title: 'Thread',
+            location: 'available' as const,
+            source: 'user_message' as const,
+            snippet: 'needle',
+            messageId: 'message-1',
+          },
+        ],
+        truncated: false,
+      },
+      clock: { ...clock, actualMutation: false },
+    })),
     snapshot: vi.fn(async () => ({
       id: 'snapshot',
       ok: true as const,
@@ -243,6 +261,127 @@ describe('ThreadLibraryService', () => {
       ok: true,
       value: { detail: { summary: { id: threadId, pinPosition: 1 } } },
     })
+  })
+
+  it('validates bounded Search input and projects the acknowledged Worker reply', async () => {
+    const { client, getObserver, service } = harness()
+    await service.initialize()
+
+    await expect(service.search({ query: '' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
+    await expect(service.search({ query: '   ' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
+    await expect(service.search({ query: 'x'.repeat(257) })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
+    await expect(service.search({ query: 'needle', extra: true })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
+    expect(client.search).not.toHaveBeenCalled()
+
+    const changed = detail()
+    changed.summary.pinPosition = 1
+    getObserver()({
+      operation: 'updatePin',
+      value: changed,
+      clock: { generation, watermark: 1, actualMutation: true },
+    })
+    client.search.mockResolvedValueOnce({
+      id: 'search-projection',
+      ok: true,
+      value: {
+        results: [
+          {
+            threadId: otherThreadId,
+            title: 'Archived result',
+            location: 'archived',
+            source: 'assistant_message',
+            snippet: 'original snippet',
+            messageId: 'assistant-message',
+          },
+        ],
+        truncated: true,
+      },
+      clock: { generation, watermark: 1, actualMutation: false },
+    } as never)
+
+    await expect(service.search({ query: ' n ' })).resolves.toEqual({
+      ok: true,
+      value: {
+        results: [
+          {
+            threadId: otherThreadId,
+            title: 'Archived result',
+            location: 'archived',
+            source: 'assistant_message',
+            snippet: 'original snippet',
+            messageId: 'assistant-message',
+          },
+        ],
+        truncated: true,
+        eventEpoch: generation,
+        includedThroughCursor: 1,
+      },
+    })
+    expect(client.search).toHaveBeenLastCalledWith({ query: 'n' })
+
+    const maximumQuery = '🙂'.repeat(256)
+    await expect(service.search({ query: ` ${maximumQuery} ` })).resolves.toMatchObject({
+      ok: true,
+    })
+    expect(client.search).toHaveBeenLastCalledWith({ query: maximumQuery })
+  })
+
+  it('rejects overlapping Search without adding a second Client request', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+    const pending = deferred<Awaited<ReturnType<typeof client.search>>>()
+    client.search.mockReturnValueOnce(pending.promise)
+
+    const first = service.search({ query: 'first' })
+    await expect(service.search({ query: 'second' })).resolves.toEqual({
+      ok: false,
+      error: { code: 'conflict', message: 'A Thread search is already running.' },
+    })
+    expect(client.search).toHaveBeenCalledTimes(1)
+
+    pending.resolve({
+      id: 'search-first',
+      ok: true,
+      value: { results: [], truncated: false },
+      clock: { generation, watermark: 0, actualMutation: false },
+    })
+    await expect(first).resolves.toMatchObject({ ok: true })
+    await expect(service.search({ query: 'after success' })).resolves.toMatchObject({ ok: true })
+    expect(client.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases the Search guard after safe and thrown Worker failures', async () => {
+    const { client, service } = harness()
+    await service.initialize()
+    client.search.mockResolvedValueOnce({
+      id: 'search-safe-failure',
+      ok: false,
+      safeError: { code: 'invalid_request', message: 'invalid' },
+    } as never)
+    client.search.mockRejectedValueOnce(new Error('transport failed'))
+
+    await expect(service.search({ query: 'safe failure' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'invalid_request' },
+    })
+    await expect(service.search({ query: 'thrown failure' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'library_unavailable' },
+    })
+    await expect(service.search({ query: 'after failures' })).resolves.toMatchObject({ ok: true })
+    expect(client.search).toHaveBeenCalledTimes(3)
   })
 
   it('validates and publishes one semantic Pin update through the public boundary', async () => {

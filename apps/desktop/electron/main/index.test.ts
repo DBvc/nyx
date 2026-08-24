@@ -292,8 +292,18 @@ describe('registerIpcHandlers', () => {
         includedThroughCursor: 0,
       },
     })
+    const searchPromise = Promise.resolve({
+      ok: true as const,
+      value: {
+        results: [],
+        truncated: false,
+        eventEpoch: 'epoch',
+        includedThroughCursor: 0,
+      },
+    })
     const threads = {
       listPage: vi.fn(() => pagePromise),
+      search: vi.fn(() => searchPromise),
       get: vi.fn(),
       materialize: vi.fn(),
       saveDraft: vi.fn(),
@@ -314,6 +324,14 @@ describe('registerIpcHandlers', () => {
 
     expect(threads.listPage).toHaveBeenCalledWith(input)
     expect(result).toBe(pagePromise)
+
+    const searchInput = { query: 'needle' }
+    const searchResult = registeredHandler(NYX_THREADS_IPC_CHANNELS.search)(
+      { sender: {} as WebContents },
+      searchInput,
+    )
+    expect(threads.search).toHaveBeenCalledWith(searchInput)
+    expect(searchResult).toBe(searchPromise)
 
     const pinInput = {
       threadId: '00000000-0000-4000-8000-000000000001',

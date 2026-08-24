@@ -24,6 +24,7 @@ import type {
   NyxThreadListPage,
   NyxThreadResult,
   NyxThreadSafeError,
+  NyxThreadSearchResponse,
   NyxThreadSnapshot,
   NyxThreadSummary,
 } from '../../../shared/threads/types'
@@ -98,6 +99,17 @@ const listPageInput = z
     limit: z.literal(50),
   })
   .strict()
+const searchInput = z
+  .object({
+    query: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => {
+        const length = Array.from(value).length
+        return length >= 1 && length <= 256
+      }),
+  })
+  .strict()
 const getInput = z.object({ threadId: uuid.nullable() }).strict()
 const retryOpenInput = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('library') }).strict(),
@@ -159,6 +171,11 @@ const safeErrors = {
   library_unavailable: { code: 'library_unavailable', message: "Couldn't open Thread Library" },
   thread_unavailable: { code: 'thread_unavailable', message: "Couldn't open this thread" },
 } as const satisfies Record<NyxThreadSafeError['code'], NyxThreadSafeError>
+
+const searchConflict: NyxThreadSafeError = {
+  code: 'conflict',
+  message: 'A Thread search is already running.',
+}
 
 function fail<Value>(error: NyxThreadSafeError): NyxThreadResult<Value> {
   return { ok: false, error }
@@ -250,6 +267,7 @@ export class ThreadLibraryService {
   >()
   private pendingRecoveryAt: string | null = null
   private startupRecovered = false
+  private searchInFlight = false
   private pendingMaterialize: {
     threadId: string
     createdAt: string
@@ -351,6 +369,35 @@ export class ThreadLibraryService {
       capacity,
       ...boundary,
     })
+  }
+
+  async search(value: unknown): Promise<NyxThreadResult<NyxThreadSearchResponse>> {
+    const input = searchInput.safeParse(value)
+    if (!input.success || !this.active)
+      return fail(safeErrors[input.success ? 'library_unavailable' : 'invalid_request'])
+    if (this.searchInFlight) return fail(searchConflict)
+    this.searchInFlight = true
+    try {
+      const reply = await this.active.client.search(input.data)
+      if (!reply.ok) return fail(this.publicError(reply.safeError.code))
+      return ok({
+        results: reply.value.results.map((result) => ({
+          threadId: result.threadId,
+          title: result.title,
+          location: result.location,
+          source: result.source,
+          snippet: result.snippet,
+          messageId: result.messageId,
+        })),
+        truncated: reply.value.truncated,
+        eventEpoch: this.eventEpoch,
+        includedThroughCursor: this.boundaryCursor(reply.clock),
+      })
+    } catch {
+      return fail(safeErrors.library_unavailable)
+    } finally {
+      this.searchInFlight = false
+    }
   }
 
   async get(value: unknown): Promise<NyxThreadResult<NyxThreadSnapshot>> {
