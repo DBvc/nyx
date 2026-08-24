@@ -138,6 +138,12 @@ performance gate, product inventory, dependency order or execution authority.
 This correction may change only this status owner and the runthrough evidence
 owner and grants no product-code permission.
 
+On 2026-08-24 the user explicitly authorized the exact docs-only
+`multi-thread-library/SEARCH1/T2-scope-lock` step below. It freezes the additive
+shared/Main/preload Search bridge boundary over the completed T1b Worker
+operation. It does not authorize T2 product code, Renderer Search UI or any
+follow-up step.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -434,6 +440,117 @@ T1b changed no schema, shared/preload/Main service/IPC/Renderer surface,
 database or Worker owner, Runtime or OCaml boundary. SEARCH1/T2 and T3 remain
 non-executable and require their own reviewed scope locks and explicit user
 authorization.
+
+## multi-thread-library/SEARCH1-T2-scope-lock: Additive Search bridge
+
+Contract id: `NYX-MTL-SEARCH1-T2-SCOPE-20260824-01`.
+
+Status: authorized for this docs-only step. This step may change exactly this
+status owner and is complete when this exact one-file scope lock enters HEAD.
+Completion grants no product-code or follow-up execution permission. Before
+any T2 product file changes, an independent strict review must accept this
+scope lock and the user must explicitly authorize
+`multi-thread-library/SEARCH1/T2`.
+
+T2 depends on the completed T1b Worker Search product head
+`55f478ddb1dd62ed2043e9a17ad7e895b8733764` and its completion record at
+`8845b9e6b9462770f715dbd4a23aff9d93a6785d`. The eventual T2 product commit must
+have this scope-lock commit in its ancestry.
+
+T2 has one goal: expose the existing T1b Worker `search` operation through the
+current typed Thread Library service, IPC and preload path. The bridge is
+additive and has no Renderer consumer in this slice. It must add exactly the
+shared contract already frozen by SEARCH1/P0:
+
+```text
+NyxThreadSearchInput { query: string }
+NyxThreadSearchResult {
+  threadId: string
+  title: string
+  location: 'available' | 'archived'
+  source: 'title' | 'user_message' | 'assistant_message'
+  snippet: string
+  messageId: string | null
+}
+NyxThreadSearchResponse extends NyxThreadClock {
+  results: ReadonlyArray<NyxThreadSearchResult>
+  truncated: boolean
+}
+```
+
+The eventual T2 product diff may change exactly:
+
+- `apps/desktop/shared/threads/types.ts` for those three additive Search types;
+- `apps/desktop/shared/threads/ipc.ts` for one `nyx:threads:search` channel;
+- `apps/desktop/shared/contracts/desktop.ts` for one additive
+  `threads.search(input)` method returning the existing `NyxThreadResult`;
+- `apps/desktop/electron/preload/index.ts` and `index.test.ts` for the exact
+  typed invoke bridge and method-key ratchet;
+- `apps/desktop/electron/main/index.ts` and `index.test.ts` for one direct IPC
+  registration that returns the service promise; and
+- `apps/desktop/electron/main/thread-library/service.ts` and
+  `service.test.ts` for input validation, process-wide concurrent-Search
+  rejection, safe Worker reply projection and focused service coverage.
+
+No other product or test file is allowed. After a verified product commit,
+this status owner may change only to record T2 completion and its exact
+identity; SEARCH1/T4 remains the owner of full validation evidence.
+
+The Main service must keep the bridge narrow:
+
+- validate a strict object with only `query`; trim it, require 1 through 256
+  Unicode code points and pass that bounded value to the existing Client;
+- use one private service-owned in-flight flag. A second valid Search while the
+  first is unsettled returns the existing `NyxThreadResult` conflict category
+  with safe Search-specific text and never calls the Client. The flag is
+  cleared after success, Worker safe failure or thrown transport failure;
+- add no pending query, debounce, retry, cancellation, timeout, queue or
+  scheduler. Renderer owns the later one-in-flight/latest-pending policy;
+- expose only the six frozen result fields plus `results`, `truncated`, the
+  current service `eventEpoch` and `includedThroughCursor` derived from the
+  acknowledged Worker reply clock;
+- map existing Worker safe failures through the existing service error path
+  and map thrown transport failures to the existing Library-unavailable result;
+  do not add a new error code or error framework; and
+- keep Renderer query epoch local. No `queryEpoch`, Search session, result
+  cache or new event crosses the bridge.
+
+Focused tests must prove:
+
+- preload exposes exactly the prior Thread methods plus `search`, invokes only
+  `nyx:threads:search`, and preserves every existing bridge method;
+- Main IPC forwards the same input and returns the exact service promise;
+- empty, whitespace-only, 257-code-point and extra-field inputs fail without a
+  Client call, while trimmed 1- and 256-code-point inputs reach the Client;
+- a successful reply preserves result identity, source, location, snippet,
+  truncation and the existing Thread clock mapping;
+- Worker safe failure and thrown transport failure remain safe; and
+- two overlapping service calls enqueue only the first, reject the second via
+  the existing conflict category, and allow a later call after either success
+  or failure. This proves the process-wide guard without building a second
+  queue.
+
+Before T2 completion, run:
+
+```text
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+git diff --check
+```
+
+T2 stops rather than expanding if the bridge requires changing the T1b
+protocol, Client or Worker; adding a schema, database owner, queue, new error
+code or dependency; touching Renderer code; changing any existing Thread API,
+event, location, lifecycle or Run behavior; or implementing debounce, pending
+query policy, result invalidation, navigation, focus or Search UI. Reverting the
+eventual additive T2 product commit must restore the exact pre-T2 bridge without
+data migration or cleanup.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 
