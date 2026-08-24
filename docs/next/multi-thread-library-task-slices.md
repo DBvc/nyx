@@ -148,6 +148,12 @@ no findings, after which the user explicitly authorized
 `f06105a`; a bounded code-ratchet repair completed at final product head
 `b815df4`. It adds no Renderer Search UI and grants no follow-up step.
 
+On 2026-08-24 the user explicitly authorized the exact docs-only
+`multi-thread-library/SEARCH1/T3-scope-lock` step below. It freezes the
+Renderer-local Search state, presentation, invalidation, navigation and
+one-shot focus boundary over the completed T2 bridge. This authorization may
+change only this status owner. It does not authorize T3 product code or T4.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -572,6 +578,215 @@ compatibility typecheck, lint, format check, build, runtime chat-state check,
 docs check and diff check all passed. T2 changed no Worker/Client, schema,
 database, Renderer, Runtime or OCaml surface. SEARCH1/T3 and T4 remain
 non-executable and require their own exact authorization.
+
+## multi-thread-library/SEARCH1-T3-scope-lock: Renderer Search UI
+
+Contract id: `NYX-MTL-SEARCH1-T3-SCOPE-20260824-01`.
+
+Status: authorized for this docs-only step. T3 scope-lock work may change
+exactly this status owner and is complete when this exact one-file artifact
+enters HEAD. Before product code may change, the committed scope lock must pass
+independent strict review and the user must explicitly authorize
+`multi-thread-library/SEARCH1/T3`. Scope-lock completion grants no product-code,
+T4 or follow-up permission.
+
+T3 depends on the completed T2 Search bridge at final product head
+`b815df4182801a36cd866fd58d84bd1bbe35cc06`. Any eventual T3 product commit
+must contain this scope-lock commit in its ancestry.
+
+T3 has one goal: add the bounded SEARCH1/P0 Renderer experience over the
+existing `window.nyx.threads.search` bridge. Search remains local feature state
+over the current Thread Library. Entering or cancelling Search must not call a
+Thread API, cross the Draft save barrier, or change the underlying collection,
+selection, detail, Draft, attachment preparation or Runs.
+
+The eventual T3 product diff may change exactly these ten files:
+
+- `apps/desktop/src/ui/chat/thread-search.ts` and
+  `apps/desktop/src/ui/chat/thread-search.test.ts` for the feature-local state,
+  bounded display copy and pure stale-response/event transition helpers;
+- `apps/desktop/src/ui/chat/use-chat-session.ts` and
+  `apps/desktop/src/ui/chat/use-chat-session.test.ts` for debounce, bridge
+  dispatch, one-in-flight/latest-pending ownership, accepted-event
+  invalidation, exact-result navigation and the one-shot anchor handoff;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.tsx` and
+  `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx` for the fixed
+  Search input, Cancel, results, busy, empty, truncated and local error UI;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.tsx` and
+  `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts` for wiring and
+  consuming one exact programmatic focus target; and
+- `apps/desktop/src/ui/chat/components/ChatMessage.tsx` and
+  `apps/desktop/src/ui/chat/components/ChatMessage.test.tsx` for a stable,
+  programmatically focusable message anchor that stays outside ordinary Tab
+  order.
+
+No reducer, chat-state type, Thread collection helper, `ChatThread`,
+`ChatHeader`, browser-test harness, stylesheet, shared contract, preload,
+Electron Main, Worker/Client, Runtime, OCaml, schema or documentation file is
+allowed. The UI must use existing utility classes and existing bridge/error
+types; it adds no state library, dependency or new error category.
+
+`thread-search.ts` is a feature helper, not another durable owner. Its rendered
+state is limited to active/inactive, the raw input value, IME composition,
+current query epoch, `idle | debouncing | searching | ready | error`, the
+current bounded results and `truncated`, one visible status/error, and one
+polite announcement. `use-chat-session.ts` owns the associated timer and refs:
+one unsettled bridge Promise, at most one latest pending `{ epoch, query }`, the
+accepted Library clock captured for the current query, the last accepted Search
+clock, a navigation generation and at most one one-shot focus anchor. None of
+this enters `ChatState`, localStorage, IPC or Main.
+
+Search request behavior is fixed:
+
+- focusing the always-visible `Search threads` input activates Search without
+  changing the underlying Available/Archived/Trash mode. Input changes update
+  the raw value immediately. Whitespace-only input is empty; it synchronously
+  increments the query epoch, clears the debounce, pending query, visible
+  results, busy/error/status and announcement, and makes no bridge call;
+- composition updates never dispatch. `compositionend`, or the latest ordinary
+  input, starts one 120 ms debounce. Starting that new epoch immediately clears
+  old results and errors and visibly shows `Searching` with the results region
+  `aria-busy=true`; only actual bridge dispatch writes `Searching` once to the
+  polite live region;
+- only one `threads.search` Promise may be unsettled in this Renderer. If the
+  debounce settles while one is in flight, it replaces the single pending
+  query. When the in-flight call settles, only the latest pending epoch may
+  dispatch. Intermediate queries never cross the bridge;
+- successful results publish only when their query epoch is still current,
+  their `eventEpoch` equals the accepted Library epoch, and their
+  `includedThroughCursor` is at least the greater of the accepted list/detail
+  cursors. Completion clears busy and announces exactly `No results`,
+  `1 result`, `${N} results`, or `Showing first 50 results` when
+  `truncated=true`. An older cursor is discarded and coalesces a requery; an
+  epoch mismatch first runs the existing full hydration and then requeries;
+- a thrown bridge failure or existing safe failure for the latest epoch clears
+  busy/results, retains the input, shows and announces `Couldn't search` once,
+  and exposes Retry. Retry focuses the input and creates a fresh epoch for the
+  same non-empty query. Existing Client/Main timeout behavior is handled by
+  this same failure path; T3 adds no second timeout; and
+- changing query, emptying it, Retry, Cancel, result-open intent and unmount all
+  invalidate older completion/error/announcement paths. A late reply cannot
+  restore results, busy, error or live copy, and exit never dispatches a saved
+  pending query.
+
+The existing Thread subscription remains the only invalidation source. After
+the existing clock acceptance logic accepts a Thread event whose epoch differs
+from, or whose cursor is greater than, the visible Search response clock,
+active Search synchronously clears visible results, advances the query epoch
+and coalesces one requery for the latest non-empty input. Repeated accepted
+events while a request is unsettled replace the same pending entry. Before a
+response is visible, compare the event with the accepted Library clock captured
+when that query epoch began. Events at or before the applicable clock and
+otherwise stale events do not invalidate. T3 adds no event, subscription,
+polling, cache or automatic paging.
+
+The Sidebar presentation is fixed:
+
+- active Search temporarily replaces only the middle Thread collection; it
+  never turns `ThreadCollectionLocation` into a Search value. Cancel restores
+  the still-current underlying mode and valid selection because Search never
+  copied or mutated them;
+- the active input has a visible, normally tabbable button with accessible name
+  `Cancel search`. Escape during composition is left to IME. Otherwise Escape
+  clears a non-empty query first; Escape on an empty query and Cancel both exit
+  Search synchronously. Cancel and successful result open also clear the raw
+  query; a failed result open retains it;
+- Search result rows are ordinary buttons with the full Thread title, source
+  label and bounded snippet in their accessible name. Source labels are exactly
+  `Title`, `Your message` and `Assistant message`. Results expose no Pin,
+  Rename, Archive, Trash or Load-more action. At most 50 results render, and
+  truncated copy never claims a complete total;
+- `Couldn't search` keeps focus on the input and places Retry next in ordinary
+  Tab order. Cancel remains available in loading, ready, empty and error states;
+  and
+- while Search is active, New thread and collection-location navigation are
+  disabled rather than gaining a second Search-exit path. Existing Connections
+  navigation and sidebar collapse behavior remain unchanged; and
+- whole-Library unavailable invalidates and hides Search state behind the
+  existing fail-closed Library surface. It disables the Search input until the
+  existing Retry path restores the Library. A Thread-scoped unavailable detail
+  does not block searching other safe Threads.
+
+Opening a result is the only Search action that may navigate. The session hook
+must use the existing navigation lock and Draft save queue; it must not invent
+a second barrier:
+
+- a title hit for the already selected Thread exits Search and publishes the
+  Thread-heading anchor without saving or rehydrating. A message hit for that
+  Thread exits only if the exact message id is still present in the current
+  committed projection; otherwise Search stays open, clears stale results and
+  returns focus to the input;
+- a different Thread first runs `queueSaveDraft(false, true)`, then performs an
+  exact `threads.get({ threadId })` inside the existing hydration/event owner.
+  Reads are staged without changing the visible selection. Only the latest
+  navigation generation with an exact detail whose real location is
+  `available` or `archived` may synchronously commit that detail, selected id,
+  real collection location and `nyx.thread.selected.v1`; Search closes only
+  after that commit. Archived results therefore reuse the existing read-only
+  surface;
+- save failure, `null`, Trash, not-found and Thread-unavailable results leave
+  the original collection/selection/detail visible under Search, clear stale
+  results and focus the query input without exposing target content. A
+  Search-call safe failure stays in the local `Couldn't search` path above; a
+  Library-unavailable result from the exact navigation get continues through
+  the existing whole-Library failure path; and
+- Cancel, a newer query/event/navigation generation or another hydration can
+  make an exact get stale. Such a get never commits. The existing full
+  hydration of the still-selected underlying mode must finish before the
+  navigation lock releases. No Search path aborts a background Run, loads
+  unknown pages, creates an around-page API or stores a second dirty Draft.
+
+After a successful open, the hook publishes one target `{ threadId,
+messageId | null }`. `ChatWorkspace` consumes it once after the selected ready
+projection is mounted. It focuses the exact message article by stable data
+identity; title hits and missing message DOM anchors fall back to the current
+Thread `h1`. Any temporary heading focusability is removed after the focus
+attempt. `ChatMessage` anchors use `tabIndex=-1`, so T3 does not add roving
+focus, Arrow-key navigation or a general focus registry.
+
+Focused tests must prove the following without broadening into T4 evidence:
+
+- pure state transitions cover empty/query/IME/debounce, one pending query,
+  current versus stale success/failure, accepted-event coalescing, Retry and
+  exit cleanup with exact announcement copy;
+- the hook makes no request during composition, dispatches after 120 ms, never
+  overlaps two bridge calls, drops stale clocks/replies, requeries after an
+  accepted event and ignores stale events;
+- entry/Cancel do not save or mutate underlying state; same-Thread and
+  cross-Thread result opens cover save-before-get, actual Available/Archived
+  commit, stale get plus full hydration, save/not-found/Trash/unavailable
+  failure and latest navigation generation;
+- Sidebar markup covers input/Cancel accessibility, busy/empty/error/Retry,
+  bounded result names, truncated wording and suppression of ordinary
+  collection/actions while Search is active; and
+- Workspace/Message coverage proves exact one-shot message focus, heading
+  fallback and no ordinary message Tab stop.
+
+Before T3 completion, run:
+
+```text
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run docs:check
+git diff --check
+```
+
+After one verified T3 product commit, this status owner may change only to
+record its exact identity. SEARCH1/T4 remains the sole owner of the full
+cross-layer validation and final runthrough evidence.
+
+T3 stops rather than expanding if implementation needs a file outside the ten
+listed above; a shared/Main/Worker/schema/API change; another database, queue,
+cache, state owner, timeout or dependency; Draft/document/image/Trash/semantic
+search; result paging; collection auto-loading; broader keyboard/focus
+infrastructure; or a change to CP1, PIN1, lifecycle, Connections, provider or
+Run behavior. Reverting the eventual T3 product commit must remove the Search
+UI and Renderer-local state without migration or cleanup while leaving the T2
+bridge intact.
 
 ## multi-thread-library/Actions-UI-R2-scope-lock: Native Popover browser regression
 
