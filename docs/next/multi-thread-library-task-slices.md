@@ -144,8 +144,9 @@ shared/Main/preload Search bridge boundary over the completed T1b Worker
 operation. Its scope lock entered HEAD at `3e659d3`. Independent strict review
 `NYX-MTL-SEARCH1-T2-SCOPE-REVIEW-20260824-01` accepted the exact artifact with
 no findings, after which the user explicitly authorized
-`multi-thread-library/SEARCH1/T2`. T2 completed at product head `f06105a`.
-It adds no Renderer Search UI and grants no follow-up step.
+`multi-thread-library/SEARCH1/T2`. T2 entered its initial product commit at
+`f06105a`; a bounded code-ratchet repair completed at final product head
+`b815df4`. It adds no Renderer Search UI and grants no follow-up step.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -448,8 +449,9 @@ authorization.
 
 Contract id: `NYX-MTL-SEARCH1-T2-SCOPE-20260824-01`.
 
-Status: complete at product head
-`f06105a566d43ddfdad31d6b8ccb0a09175320c8`. The scope lock entered HEAD at
+Status: complete at final product head
+`b815df4182801a36cd866fd58d84bd1bbe35cc06`. The initial product commit was
+`f06105a566d43ddfdad31d6b8ccb0a09175320c8`; the scope lock entered HEAD at
 `3e659d336b7dd879de8ed80e2603708ee4c2e5a0`. Independent strict review
 `NYX-MTL-SEARCH1-T2-SCOPE-REVIEW-20260824-01` accepted the exact scope-lock
 artifact with SHA-256
@@ -557,9 +559,14 @@ query policy, result invalidation, navigation, focus or Search UI. Reverting the
 eventual additive T2 product commit must restore the exact pre-T2 bridge without
 data migration or cleanup.
 
-T2 completed without hitting a Stop condition. The exact nine-file product
-diff from the scope-lock head through the product head had SHA-256
-`edf8756afb0f8d7c15d7bcc0584baafd43183c04e8d3b9bf55e58935ad45672f`.
+T2 completed without hitting a Stop condition. Code-ratchet review found one
+bounded S2 resource-validation issue in the initial product diff: Main used an
+allocating full-input code-point count before rejecting an oversized query.
+The two-file repair at `b815df4` replaced it with a count that stops at 257 and
+added an oversized-input regression; scoped re-review closed the finding with
+no direct regression. The final product-file diff across exactly the nine
+allowed `apps/desktop` files had SHA-256
+`e402c63eb87f5a28d23472417797b3866819573cc7e7964874a172c8776a1d60`.
 Desktop tests passed with 720 tests and 14 expected skips; typecheck,
 compatibility typecheck, lint, format check, build, runtime chat-state check,
 docs check and diff check all passed. T2 changed no Worker/Client, schema,
