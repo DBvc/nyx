@@ -583,12 +583,15 @@ non-executable and require their own exact authorization.
 
 Contract id: `NYX-MTL-SEARCH1-T3-SCOPE-20260824-01`.
 
-Status: authorized for this docs-only step. T3 scope-lock work may change
-exactly this status owner and is complete when this exact one-file artifact
-enters HEAD. Before product code may change, the committed scope lock must pass
-independent strict review and the user must explicitly authorize
-`multi-thread-library/SEARCH1/T3`. Scope-lock completion grants no product-code,
-T4 or follow-up permission.
+Status: authorized for this docs-only amendment. Independent strict review
+`NYX-MTL-SEARCH1-T3-SCOPE-REVIEW-20260824-01` returned `changes_required` for
+the scope-lock artifact at `cbca987`; that artifact grants no product-code
+permission. This amendment addresses only its three blocking findings. T3
+scope-lock work may change exactly this status owner and is complete when this
+exact one-file amendment enters HEAD. Before product code may change, the
+amended committed scope lock must pass independent strict review and the user
+must explicitly authorize `multi-thread-library/SEARCH1/T3`. Scope-lock
+completion grants no product-code, T4 or follow-up permission.
 
 T3 depends on the completed T2 Search bridge at final product head
 `b815df4182801a36cd866fd58d84bd1bbe35cc06`. Any eventual T3 product commit
@@ -628,13 +631,16 @@ types; it adds no state library, dependency or new error category.
 
 `thread-search.ts` is a feature helper, not another durable owner. Its rendered
 state is limited to active/inactive, the raw input value, IME composition,
-current query epoch, `idle | debouncing | searching | ready | error`, the
-current bounded results and `truncated`, one visible status/error, and one
+current query epoch, `idle | invalid | debouncing | searching | ready | error`,
+the current bounded results and `truncated`, one visible status/error, and one
 polite announcement. `use-chat-session.ts` owns the associated timer and refs:
-one unsettled bridge Promise, at most one latest pending `{ epoch, query }`, the
-accepted Library clock captured for the current query, the last accepted Search
-clock, a navigation generation and at most one one-shot focus anchor. None of
-this enters `ChatState`, localStorage, IPC or Main.
+one unsettled bridge Promise, at most one latest pending `{ epoch, query }`, a
+Renderer-local Search-corpus clock updated only by accepted Thread events, the
+clock captured for the current query, the last accepted Search-response clock,
+a navigation generation and at most one one-shot focus anchor. The
+Search-corpus clock is separate from the generic list/detail cursors and is
+never advanced by `NyxChatEvent`. None of this enters `ChatState`, localStorage,
+IPC or Main.
 
 Search request behavior is fixed:
 
@@ -643,6 +649,13 @@ Search request behavior is fixed:
   the raw value immediately. Whitespace-only input is empty; it synchronously
   increments the query epoch, clears the debounce, pending query, visible
   results, busy/error/status and announcement, and makes no bridge call;
+- after trimming, an input longer than 256 Unicode code points is a local
+  invalid state. It retains the raw input, increments the query epoch, clears
+  debounce, pending query, results, busy state and any bridge error, shows and
+  announces `Search is limited to 256 characters` once for that invalid value,
+  makes no bridge call and exposes no Retry. Counting must stop after the 257th
+  code point and treat astral characters as one code point. Returning to 1
+  through 256 trimmed code points starts the ordinary debounce path;
 - composition updates never dispatch. `compositionend`, or the latest ordinary
   input, starts one 120 ms debounce. Starting that new epoch immediately clears
   old results and errors and visibly shows `Searching` with the results region
@@ -654,11 +667,13 @@ Search request behavior is fixed:
   dispatch. Intermediate queries never cross the bridge;
 - successful results publish only when their query epoch is still current,
   their `eventEpoch` equals the accepted Library epoch, and their
-  `includedThroughCursor` is at least the greater of the accepted list/detail
-  cursors. Completion clears busy and announces exactly `No results`,
-  `1 result`, `${N} results`, or `Showing first 50 results` when
-  `truncated=true`. An older cursor is discarded and coalesces a requery; an
-  epoch mismatch first runs the existing full hydration and then requeries;
+  `includedThroughCursor` covers the Renderer-local Search-corpus Thread-event
+  clock captured for that query. The response is never compared with generic
+  list/detail cursors. Completion clears busy and announces exactly
+  `No results`, `1 result`, `${N} results`, or `Showing first 50 results` when
+  `truncated=true`. A response behind the applicable Search-corpus clock is
+  discarded and coalesces a requery; an epoch mismatch first runs the existing
+  full hydration and then requeries;
 - a thrown bridge failure or existing safe failure for the latest epoch clears
   busy/results, retains the input, shows and announces `Couldn't search` once,
   and exposes Retry. Retry focuses the input and creates a fresh epoch for the
@@ -670,15 +685,17 @@ Search request behavior is fixed:
   pending query.
 
 The existing Thread subscription remains the only invalidation source. After
-the existing clock acceptance logic accepts a Thread event whose epoch differs
-from, or whose cursor is greater than, the visible Search response clock,
-active Search synchronously clears visible results, advances the query epoch
-and coalesces one requery for the latest non-empty input. Repeated accepted
-events while a request is unsettled replace the same pending entry. Before a
-response is visible, compare the event with the accepted Library clock captured
-when that query epoch began. Events at or before the applicable clock and
-otherwise stale events do not invalidate. T3 adds no event, subscription,
-polling, cache or automatic paging.
+the existing clock acceptance logic accepts a Thread event that advances the
+Renderer-local Search-corpus clock, active Search synchronously clears visible
+results, advances the query epoch and coalesces one requery for the latest
+valid non-empty input. Repeated accepted events while a request is unsettled
+replace the same pending entry. Before a response is visible, it must cover the
+Search-corpus clock captured when that query epoch began. An accepted epoch
+change invalidates Search, runs the existing full hydration and then requeries.
+Thread events at or before the applicable Search clock and otherwise stale
+events do not invalidate. Chat-only events may advance the generic list/detail
+cursors but never advance the Search-corpus clock or trigger a Search requery.
+T3 adds no event, subscription, polling, cache or automatic paging.
 
 The Sidebar presentation is fixed:
 
@@ -724,17 +741,28 @@ a second barrier:
   real collection location and `nyx.thread.selected.v1`; Search closes only
   after that commit. Archived results therefore reuse the existing read-only
   surface;
-- save failure, `null`, Trash, not-found and Thread-unavailable results leave
-  the original collection/selection/detail visible under Search, clear stale
-  results and focus the query input without exposing target content. A
-  Search-call safe failure stays in the local `Couldn't search` path above; a
-  Library-unavailable result from the exact navigation get continues through
-  the existing whole-Library failure path; and
-- Cancel, a newer query/event/navigation generation or another hydration can
-  make an exact get stale. Such a get never commits. The existing full
-  hydration of the still-selected underlying mode must finish before the
-  navigation lock releases. No Search path aborts a background Run, loads
-  unknown pages, creates an around-page API or stores a second dirty Draft.
+- save failure occurs before the target `get` and leaves the original
+  collection/selection/detail visible under Search. A successful
+  different-Thread `get` may already have changed Main-owned selection and
+  image authorization before Renderer decides whether to commit it. Therefore
+  a successful get that does not commit the target -- `null`/not-found, Trash,
+  or a successful reply made stale by Cancel, a newer
+  query/event/navigation generation or another hydration -- must complete or
+  observe the existing full hydration of the captured original selection and
+  mode before the navigation lock releases. A safe `thread_unavailable`
+  failure does not change Main-owned selection or authorization and returns
+  directly to Search without that restoration. If Search remains active, the
+  failure path clears stale results and focuses the query input without
+  exposing target content. A Search-call safe failure stays in the local
+  `Couldn't search` path above; a Library-unavailable result from the exact
+  navigation get continues through the existing whole-Library failure path;
+  and
+- this restoration reuses the existing hydration/event owner and Draft save
+  queue. It adds no second selection owner, get owner or barrier. If restoration
+  cannot re-establish the captured original projection, the existing
+  whole-Library fail-closed path wins. No Search path aborts a background Run,
+  loads unknown pages, creates an around-page API or stores a second dirty
+  Draft.
 
 After a successful open, the hook publishes one target `{ threadId,
 messageId | null }`. `ChatWorkspace` consumes it once after the selected ready
@@ -748,17 +776,25 @@ Focused tests must prove the following without broadening into T4 evidence:
 
 - pure state transitions cover empty/query/IME/debounce, one pending query,
   current versus stale success/failure, accepted-event coalescing, Retry and
-  exit cleanup with exact announcement copy;
+  exit cleanup with exact announcement copy. They also cover 256 versus 257
+  Unicode code points and astral characters, proving local invalid input makes
+  no bridge call and exposes no Retry;
 - the hook makes no request during composition, dispatches after 120 ms, never
   overlaps two bridge calls, drops stale clocks/replies, requeries after an
-  accepted event and ignores stale events;
+  accepted Thread event and ignores stale events. A chat-only event that
+  advances generic list/detail cursors neither rejects a valid Search response
+  nor causes a Search requery;
 - entry/Cancel do not save or mutate underlying state; same-Thread and
   cross-Thread result opens cover save-before-get, actual Available/Archived
-  commit, stale get plus full hydration, save/not-found/Trash/unavailable
-  failure and latest navigation generation;
+  commit, save failure before get, original-selection hydration after
+  successful noncommitting `null`/not-found, Trash and stale
+  Cancel/newer-generation replies, and direct return to Search after a safe
+  Thread-unavailable failure. Tests assert required restoration finishes before
+  the navigation lock releases, while whole-Library unavailable remains fail
+  closed;
 - Sidebar markup covers input/Cancel accessibility, busy/empty/error/Retry,
-  bounded result names, truncated wording and suppression of ordinary
-  collection/actions while Search is active; and
+  local over-limit copy without Retry, bounded result names, truncated wording
+  and suppression of ordinary collection/actions while Search is active; and
 - Workspace/Message coverage proves exact one-shot message focus, heading
   fallback and no ordinary message Tab stop.
 
