@@ -5,6 +5,7 @@ import type { NyxConnectionsOverview } from '../../../../shared/connections/type
 import {
   buildComposerTargetOptions,
   composerTargetPresentation,
+  focusThreadSearchTarget,
   isSidebarShortcut,
   messagesForThreadSurface,
   readSidebarCollapsed,
@@ -197,6 +198,33 @@ describe('Composer target options', () => {
 })
 
 describe('sidebar workspace helpers', () => {
+  it('focuses one exact message anchor and falls back to a temporary heading anchor', () => {
+    const message = { dataset: { threadMessageId: 'message-1' }, focus: vi.fn() }
+    const heading = {
+      tabIndex: 0,
+      focus: vi.fn(),
+      hasAttribute: vi.fn(() => false),
+      removeAttribute: vi.fn(),
+    }
+    const root = {
+      querySelectorAll: vi.fn(() => [message]),
+      querySelector: vi.fn(() => heading),
+    } as unknown as ParentNode
+
+    expect(focusThreadSearchTarget(root, { threadId: 'thread-1', messageId: 'message-1' })).toBe(
+      'message',
+    )
+    expect(message.focus).toHaveBeenCalledOnce()
+    expect(heading.focus).not.toHaveBeenCalled()
+
+    expect(focusThreadSearchTarget(root, { threadId: 'thread-1', messageId: 'missing' })).toBe(
+      'heading',
+    )
+    expect(heading.focus).toHaveBeenCalledOnce()
+    expect(heading.tabIndex).toBe(-1)
+    expect(heading.removeAttribute).toHaveBeenCalledWith('tabindex')
+  })
+
   it('hides message Retry on a read-only Thread surface without mutating canonical messages', () => {
     const messages = [
       {

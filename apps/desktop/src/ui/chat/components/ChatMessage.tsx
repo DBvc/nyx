@@ -29,7 +29,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
     const openImage = openImageIndex === null ? null : message.images?.[openImageIndex]
 
     return (
-      <article className='flex justify-end'>
+      <article className='flex justify-end' data-thread-message-id={message.id} tabIndex={-1}>
         <div className='flex max-w-[min(78%,32rem)] flex-col items-end gap-2'>
           {message.content ? (
             <div className='whitespace-pre-wrap break-words rounded-[14px_14px_4px_14px] bg-nyx-solid px-3.5 py-2.5 text-[14.5px] leading-[1.55] text-nyx-ink'>
@@ -144,7 +144,11 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   }
 
   return (
-    <article className='max-w-[48rem] text-[15px] leading-6 text-nyx-ink'>
+    <article
+      className='max-w-[48rem] text-[15px] leading-6 text-nyx-ink'
+      data-thread-message-id={message.id}
+      tabIndex={-1}
+    >
       {attribution ? (
         <p className='mb-1 text-[11px] font-medium leading-4 text-nyx-subtle'>
           {attribution.kind === 'connection'

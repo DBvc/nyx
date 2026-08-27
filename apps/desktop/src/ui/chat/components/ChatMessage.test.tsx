@@ -35,6 +35,13 @@ function renderUser(message: Partial<NyxChatMessage>) {
 }
 
 describe('ChatMessage', () => {
+  it('exposes stable message anchors outside the ordinary Tab order', () => {
+    expect(renderAssistant({})).toContain('data-thread-message-id="assistant-1" tabindex="-1"')
+    expect(renderUser({ content: 'Hello' })).toContain(
+      'data-thread-message-id="user-1" tabindex="-1"',
+    )
+  })
+
   it.each(['pending', 'streaming'] as const)(
     'shows Thinking while an empty assistant message is %s',
     (status) => {

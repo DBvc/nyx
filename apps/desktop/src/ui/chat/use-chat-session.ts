@@ -7,6 +7,7 @@ import type {
   NyxThreadListPage,
   NyxThreadRenameInput,
   NyxThreadSafeError,
+  NyxThreadSearchResult,
   NyxThreadSaveDraftInput,
   NyxThreadRunCapacity,
   NyxThreadUpdateLocationInput,
@@ -59,6 +60,19 @@ import {
   type ThreadCollectionPage,
   type ThreadCollectionState,
 } from './thread-collection'
+import {
+  activateThreadSearch,
+  beginThreadSearchRequest,
+  classifyThreadSearchInput,
+  completeThreadSearch,
+  exitThreadSearch,
+  failThreadSearch,
+  initialThreadSearchState,
+  invalidateThreadSearch,
+  threadSearchDebounceMs,
+  updateThreadSearchInput,
+  type ThreadSearchState,
+} from './thread-search'
 
 function normalizeBridgeError(error: unknown): NyxChatError {
   if (error instanceof Error) {
@@ -294,6 +308,11 @@ export function useChatSession({
     attachmentRunActive: false,
   })
   const [navigating, setNavigating] = useState(false)
+  const [threadSearch, setThreadSearch] = useState<ThreadSearchState>(initialThreadSearchState)
+  const [threadFocusTarget, setThreadFocusTarget] = useState<{
+    threadId: string
+    messageId: string | null
+  } | null>(null)
   const projectionGeneration = useRef(initialChatState.projectionGeneration)
   const stateRef = useRef(state)
   const threadCollectionRef = useRef(threadCollection)
@@ -333,6 +352,15 @@ export function useChatSession({
   >(null)
   const missingSelectionRecoveryRef = useRef<string | null>(null)
   const navigationRef = useRef(false)
+  const threadSearchRef = useRef(threadSearch)
+  const threadSearchTimerRef = useRef<number | null>(null)
+  const threadSearchRequestRef = useRef<Promise<void> | null>(null)
+  const enqueueThreadSearchRef = useRef<((epoch: number, query: string) => void) | null>(null)
+  const dispatchPendingThreadSearchRef = useRef<(() => void) | null>(null)
+  const resetThreadSearchOwnerRef = useRef<(() => void) | null>(null)
+  const openThreadSearchResultRef = useRef<
+    ((result: NyxThreadSearchResult) => Promise<boolean>) | null
+  >(null)
   stateRef.current = state
   threadCollectionRef.current = threadCollection
   threadPinActionRef.current = threadPinAction
@@ -340,6 +368,41 @@ export function useChatSession({
   runCapacityRef.current = runCapacity
   selectedThreadIdRef.current = state.selectedThreadId
   activeRequestIdRef.current = state.activeRequestId ?? null
+  threadSearchRef.current = threadSearch
+
+  function replaceThreadSearch(next: ThreadSearchState) {
+    threadSearchRef.current = next
+    setThreadSearch(next)
+  }
+
+  function clearThreadSearchTimer() {
+    if (threadSearchTimerRef.current === null) return
+    window.clearTimeout(threadSearchTimerRef.current)
+    threadSearchTimerRef.current = null
+  }
+
+  function scheduleThreadSearch(next: ThreadSearchState) {
+    const classified = classifyThreadSearchInput(next.input)
+    if (!next.active || next.composing || classified.kind !== 'valid') return
+    threadSearchTimerRef.current = window.setTimeout(() => {
+      threadSearchTimerRef.current = null
+      enqueueThreadSearchRef.current?.(next.epoch, classified.query)
+    }, threadSearchDebounceMs)
+  }
+
+  function setThreadSearchInput(input: string, composing = threadSearchRef.current.composing) {
+    clearThreadSearchTimer()
+    resetThreadSearchOwnerRef.current?.()
+    const next = updateThreadSearchInput(threadSearchRef.current, input, composing)
+    replaceThreadSearch(next)
+    scheduleThreadSearch(next)
+  }
+
+  function cancelThreadSearch() {
+    clearThreadSearchTimer()
+    resetThreadSearchOwnerRef.current?.()
+    replaceThreadSearch(exitThreadSearch(threadSearchRef.current))
+  }
 
   function replaceThreadCollection(next: ThreadCollectionState) {
     threadCollectionRef.current = next
@@ -699,12 +762,171 @@ export function useChatSession({
     let eventEpoch: string | null = null
     let listCursor = 0
     let detailCursor = 0
+    let searchCorpusEpoch: string | null = null
+    let searchCorpusCursor = 0
+    let lastAcceptedSearchResponse: { epoch: string; cursor: number } | null = null
+    let searchHydrationBlocked = false
+    let pendingSearch: { epoch: number; query: string; cursor: number } | null = null
+    let searchIntentGeneration = 0
+    let searchNavigationGeneration = 0
+    let threadGetDispatchSerial = 0
     let collectionInFlight = false
     let collectionDirty = false
     let collectionReadSerial = 0
     let lastCollectionCommit: { epoch: string; cursor: number } | null = null
     let lastHydrationCommit: { request: number; epoch: string } | null = null
     let satisfiedCollectionReplacementEpoch: string | null = null
+
+    function readThread(threadId: string | null) {
+      const serial = ++threadGetDispatchSerial
+      return {
+        serial,
+        promise: threads.get({ threadId }),
+      }
+    }
+
+    function dispatchPendingSearch() {
+      if (
+        disposed ||
+        !hydrated ||
+        searchHydrationBlocked ||
+        threadSearchRequestRef.current ||
+        !pendingSearch
+      ) {
+        return
+      }
+      const request = pendingSearch
+      pendingSearch = null
+      const current = threadSearchRef.current
+      if (!current.active || current.epoch !== request.epoch) {
+        dispatchPendingSearch()
+        return
+      }
+
+      replaceThreadSearch(beginThreadSearchRequest(current, request.epoch))
+      let response: ReturnType<typeof threads.search>
+      try {
+        response = threads.search({ query: request.query })
+      } catch {
+        replaceThreadSearch(failThreadSearch(threadSearchRef.current, request.epoch))
+        dispatchPendingSearch()
+        return
+      }
+      let operation!: Promise<void>
+      operation = response
+        .then((result) => {
+          if (disposed) return
+          const latest = threadSearchRef.current
+          if (!latest.active || latest.epoch !== request.epoch) return
+          if (!result.ok) {
+            replaceThreadSearch(failThreadSearch(latest, request.epoch))
+            return
+          }
+          if (!eventEpoch || result.value.eventEpoch !== eventEpoch) {
+            prepareThreadSearchForHydration()
+            void hydrateThreadLibrary()
+            return
+          }
+          if (
+            result.value.eventEpoch !== searchCorpusEpoch ||
+            result.value.includedThroughCursor < request.cursor
+          ) {
+            const invalidated = invalidateThreadSearch(latest)
+            replaceThreadSearch(invalidated.state)
+            if (invalidated.query) {
+              pendingSearch = {
+                epoch: invalidated.state.epoch,
+                query: invalidated.query,
+                cursor: searchCorpusCursor,
+              }
+            }
+            return
+          }
+          replaceThreadSearch(
+            completeThreadSearch(
+              latest,
+              request.epoch,
+              result.value.results,
+              result.value.truncated,
+            ),
+          )
+          lastAcceptedSearchResponse = {
+            epoch: result.value.eventEpoch,
+            cursor: result.value.includedThroughCursor,
+          }
+        })
+        .catch(() => {
+          if (disposed) return
+          const latest = threadSearchRef.current
+          if (latest.active && latest.epoch === request.epoch) {
+            replaceThreadSearch(failThreadSearch(latest, request.epoch))
+          }
+        })
+        .finally(() => {
+          if (threadSearchRequestRef.current === operation) {
+            threadSearchRequestRef.current = null
+            dispatchPendingThreadSearchRef.current?.()
+          }
+        })
+      threadSearchRequestRef.current = operation
+    }
+
+    function enqueueThreadSearch(epoch: number, query: string) {
+      const current = threadSearchRef.current
+      if (!current.active || current.epoch !== epoch) return
+      pendingSearch = { epoch, query, cursor: searchCorpusCursor }
+      dispatchPendingSearch()
+    }
+
+    function invalidateActiveThreadSearch() {
+      clearThreadSearchTimer()
+      const invalidated = invalidateThreadSearch(threadSearchRef.current)
+      replaceThreadSearch(invalidated.state)
+      if (invalidated.query) {
+        pendingSearch = {
+          epoch: invalidated.state.epoch,
+          query: invalidated.query,
+          cursor: searchCorpusCursor,
+        }
+      } else {
+        pendingSearch = null
+      }
+      return invalidated
+    }
+
+    function prepareThreadSearchForHydration() {
+      if (searchHydrationBlocked) return
+      searchHydrationBlocked = true
+      if (threadSearchRef.current.active) invalidateActiveThreadSearch()
+      else pendingSearch = null
+    }
+
+    function releaseThreadSearchAfterHydration(epoch: string, cursor: number) {
+      searchCorpusCursor =
+        searchCorpusEpoch === epoch ? Math.max(searchCorpusCursor, cursor) : cursor
+      searchCorpusEpoch = epoch
+      lastAcceptedSearchResponse = null
+      searchHydrationBlocked = false
+      const current = threadSearchRef.current
+      const classified = classifyThreadSearchInput(current.input)
+      if (current.active && classified.kind === 'valid') {
+        pendingSearch = {
+          epoch: current.epoch,
+          query: classified.query,
+          cursor: searchCorpusCursor,
+        }
+      } else {
+        pendingSearch = null
+      }
+      dispatchPendingSearch()
+    }
+
+    enqueueThreadSearchRef.current = enqueueThreadSearch
+    dispatchPendingThreadSearchRef.current = dispatchPendingSearch
+    resetThreadSearchOwnerRef.current = () => {
+      pendingSearch = null
+      searchIntentGeneration += 1
+    }
 
     type ActiveThreadCollectionActionPhase =
       | { kind: 'dispatching' }
@@ -1004,6 +1226,12 @@ export function useChatSession({
     function failWholeLibrary(error: NyxThreadSafeError) {
       hydrated = false
       collectionDirty = false
+      clearThreadSearchTimer()
+      pendingSearch = null
+      searchHydrationBlocked = false
+      lastAcceptedSearchResponse = null
+      searchIntentGeneration += 1
+      replaceThreadSearch(exitThreadSearch(threadSearchRef.current))
       finishThreadCollectionAction()
       dispatch({
         type: 'thread-library-hydration-failed',
@@ -1028,7 +1256,8 @@ export function useChatSession({
         return 'accept'
       }
 
-      const result = await threads.get({ threadId })
+      const { promise } = readThread(threadId)
+      const result = await promise
       if (disposed || hydration !== hydrationRef.current) return 'reject'
       if (
         !result.ok &&
@@ -1190,6 +1419,7 @@ export function useChatSession({
 
     function acceptClock(nextEpoch: string, cursor: number) {
       if (!eventEpoch || nextEpoch !== eventEpoch) {
+        prepareThreadSearchForHydration()
         void hydrateThreadLibrary()
         return null
       }
@@ -1198,6 +1428,7 @@ export function useChatSession({
       let detailAdvanced = false
       if (cursor > listCursor) {
         if (cursor !== listCursor + 1) {
+          prepareThreadSearchForHydration()
           void hydrateThreadLibrary()
           return null
         }
@@ -1207,6 +1438,7 @@ export function useChatSession({
       }
       if (cursor > detailCursor) {
         if (cursor !== detailCursor + 1) {
+          prepareThreadSearchForHydration()
           void hydrateThreadLibrary()
           return null
         }
@@ -1335,6 +1567,7 @@ export function useChatSession({
 
     function handleThreadEvent(event: NyxThreadEvent) {
       if (event.type === 'threads:epoch-changed') {
+        prepareThreadSearchForHydration()
         const action = activeThreadCollectionAction
         if (action && event.eventEpoch !== action.epoch) {
           requestThreadCollectionReplacementHydration(action, event.eventEpoch)
@@ -1353,6 +1586,18 @@ export function useChatSession({
       const cursor = event.includedThroughCursor
       const accepted = acceptClock(event.eventEpoch, cursor)
       if (!accepted) return
+      if ((accepted.listAdvanced || accepted.detailAdvanced) && cursor > searchCorpusCursor) {
+        const coveredCursor =
+          lastAcceptedSearchResponse?.epoch === event.eventEpoch
+            ? Math.max(searchCorpusCursor, lastAcceptedSearchResponse.cursor)
+            : searchCorpusCursor
+        searchCorpusEpoch = event.eventEpoch
+        searchCorpusCursor = cursor
+        if (cursor > coveredCursor && threadSearchRef.current.active) {
+          invalidateActiveThreadSearch()
+          dispatchPendingSearch()
+        }
+      }
       if (accepted.listAdvanced) {
         if (event.type === 'threads:changed' || event.type === 'threads:removed') {
           markCollectionDirty()
@@ -1438,6 +1683,7 @@ export function useChatSession({
         errorPhase?: ThreadCollectionErrorPhase
       } = {},
     ) {
+      prepareThreadSearchForHydration()
       const request = ++hydrationRef.current
       const generation = projectionGeneration.current
       const location = threadCollectionRef.current.location
@@ -1523,7 +1769,7 @@ export function useChatSession({
         let summary =
           pageResult.rows.find((row) => row.id === selectedId) ??
           (selectedId === firstSummary?.id ? firstSummary : null)
-        let detailResult = selectedId ? await threads.get({ threadId: selectedId }) : null
+        let detailResult = selectedId ? await readThread(selectedId).promise : null
         if (disposed || request !== hydrationRef.current) return
         if (
           storedId &&
@@ -1537,7 +1783,7 @@ export function useChatSession({
         ) {
           selectedId = firstSummary?.id ?? null
           summary = firstSummary
-          detailResult = selectedId ? await threads.get({ threadId: selectedId }) : null
+          detailResult = selectedId ? await readThread(selectedId).promise : null
           if (disposed || request !== hydrationRef.current) return
         }
         if (detailResult && !detailResult.ok) {
@@ -1624,6 +1870,9 @@ export function useChatSession({
         })
         completeThreadCollectionActionAfterHydration(request, eventEpoch)
         resumeEventPump()
+        if (hydrated && request === hydrationRef.current) {
+          releaseThreadSearchAfterHydration(eventEpoch, pageResult.includedThroughCursor)
+        }
       } catch {
         if (!disposed && request === hydrationRef.current) {
           failWholeLibrary(threadLibraryBridgeError())
@@ -1861,7 +2110,8 @@ export function useChatSession({
         !hydrated ||
         activeThreadCollectionAction ||
         threadPinActionRef.current.pending ||
-        navigationRef.current
+        navigationRef.current ||
+        threadSearchRef.current.active
       ) {
         return false
       }
@@ -1883,6 +2133,224 @@ export function useChatSession({
         setNavigating(false)
       }
     }
+
+    function keepSearchOpenAfterStaleResult() {
+      const current = threadSearchRef.current
+      if (!current.active) return
+      replaceThreadSearch({
+        ...current,
+        phase: 'idle',
+        results: [],
+        truncated: false,
+        status: null,
+        announcement: null,
+      })
+    }
+
+    async function clearMainSelectionThenHydrate(pageBudget: number) {
+      try {
+        const cleared = readThread(null)
+        const result = await cleared.promise
+        if (
+          !result.ok ||
+          result.value.detail !== null ||
+          cleared.serial !== threadGetDispatchSerial
+        ) {
+          failWholeLibrary(result.ok ? threadLibraryBridgeError() : result.error)
+          return false
+        }
+        await hydrateThreadLibrary({ pageBudget, preserveCollection: true })
+        return hydrated
+      } catch {
+        failWholeLibrary(threadLibraryBridgeError())
+        return false
+      }
+    }
+
+    async function restoreSearchNavigation(
+      navigation: number,
+      originalThreadId: string | null,
+      originalLocation: NyxThreadDetail['summary']['location'] | null,
+      pageBudget: number,
+    ) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (navigation !== searchNavigationGeneration) return false
+        if (!hydrated) {
+          await hydrateThreadLibrary({ pageBudget, preserveCollection: true })
+          if (!hydrated || navigation !== searchNavigationGeneration) return false
+        }
+        const hydration = hydrationRef.current
+        let recovery
+        try {
+          recovery = readThread(originalThreadId)
+          const result = await recovery.promise
+          if (navigation !== searchNavigationGeneration) return false
+          if (!result.ok) {
+            if (result.error.code === 'library_unavailable') {
+              failWholeLibrary(result.error)
+              return false
+            }
+            return clearMainSelectionThenHydrate(pageBudget)
+          }
+
+          const exactOriginal = originalThreadId
+            ? result.value.detail?.summary.id === originalThreadId &&
+              result.value.detail.summary.location === originalLocation
+            : result.value.detail === null
+          const currentRecovery =
+            result.value.eventEpoch === eventEpoch &&
+            result.value.includedThroughCursor >= searchCorpusCursor &&
+            recovery.serial === threadGetDispatchSerial &&
+            hydration === hydrationRef.current
+
+          if (exactOriginal && currentRecovery) return true
+          if (!exactOriginal) return clearMainSelectionThenHydrate(pageBudget)
+
+          await hydrateThreadLibrary({ pageBudget, preserveCollection: true })
+          if (!hydrated) return false
+        } catch {
+          failWholeLibrary(threadLibraryBridgeError())
+          return false
+        }
+      }
+      return clearMainSelectionThenHydrate(pageBudget)
+    }
+
+    openThreadSearchResultRef.current = async (result) => {
+      const currentSearch = threadSearchRef.current
+      const exactResult = currentSearch.results.some(
+        (candidate) =>
+          candidate.threadId === result.threadId &&
+          candidate.source === result.source &&
+          candidate.messageId === result.messageId &&
+          candidate.location === result.location &&
+          candidate.title === result.title &&
+          candidate.snippet === result.snippet,
+      )
+      if (
+        disposed ||
+        !hydrated ||
+        !eventEpoch ||
+        !currentSearch.active ||
+        !exactResult ||
+        navigationRef.current ||
+        stateRef.current.hydrationStatus !== 'ready'
+      ) {
+        return false
+      }
+
+      clearThreadSearchTimer()
+      pendingSearch = null
+      const invalidated = invalidateThreadSearch(currentSearch)
+      replaceThreadSearch(invalidated.state)
+      const searchEpoch = invalidated.state.epoch
+      const intent = ++searchIntentGeneration
+
+      if (selectedThreadIdRef.current === result.threadId) {
+        const exactMessage =
+          result.source === 'title' ||
+          (result.messageId !== null &&
+            stateRef.current.messages.some((message) => message.id === result.messageId))
+        if (!exactMessage) {
+          keepSearchOpenAfterStaleResult()
+          return false
+        }
+        replaceThreadSearch(exitThreadSearch(threadSearchRef.current))
+        setThreadFocusTarget({
+          threadId: result.threadId,
+          messageId: result.source === 'title' ? null : result.messageId,
+        })
+        return true
+      }
+
+      const navigation = ++searchNavigationGeneration
+      const originalThreadId = selectedThreadIdRef.current
+      const originalLocation = stateRef.current.threadSummary?.location ?? null
+      const pageBudget = Math.max(1, threadCollectionRef.current.loadedPageCount)
+      navigationRef.current = true
+      setNavigating(true)
+      try {
+        const saved = await queueSaveDraft(false, true)
+        if (!saved.ok) {
+          keepSearchOpenAfterStaleResult()
+          return false
+        }
+
+        const hydration = hydrationRef.current
+        const targetRead = readThread(result.threadId)
+        let target
+        try {
+          target = await targetRead.promise
+        } catch {
+          await restoreSearchNavigation(navigation, originalThreadId, originalLocation, pageBudget)
+          return false
+        }
+
+        if (!target.ok) {
+          if (target.error.code === 'library_unavailable') failWholeLibrary(target.error)
+          else keepSearchOpenAfterStaleResult()
+          return false
+        }
+
+        const detail = target.value.detail
+        const canCommit =
+          navigation === searchNavigationGeneration &&
+          intent === searchIntentGeneration &&
+          threadSearchRef.current.epoch === searchEpoch &&
+          threadSearchRef.current.active &&
+          targetRead.serial === threadGetDispatchSerial &&
+          hydration === hydrationRef.current &&
+          target.value.eventEpoch === eventEpoch &&
+          target.value.includedThroughCursor >= searchCorpusCursor &&
+          detail?.summary.id === result.threadId &&
+          (detail.summary.location === 'available' || detail.summary.location === 'archived')
+
+        if (!canCommit || !detail) {
+          await restoreSearchNavigation(navigation, originalThreadId, originalLocation, pageBudget)
+          if (threadSearchRef.current.active) keepSearchOpenAfterStaleResult()
+          return false
+        }
+
+        listCursor = Math.max(listCursor, target.value.includedThroughCursor)
+        detailCursor = Math.max(detailCursor, target.value.includedThroughCursor)
+        selectedThreadIdRef.current = detail.summary.id
+        activeRequestIdRef.current = detail.activeRun?.requestId ?? null
+        try {
+          window.localStorage.setItem('nyx.thread.selected.v1', detail.summary.id)
+        } catch {
+          // A blocked UI preference does not block canonical Search navigation.
+        }
+        if (threadCollectionRef.current.location !== detail.summary.location) {
+          replaceThreadCollection({
+            ...initialThreadCollectionState,
+            location: detail.summary.location,
+            status: 'ready',
+          })
+        }
+        const action = {
+          type: 'thread-library-hydrated' as const,
+          generation: projectionGeneration.current,
+          summary: detail.summary,
+          detail,
+          eventEpoch,
+          listCursor,
+          detailCursor,
+        }
+        stateRef.current = chatReducer(stateRef.current, action)
+        dispatch(action)
+        replaceThreadSearch(exitThreadSearch(threadSearchRef.current))
+        setThreadFocusTarget({
+          threadId: detail.summary.id,
+          messageId: result.source === 'title' ? null : result.messageId,
+        })
+        return true
+      } finally {
+        if (navigation === searchNavigationGeneration) {
+          navigationRef.current = false
+          setNavigating(false)
+        }
+      }
+    }
     void hydrateThreadLibrary()
 
     return () => {
@@ -1894,6 +2362,16 @@ export function useChatSession({
       renameThreadRef.current = null
       updateThreadLocationRef.current = null
       switchThreadCollectionLocationRef.current = null
+      enqueueThreadSearchRef.current = null
+      if (dispatchPendingThreadSearchRef.current === dispatchPendingSearch) {
+        dispatchPendingThreadSearchRef.current = null
+      }
+      resetThreadSearchOwnerRef.current = null
+      openThreadSearchResultRef.current = null
+      clearThreadSearchTimer()
+      pendingSearch = null
+      searchIntentGeneration += 1
+      searchNavigationGeneration += 1
       unsubscribeChat()
       unsubscribeThreads()
     }
@@ -2488,6 +2966,7 @@ export function useChatSession({
       stateRef.current.hydrationStatus !== 'ready' ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
+      threadSearchRef.current.active ||
       selectedThreadIdRef.current === threadId ||
       !threadSummariesRef.current.some((summary) => summary.id === threadId)
     )
@@ -2526,6 +3005,7 @@ export function useChatSession({
       state.hydrationStatus !== 'ready' ||
       stateRef.current.newThreadPending ||
       navigationRef.current ||
+      threadSearchRef.current.active ||
       threadCollectionRef.current.location !== 'available' ||
       !window.nyx
     )
@@ -2623,6 +3103,8 @@ export function useChatSession({
     threadSummaries,
     threadCollection,
     threadPinAction,
+    threadSearch,
+    threadFocusTarget,
     pinnedThreadSummaries: threadGroups.pinned,
     recentThreadSummaries: threadGroups.recent,
     currentThreadSummary: currentThreadOutsideCollection(threadCollection, state.threadSummary),
@@ -2700,6 +3182,35 @@ export function useChatSession({
     },
     switchThreadCollectionLocation(location: ThreadCollectionLocation) {
       return switchThreadCollectionLocationRef.current?.(location) ?? Promise.resolve(false)
+    },
+    activateThreadSearch() {
+      if (
+        stateRef.current.hydrationStatus !== 'ready' &&
+        !(
+          stateRef.current.hydrationStatus === 'error' &&
+          stateRef.current.hydrationErrorThreadId !== null
+        )
+      ) {
+        return
+      }
+      replaceThreadSearch(activateThreadSearch(threadSearchRef.current))
+    },
+    setThreadSearchInput,
+    beginThreadSearchComposition() {
+      setThreadSearchInput(threadSearchRef.current.input, true)
+    },
+    endThreadSearchComposition(input: string) {
+      setThreadSearchInput(input, false)
+    },
+    retryThreadSearch() {
+      setThreadSearchInput(threadSearchRef.current.input, false)
+    },
+    cancelThreadSearch,
+    openThreadSearchResult(result: NyxThreadSearchResult) {
+      return openThreadSearchResultRef.current?.(result) ?? Promise.resolve(false)
+    },
+    consumeThreadFocusTarget() {
+      setThreadFocusTarget(null)
     },
   }
 }

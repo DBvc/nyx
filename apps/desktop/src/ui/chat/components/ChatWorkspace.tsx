@@ -45,6 +45,29 @@ interface ComposerTargetOption {
   disabled?: boolean
 }
 
+export function focusThreadSearchTarget(
+  root: ParentNode,
+  target: { threadId: string; messageId: string | null },
+) {
+  const message = target.messageId
+    ? Array.from(root.querySelectorAll<HTMLElement>('[data-thread-message-id]')).find(
+        (element) => element.dataset.threadMessageId === target.messageId,
+      )
+    : null
+  if (message) {
+    message.focus()
+    return 'message' as const
+  }
+
+  const heading = root.querySelector<HTMLElement>('h1')
+  if (!heading) return null
+  const temporaryTabIndex = !heading.hasAttribute('tabindex')
+  if (temporaryTabIndex) heading.tabIndex = -1
+  heading.focus()
+  if (temporaryTabIndex) heading.removeAttribute('tabindex')
+  return 'heading' as const
+}
+
 export function messagesForThreadSurface(
   messages: ReadonlyArray<NyxChatMessage>,
   readOnly: boolean,
@@ -224,6 +247,8 @@ export function ChatWorkspace() {
     state,
     threadCollection,
     threadPinAction,
+    threadSearch,
+    threadFocusTarget,
     currentThreadSummary,
     isBusy,
     isAccepting,
@@ -251,6 +276,14 @@ export function ChatWorkspace() {
     renameThread,
     updateThreadLocation,
     switchThreadCollectionLocation,
+    activateThreadSearch,
+    setThreadSearchInput,
+    beginThreadSearchComposition,
+    endThreadSearchComposition,
+    retryThreadSearch,
+    cancelThreadSearch,
+    openThreadSearchResult,
+    consumeThreadFocusTarget,
   } = useChatSession({
     connectionStatus: connectionSetup.status,
     refreshConnections: connectionSetup.refresh,
@@ -344,6 +377,26 @@ export function ChatWorkspace() {
     }
   }, [activeView, state.hydrationError, state.hydrationRetrying, state.hydrationStatus])
 
+  useEffect(() => {
+    if (
+      !threadFocusTarget ||
+      activeView !== 'chat' ||
+      state.hydrationStatus !== 'ready' ||
+      state.selectedThreadId !== threadFocusTarget.threadId
+    ) {
+      return
+    }
+    focusThreadSearchTarget(document, threadFocusTarget)
+    consumeThreadFocusTarget()
+  }, [
+    activeView,
+    consumeThreadFocusTarget,
+    state.hydrationStatus,
+    state.selectedThreadId,
+    threadFocusTarget,
+    threadItems.length,
+  ])
+
   function handleSend() {
     if (!canSend) {
       return
@@ -406,6 +459,7 @@ export function ChatWorkspace() {
             )}
             libraryUnavailable={libraryUnavailable}
             pinAction={threadPinAction}
+            search={threadSearch}
             newThreadDisabled={
               state.hydrationStatus !== 'ready' ||
               isResetting ||
@@ -439,6 +493,17 @@ export function ChatWorkspace() {
               void loadMoreThreads()
             }}
             onRetryThreadCollection={retryThreadCollection}
+            onActivateSearch={activateThreadSearch}
+            onSearchInput={setThreadSearchInput}
+            onSearchCompositionStart={beginThreadSearchComposition}
+            onSearchCompositionEnd={endThreadSearchComposition}
+            onRetrySearch={retryThreadSearch}
+            onCancelSearch={cancelThreadSearch}
+            onOpenSearchResult={async (result) => {
+              const opened = await openThreadSearchResult(result)
+              if (opened) setActiveView('chat')
+              return opened
+            }}
             preview={currentThreadPreview}
             selectedThreadId={state.selectedThreadId}
             settingsPopoverRef={settingsPopoverRef}

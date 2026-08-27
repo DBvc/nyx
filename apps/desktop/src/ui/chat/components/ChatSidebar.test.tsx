@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { NyxThreadSummary } from '../../../../shared/threads/types'
 import { initialThreadCollectionState, initialThreadPinActionState } from '../thread-collection'
+import { initialThreadSearchState, threadSearchLimitMessage } from '../thread-search'
 import { ChatSidebar } from './ChatSidebar'
 
 function thread(id: string, title: string, pinPosition: number | null): NyxThreadSummary {
@@ -370,5 +371,90 @@ describe('ChatSidebar Thread Library', () => {
 
     expect(html).toContain('Couldn’t load threads.')
     expect(html).not.toContain('Untouched draft')
+  })
+
+  it('keeps Search visible and replaces only the middle collection while active', () => {
+    const html = renderSidebar({
+      search: {
+        ...initialThreadSearchState,
+        active: true,
+        input: 'draft',
+        epoch: 1,
+        phase: 'searching',
+        status: 'Searching',
+      },
+    })
+
+    expect(html).toContain('aria-label="Search threads"')
+    expect(html).toContain('aria-label="Cancel search"')
+    expect(html).toContain('aria-busy="true"')
+    expect(html).toContain('>Searching</p>')
+    expect(html).not.toContain('Pinned one')
+    expect(html).not.toContain('Recent one')
+    expect(html).toMatch(/<input[^>]*aria-label="Search threads"/u)
+    expect(html.match(/disabled=""/gu)?.length).toBeGreaterThanOrEqual(3)
+    expect(html).toContain('New thread</button>')
+    expect(html).toContain('>Archived</button>')
+    expect(html).toContain('>Trash</button>')
+  })
+
+  it('renders bounded result names, source labels, and truncated wording', () => {
+    const html = renderSidebar({
+      search: {
+        ...initialThreadSearchState,
+        active: true,
+        input: 'needle',
+        epoch: 1,
+        phase: 'ready',
+        results: [
+          {
+            threadId: 'thread-result',
+            title: 'Full result title',
+            location: 'archived',
+            source: 'assistant_message',
+            snippet: 'Bounded snippet',
+            messageId: 'assistant-1',
+          },
+        ],
+        truncated: true,
+        status: 'Showing first 50 results',
+        announcement: 'Showing first 50 results',
+      },
+    })
+
+    expect(html).toContain('aria-label="Full result title. Assistant message. Bounded snippet"')
+    expect(html).toContain('Showing first 50 results')
+    expect(html).not.toContain('Load more threads')
+    expect(html).not.toContain('Actions for')
+  })
+
+  it('shows local invalid and bridge error states with Retry only for bridge errors', () => {
+    const invalid = renderSidebar({
+      search: {
+        ...initialThreadSearchState,
+        active: true,
+        input: 'x'.repeat(257),
+        epoch: 1,
+        phase: 'invalid',
+        status: threadSearchLimitMessage,
+        announcement: threadSearchLimitMessage,
+      },
+    })
+    expect(invalid).toContain(threadSearchLimitMessage)
+    expect(invalid).not.toContain('>Retry</button>')
+
+    const failed = renderSidebar({
+      search: {
+        ...initialThreadSearchState,
+        active: true,
+        input: 'needle',
+        epoch: 1,
+        phase: 'error',
+        status: "Couldn't search",
+        announcement: "Couldn't search",
+      },
+    })
+    expect(failed).toContain('Couldn&#x27;t search')
+    expect(failed).toContain('>Retry</button>')
   })
 })

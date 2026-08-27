@@ -11,6 +11,8 @@ import type {
   NyxThreadRenameInput,
   NyxThreadRenameResult,
   NyxThreadResult,
+  NyxThreadSearchInput,
+  NyxThreadSearchResponse,
   NyxThreadSaveDraftResult,
   NyxThreadUpdatePinInput,
   NyxThreadUpdatePinResult,
@@ -81,6 +83,547 @@ vi.mock('react', async (importOriginal) => {
       if (cleanup) harness.cleanups.push(cleanup)
     },
   }
+})
+
+describe('SEARCH1/T3 Renderer Search', () => {
+  const hit = {
+    threadId: 'thread-b',
+    title: 'Search result',
+    location: 'available' as const,
+    source: 'title' as const,
+    snippet: 'Search result',
+    messageId: null,
+  }
+
+  it('waits for IME composition and 120 ms, and rejects oversized input locally', async () => {
+    const bridge = installBridge(selectedSnapshot(detail('', 'thread-a')))
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+
+    let session = render()
+    session.activateThreadSearch()
+    session.beginThreadSearchComposition()
+    session.setThreadSearchInput('needle')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(bridge.search).not.toHaveBeenCalled()
+
+    session.endThreadSearchComposition('needle')
+    await vi.advanceTimersByTimeAsync(119)
+    expect(bridge.search).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(bridge.search).toHaveBeenCalledOnce()
+    expect(bridge.search).toHaveBeenLastCalledWith({ query: 'needle' })
+
+    session = render()
+    session.setThreadSearchInput('😀'.repeat(257))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(bridge.search).toHaveBeenCalledOnce()
+    expect(render().threadSearch).toMatchObject({
+      phase: 'invalid',
+      status: 'Search is limited to 256 characters',
+    })
+  })
+
+  it('keeps one request unsettled and replaces one latest pending query', async () => {
+    const first = deferred<NyxThreadResult<NyxThreadSearchResponse>>()
+    const bridge = installBridge({
+      ...selectedSnapshot(detail('', 'thread-a')),
+      search: async (input) => {
+        if (input.query === 'one') return first.promise
+        return {
+          ok: true,
+          value: {
+            results: [{ ...hit, title: input.query }],
+            truncated: false,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 0,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+
+    let session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('one')
+    await vi.advanceTimersByTimeAsync(120)
+    session = render()
+    session.setThreadSearchInput('two')
+    await vi.advanceTimersByTimeAsync(120)
+    session.setThreadSearchInput('three')
+    await vi.advanceTimersByTimeAsync(120)
+    expect(bridge.search).toHaveBeenCalledTimes(1)
+
+    first.resolve({
+      ok: true,
+      value: {
+        results: [{ ...hit, title: 'stale' }],
+        truncated: false,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await vi.waitFor(() => expect(bridge.search).toHaveBeenCalledTimes(2))
+    expect(bridge.search).toHaveBeenLastCalledWith({ query: 'three' })
+    await vi.waitFor(() => expect(render().threadSearch.results[0]?.title).toBe('three'))
+  })
+
+  it('accepts a Search response across a contiguous Chat-only event and requeries on Thread change', async () => {
+    const first = deferred<NyxThreadResult<NyxThreadSearchResponse>>()
+    let calls = 0
+    const bridge = installBridge({
+      ...selectedSnapshot(detail('', 'thread-a')),
+      search: async () => {
+        calls += 1
+        if (calls === 1) return first.promise
+        return {
+          ok: true,
+          value: {
+            results: [hit],
+            truncated: false,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 2,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    let session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('needle')
+    await vi.advanceTimersByTimeAsync(120)
+
+    bridge.emitChat({
+      type: 'chat:capacity',
+      eventEpoch: 'epoch-1',
+      cursor: 1,
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
+    first.resolve({
+      ok: true,
+      value: {
+        results: [hit],
+        truncated: false,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([hit]))
+    expect(bridge.search).toHaveBeenCalledOnce()
+
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+      detail: detail('', 'thread-a'),
+    })
+    expect(bridge.search).toHaveBeenCalledOnce()
+
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 2,
+      detail: detail('', 'thread-a'),
+    })
+    await vi.waitFor(() => expect(bridge.search).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([hit]))
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 2,
+      detail: detail('', 'thread-a'),
+    })
+    expect(bridge.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates before a Chat-exposed cursor-gap hydration and sends one latest requery', async () => {
+    const delayed = deferred<NyxThreadResult<NyxThreadSearchResponse>>()
+    let hydration = 0
+    const bridge = installBridge({
+      selectedId: 'thread-a',
+      list: async () => {
+        const cursor = hydration === 0 ? 0 : 2
+        hydration += 1
+        return collectionPageResult([detail('', 'thread-a').summary], null, cursor)
+      },
+      get: async () => ({
+        ok: true,
+        value: {
+          detail: detail('', 'thread-a'),
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: hydration > 1 ? 2 : 0,
+        },
+      }),
+      search: async () => {
+        if (bridge.search.mock.calls.length === 1) return delayed.promise
+        return {
+          ok: true,
+          value: {
+            results: [hit],
+            truncated: false,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: 2,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    const session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('needle')
+    await vi.advanceTimersByTimeAsync(120)
+    expect(bridge.search).toHaveBeenCalledOnce()
+
+    bridge.emitChat({
+      type: 'chat:capacity',
+      eventEpoch: 'epoch-1',
+      cursor: 2,
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
+    expect(render().threadSearch.results).toEqual([])
+    await vi.waitFor(() => expect(bridge.listPage).toHaveBeenCalledTimes(2))
+    expect(bridge.search).toHaveBeenCalledOnce()
+
+    delayed.resolve({
+      ok: true,
+      value: {
+        results: [{ ...hit, title: 'Old result' }],
+        truncated: false,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    })
+    await vi.waitFor(() => expect(bridge.search).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([hit]))
+  })
+
+  it('does not requery for accepted Thread events already covered by the last Search response', async () => {
+    const bridge = installBridge({
+      ...selectedSnapshot(detail('', 'thread-a')),
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [hit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 2,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    const session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('needle')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([hit]))
+
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+      detail: detail('', 'thread-a'),
+    })
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 2,
+      detail: detail('', 'thread-a'),
+    })
+    expect(bridge.search).toHaveBeenCalledOnce()
+    expect(render().threadSearch.results).toEqual([hit])
+  })
+
+  it('opens same-Thread title results without saving and commits cross-Thread after save', async () => {
+    const selected = detail('', 'thread-a')
+    const targetDetail = detail('', 'thread-b')
+    const get = vi.fn(async ({ threadId }: { threadId: string | null }) => ({
+      ok: true as const,
+      value: {
+        detail: threadId === 'thread-b' ? targetDetail : selected,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    }))
+    const bridge = installBridge({
+      list: selectedSnapshot(selected).list,
+      get,
+      selectedId: selected.summary.id,
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [hit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+
+    let session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('same')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toHaveLength(1))
+    const same = { ...hit, threadId: 'thread-a' }
+    // The exact current result identity is required, so publish the same-Thread hit first.
+    session = render()
+    session.setThreadSearchInput('same-thread')
+    bridge.search.mockResolvedValueOnce({
+      ok: true,
+      value: { results: [same], truncated: false, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+    })
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results[0]?.threadId).toBe('thread-a'))
+    expect(await render().openThreadSearchResult(same)).toBe(true)
+    expect(bridge.saveDraft).not.toHaveBeenCalled()
+    expect(render().threadFocusTarget).toEqual({ threadId: 'thread-a', messageId: null })
+
+    session = render()
+    session.setInput('Edited draft')
+    session.activateThreadSearch()
+    session.setThreadSearchInput('cross')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results[0]?.threadId).toBe('thread-b'))
+    expect(await render().openThreadSearchResult(hit)).toBe(true)
+    expect(bridge.saveDraft).toHaveBeenCalledOnce()
+    expect(bridge.saveDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      get.mock.invocationCallOrder.at(-1)!,
+    )
+    expect((harness.state as ChatState).selectedThreadId).toBe('thread-b')
+    expect(render().threadSearch.active).toBe(false)
+    expect(render().threadFocusTarget).toEqual({ threadId: 'thread-b', messageId: null })
+  })
+
+  it('restores an originally empty Main selection after a successful noncommitting target get', async () => {
+    const trash = {
+      ...detail('', 'thread-b'),
+      summary: { ...detail('', 'thread-b').summary, location: 'trash' as const },
+    }
+    const get = vi.fn(async ({ threadId }: { threadId: string | null }) => ({
+      ok: true as const,
+      value: {
+        detail: threadId === 'thread-b' ? trash : null,
+        eventEpoch: 'epoch-1',
+        includedThroughCursor: 0,
+      },
+    }))
+    installBridge({
+      get,
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [hit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    const session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('trash')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toHaveLength(1))
+
+    expect(await render().openThreadSearchResult(hit)).toBe(false)
+    expect(get.mock.calls.map(([input]) => input.threadId)).toEqual(['thread-b', null])
+    expect(render().isResetting).toBe(false)
+    expect(render().threadSearch.active).toBe(true)
+  })
+
+  it('keeps the navigation lock through stale recovery, hydration, and one fresh recovery read', async () => {
+    const original = detail('', 'thread-a')
+    const trash = {
+      ...detail('', 'thread-b'),
+      summary: { ...detail('', 'thread-b').summary, location: 'trash' as const },
+    }
+    const delayedRecovery = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    let getCalls = 0
+    let listCalls = 0
+    let searchCalls = 0
+    const bridge = installBridge({
+      selectedId: original.summary.id,
+      list: async () => {
+        listCalls += 1
+        return collectionPageResult([original.summary], null, listCalls === 1 ? 0 : 1)
+      },
+      get: async ({ threadId }) => {
+        getCalls += 1
+        if (getCalls === 2) {
+          return {
+            ok: true,
+            value: { detail: trash, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+          }
+        }
+        if (getCalls === 3) return delayedRecovery.promise
+        return {
+          ok: true,
+          value: {
+            detail: threadId === original.summary.id ? original : null,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: getCalls === 1 ? 0 : 1,
+          },
+        }
+      },
+      search: async () => {
+        searchCalls += 1
+        return {
+          ok: true,
+          value: {
+            results: [hit],
+            truncated: false,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: searchCalls === 1 ? 0 : 1,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    const session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('trash')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toHaveLength(1))
+
+    const opening = render().openThreadSearchResult(hit)
+    await vi.waitFor(() => expect(getCalls).toBe(3))
+    expect(render().isResetting).toBe(true)
+    bridge.emitThread({
+      type: 'threads:changed',
+      eventEpoch: 'epoch-1',
+      includedThroughCursor: 1,
+      detail: original,
+    })
+    delayedRecovery.resolve({
+      ok: true,
+      value: { detail: original, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+    })
+
+    await expect(opening).resolves.toBe(false)
+    expect(getCalls).toBeGreaterThanOrEqual(5)
+    expect(render().isResetting).toBe(false)
+    expect((harness.state as ChatState).selectedThreadId).toBe(original.summary.id)
+  })
+
+  it('does not count a hydration read started before the target settles as recovery', async () => {
+    const original = detail('', 'thread-a')
+    const trash = {
+      ...detail('', 'thread-b'),
+      summary: { ...detail('', 'thread-b').summary, location: 'trash' as const },
+    }
+    const delayedTarget = deferred<
+      NyxThreadResult<{
+        detail: NyxThreadDetail | null
+        eventEpoch: string
+        includedThroughCursor: number
+      }>
+    >()
+    let getCalls = 0
+    let listCalls = 0
+    let searchCalls = 0
+    const bridge = installBridge({
+      selectedId: original.summary.id,
+      list: async () => {
+        listCalls += 1
+        return collectionPageResult([original.summary], null, listCalls === 1 ? 0 : 2)
+      },
+      get: async ({ threadId }) => {
+        getCalls += 1
+        if (getCalls === 2) return delayedTarget.promise
+        return {
+          ok: true,
+          value: {
+            detail: threadId === original.summary.id ? original : null,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: getCalls === 1 ? 0 : 2,
+          },
+        }
+      },
+      search: async () => {
+        searchCalls += 1
+        return {
+          ok: true,
+          value: {
+            results: [hit],
+            truncated: false,
+            eventEpoch: 'epoch-1',
+            includedThroughCursor: searchCalls === 1 ? 0 : 2,
+          },
+        }
+      },
+    })
+    render(true)
+    await vi.waitFor(() => expect((harness.state as ChatState).hydrationStatus).toBe('ready'))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    const session = render()
+    session.activateThreadSearch()
+    session.setThreadSearchInput('trash')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toHaveLength(1))
+
+    const opening = render().openThreadSearchResult(hit)
+    await vi.waitFor(() => expect(getCalls).toBe(2))
+    bridge.emitChat({
+      type: 'chat:capacity',
+      eventEpoch: 'epoch-1',
+      cursor: 2,
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
+    await vi.waitFor(() => expect(getCalls).toBe(3))
+    delayedTarget.resolve({
+      ok: true,
+      value: { detail: trash, eventEpoch: 'epoch-1', includedThroughCursor: 0 },
+    })
+
+    await expect(opening).resolves.toBe(false)
+    expect(getCalls).toBe(4)
+    expect(render().isResetting).toBe(false)
+    expect((harness.state as ChatState).selectedThreadId).toBe(original.summary.id)
+  })
 })
 
 const target = { kind: 'connection', providerId: 'provider-1', modelId: 'model-1' } as const
@@ -331,6 +874,7 @@ function installBridge(options?: {
   updateLocation?: (
     input: NyxThreadUpdateLocationInput,
   ) => Promise<NyxThreadResult<NyxThreadUpdateLocationResult>>
+  search?: (input: NyxThreadSearchInput) => Promise<NyxThreadResult<NyxThreadSearchResponse>>
   selectedId?: string | null
 }) {
   let chatListener: ((event: NyxChatEvent) => void) | null = null
@@ -451,6 +995,18 @@ function installBridge(options?: {
         }
       }),
   )
+  const search = vi.fn(
+    options?.search ??
+      (async () => ({
+        ok: true as const,
+        value: {
+          results: [],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      })),
+  )
   let storedSelectedId = options?.selectedId ?? null
   const localStorage = {
     getItem: vi.fn(() => storedSelectedId),
@@ -488,6 +1044,7 @@ function installBridge(options?: {
         updatePin,
         rename,
         updateLocation,
+        search,
         subscribe(listener: (event: NyxThreadEvent) => void) {
           threadListener = listener
           return () => {
@@ -511,6 +1068,7 @@ function installBridge(options?: {
     updatePin,
     rename,
     updateLocation,
+    search,
     localStorage,
     emitChat(event: NyxChatEvent) {
       chatListener?.(event)

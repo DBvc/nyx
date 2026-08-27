@@ -1,11 +1,12 @@
 import { ChevronDown, Ellipsis, Plus, SlidersHorizontal, UserRound } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import type { NyxChatRunStatus } from '../../../../shared/chat/types'
 import type {
   NyxThreadLocationAction,
   NyxThreadPinAction,
+  NyxThreadSearchResult,
   NyxThreadSummary,
 } from '../../../../shared/threads/types'
 import { validateNyxThreadTitle } from '../../../../shared/threads/title'
@@ -15,6 +16,7 @@ import {
   type ThreadCollectionState,
   type ThreadPinActionState,
 } from '../thread-collection'
+import { initialThreadSearchState, type ThreadSearchState } from '../thread-search'
 
 type CurrentThreadStatus = 'idle' | 'running' | 'saving_failed'
 
@@ -27,6 +29,7 @@ interface ChatSidebarProps {
   selectedThreadId: string | null
   collection: ThreadCollectionState
   pinAction: ThreadPinActionState
+  search?: ThreadSearchState
   libraryUnavailable: boolean
   newThreadDisabled: boolean
   onNewThread: () => void
@@ -49,6 +52,13 @@ interface ChatSidebarProps {
   onSwitchThreadCollection: (location: ThreadCollectionLocation) => void
   onLoadMoreThreads: () => void
   onRetryThreadCollection: () => Promise<boolean>
+  onActivateSearch?: () => void
+  onSearchInput?: (input: string) => void
+  onSearchCompositionStart?: () => void
+  onSearchCompositionEnd?: (input: string) => void
+  onRetrySearch?: () => void
+  onCancelSearch?: () => void
+  onOpenSearchResult?: (result: NyxThreadSearchResult) => Promise<boolean>
   onOpenConnectionsSettings: () => void
   settingsPopoverRef: RefObject<HTMLDivElement | null>
 }
@@ -82,6 +92,7 @@ export function ChatSidebar({
   selectedThreadId,
   collection,
   pinAction,
+  search = initialThreadSearchState,
   libraryUnavailable,
   newThreadDisabled,
   onNewThread,
@@ -92,6 +103,13 @@ export function ChatSidebar({
   onSwitchThreadCollection,
   onLoadMoreThreads,
   onRetryThreadCollection,
+  onActivateSearch = () => undefined,
+  onSearchInput = () => undefined,
+  onSearchCompositionStart = () => undefined,
+  onSearchCompositionEnd = () => undefined,
+  onRetrySearch = () => undefined,
+  onCancelSearch = () => undefined,
+  onOpenSearchResult = async () => false,
   onOpenConnectionsSettings,
   settingsPopoverRef,
 }: ChatSidebarProps) {
@@ -100,6 +118,7 @@ export function ChatSidebar({
     value: string
     error: string | null
   } | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const canonicalThreads = collection.rows
   const pinnedThreads = useMemo(
     () => canonicalThreads.filter((thread) => thread.pinPosition !== null),
@@ -111,6 +130,11 @@ export function ChatSidebar({
   )
   const visibleCurrentThread =
     currentThread?.location === collection.location ? currentThread : null
+
+  function searchSourceLabel(source: NyxThreadSearchResult['source']) {
+    if (source === 'title') return 'Title'
+    return source === 'user_message' ? 'Your message' : 'Assistant message'
+  }
 
   function switchCollection(location: ThreadCollectionLocation) {
     setRename(null)
@@ -382,7 +406,7 @@ export function ChatSidebar({
 
       <button
         className='mt-1 flex h-8 items-center gap-2 rounded-lg bg-nyx-accent px-3 text-left text-[13px] font-medium text-nyx-canvas hover:opacity-90'
-        disabled={newThreadDisabled || collection.location !== 'available'}
+        disabled={newThreadDisabled || search.active || collection.location !== 'available'}
         onClick={onNewThread}
         type='button'
       >
@@ -390,10 +414,48 @@ export function ChatSidebar({
         New thread
       </button>
 
+      <div className='mt-3 flex items-center gap-2'>
+        <input
+          aria-label='Search threads'
+          className='h-8 min-w-0 flex-1 rounded-lg border border-nyx-line bg-nyx-canvas px-2.5 text-[13px] text-nyx-ink outline-none placeholder:text-nyx-subtle focus:border-nyx-line-strong disabled:opacity-50'
+          disabled={libraryUnavailable}
+          onChange={(event) => onSearchInput(event.currentTarget.value)}
+          onCompositionEnd={(event) => onSearchCompositionEnd(event.currentTarget.value)}
+          onCompositionStart={onSearchCompositionStart}
+          onFocus={onActivateSearch}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || search.composing) return
+            event.preventDefault()
+            if (search.input.length > 0) onSearchInput('')
+            else onCancelSearch()
+          }}
+          placeholder='Search threads'
+          ref={searchInputRef}
+          type='search'
+          value={search.input}
+        />
+        {search.active ? (
+          <button
+            aria-label='Cancel search'
+            className='h-8 rounded-lg px-2 text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
+            onClick={onCancelSearch}
+            type='button'
+          >
+            Cancel
+          </button>
+        ) : null}
+      </div>
+
+      <p aria-live='polite' className='sr-only'>
+        {search.announcement}
+      </p>
+
       <div
         aria-busy={
           !libraryUnavailable &&
-          (initialLoading || collection.status === 'loading-more' || undefined)
+          (search.active
+            ? search.phase === 'debouncing' || search.phase === 'searching' || undefined
+            : initialLoading || collection.status === 'loading-more' || undefined)
         }
         aria-label='Thread Library'
         className='nyx-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto'
@@ -402,8 +464,10 @@ export function ChatSidebar({
         {collection.location !== 'available' && !libraryUnavailable ? (
           <button
             className='mb-3 rounded-lg px-3 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
-            disabled={pinAction.pending}
-            onClick={() => switchCollection('available')}
+            disabled={pinAction.pending || search.active}
+            onClick={() => {
+              if (!search.active) switchCollection('available')
+            }}
             type='button'
           >
             Back to threads
@@ -413,6 +477,64 @@ export function ChatSidebar({
           <div className='px-3 py-2 text-left'>
             <p className='text-[12px] font-medium text-nyx-danger'>Thread Library unavailable</p>
             <p className='mt-1 text-[12px] text-nyx-muted'>Couldn’t open Thread Library.</p>
+          </div>
+        ) : search.active ? (
+          <div className='space-y-2 px-1 py-1'>
+            {search.phase === 'debouncing' || search.phase === 'searching' ? (
+              <p className='px-2 py-2 text-[12px] text-nyx-muted'>Searching</p>
+            ) : null}
+            {search.phase === 'invalid' ? (
+              <p className='px-2 py-2 text-[12px] text-nyx-danger'>{search.status}</p>
+            ) : null}
+            {search.phase === 'error' ? (
+              <div className='px-2 py-2'>
+                <p className='text-[12px] text-nyx-danger'>Couldn't search</p>
+                <button
+                  className='mt-2 rounded-lg border border-nyx-line-strong px-2.5 py-1.5 text-[12px] font-medium text-nyx-ink hover:bg-nyx-canvas'
+                  onClick={() => {
+                    onRetrySearch()
+                    searchInputRef.current?.focus()
+                  }}
+                  type='button'
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            {search.phase === 'ready' && search.results.length === 0 ? (
+              <p className='px-2 py-2 text-[12px] text-nyx-muted'>No results</p>
+            ) : null}
+            {search.phase === 'ready'
+              ? search.results.slice(0, 50).map((result) => {
+                  const source = searchSourceLabel(result.source)
+                  return (
+                    <button
+                      aria-label={`${result.title}. ${source}. ${result.snippet}`}
+                      className='block w-full rounded-lg px-2 py-2 text-left hover:bg-nyx-canvas'
+                      key={`${result.threadId}:${result.source}:${result.messageId ?? ''}`}
+                      onClick={() => {
+                        void onOpenSearchResult(result).then((opened) => {
+                          if (!opened) searchInputRef.current?.focus()
+                        })
+                      }}
+                      type='button'
+                    >
+                      <span className='block truncate text-[13px] font-medium text-nyx-ink'>
+                        {result.title}
+                      </span>
+                      <span className='mt-0.5 block text-[11px] font-medium text-nyx-subtle'>
+                        {source}
+                      </span>
+                      <span className='mt-0.5 block truncate text-[12px] text-nyx-muted'>
+                        {result.snippet}
+                      </span>
+                    </button>
+                  )
+                })
+              : null}
+            {search.phase === 'ready' && search.truncated ? (
+              <p className='px-2 py-2 text-[11px] text-nyx-subtle'>Showing first 50 results</p>
+            ) : null}
           </div>
         ) : (
           <>
@@ -554,16 +676,20 @@ export function ChatSidebar({
         <div className='mt-2 flex flex-col'>
           <button
             className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
-            disabled={libraryUnavailable || pinAction.pending}
-            onClick={() => switchCollection('archived')}
+            disabled={libraryUnavailable || pinAction.pending || search.active}
+            onClick={() => {
+              if (!search.active) switchCollection('archived')
+            }}
             type='button'
           >
             Archived
           </button>
           <button
             className='rounded-lg px-2 py-2 text-left text-[12px] font-medium text-nyx-muted hover:bg-nyx-canvas hover:text-nyx-ink'
-            disabled={libraryUnavailable || pinAction.pending}
-            onClick={() => switchCollection('trash')}
+            disabled={libraryUnavailable || pinAction.pending || search.active}
+            onClick={() => {
+              if (!search.active) switchCollection('trash')
+            }}
             type='button'
           >
             Trash
