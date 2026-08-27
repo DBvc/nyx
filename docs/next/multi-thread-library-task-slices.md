@@ -583,20 +583,16 @@ non-executable and require their own exact authorization.
 
 Contract id: `NYX-MTL-SEARCH1-T3-SCOPE-20260824-01`.
 
-Status: authorized for this docs-only second amendment. Independent strict
-review `NYX-MTL-SEARCH1-T3-SCOPE-REVIEW-20260824-01` returned
-`changes_required` for the scope-lock artifact at `cbca987`. The first amendment
-entered HEAD at `a0a8a44` and closed the local over-limit-input finding.
-Independent strict re-review
-`NYX-MTL-SEARCH1-T3-SCOPE-REREVIEW-20260826-01` returned `changes_required`
-only for two residual races: clock-recovery hydration did not yet invalidate an
-in-flight Search, and post-target restoration could accept an earlier or
-superseded read. This second amendment addresses only those two findings. T3
-scope-lock work may change exactly this status owner and is complete when this
-exact one-file amendment enters HEAD. Before product code may change, the
-amended committed scope lock must pass independent strict review and the user
-must explicitly authorize `multi-thread-library/SEARCH1/T3`. Scope-lock
-completion grants no product-code, T4 or follow-up permission.
+Status: complete at product head
+`0a22c98ce61dcb2b19a11edd0f668d59a60b7d27`. The final scope lock entered HEAD
+at `a207ea17d900093709ef9f29b496296764d9d213`; independent strict review
+`NYX-MTL-SEARCH1-T3-SCOPE-REREVIEW-20260827-01` accepted its exact-byte
+SHA-256 `c87f6277b80a4ed82e9c9293ea9a4e257809aa46120f6789ae5065f306191f5b`
+with no findings before the user authorized `multi-thread-library/SEARCH1/T3`.
+The product commit changed exactly the ten allowed Renderer files. Desktop
+tests passed with 737 tests and 14 expected skips; typecheck, compatibility
+typecheck, lint, format check, build, docs check and diff check all passed.
+SEARCH1/T4 remains non-executable and requires its own exact authorization.
 
 T3 depends on the completed T2 Search bridge at final product head
 `b815df4182801a36cd866fd58d84bd1bbe35cc06`. Any eventual T3 product commit
