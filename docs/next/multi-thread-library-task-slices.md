@@ -583,10 +583,15 @@ non-executable and require their own exact authorization.
 
 Contract id: `NYX-MTL-SEARCH1-T3-SCOPE-20260824-01`.
 
-Status: authorized for this docs-only amendment. Independent strict review
-`NYX-MTL-SEARCH1-T3-SCOPE-REVIEW-20260824-01` returned `changes_required` for
-the scope-lock artifact at `cbca987`; that artifact grants no product-code
-permission. This amendment addresses only its three blocking findings. T3
+Status: authorized for this docs-only second amendment. Independent strict
+review `NYX-MTL-SEARCH1-T3-SCOPE-REVIEW-20260824-01` returned
+`changes_required` for the scope-lock artifact at `cbca987`. The first amendment
+entered HEAD at `a0a8a44` and closed the local over-limit-input finding.
+Independent strict re-review
+`NYX-MTL-SEARCH1-T3-SCOPE-REREVIEW-20260826-01` returned `changes_required`
+only for two residual races: clock-recovery hydration did not yet invalidate an
+in-flight Search, and post-target restoration could accept an earlier or
+superseded read. This second amendment addresses only those two findings. T3
 scope-lock work may change exactly this status owner and is complete when this
 exact one-file amendment enters HEAD. Before product code may change, the
 amended committed scope lock must pass independent strict review and the user
@@ -610,7 +615,7 @@ The eventual T3 product diff may change exactly these ten files:
   bounded display copy and pure stale-response/event transition helpers;
 - `apps/desktop/src/ui/chat/use-chat-session.ts` and
   `apps/desktop/src/ui/chat/use-chat-session.test.ts` for debounce, bridge
-  dispatch, one-in-flight/latest-pending ownership, accepted-event
+  dispatch, one-in-flight/latest-pending ownership, event and clock-recovery
   invalidation, exact-result navigation and the one-shot anchor handoff;
 - `apps/desktop/src/ui/chat/components/ChatSidebar.tsx` and
   `apps/desktop/src/ui/chat/components/ChatSidebar.test.tsx` for the fixed
@@ -684,18 +689,29 @@ Search request behavior is fixed:
   restore results, busy, error or live copy, and exit never dispatches a saved
   pending query.
 
-The existing Thread subscription remains the only invalidation source. After
-the existing clock acceptance logic accepts a Thread event that advances the
-Renderer-local Search-corpus clock, active Search synchronously clears visible
-results, advances the query epoch and coalesces one requery for the latest
-valid non-empty input. Repeated accepted events while a request is unsettled
-replace the same pending entry. Before a response is visible, it must cover the
-Search-corpus clock captured when that query epoch began. An accepted epoch
-change invalidates Search, runs the existing full hydration and then requeries.
-Thread events at or before the applicable Search clock and otherwise stale
-events do not invalidate. Chat-only events may advance the generic list/detail
-cursors but never advance the Search-corpus clock or trigger a Search requery.
-T3 adds no event, subscription, polling, cache or automatic paging.
+The existing subscriptions remain the only event source. After the existing
+clock acceptance logic accepts a Thread event that advances the Renderer-local
+Search-corpus clock, active Search synchronously clears visible results,
+advances the query epoch and coalesces one requery for the latest valid
+non-empty input. Repeated accepted events while a request is unsettled replace
+the same pending entry. Before a response is visible, it must cover the
+Search-corpus clock captured when that query epoch began. Thread events at or
+before the applicable Search clock and otherwise stale events do not
+invalidate. A contiguous Chat event may advance the generic list/detail cursors
+but never advances the Search-corpus clock or triggers a Search requery.
+
+At the existing clock-recovery decision point, any event epoch mismatch or
+forward cursor gap that starts full hydration must first synchronously advance
+the active Search query epoch and clear its visible results, error and
+announcement. This also applies when a Chat event exposes the gap, because a
+missing cursor may belong to a Thread event; the Chat event still does not
+advance the Search-corpus clock. Search retains the raw input, records only its
+latest valid query as the single pending query and does not dispatch it until
+that hydration has committed and the previous Search Promise, if any, has
+settled. The old reply is discarded by its query epoch; the existing
+one-in-flight owner then sends at most one current requery. An already stale
+event that does not start hydration remains ignored. T3 adds no second clock
+classifier, event, subscription, polling, cache or automatic paging.
 
 The Sidebar presentation is fixed:
 
@@ -744,25 +760,39 @@ a second barrier:
 - save failure occurs before the target `get` and leaves the original
   collection/selection/detail visible under Search. A successful
   different-Thread `get` may already have changed Main-owned selection and
-  image authorization before Renderer decides whether to commit it. Therefore
-  a successful get that does not commit the target -- `null`/not-found, Trash,
-  or a successful reply made stale by Cancel, a newer
-  query/event/navigation generation or another hydration -- must complete or
-  observe the existing full hydration of the captured original selection and
-  mode before the navigation lock releases. A safe `thread_unavailable`
-  failure does not change Main-owned selection or authorization and returns
-  directly to Search without that restoration. If Search remains active, the
-  failure path clears stale results and focuses the query input without
-  exposing target content. A Search-call safe failure stays in the local
-  `Couldn't search` path above; a Library-unavailable result from the exact
-  navigation get continues through the existing whole-Library failure path;
-  and
-- this restoration reuses the existing hydration/event owner and Draft save
-  queue. It adds no second selection owner, get owner or barrier. If restoration
-  cannot re-establish the captured original projection, the existing
-  whole-Library fail-closed path wins. No Search path aborts a background Run,
-  loads unknown pages, creates an around-page API or stores a second dirty
-  Draft.
+  image authorization before Renderer decides whether to commit it. Therefore,
+  after any successful target get that Renderer does not commit -- an `ok`
+  reply with no detail, Trash detail, or a reply made stale by Cancel, a newer
+  query/event/navigation generation or hydration -- the same navigation owner
+  must dispatch a fresh recovery read after the target reply settles. It calls
+  `threads.get` with the captured original Thread id, or explicitly with
+  `threadId: null` when the original selection was empty. A get or hydration
+  started before the target settled never satisfies restoration;
+- a recovery reply releases the navigation lock only when its navigation
+  generation and event epoch are still current, its `includedThroughCursor`
+  covers the current Renderer-local Search-corpus Thread-event clock, its detail
+  has the captured original id and location or is null for a captured empty
+  selection, and no newer get or hydration was dispatched by the hook after
+  that recovery read began. A behind-cursor or superseded `ok` reply is stale
+  even if its payload looks correct. Keep the same lock, run or await the one
+  current full hydration, then issue one fresh recovery read after it. This is
+  the existing Search clock, latest-generation check and navigation lock, not a
+  new get queue or state owner;
+- if the captured original Thread is now missing, moved or unavailable, or the
+  hook otherwise cannot prove that Main applied the recovery read, it first
+  calls `threads.get({ threadId: null })` to revoke the target authorization and
+  after that succeeds runs the existing full hydration before unlocking. A
+  failure to clear continues through the existing whole-Library fail-closed
+  path. A safe failure from the target get itself does not authorize target
+  detail and returns directly to Search; `library_unavailable` continues
+  through the same whole-Library path. If Search remains active, the failure
+  path clears stale results and focuses the query input without exposing target
+  content. A Search-call safe failure stays in the local `Couldn't search` path
+  above; and
+- this recovery reuses the existing hydration/event owner, navigation lock and
+  Draft save queue. It adds no second selection owner, get owner or barrier. No
+  Search path aborts a background Run, loads unknown pages, creates an
+  around-page API or stores a second dirty Draft.
 
 After a successful open, the hook publishes one target `{ threadId,
 messageId | null }`. `ChatWorkspace` consumes it once after the selected ready
@@ -781,17 +811,23 @@ Focused tests must prove the following without broadening into T4 evidence:
   no bridge call and exposes no Retry;
 - the hook makes no request during composition, dispatches after 120 ms, never
   overlaps two bridge calls, drops stale clocks/replies, requeries after an
-  accepted Thread event and ignores stale events. A chat-only event that
-  advances generic list/detail cursors neither rejects a valid Search response
-  nor causes a Search requery;
+  accepted Thread event and ignores stale events. A contiguous chat-only event
+  that advances generic list/detail cursors neither rejects a valid Search
+  response nor causes a Search requery. A same-epoch forward cursor gap exposed
+  by either subscription invalidates a delayed old Search reply before
+  hydration and produces only one latest requery after hydration;
 - entry/Cancel do not save or mutate underlying state; same-Thread and
   cross-Thread result opens cover save-before-get, actual Available/Archived
-  commit, save failure before get, original-selection hydration after
-  successful noncommitting `null`/not-found, Trash and stale
-  Cancel/newer-generation replies, and direct return to Search after a safe
-  Thread-unavailable failure. Tests assert required restoration finishes before
-  the navigation lock releases, while whole-Library unavailable remains fail
-  closed;
+  commit, save failure before get, and direct return to Search after a safe
+  target-get failure. Deferred-get tests prove that a hydration read started
+  before the target cannot count as recovery, an originally empty selection
+  dispatches a later `get(null)`, and a recovery `ok` superseded by a newer
+  hydration/get cannot release the lock. A delayed recovery response made stale
+  by an accepted same-epoch Thread event also stays locked until hydration and a
+  fresh recovery read complete. Missing, moved or unavailable original
+  selections cover clear-then-hydrate recovery. Tests assert the current
+  recovery finishes before the navigation lock releases, while whole-Library
+  unavailable remains fail closed;
 - Sidebar markup covers input/Cancel accessibility, busy/empty/error/Retry,
   local over-limit copy without Retry, bounded result names, truncated wording
   and suppression of ordinary collection/actions while Search is active; and
