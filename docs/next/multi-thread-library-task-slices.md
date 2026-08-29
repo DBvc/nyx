@@ -592,7 +592,11 @@ with no findings before the user authorized `multi-thread-library/SEARCH1/T3`.
 The product commit changed exactly the ten allowed Renderer files. Desktop
 tests passed with 737 tests and 14 expected skips; typecheck, compatibility
 typecheck, lint, format check, build, docs check and diff check all passed.
-SEARCH1/T4 remains non-executable and requires its own exact authorization.
+SEARCH1/T4 was explicitly authorized and completed at evidence head
+`fef9bd8e2e190798810423a5ada6db59cfd629f3` after fresh full validation. It
+changed only `multi-thread-library-runthrough.md`. SEARCH1 is complete for the
+authorized 128-Thread small envelope; completion grants no follow-up execution
+permission.
 
 T3 depends on the completed T2 Search bridge at final product head
 `b815df4182801a36cd866fd58d84bd1bbe35cc06`. Any eventual T3 product commit
