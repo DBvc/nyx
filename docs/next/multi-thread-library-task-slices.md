@@ -138,6 +138,10 @@ performance gate, product inventory, dependency order or execution authority.
 This correction may change only this status owner and the runthrough evidence
 owner and grants no product-code permission.
 
+SEARCH1/T1b later completed at product head `55f478d`; its completion record
+entered HEAD at `8845b9e`. The required 128-Thread product gate and all required
+checks passed. T1b grants no follow-up execution permission.
+
 On 2026-08-24 the user explicitly authorized the exact docs-only
 `multi-thread-library/SEARCH1/T2-scope-lock` step below. It freezes the additive
 shared/Main/preload Search bridge boundary over the completed T1b Worker
@@ -151,8 +155,13 @@ no findings, after which the user explicitly authorized
 On 2026-08-24 the user explicitly authorized the exact docs-only
 `multi-thread-library/SEARCH1/T3-scope-lock` step below. It freezes the
 Renderer-local Search state, presentation, invalidation, navigation and
-one-shot focus boundary over the completed T2 bridge. This authorization may
-change only this status owner. It does not authorize T3 product code or T4.
+one-shot focus boundary over the completed T2 bridge. The final scope lock
+entered HEAD at `a207ea1`; after independent strict review and explicit product
+authorization, T3 completed at product head `0a22c98` and its completion record
+entered HEAD at `f176ce1`. The user then explicitly authorized SEARCH1/T4.
+Fresh full validation passed, final evidence entered HEAD at `fef9bd8`, and the
+status closed at `4dc316d`. SEARCH1 is complete for the selected 128-Thread
+small envelope and grants no follow-up execution permission.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
