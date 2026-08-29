@@ -505,6 +505,36 @@ schema, FTS/index/cache, second database/Worker/queue owner, shared/preload/Main
 service/IPC/Renderer contract, Runtime or OCaml change. It grants no T2/T3
 execution permission.
 
+## SEARCH1/T4 — Full validation and evidence
+
+Result: complete for the explicitly authorized 128-Thread small envelope.
+
+- The landed chain is contiguous: T1b Worker Search core
+  `55f478ddb1dd62ed2043e9a17ad7e895b8733764`, T2 typed Main/preload bridge
+  `b815df4182801a36cd866fd58d84bd1bbe35cc06`, and T3 Renderer Search UI
+  `0a22c98ce61dcb2b19a11edd0f668d59a60b7d27` are all ancestors of the
+  validation head `f176ce1a666419b60da50544fbd9287eaf818ace`.
+- Fresh validation on 2026-08-30 passed: all 54 desktop test files (`49`
+  passed, `5` expected skipped), `737` desktop tests passed with `14` expected
+  skips, both desktop TypeScript checks, lint, format check, desktop production
+  build, runtime chat-state check (`6` tests), documentation check and
+  `git diff --check`.
+- The required performance evidence remains the one valid T1b product-gate run
+  recorded above. Its 128-Thread corpus stayed below the fixed 50 ms limit for
+  both Worker Search and the real `saveDraft` queued behind it. T4 did not
+  rerun, reinterpret or extend that result.
+- The completed path remains one existing SQLite/Worker owner, the bounded
+  typed bridge and Renderer-local one-in-flight/latest-pending Search state.
+  Existing event-clock invalidation, hydration recovery, Draft save barrier,
+  exact result navigation and one-shot focus behavior are covered by the
+  landed focused tests and the fresh cross-layer checks.
+
+T4 changed no product code. It adds no 512-Thread support claim, FTS, semantic
+Search, Draft or Trash Search, schema/index/cache, second database/Worker/queue
+owner, shared state owner, Runtime or OCaml Thread model. SEARCH1 is complete
+only for the authorized small envelope, and this evidence grants no follow-up
+execution permission.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.
