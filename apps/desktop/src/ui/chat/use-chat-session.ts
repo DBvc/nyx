@@ -107,6 +107,8 @@ function threadSurfaceIsReadOnly(state: ChatState, collectionLocation: ThreadCol
   )
 }
 
+type ThreadLibraryHydrationResult = 'ready' | 'recoverable-failure' | false
+
 function threadMutationError(error: NyxThreadSafeError): NyxChatError {
   return {
     code: error.code === 'invalid_request' ? 'invalid_request' : 'unknown',
@@ -334,7 +336,10 @@ export function useChatSession({
   )
   const hydrationRef = useRef(0)
   const retryHydrationRef = useRef<
-    | ((options?: { pageBudget?: number; preserveCollection?: boolean }) => Promise<boolean | void>)
+    | ((options?: {
+        pageBudget?: number
+        preserveCollection?: boolean
+      }) => Promise<ThreadLibraryHydrationResult>)
     | null
   >(null)
   const loadMoreThreadsRef = useRef<(() => Promise<boolean>) | null>(null)
@@ -1684,8 +1689,9 @@ export function useChatSession({
         errorPhase?: ThreadCollectionErrorPhase
         selection?: string | null
         recoverable?: boolean
+        searchIntent?: number
       } = {},
-    ) {
+    ): Promise<ThreadLibraryHydrationResult> {
       prepareThreadSearchForHydration()
       const request = ++hydrationRef.current
       const generation = projectionGeneration.current
@@ -1698,7 +1704,7 @@ export function useChatSession({
       const failRecoverableHydration = () => {
         updateThreadCollection((current) => failThreadCollection(current, errorPhase, 'hydrate'))
         if (resumeReadyProjection) resumeEventPump()
-        return false
+        return 'recoverable-failure' as const
       }
       hydrated = false
       collectionDirty = false
@@ -1738,6 +1744,7 @@ export function useChatSession({
           if (conflicted) {
             pageResult = null
             if (attempt === 0) continue
+            if (options.recoverable) return failRecoverableHydration()
             updateThreadCollection((current) =>
               failThreadCollection(current, errorPhase, 'hydrate'),
             )
@@ -1754,6 +1761,7 @@ export function useChatSession({
             }
             pageResult = null
             if (attempt === 0) continue
+            if (options.recoverable) return failRecoverableHydration()
             updateThreadCollection((current) =>
               failThreadCollection(current, errorPhase, 'hydrate'),
             )
@@ -1830,6 +1838,22 @@ export function useChatSession({
           return false
         }
 
+        if (options.selection !== undefined) {
+          const selectedSummary = snapshot?.detail?.summary ?? null
+          const exactSelection =
+            options.selection === null
+              ? selectedSummary === null
+              : selectedSummary?.id === options.selection && selectedSummary.location === location
+          const currentSearchIntent =
+            options.searchIntent === undefined ||
+            (options.searchIntent === searchIntentGeneration && threadSearchRef.current.active)
+          if (!exactSelection || !currentSearchIntent) {
+            if (options.recoverable) return failRecoverableHydration()
+            failWholeLibrary(threadLibraryBridgeError())
+            return false
+          }
+        }
+
         const resolvedSummary =
           snapshot?.detail?.summary ?? (summary?.availability === 'unavailable' ? summary : null)
         eventEpoch = pageResult.eventEpoch
@@ -1862,6 +1886,7 @@ export function useChatSession({
             errorPhase,
             ...(options.selection !== undefined ? { selection: options.selection } : {}),
             ...(options.recoverable ? { recoverable: true } : {}),
+            ...(options.searchIntent !== undefined ? { searchIntent: options.searchIntent } : {}),
           }
           if (options.recoverable) return hydrateThreadLibrary(recoveryOptions)
           void hydrateThreadLibrary(recoveryOptions)
@@ -1896,7 +1921,7 @@ export function useChatSession({
         if (hydrated && request === hydrationRef.current) {
           releaseThreadSearchAfterHydration(eventEpoch, pageResult.includedThroughCursor)
         }
-        return hydrated && request === hydrationRef.current
+        return hydrated && request === hydrationRef.current ? 'ready' : false
       } catch {
         if (!disposed && request === hydrationRef.current) {
           if (options.recoverable) return failRecoverableHydration()
@@ -2343,20 +2368,27 @@ export function useChatSession({
             ...initialThreadCollectionState,
             location: detail.summary.location,
           })
-          const targetHydrated = await hydrateThreadLibrary({
+          const targetHydration = await hydrateThreadLibrary({
             pageBudget,
             selection: detail.summary.id,
             recoverable: true,
+            searchIntent: intent,
           })
           const exactTargetHydrated =
-            targetHydrated &&
+            targetHydration === 'ready' &&
             !disposed &&
             navigation === searchNavigationGeneration &&
+            intent === searchIntentGeneration &&
+            threadSearchRef.current.active &&
             selectedThreadIdRef.current === detail.summary.id &&
             threadCollectionRef.current.location === detail.summary.location &&
             threadCollectionRef.current.status === 'ready'
           if (!exactTargetHydrated) {
-            if (!disposed && !targetHydrated && threadSearchRef.current.active) {
+            if (
+              !disposed &&
+              navigation === searchNavigationGeneration &&
+              targetHydration !== false
+            ) {
               missingSelectionRecoveryRef.current = null
               replaceThreadCollection(originalCollection)
               await restoreSearchNavigation(
