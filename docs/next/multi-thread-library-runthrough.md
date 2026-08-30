@@ -535,6 +535,33 @@ owner, shared state owner, Runtime or OCaml Thread model. SEARCH1 is complete
 only for the authorized small envelope, and this evidence grants no follow-up
 execution permission.
 
+## SEARCH1/T3-FOCUS-R1 — Real Electron heading-focus repair
+
+Result: complete at product head
+`48565249b3568e792ae66b1fc7b5d3f3380346c8`.
+
+- A real Electron regression reproduced a successful title result open leaving
+  `document.activeElement` as `BODY` instead of the current Thread `h1`.
+- The focused Electron/Chromium regression failed before the repair with
+  `Search heading focus did not survive in Chromium`, then passed after the
+  existing Thread heading gained stable `tabIndex=-1`. The heading remains
+  outside ordinary Tab order, and the existing one-shot Search focus helper is
+  unchanged.
+- A post-build manual run opened `Thread A baseline` from Search and exposed
+  the `h1` as the focused accessibility element. Existing Thread actions
+  browser assertions also remained green.
+- Focused Workspace coverage passed with `37` tests. Fresh full validation
+  passed with `753` desktop tests and `14` expected skips, both desktop
+  TypeScript checks, lint, format check, production build and
+  `git diff --check`.
+- The exact four-file product diff from scope-lock head `f9d3309` through the
+  product head has SHA-256
+  `e6ff9de53699235566788911c01917151d124ea6acfb87d9fb4d5ae023ea9195`.
+
+The repair changed no Search state, navigation, matching, paging, message
+anchor, IPC, persistence, visual layout, Load-more focus or Home/End behavior.
+It adds no focus registry, timer, queue, dependency or follow-up permission.
+
 ## G1 — SQLite on Electron Main
 
 Result: `VALID_STOP`.

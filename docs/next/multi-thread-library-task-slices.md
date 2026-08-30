@@ -180,8 +180,12 @@ one-shot Thread-heading focus falls back to `document.body`. The same review
 confirmed that CP1 automatic Load-more focus and Home/End navigation were
 explicitly removed on 2026-08-21 and are not defects. The user authorized the
 exact docs-only `multi-thread-library/SEARCH1/T3-FOCUS-R1-scope-lock` below.
-Product code remains non-executable until this scope lock enters HEAD and the
-user explicitly authorizes `multi-thread-library/SEARCH1/T3-FOCUS-R1`.
+Its scope lock entered HEAD at `f9d3309`; the user then explicitly authorized
+`multi-thread-library/SEARCH1/T3-FOCUS-R1`, which completed at product head
+`4856524`. The exact four-file product diff had SHA-256
+`e6ff9de53699235566788911c01917151d124ea6acfb87d9fb4d5ae023ea9195`.
+Required checks and real Electron regression passed. This repair grants no
+follow-up execution permission.
 
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
@@ -200,10 +204,11 @@ status history for traceability. This Current Status section is authoritative.
 
 Contract id: `NYX-MTL-SEARCH1-T3-FOCUS-R1-SCOPE-20260830-01`.
 
-Status: authorized for this docs-only scope-lock step. It may change exactly
-this status owner. It grants no product-code or follow-up permission. The
-product slice becomes eligible for explicit user authorization only after this
-exact scope lock enters HEAD.
+Status: complete at product head
+`48565249b3568e792ae66b1fc7b5d3f3380346c8`. The exact docs-only scope lock
+entered HEAD at `f9d3309ed50ffdc00cec8ec33742cb2a24465437`; the user then
+explicitly authorized the product slice. The product commit changed exactly
+the four allowed files and grants no follow-up permission.
 
 SEARCH1/T3-FOCUS-R1 has one goal: preserve the completed SEARCH1/T3 one-shot
 focus when a successful title hit, or a missing message anchor, falls back to
