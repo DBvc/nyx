@@ -174,6 +174,15 @@ below; product code remains non-executable until the scope-lock bytes pass
 independent review and the user explicitly authorizes
 `multi-thread-library/FULL-AUDIT-R1`.
 
+On 2026-08-30 a real Electron regression found one narrower defect in the
+completed SEARCH1/T3 behavior: after a successful title result open, the
+one-shot Thread-heading focus falls back to `document.body`. The same review
+confirmed that CP1 automatic Load-more focus and Home/End navigation were
+explicitly removed on 2026-08-21 and are not defects. The user authorized the
+exact docs-only `multi-thread-library/SEARCH1/T3-FOCUS-R1-scope-lock` below.
+Product code remains non-executable until this scope lock enters HEAD and the
+user explicitly authorizes `multi-thread-library/SEARCH1/T3-FOCUS-R1`.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -186,6 +195,72 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/SEARCH1/T3-FOCUS-R1-scope-lock: Search heading focus repair
+
+Contract id: `NYX-MTL-SEARCH1-T3-FOCUS-R1-SCOPE-20260830-01`.
+
+Status: authorized for this docs-only scope-lock step. It may change exactly
+this status owner. It grants no product-code or follow-up permission. The
+product slice becomes eligible for explicit user authorization only after this
+exact scope lock enters HEAD.
+
+SEARCH1/T3-FOCUS-R1 has one goal: preserve the completed SEARCH1/T3 one-shot
+focus when a successful title hit, or a missing message anchor, falls back to
+the current Thread heading in real Electron. The existing `h1` may remain
+programmatically focusable with `tabIndex=-1`, outside ordinary Tab order, so
+Chromium does not move focus back to `document.body` when temporary
+focusability is removed. This narrowly supersedes only the T3 wording that
+required removing temporary heading focusability after the focus attempt.
+
+The eventual product diff may change exactly these four files:
+
+- `apps/desktop/src/ui/chat/components/ChatHeader.tsx`;
+- `apps/desktop/src/ui/chat/components/ChatWorkspace.test.ts`;
+- `apps/desktop/src/ui/chat/components/ChatSidebar.browser-test.tsx`; and
+- `apps/desktop/scripts/thread-actions-browser-test.mjs`.
+
+The repair must reuse `focusThreadSearchTarget` and the existing one-shot
+`threadFocusTarget` handoff. It may add `tabIndex=-1` only to the existing
+Thread `h1` and extend the existing real Electron/Chromium harness to prove
+that the helper leaves that heading as `document.activeElement`. The existing
+unit coverage must prove a pre-focusable heading is not treated as temporary.
+No new component, hook, ref registry, timer, focus queue, dependency, script,
+IPC, persisted state or public contract is allowed.
+
+This slice does not add Load-more focus movement, Home/End or Arrow-key
+navigation, roving Tab state, live announcements or a general accessibility
+cleanup. It does not change Search matching, debounce, limits, navigation,
+hydration, selection, paging, Thread lifecycle, message anchors, styling or
+visual layout. Mouse behavior and ordinary Tab order remain unchanged.
+
+Required focused evidence:
+
+- a title result open and missing-message fallback retain the Thread `h1` as
+  the actual focused DOM element after the selected ready projection mounts;
+- the Thread heading remains outside ordinary Tab order;
+- an exact committed message anchor still receives focus without involving the
+  heading; and
+- the existing Thread actions browser assertions remain unchanged and pass.
+
+Before SEARCH1/T3-FOCUS-R1 completion, run:
+
+```text
+pnpm --dir apps/desktop test:thread-actions:browser
+pnpm --dir apps/desktop exec vitest run src/ui/chat/components/ChatWorkspace.test.ts
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+git diff --check
+```
+
+SEARCH1/T3-FOCUS-R1 stops rather than expanding if the repair needs a file
+outside the four-file inventory; changes `focusThreadSearchTarget` product
+logic, Search state/navigation, message anchors, collection behavior or shared
+contracts; or requires a new focus abstraction or browser-test harness.
 
 ## multi-thread-library/FULL-AUDIT-R1-scope-lock: Bounded post-audit repair
 
