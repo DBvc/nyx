@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -278,6 +278,13 @@ describe('activateThreadLibrary', () => {
     const legacy = join(userDataPath, 'threads')
     await mkdir(target, { recursive: true })
     await writeFile(join(target, 'library.sqlite'), '{"rows":null}', 'utf8')
+    const threadPath = join(target, 'threads', threadId)
+    const stagingPath = join(threadPath, '.staging')
+    const canonicalPath = join(threadPath, 'documents', `${documentId}.source`)
+    await mkdir(stagingPath, { recursive: true })
+    await mkdir(join(threadPath, 'documents'), { recursive: true })
+    await writeFile(join(stagingPath, 'orphan.tmp'), 'orphan', 'utf8')
+    await writeFile(canonicalPath, documentSource)
     await mkdir(legacy, { recursive: true })
     await writeFile(join(legacy, 'current-thread.json'), '{malformed', 'utf8')
     const base = createCurrentThreadFileAdapter()
@@ -310,7 +317,33 @@ describe('activateThreadLibrary', () => {
     expect(touchedLegacy).toBe(false)
     expect(observed.imports).toBe(0)
     expect(observed.opens).toEqual([join(target, 'library.sqlite')])
+    await expect(stat(stagingPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(canonicalPath)).resolves.toEqual(Buffer.from(documentSource))
     await activated.client.close()
+  })
+
+  it('fails before opening an existing library when a staging boundary is unsafe', async () => {
+    const userDataPath = await createUserData()
+    const target = join(userDataPath, 'thread-library')
+    const threadPath = join(target, 'threads', threadId)
+    const outsidePath = join(userDataPath, 'outside-staging')
+    await mkdir(threadPath, { recursive: true })
+    await mkdir(outsidePath)
+    await writeFile(join(target, 'library.sqlite'), '{"rows":null}', 'utf8')
+    await writeFile(join(outsidePath, 'keep.txt'), 'keep', 'utf8')
+    await symlink(outsidePath, join(threadPath, '.staging'), 'dir')
+    const observed = tracker()
+
+    await expect(
+      activateThreadLibrary({
+        userDataPath,
+        decodeImageSize,
+        createClient: fakeClientFactory(observed),
+      }),
+    ).rejects.toBeInstanceOf(ThreadLibraryActivationError)
+
+    expect(observed.opens).toEqual([])
+    await expect(readFile(join(outsidePath, 'keep.txt'), 'utf8')).resolves.toBe('keep')
   })
 
   it('activates empty libraries for absent and retained-empty legacy roots', async () => {

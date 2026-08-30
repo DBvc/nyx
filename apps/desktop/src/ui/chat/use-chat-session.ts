@@ -334,7 +334,8 @@ export function useChatSession({
   )
   const hydrationRef = useRef(0)
   const retryHydrationRef = useRef<
-    ((options?: { pageBudget?: number; preserveCollection?: boolean }) => Promise<void>) | null
+    | ((options?: { pageBudget?: number; preserveCollection?: boolean }) => Promise<boolean | void>)
+    | null
   >(null)
   const loadMoreThreadsRef = useRef<(() => Promise<boolean>) | null>(null)
   const retryThreadCollectionRef = useRef<(() => Promise<boolean>) | null>(null)
@@ -1681,6 +1682,8 @@ export function useChatSession({
         pageBudget?: number
         preserveCollection?: boolean
         errorPhase?: ThreadCollectionErrorPhase
+        selection?: string | null
+        recoverable?: boolean
       } = {},
     ) {
       prepareThreadSearchForHydration()
@@ -1692,6 +1695,11 @@ export function useChatSession({
         options.errorPhase ?? (options.preserveCollection ? 'load-more' : 'initial')
       const resumeReadyProjection =
         options.preserveCollection && stateRef.current.hydrationStatus === 'ready'
+      const failRecoverableHydration = () => {
+        updateThreadCollection((current) => failThreadCollection(current, errorPhase, 'hydrate'))
+        if (resumeReadyProjection) resumeEventPump()
+        return false
+      }
       hydrated = false
       collectionDirty = false
       bufferedEvents.length = 0
@@ -1706,14 +1714,17 @@ export function useChatSession({
           let conflicted = false
           for (let pageIndex = 0; pageIndex < pageBudget; pageIndex += 1) {
             const result = await threads.listPage({ location, cursor, limit: 50 })
-            if (disposed || request !== hydrationRef.current) return
+            if (disposed || request !== hydrationRef.current) return false
             if (!result.ok) {
               if (result.error.code === 'conflict') {
                 conflicted = true
                 break
               }
+              if (options.recoverable && result.error.code !== 'library_unavailable') {
+                return failRecoverableHydration()
+              }
               failWholeLibrary(result.error)
-              return
+              return false
             }
             if (pageResult && result.value.eventEpoch !== pageResult.eventEpoch) {
               conflicted = true
@@ -1731,7 +1742,7 @@ export function useChatSession({
               failThreadCollection(current, errorPhase, 'hydrate'),
             )
             if (resumeReadyProjection) resumeEventPump()
-            return
+            return false
           }
           try {
             initialCandidate = buildThreadCollectionCandidate(pages, pageBudget, location)
@@ -1739,7 +1750,7 @@ export function useChatSession({
           } catch (error) {
             if (!(error instanceof ThreadCollectionCandidateError) || error.unsafe) {
               failWholeLibrary(threadLibraryBridgeError())
-              return
+              return false
             }
             pageResult = null
             if (attempt === 0) continue
@@ -1747,10 +1758,10 @@ export function useChatSession({
               failThreadCollection(current, errorPhase, 'hydrate'),
             )
             if (resumeReadyProjection) resumeEventPump()
-            return
+            return false
           }
         }
-        if (!pageResult || !initialCandidate) return
+        if (!pageResult || !initialCandidate) return false
         const firstSummary = pageResult.rows[0] ?? null
         let storedId: string | null = null
         try {
@@ -1759,9 +1770,12 @@ export function useChatSession({
           // A blocked UI preference does not block canonical hydration.
         }
 
-        const navigationSelection = activeThreadCollectionAction?.holdsNavigation
-          ? activeThreadCollectionAction.navigationSelection
-          : undefined
+        const navigationSelection =
+          options.selection !== undefined
+            ? options.selection
+            : activeThreadCollectionAction?.holdsNavigation
+              ? activeThreadCollectionAction.navigationSelection
+              : undefined
         let selectedId =
           navigationSelection !== undefined
             ? navigationSelection
@@ -1770,7 +1784,7 @@ export function useChatSession({
           pageResult.rows.find((row) => row.id === selectedId) ??
           (selectedId === firstSummary?.id ? firstSummary : null)
         let detailResult = selectedId ? await readThread(selectedId).promise : null
-        if (disposed || request !== hydrationRef.current) return
+        if (disposed || request !== hydrationRef.current) return false
         if (
           storedId &&
           selectedId === storedId &&
@@ -1784,9 +1798,12 @@ export function useChatSession({
           selectedId = firstSummary?.id ?? null
           summary = firstSummary
           detailResult = selectedId ? await readThread(selectedId).promise : null
-          if (disposed || request !== hydrationRef.current) return
+          if (disposed || request !== hydrationRef.current) return false
         }
         if (detailResult && !detailResult.ok) {
+          if (options.recoverable && detailResult.error.code !== 'library_unavailable') {
+            return failRecoverableHydration()
+          }
           if (detailResult.error.code === 'thread_unavailable' && selectedId && summary) {
             summary = {
               availability: 'unavailable',
@@ -1802,14 +1819,15 @@ export function useChatSession({
                 ? threadLibraryBridgeError()
                 : detailResult.error,
             )
-            return
+            return false
           }
         }
 
         const snapshot = detailResult?.ok ? detailResult.value : null
         if (snapshot && snapshot.eventEpoch !== pageResult.eventEpoch) {
+          if (options.recoverable) return hydrateThreadLibrary(options)
           void hydrateThreadLibrary()
-          return
+          return false
         }
 
         const resolvedSummary =
@@ -1838,13 +1856,18 @@ export function useChatSession({
         if (missingAtEnd && missingSelectionRecoveryRef.current !== resolvedSummary.id) {
           missingSelectionRecoveryRef.current = resolvedSummary.id
           replaceThreadCollection(nextCollection)
-          void hydrateThreadLibrary({
+          const recoveryOptions = {
             pageBudget: initialCandidate.loadedPageCount,
             preserveCollection: true,
             errorPhase,
-          })
-          return
+            ...(options.selection !== undefined ? { selection: options.selection } : {}),
+            ...(options.recoverable ? { recoverable: true } : {}),
+          }
+          if (options.recoverable) return hydrateThreadLibrary(recoveryOptions)
+          void hydrateThreadLibrary(recoveryOptions)
+          return false
         }
+        if (missingAtEnd && options.recoverable) return failRecoverableHydration()
         if (nextCollection.rows.some((row) => row.id === resolvedSummary?.id)) {
           missingSelectionRecoveryRef.current = null
         }
@@ -1873,10 +1896,13 @@ export function useChatSession({
         if (hydrated && request === hydrationRef.current) {
           releaseThreadSearchAfterHydration(eventEpoch, pageResult.includedThroughCursor)
         }
+        return hydrated && request === hydrationRef.current
       } catch {
         if (!disposed && request === hydrationRef.current) {
+          if (options.recoverable) return failRecoverableHydration()
           failWholeLibrary(threadLibraryBridgeError())
         }
+        return false
       }
     }
 
@@ -2311,6 +2337,46 @@ export function useChatSession({
           return false
         }
 
+        if (threadCollectionRef.current.location !== detail.summary.location) {
+          const originalCollection = threadCollectionRef.current
+          replaceThreadCollection({
+            ...initialThreadCollectionState,
+            location: detail.summary.location,
+          })
+          const targetHydrated = await hydrateThreadLibrary({
+            pageBudget,
+            selection: detail.summary.id,
+            recoverable: true,
+          })
+          const exactTargetHydrated =
+            targetHydrated &&
+            !disposed &&
+            navigation === searchNavigationGeneration &&
+            selectedThreadIdRef.current === detail.summary.id &&
+            threadCollectionRef.current.location === detail.summary.location &&
+            threadCollectionRef.current.status === 'ready'
+          if (!exactTargetHydrated) {
+            if (!disposed && !targetHydrated && threadSearchRef.current.active) {
+              missingSelectionRecoveryRef.current = null
+              replaceThreadCollection(originalCollection)
+              await restoreSearchNavigation(
+                navigation,
+                originalThreadId,
+                originalLocation,
+                pageBudget,
+              )
+              if (threadSearchRef.current.active) keepSearchOpenAfterStaleResult()
+            }
+            return false
+          }
+          replaceThreadSearch(exitThreadSearch(threadSearchRef.current))
+          setThreadFocusTarget({
+            threadId: detail.summary.id,
+            messageId: result.source === 'title' ? null : result.messageId,
+          })
+          return true
+        }
+
         listCursor = Math.max(listCursor, target.value.includedThroughCursor)
         detailCursor = Math.max(detailCursor, target.value.includedThroughCursor)
         selectedThreadIdRef.current = detail.summary.id
@@ -2319,13 +2385,6 @@ export function useChatSession({
           window.localStorage.setItem('nyx.thread.selected.v1', detail.summary.id)
         } catch {
           // A blocked UI preference does not block canonical Search navigation.
-        }
-        if (threadCollectionRef.current.location !== detail.summary.location) {
-          replaceThreadCollection({
-            ...initialThreadCollectionState,
-            location: detail.summary.location,
-            status: 'ready',
-          })
         }
         const action = {
           type: 'thread-library-hydrated' as const,

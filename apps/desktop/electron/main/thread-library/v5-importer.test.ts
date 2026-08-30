@@ -191,6 +191,59 @@ async function createCompleteFixture(continuationText = 'Answer') {
   return { ...fixture, providerStateRef, record }
 }
 
+async function createDocumentOnlyFixture(name: string) {
+  const fixture = await createRoot()
+  const mediaType = name.toLowerCase().endsWith('.pdf')
+    ? ('application/pdf' as const)
+    : ('text/plain' as const)
+  const sourceBytes = mediaType === 'application/pdf' ? documentSource : extractedText
+  const [documentRef] = await fixture.documents.writeNewDocuments({
+    record: null,
+    refs: [
+      {
+        documentId,
+        name: mediaType === 'application/pdf' ? 'fixture.pdf' : 'fixture.txt',
+        mediaType,
+        byteLength: sourceBytes.byteLength,
+        extractedByteLength: extractedText.byteLength,
+      },
+    ],
+    documents: [
+      {
+        documentId,
+        sourceBytes,
+        extractedTextBytes: extractedText,
+        extractedFromSha256: digest(sourceBytes),
+      },
+    ],
+  })
+  const record = parseCurrentThreadRecord({
+    version: 5,
+    threadId,
+    turns: [
+      {
+        attemptRequestId: 'request-document',
+        userMessageId: 'user-document',
+        assistantMessageId: 'assistant-document',
+        userContent: '   ',
+        imageRefs: [],
+        documentRefs: [{ ...documentRef, name }],
+        assistantContent: 'Answer',
+        assistantStatus: 'completed',
+        error: null,
+        targetBinding: { selection: targetSelection, attribution: targetAttribution },
+        providerStateRef: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+  await writeRecord(fixture.filePath, record)
+  return fixture
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -227,6 +280,32 @@ describe('readV5Import', () => {
     expect(serialized).not.toContain(Buffer.from(png).toString('base64'))
     expect(repeatedRows).toEqual(rows)
     expect(await hashTree(fixture.root)).toBe(before)
+  })
+
+  it.each([
+    {
+      name: 'quarterly   notes.pdf',
+      title: 'quarterly notes.pdf',
+    },
+    {
+      name: `${'文'.repeat(50)}.pdf`,
+      title: `${'文'.repeat(41)}....pdf`,
+    },
+    {
+      name: `${'😀'.repeat(50)}.txt`,
+      title: `${'😀'.repeat(41)}....txt`,
+    },
+    {
+      name: `${'a'.repeat(251)}.txt`,
+      title: `${'a'.repeat(41)}....txt`,
+    },
+  ])('uses the canonical document title rule when importing $name', async ({ name, title }) => {
+    const fixture = await createDocumentOnlyFixture(name)
+
+    const rows = await readV5Import(fixture)
+
+    expect(rows?.thread.title).toBe(title)
+    expect(Array.from(rows!.thread.title).length).toBeLessThanOrEqual(48)
   })
 
   it('projects abandoned pending as Interrupted without rewriting the old record', async () => {

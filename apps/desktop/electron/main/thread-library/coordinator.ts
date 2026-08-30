@@ -194,15 +194,18 @@ export class ThreadLibraryCoordinator {
   }
 
   async classifyTurn(request: NyxThreadChatRequest): Promise<boolean> {
-    const detail = await this.reconcileThread(request.threadId, this.now())
-    if (!detail) {
+    const read = await this.client.readThread({ threadId: request.threadId })
+    if (!read.ok) {
+      throw new ThreadLibraryCoordinatorError(read.safeError.message)
+    }
+    if (!read.value) {
       throw new ThreadLibraryCoordinatorError('This thread was not found.', 'invalid_request')
     }
 
     const includesDraft = request.turnIntent === 'new_user_message'
     return (
-      detail.images.some((image) => image.owner === 'turn' || includesDraft) ||
-      detail.documents.some((document) => document.owner === 'turn' || includesDraft)
+      read.value.images.some((image) => image.owner === 'turn' || includesDraft) ||
+      read.value.documents.some((document) => document.owner === 'turn' || includesDraft)
     )
   }
 

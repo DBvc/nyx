@@ -368,6 +368,41 @@ describe('ChatSessionManager canonical execution', () => {
     ])
   })
 
+  it('continues an accepted Run after its initiating WebContents is destroyed', async () => {
+    const { coordinator, createRuntimeChatStateClient, resolveChatTarget } = setup()
+    const providerMayContinue = deferred<void>()
+    const windowA: UnclockedNyxChatEvent[] = []
+    const windowB: UnclockedNyxChatEvent[] = []
+    let liveWindows = [windowA]
+    streamChatCompletion.mockImplementationOnce(async ({ onDelta }) => {
+      await providerMayContinue.promise
+      await onDelta('Later', 'Later')
+      return { finalContent: 'Later' }
+    })
+    const manager = new ChatSessionManager({
+      resolveThreadLibraryCoordinator: () => coordinator as unknown as ThreadLibraryCoordinator,
+      publishChatEvent: (_sender, event) => {
+        for (const events of liveWindows) events.push(event)
+      },
+      resolveChatTarget,
+      createRuntimeChatStateClient,
+      now: () => timestamp,
+    })
+    const sender = {
+      send: () => {
+        throw new Error('destroyed WebContents')
+      },
+    } as unknown as WebContents
+
+    manager.start(sender, request())
+    await waitFor(() => expect(windowA.some((event) => event.type === 'chat:start')).toBe(true))
+    liveWindows = [windowB]
+    providerMayContinue.resolve()
+    await waitFor(() => expect(windowB.some((event) => event.type === 'chat:done')).toBe(true))
+
+    expect(windowB.map((event) => event.type)).toEqual(['chat:delta', 'chat:done', 'chat:capacity'])
+  })
+
   it('streams normally while the Runtime projection is explicitly disabled', async () => {
     const { capacityEvents, coordinator, events, runtimeClient, sender } = setup()
     const createRuntimeChatStateClient = vi.fn(() => runtimeClient)

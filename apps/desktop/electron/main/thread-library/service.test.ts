@@ -185,6 +185,7 @@ function harness() {
     resolveImageProtocolFile: vi.fn(async () => ({ filePath: '/x', mediaType: 'image/png' })),
   }
   const events = vi.fn()
+  const chatEvents = vi.fn()
   const activate = vi.fn(
     async () =>
       ({
@@ -197,10 +198,11 @@ function harness() {
   )
   const service = new ThreadLibraryService({
     activate,
+    broadcastChatEvent: chatEvents,
     broadcastThreadEvent: events,
     now: () => new Date(createdAt),
   })
-  return { activate, client, events, getObserver: () => observer!, service, sidecars }
+  return { activate, chatEvents, client, events, getObserver: () => observer!, service, sidecars }
 }
 
 describe('ThreadLibraryService', () => {
@@ -621,7 +623,7 @@ describe('ThreadLibraryService', () => {
   )
 
   it('keeps independent live activity for two Threads', async () => {
-    const { client, service } = harness()
+    const { chatEvents, client, service } = harness()
     await service.initialize()
     client.listPage.mockResolvedValueOnce({
       id: 'list-two',
@@ -703,7 +705,8 @@ describe('ThreadLibraryService', () => {
         ],
       },
     })
-    expect(sender.send).toHaveBeenLastCalledWith('nyx:chat:event', {
+    expect(sender.send).not.toHaveBeenCalled()
+    expect(chatEvents).toHaveBeenLastCalledWith({
       type: 'chat:capacity',
       activeRuns: 2,
       attachmentRunActive: true,
@@ -863,7 +866,7 @@ describe('ThreadLibraryService', () => {
   })
 
   it('binds a new snapshot to chat events already reflected in its live detail', async () => {
-    const { getObserver, service, events } = harness()
+    const { chatEvents, getObserver, service, events } = harness()
     await expect(service.initialize()).resolves.toBe(true)
 
     getObserver()({
@@ -886,8 +889,8 @@ describe('ThreadLibraryService', () => {
       ok: true,
       value: { eventEpoch: generation, includedThroughCursor: 2 },
     })
-    expect(sender.send).toHaveBeenCalledWith(
-      'nyx:chat:event',
+    expect(sender.send).not.toHaveBeenCalled()
+    expect(chatEvents).toHaveBeenCalledWith(
       expect.objectContaining({ eventEpoch: generation, cursor: 2 }),
     )
     expect(events).toHaveBeenCalledWith(
@@ -896,7 +899,7 @@ describe('ThreadLibraryService', () => {
   })
 
   it('publishes only the shared chat:done contract and event clock', async () => {
-    const { service } = harness()
+    const { chatEvents, service } = harness()
     await expect(service.initialize()).resolves.toBe(true)
     const sender = { send: vi.fn() }
 
@@ -909,7 +912,8 @@ describe('ThreadLibraryService', () => {
       finalContent: 'Answer',
     })
 
-    expect(sender.send).toHaveBeenCalledWith('nyx:chat:event', {
+    expect(sender.send).not.toHaveBeenCalled()
+    expect(chatEvents).toHaveBeenCalledWith({
       type: 'chat:done',
       threadId,
       requestId: 'request',
@@ -919,6 +923,86 @@ describe('ThreadLibraryService', () => {
       eventEpoch: generation,
       cursor: 1,
     })
+  })
+
+  it('broadcasts later Run events after the initiating window is gone', async () => {
+    const { chatEvents, service } = harness()
+    const windowA = vi.fn()
+    const windowB = vi.fn()
+    let liveWindows = [windowA]
+    chatEvents.mockImplementation((event) => {
+      for (const send of liveWindows) send(event)
+    })
+    await service.initialize()
+    const initiatingSender = {
+      send: () => {
+        throw new Error('window A was destroyed')
+      },
+    }
+
+    service.publishChatEvent(initiatingSender as never, {
+      type: 'chat:accepted',
+      threadId,
+      requestId: 'request',
+      userMessageId: 'user',
+      assistantMessageId: 'assistant',
+      turnIntent: 'new_user_message',
+      attachmentBearing: false,
+    })
+    service.publishChatEvent(initiatingSender as never, {
+      type: 'chat:capacity',
+      activeRuns: 1,
+      attachmentRunActive: false,
+    })
+
+    liveWindows = [windowB]
+    await expect(service.get({ threadId })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        includedThroughCursor: 2,
+      },
+    })
+    service.publishChatEvent(initiatingSender as never, {
+      type: 'chat:delta',
+      threadId,
+      requestId: 'request',
+      assistantMessageId: 'assistant',
+      delta: 'Later',
+      snapshot: 'Later',
+    })
+    await expect(
+      service.listPage({ location: 'available', cursor: null, limit: 50 }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        rows: [
+          {
+            id: threadId,
+            activity: { status: 'streaming', requestId: 'request' },
+          },
+        ],
+      },
+    })
+    service.publishChatEvent(initiatingSender as never, {
+      type: 'chat:done',
+      threadId,
+      requestId: 'request',
+      assistantMessageId: 'assistant',
+      status: 'completed',
+      finalContent: 'Later',
+    })
+    service.publishChatEvent(initiatingSender as never, {
+      type: 'chat:capacity',
+      activeRuns: 0,
+      attachmentRunActive: false,
+    })
+
+    expect(windowA.mock.calls.map(([event]) => event.cursor)).toEqual([1, 2])
+    expect(windowB.mock.calls.map(([event]) => [event.type, event.cursor])).toEqual([
+      ['chat:delta', 3],
+      ['chat:done', 4],
+      ['chat:capacity', 5],
+    ])
   })
 
   it('authorizes only images from the selected canonical detail and revokes on epoch change', async () => {
@@ -1229,8 +1313,11 @@ describe('ThreadLibraryService', () => {
   })
 
   it('does not let a closed Renderer invalidate acknowledged state', async () => {
-    const { events, getObserver, service } = harness()
+    const { chatEvents, events, getObserver, service } = harness()
     events.mockImplementation(() => {
+      throw new Error('window closed')
+    })
+    chatEvents.mockImplementation(() => {
       throw new Error('window closed')
     })
     await service.initialize()

@@ -483,6 +483,21 @@ export type ThreadLibraryOperationInput = {
   [Operation in ThreadLibraryOperation]: z.infer<(typeof operationInputSchemas)[Operation]>
 }
 
+export function deriveThreadDocumentTitle(nameInput: string) {
+  const normalizedName = nameInput.trim().replace(/\s+/gu, ' ')
+  const name = Array.from(normalizedName)
+  if (name.length <= 48) return normalizedName
+
+  const dot = name.lastIndexOf('.')
+  const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot) : []
+  return extension.length > 0 && extension.length <= 44
+    ? `${name
+        .slice(0, 48 - 3 - extension.length)
+        .join('')
+        .trimEnd()}...${extension.join('')}`
+    : `${name.slice(0, 45).join('').trimEnd()}...`
+}
+
 export function deriveThreadDraftTitle(
   draft: ThreadLibraryOperationInput['saveDraft']['draft'],
 ): { title: string; genericKind: null } | { title: null; genericKind: 'Image' | 'Untitled draft' } {
@@ -505,21 +520,8 @@ export function deriveThreadDraftTitle(
     }
   }
 
-  const normalizedName = document.name.trim().replace(/\s+/gu, ' ')
-  const name = Array.from(normalizedName)
-  if (name.length <= 48) {
-    return { title: normalizedName, genericKind: null }
-  }
-  const dot = name.lastIndexOf('.')
-  const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot) : []
   return {
-    title:
-      extension.length > 0 && extension.length <= 44
-        ? `${name
-            .slice(0, 48 - 3 - extension.length)
-            .join('')
-            .trimEnd()}...${extension.join('')}`
-        : `${name.slice(0, 45).join('').trimEnd()}...`,
+    title: deriveThreadDocumentTitle(document.name),
     genericKind: null,
   }
 }

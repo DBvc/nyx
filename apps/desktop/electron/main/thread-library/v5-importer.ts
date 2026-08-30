@@ -12,7 +12,7 @@ import {
   parseCurrentThreadRecord,
   type CurrentThreadRecord,
 } from '../current-thread/schemas'
-import { importedV5RowsSchema, type ImportedV5Rows } from './protocol'
+import { deriveThreadDocumentTitle, importedV5RowsSchema, type ImportedV5Rows } from './protocol'
 
 export type V5ImportErrorCode = 'io_error' | 'malformed_json' | 'schema_invalid'
 
@@ -113,7 +113,7 @@ function importedTitle(record: CurrentThreadRecord) {
   const title = normalizeTitle(firstVisibleTurn?.userContent ?? '')
   if (title || firstVisibleTurn?.documentRefs[0]) {
     return {
-      title: title || firstVisibleTurn!.documentRefs[0]!.name,
+      title: title || deriveThreadDocumentTitle(firstVisibleTurn!.documentRefs[0]!.name),
       fallbackLocalSecond: null,
       fallbackOrdinal: null,
     }

@@ -420,6 +420,177 @@ describe('SEARCH1/T3 Renderer Search', () => {
     expect(render().threadFocusTarget).toEqual({ threadId: 'thread-b', messageId: null })
   })
 
+  it('hydrates the Archived collection before completing an Available Search open', async () => {
+    const available = detail('', 'thread-a')
+    const archivedRows = collectionRows(100, 50).map((row) => ({
+      ...row,
+      location: 'archived' as const,
+      pinPosition: null,
+    }))
+    const archived = detailForSummary(archivedRows[0]!)
+    const archivedHit = {
+      ...hit,
+      threadId: archived.summary.id,
+      location: 'archived' as const,
+    }
+    const bridge = installBridge({
+      selectedId: available.summary.id,
+      list: async ({ location }) =>
+        location === 'available'
+          ? collectionPageResult([available.summary], null)
+          : collectionPageResult(archivedRows, 'archived-next'),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === archived.summary.id ? archived : available,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [archivedHit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    render().activateThreadSearch()
+    render().setThreadSearchInput('archived')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([archivedHit]))
+
+    await expect(render().openThreadSearchResult(archivedHit)).resolves.toBe(true)
+
+    expect(render().threadCollection).toMatchObject({
+      location: 'archived',
+      status: 'ready',
+      nextCursor: 'archived-next',
+    })
+    expect(render().threadSummaries).toEqual(archivedRows)
+    expect(render().state.selectedThreadId).toBe(archived.summary.id)
+    expect(render().threadSearch.active).toBe(false)
+    expect(bridge.listPage.mock.calls.map(([input]) => input.location)).toEqual([
+      'available',
+      'archived',
+    ])
+  })
+
+  it('hydrates the Available collection before completing an Archived Search open', async () => {
+    const available = detail('', 'thread-b')
+    const archived = detailForSummary({
+      ...detail('', 'thread-a').summary,
+      location: 'archived',
+    })
+    const availableHit = { ...hit, threadId: available.summary.id, location: 'available' as const }
+    const bridge = installBridge({
+      selectedId: available.summary.id,
+      list: async ({ location }) =>
+        collectionPageResult(
+          [location === 'available' ? available.summary : archived.summary],
+          null,
+        ),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === archived.summary.id ? archived : available,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [availableHit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    await expect(render().switchThreadCollectionLocation('archived')).resolves.toBe(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(archived.summary.id))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    render().activateThreadSearch()
+    render().setThreadSearchInput('available')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([availableHit]))
+
+    await expect(render().openThreadSearchResult(availableHit)).resolves.toBe(true)
+
+    expect(render().threadCollection).toMatchObject({ location: 'available', status: 'ready' })
+    expect(render().threadSummaries).toEqual([available.summary])
+    expect(render().state.selectedThreadId).toBe(available.summary.id)
+    expect(bridge.listPage.mock.calls.map(([input]) => input.location)).toEqual([
+      'available',
+      'archived',
+      'available',
+    ])
+  })
+
+  it('recovers the original collection when cross-location Search hydration fails', async () => {
+    const available = detail('', 'thread-a')
+    const archived = detailForSummary({
+      ...detail('', 'thread-b').summary,
+      location: 'archived',
+    })
+    const archivedHit = { ...hit, location: 'archived' as const }
+    installBridge({
+      selectedId: available.summary.id,
+      list: async ({ location }) =>
+        location === 'archived'
+          ? {
+              ok: false,
+              error: { code: 'invalid_request', message: 'Could not load Archived.' },
+            }
+          : collectionPageResult([available.summary], null),
+      get: async ({ threadId }) => ({
+        ok: true,
+        value: {
+          detail: threadId === archived.summary.id ? archived : available,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+      search: async () => ({
+        ok: true,
+        value: {
+          results: [archivedHit],
+          truncated: false,
+          eventEpoch: 'epoch-1',
+          includedThroughCursor: 0,
+        },
+      }),
+    })
+    render(true)
+    await vi.waitFor(() => expect(render().state.selectedThreadId).toBe(available.summary.id))
+    vi.useFakeTimers()
+    window.setTimeout = setTimeout
+    window.clearTimeout = clearTimeout
+    render().activateThreadSearch()
+    render().setThreadSearchInput('archived')
+    await vi.advanceTimersByTimeAsync(120)
+    await vi.waitFor(() => expect(render().threadSearch.results).toEqual([archivedHit]))
+
+    await expect(render().openThreadSearchResult(archivedHit)).resolves.toBe(false)
+
+    expect(render().threadCollection).toMatchObject({ location: 'available', status: 'ready' })
+    expect(render().threadSummaries).toEqual([available.summary])
+    expect(render().state.selectedThreadId).toBe(available.summary.id)
+    expect(render().threadSearch.active).toBe(true)
+  })
+
   it('restores an originally empty Main selection after a successful noncommitting target get', async () => {
     const trash = {
       ...detail('', 'thread-b'),

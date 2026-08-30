@@ -15,6 +15,7 @@ import {
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
+import type { NyxChatEvent } from '../../shared/chat/events'
 import { NYX_CHAT_IPC_CHANNELS } from '../../shared/chat/ipc'
 import { NYX_PROVIDER_IPC_CHANNELS } from '../../shared/provider/ipc'
 import { NYX_THREADS_IPC_CHANNELS } from '../../shared/threads/ipc'
@@ -52,6 +53,19 @@ function focusExistingMainWindow() {
   }
   window.show()
   window.focus()
+}
+
+export function broadcastChatEventToLiveWindows(
+  event: NyxChatEvent,
+  windows: ReadonlyArray<Pick<BrowserWindow, 'webContents'>> = BrowserWindow.getAllWindows(),
+) {
+  for (const window of windows) {
+    try {
+      window.webContents.send(NYX_CHAT_IPC_CHANNELS.event, event)
+    } catch {
+      // Another currently live window still receives the event.
+    }
+  }
 }
 
 export function acquireSingleInstanceOwnership() {
@@ -165,6 +179,7 @@ function createMainServices() {
           return image.isEmpty() ? null : image.getSize()
         },
       }),
+    broadcastChatEvent: broadcastChatEventToLiveWindows,
     broadcastThreadEvent: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(NYX_THREADS_IPC_CHANNELS.event, event)

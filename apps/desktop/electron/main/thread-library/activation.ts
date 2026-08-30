@@ -347,15 +347,17 @@ export async function activateThreadLibrary({
   try {
     if (await exists(targetRootPath, fileAdapter)) {
       await assertCanonicalDatabase(targetRootPath, fileAdapter)
+      const sidecars = new ThreadLibrarySidecars({
+        rootPath: targetRootPath,
+        decodeImageSize,
+        fileAdapter,
+      })
+      await sidecars.removeCrashLeftStaging()
       const client = createClient(targetDatabasePath)
       await requireOpen(client)
       return {
         client: client as ThreadLibraryClient,
-        sidecars: new ThreadLibrarySidecars({
-          rootPath: targetRootPath,
-          decodeImageSize,
-          fileAdapter,
-        }),
+        sidecars,
         rootPath: targetRootPath,
         databasePath: targetDatabasePath,
         importedThreadId: null,
@@ -437,15 +439,17 @@ export async function activateThreadLibrary({
     if (await exists(targetRootPath, fileAdapter)) throw new ThreadLibraryActivationError()
     await fileAdapter.rename(stagingRootPath, targetRootPath)
 
+    const sidecars = new ThreadLibrarySidecars({
+      rootPath: targetRootPath,
+      decodeImageSize,
+      fileAdapter,
+    })
+    await sidecars.removeCrashLeftStaging()
     const client = createClient(targetDatabasePath)
     await requireOpen(client)
     return {
       client: client as ThreadLibraryClient,
-      sidecars: new ThreadLibrarySidecars({
-        rootPath: targetRootPath,
-        decodeImageSize,
-        fileAdapter,
-      }),
+      sidecars,
       rootPath: targetRootPath,
       databasePath: targetDatabasePath,
       importedThreadId: rows?.thread.id ?? null,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -75,6 +75,37 @@ afterEach(async () => {
 })
 
 describe('ThreadLibrarySidecars', () => {
+  it('removes only crash-left staging below validated Thread directories', async () => {
+    const { rootPath, sidecars } = await createSidecars()
+    const threadPath = join(rootPath, 'threads', threadId)
+    const stagingPath = join(threadPath, '.staging')
+    const documentPath = join(threadPath, 'documents', `${documentId}.source`)
+    await mkdir(stagingPath, { recursive: true })
+    await mkdir(join(threadPath, 'documents'), { recursive: true })
+    await writeFile(join(stagingPath, 'orphan.tmp'), 'orphan', 'utf8')
+    await writeFile(documentPath, documentBytes)
+
+    await sidecars.removeCrashLeftStaging()
+
+    await expect(stat(stagingPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(documentPath)).resolves.toEqual(Buffer.from(documentBytes))
+  })
+
+  it('refuses a symlinked staging boundary without touching its target', async () => {
+    const { rootPath, sidecars } = await createSidecars()
+    const threadPath = join(rootPath, 'threads', threadId)
+    const outsidePath = join(rootPath, 'outside-staging')
+    await mkdir(threadPath, { recursive: true })
+    await mkdir(outsidePath)
+    await writeFile(join(outsidePath, 'keep.txt'), 'keep', 'utf8')
+    await symlink(outsidePath, join(threadPath, '.staging'), 'dir')
+
+    await expect(sidecars.removeCrashLeftStaging()).rejects.toThrow(
+      'Thread staging directory is unsafe.',
+    )
+    await expect(readFile(join(outsidePath, 'keep.txt'), 'utf8')).resolves.toBe('keep')
+  })
+
   it('publishes verified private image, document, and Responses files in one Thread layout', async () => {
     const { rootPath, sidecars } = await createSidecars()
     const imageInput = [

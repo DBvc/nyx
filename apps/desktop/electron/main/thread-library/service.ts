@@ -4,7 +4,6 @@ import type { WebContents } from 'electron'
 import { z } from 'zod'
 
 import type { NyxChatEvent } from '../../../shared/chat/events'
-import { NYX_CHAT_IPC_CHANNELS } from '../../../shared/chat/ipc'
 import {
   type NyxChatError,
   nyxChatDocumentMediaTypes,
@@ -157,6 +156,7 @@ type UnclockedChatEvent = NyxChatEvent extends infer Event
 
 type Options = {
   activate: () => Promise<ActivatedThreadLibrary>
+  broadcastChatEvent: (event: NyxChatEvent) => void
   broadcastThreadEvent: (event: NyxThreadEvent) => void
   generateId?: () => string
   now?: () => Date
@@ -303,7 +303,7 @@ export class ThreadLibraryService {
     return this.active.sidecars.resolveImageProtocolFile(threadId, ref, variant)
   }
 
-  publishChatEvent(sender: WebContents, event: UnclockedChatEvent) {
+  publishChatEvent(_sender: WebContents, event: UnclockedChatEvent) {
     if (!this.eventEpoch) return
     if (event.type === 'chat:capacity') {
       this.capacity = {
@@ -346,7 +346,7 @@ export class ThreadLibraryService {
     }
     this.cursor += 1
     try {
-      sender.send(NYX_CHAT_IPC_CHANNELS.event, {
+      this.options.broadcastChatEvent({
         ...event,
         eventEpoch: this.eventEpoch,
         cursor: this.cursor,

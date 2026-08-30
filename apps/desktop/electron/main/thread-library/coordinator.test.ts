@@ -181,9 +181,12 @@ describe('ThreadLibraryCoordinator', () => {
     ).resolves.toBe(false)
     expect(client.startTurn).not.toHaveBeenCalled()
     expect(client.retryTurn).not.toHaveBeenCalled()
+    expect(client.readThread).toHaveBeenCalledTimes(2)
+    expect(sidecars.inspect).not.toHaveBeenCalled()
+    expect(sidecars.cleanupOrphans).not.toHaveBeenCalled()
   })
 
-  it('checks preflight Stop immediately before Draft-to-pending mutation', async () => {
+  it('performs one full sidecar inspection across classify and prepare', async () => {
     const { client, coordinator, sidecars } = createCoordinator()
     client.readThread.mockResolvedValue({ id: 'read', ok: true, value: detail() })
     sidecars.inspect.mockResolvedValue({
@@ -194,6 +197,14 @@ describe('ThreadLibraryCoordinator', () => {
     const controller = new AbortController()
     controller.abort()
 
+    await expect(
+      coordinator.classifyTurn({
+        threadId,
+        requestId: 'request-new',
+        turnIntent: 'new_user_message',
+        expectedDraftRevision: 0,
+      }),
+    ).resolves.toBe(false)
     await expect(
       coordinator.prepareTurn(
         {
@@ -206,6 +217,9 @@ describe('ThreadLibraryCoordinator', () => {
       ),
     ).rejects.toMatchObject({ code: 'cancelled' })
     expect(client.startTurn).not.toHaveBeenCalled()
+    expect(client.readThread).toHaveBeenCalledTimes(2)
+    expect(sidecars.inspect).toHaveBeenCalledOnce()
+    expect(sidecars.cleanupOrphans).toHaveBeenCalledOnce()
   })
 
   it('keeps an exact settlement failure when storage is replaced', async () => {

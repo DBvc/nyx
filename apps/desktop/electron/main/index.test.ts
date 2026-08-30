@@ -87,6 +87,7 @@ vi.mock('electron', () => ({
 import {
   acquireSingleInstanceOwnership,
   bindRendererProjectionTeardown,
+  broadcastChatEventToLiveWindows,
   configureRendererPermissions,
   registerIpcHandlers,
   resolveDevServerUrl,
@@ -139,6 +140,30 @@ describe('resolveMainWindowChromeOptions', () => {
     })
     expect(resolveMainWindowChromeOptions('win32')).toEqual({})
     expect(resolveMainWindowChromeOptions('linux')).toEqual({})
+  })
+})
+
+describe('chat event broadcast', () => {
+  it('continues to later live windows when one WebContents rejects the event', () => {
+    const event = {
+      type: 'chat:capacity' as const,
+      activeRuns: 1,
+      attachmentRunActive: false,
+      eventEpoch: 'epoch-1',
+      cursor: 4,
+    }
+    const first = vi.fn(() => {
+      throw new Error('window closed')
+    })
+    const second = vi.fn()
+
+    broadcastChatEventToLiveWindows(event, [
+      { webContents: { send: first } as never },
+      { webContents: { send: second } as never },
+    ])
+
+    expect(first).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, event)
+    expect(second).toHaveBeenCalledWith(NYX_CHAT_IPC_CHANNELS.event, event)
   })
 })
 

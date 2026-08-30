@@ -403,6 +403,43 @@ export class ThreadLibrarySidecars {
     ])
   }
 
+  async removeCrashLeftStaging() {
+    const root = await this.optionalStat(this.rootPath)
+    if (!root?.isDirectory() || root.isSymbolicLink()) {
+      throw new ThreadLibrarySidecarError('Thread Library root is unsafe.')
+    }
+
+    const threadsPath = join(this.rootPath, 'threads')
+    const threads = await this.optionalStat(threadsPath)
+    if (!threads) return
+    if (!threads.isDirectory() || threads.isSymbolicLink()) {
+      throw new ThreadLibrarySidecarError('Thread sidecar root is unsafe.')
+    }
+
+    for (const name of await this.files.listDirectory(threadsPath)) {
+      const parsed = uuid.safeParse(name)
+      if (!parsed.success || parsed.data !== name) {
+        throw new ThreadLibrarySidecarError('Thread sidecar identity is unsafe.')
+      }
+      const threadPath = join(threadsPath, parsed.data)
+      const thread = await this.optionalStat(threadPath)
+      if (!thread?.isDirectory() || thread.isSymbolicLink()) {
+        throw new ThreadLibrarySidecarError('Thread sidecar directory is unsafe.')
+      }
+
+      const stagingPath = join(threadPath, '.staging')
+      const staging = await this.optionalStat(stagingPath)
+      if (!staging) continue
+      if (!staging.isDirectory() || staging.isSymbolicLink()) {
+        throw new ThreadLibrarySidecarError('Thread staging directory is unsafe.')
+      }
+      await this.files.removeDirectory(stagingPath)
+      if (await this.optionalStat(stagingPath)) {
+        throw new ThreadLibrarySidecarError('Thread staging cleanup failed.')
+      }
+    }
+  }
+
   rollbackImages(threadId: string, imageIds: ReadonlyArray<string>) {
     const paths = this.paths(uuid.parse(threadId))
     return this.remove(
@@ -522,6 +559,15 @@ export class ThreadLibrarySidecars {
       return true
     } catch (error) {
       return !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+    }
+  }
+
+  private async optionalStat(path: string) {
+    try {
+      return await this.files.lstat(path)
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
+      throw error
     }
   }
 
