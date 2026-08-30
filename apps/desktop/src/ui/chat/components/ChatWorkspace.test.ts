@@ -225,6 +225,24 @@ describe('sidebar workspace helpers', () => {
     expect(heading.removeAttribute).toHaveBeenCalledWith('tabindex')
   })
 
+  it('preserves a stable programmatic heading anchor', () => {
+    const heading = {
+      tabIndex: -1,
+      focus: vi.fn(),
+      hasAttribute: vi.fn(() => true),
+      removeAttribute: vi.fn(),
+    }
+    const root = {
+      querySelectorAll: vi.fn(() => []),
+      querySelector: vi.fn(() => heading),
+    } as unknown as ParentNode
+
+    expect(focusThreadSearchTarget(root, { threadId: 'thread-1', messageId: null })).toBe('heading')
+    expect(heading.focus).toHaveBeenCalledOnce()
+    expect(heading.tabIndex).toBe(-1)
+    expect(heading.removeAttribute).not.toHaveBeenCalled()
+  })
+
   it('hides message Retry on a read-only Thread surface without mutating canonical messages', () => {
     const messages = [
       {

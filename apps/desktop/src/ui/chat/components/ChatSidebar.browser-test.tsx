@@ -5,7 +5,9 @@ import { createRoot } from 'react-dom/client'
 import type { NyxThreadPinAction, NyxThreadSummary } from '../../../../shared/threads/types'
 import '../../../styles/index.css'
 import { initialThreadCollectionState, initialThreadPinActionState } from '../thread-collection'
+import { ChatHeader } from './ChatHeader'
 import { ChatSidebar } from './ChatSidebar'
+import { focusThreadSearchTarget } from './ChatWorkspace'
 
 interface ThreadActionsBrowserTestState {
   pinActions: Array<{ action: NyxThreadPinAction; threadId: string }>
@@ -15,6 +17,7 @@ interface ThreadActionsBrowserTestState {
 declare global {
   interface Window {
     __nyxThreadActionsBrowserTest: ThreadActionsBrowserTestState
+    __nyxThreadSearchFocusBrowserTest: () => 'message' | 'heading' | null
   }
 }
 
@@ -37,36 +40,47 @@ function thread(index: number): NyxThreadSummary {
 const rows = Array.from({ length: 14 }, (_, index) => thread(index + 1))
 const state: ThreadActionsBrowserTestState = { pinActions: [], selections: [] }
 window.__nyxThreadActionsBrowserTest = state
+window.__nyxThreadSearchFocusBrowserTest = () =>
+  focusThreadSearchTarget(document, { threadId: 'focus-thread', messageId: null })
 
 flushSync(() => {
   createRoot(document.getElementById('root')!).render(
-    <ChatSidebar
-      activeView='chat'
-      collection={{
-        ...initialThreadCollectionState,
-        loadedPageCount: 1,
-        rows,
-        status: 'ready',
-      }}
-      currentThread={null}
-      currentThreadStatus='idle'
-      libraryUnavailable={false}
-      newThreadDisabled={false}
-      onLoadMoreThreads={() => undefined}
-      onNewThread={() => undefined}
-      onOpenConnectionsSettings={() => undefined}
-      onRenameThread={async () => ({ ok: true })}
-      onRetryThreadCollection={async () => true}
-      onSelectThread={(threadId) => state.selections.push(threadId)}
-      onSwitchThreadCollection={() => undefined}
-      onUpdateThreadLocation={() => undefined}
-      onUpdateThreadPin={(threadId, action) => state.pinActions.push({ action, threadId })}
-      pinAction={initialThreadPinActionState}
-      preview=''
-      selectedThreadId={rows[0]!.id}
-      settingsPopoverRef={createRef<HTMLDivElement>()}
-      title='New thread'
-    />,
+    <>
+      <div className='fixed -left-[10000px] top-0'>
+        <ChatHeader
+          connectionStatus={{ kind: 'loading', overview: null, requestEpoch: 0 }}
+          runStatus='idle'
+          title='Thread focus target'
+        />
+      </div>
+      <ChatSidebar
+        activeView='chat'
+        collection={{
+          ...initialThreadCollectionState,
+          loadedPageCount: 1,
+          rows,
+          status: 'ready',
+        }}
+        currentThread={null}
+        currentThreadStatus='idle'
+        libraryUnavailable={false}
+        newThreadDisabled={false}
+        onLoadMoreThreads={() => undefined}
+        onNewThread={() => undefined}
+        onOpenConnectionsSettings={() => undefined}
+        onRenameThread={async () => ({ ok: true })}
+        onRetryThreadCollection={async () => true}
+        onSelectThread={(threadId) => state.selections.push(threadId)}
+        onSwitchThreadCollection={() => undefined}
+        onUpdateThreadLocation={() => undefined}
+        onUpdateThreadPin={(threadId, action) => state.pinActions.push({ action, threadId })}
+        pinAction={initialThreadPinActionState}
+        preview=''
+        selectedThreadId={rows[0]!.id}
+        settingsPopoverRef={createRef<HTMLDivElement>()}
+        title='New thread'
+      />
+    </>,
   )
 })
 

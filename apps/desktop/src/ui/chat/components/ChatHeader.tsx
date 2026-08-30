@@ -15,7 +15,9 @@ export function ChatHeader({ title, runStatus, connectionStatus }: ChatHeaderPro
   return (
     <header className='workspace-header flex h-12 shrink-0 items-center justify-between px-6'>
       <div className='window-drag-region flex min-w-0 flex-1 self-stretch items-center'>
-        <h1 className='min-w-0 truncate text-[13px] font-semibold text-nyx-ink'>{title}</h1>
+        <h1 className='min-w-0 truncate text-[13px] font-semibold text-nyx-ink' tabIndex={-1}>
+          {title}
+        </h1>
       </div>
       <div className='ml-4 shrink-0'>
         {isRunning ? (

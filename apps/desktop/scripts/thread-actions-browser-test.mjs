@@ -94,6 +94,13 @@ async function runBrowserTest() {
   )
   console.log('Thread actions browser fixture is ready.')
 
+  const focusResult = await evaluate(`window.__nyxThreadSearchFocusBrowserTest()`)
+  assert.equal(focusResult, 'heading', 'Search focus should fall back to the Thread heading')
+  await waitFor(
+    `document.activeElement?.tagName === 'H1' && document.activeElement?.tabIndex === -1`,
+    'Search heading focus did not survive in Chromium',
+  )
+
   const siblingControls = await evaluate(`(() => {
     const trigger = document.querySelector('[aria-label="Actions for Recent 1"]')
     const selection = trigger?.parentElement?.querySelector('[aria-current="page"]')
