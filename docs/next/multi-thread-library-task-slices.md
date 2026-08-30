@@ -163,6 +163,17 @@ Fresh full validation passed, final evidence entered HEAD at `fef9bd8`, and the
 status closed at `4dc316d`. SEARCH1 is complete for the selected 128-Thread
 small envelope and grants no follow-up execution permission.
 
+On 2026-08-30 an independent deep diff review and strict architecture review of
+the complete landed Multi-Thread Library found five bounded S2 defects: Run
+events remain tied to the initiating window, cross-location Search navigation
+can publish an empty ready collection, v5 document-only import bypasses the
+canonical title rule, crash-left staging is never reclaimed, and Send performs
+two complete sidecar reconciliations. The user requested a repair. That request
+authorizes the exact docs-only `multi-thread-library/FULL-AUDIT-R1-scope-lock`
+below; product code remains non-executable until the scope-lock bytes pass
+independent review and the user explicitly authorizes
+`multi-thread-library/FULL-AUDIT-R1`.
+
 E1S-R1 has no remaining executable product work and grants no follow-up slice.
 CP1 is not a continuation or revival of old U1/L1. PIN1 has no remaining
 executable product work and grants no follow-up slice. Neither CP1, PIN1 nor an
@@ -175,6 +186,110 @@ permission.
 
 The migrated source blocks below preserve the pre-retirement contract and
 status history for traceability. This Current Status section is authoritative.
+
+## multi-thread-library/FULL-AUDIT-R1-scope-lock: Bounded post-audit repair
+
+Contract id: `NYX-MTL-FULL-AUDIT-R1-SCOPE-20260830-01`.
+
+Status: authorized for this docs-only scope-lock step. It may change exactly
+this status owner. It grants no product-code or follow-up permission. The
+product slice becomes eligible for explicit user authorization only after an
+independent strict review accepts the exact scope-lock bytes in HEAD.
+
+FULL-AUDIT-R1 has one goal: repair exactly the five accepted S2 findings from
+the final full-workstream audit without changing the landed product direction.
+The eventual product diff may change exactly these 17 files:
+
+- `apps/desktop/electron/main/chat/session.ts` and `session.test.ts`;
+- `apps/desktop/electron/main/index.ts` and `index.test.ts`;
+- `apps/desktop/electron/main/thread-library/service.ts` and `service.test.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.ts` and
+  `use-chat-session.test.ts`;
+- `apps/desktop/electron/main/thread-library/v5-importer.ts` and
+  `v5-importer.test.ts`;
+- `apps/desktop/electron/main/thread-library/protocol.ts`;
+- `apps/desktop/electron/main/thread-library/sidecars.ts` and
+  `sidecars.test.ts`;
+- `apps/desktop/electron/main/thread-library/activation.ts` and
+  `activation.test.ts`; and
+- `apps/desktop/electron/main/thread-library/coordinator.ts` and
+  `coordinator.test.ts`.
+
+No other product, test, schema, contract or documentation file is allowed. The
+five repairs are fixed:
+
+1. An accepted Run is identified only by `threadId + requestId`; its initiating
+   `WebContents` is not an event owner. Existing clocked Chat events, including
+   capacity, delta and terminal events, must update the same Main projection
+   and reach every currently live Nyx window. A destroyed initiating window
+   must not abort the Run or prevent a later window, after hydration, from
+   receiving subsequent events. This adds no multi-window selection owner,
+   replay log, event bus or new public event.
+2. Successful Search navigation across Available and Archived must use the
+   existing navigation lock and bounded collection hydration before it exits
+   Search. It must never publish an empty collection as `ready`. Hydration
+   failure or a stale target must preserve or recover the original selection
+   through the existing recovery path. Same-location navigation, Draft save,
+   exact-result validation, focus and paging behavior remain unchanged. This
+   adds no store, queue, second hydration owner or general hook refactor.
+3. v5 document-only import and new Draft title derivation must call one pure
+   document-title rule: trim and collapse whitespace, cap at 48 Unicode code
+   points and preserve the valid final extension under the existing rule.
+   Existing imported text/Image/Untitled behavior stays unchanged. There is no
+   database rewrite, migration, title repair pass or Renderer title rule.
+4. Activation must remove only crash-left content under the exact
+   `thread-library/threads/<validated UUID>/.staging` layout before public IPC
+   opens. It must validate directory boundaries, never follow a symlink and
+   never remove canonical image, document, Responses or database files. Unsafe
+   structure or cleanup failure follows the existing activation fail-closed
+   path. This adds no janitor, timer, background job or general file service.
+5. Capacity classification may perform one typed canonical Thread read but
+   must not inspect, repair or clean sidecars. `prepareTurn` remains the sole
+   full reconcile before Draft-to-pending mutation, preserving its existing CAS
+   and cancellation checks. One Send therefore performs one full sidecar
+   inspection without adding a cache or weakening attachment-bearing capacity.
+
+Focused regression coverage must prove:
+
+- a Run started by window A continues after A is destroyed; after window B
+  hydrates, B receives later delta, terminal and capacity events, while event
+  epochs/cursors and Main live projection remain monotonic;
+- Available-to-Archived and Archived-to-Available Search result opens hydrate
+  real rows and cursor state before success, while a failed cross-location open
+  leaves the original collection usable;
+- document-only v5 import shares the exact whitespace, 48-code-point, CJK/
+  emoji and extension behavior already used by new Draft titles;
+- an existing canonical Library removes a prior process's bounded staging
+  directory before activation returns and refuses an unsafe staging boundary
+  without touching canonical files; and
+- classify plus prepare performs exactly one sidecar inspection, and
+  classification still counts canonical image/document rows without mutating
+  availability.
+
+Before FULL-AUDIT-R1 completion, run:
+
+```text
+pnpm --dir apps/desktop exec vitest run electron/main/chat/session.test.ts electron/main/index.test.ts electron/main/thread-library/service.test.ts electron/main/thread-library/v5-importer.test.ts electron/main/thread-library/sidecars.test.ts electron/main/thread-library/activation.test.ts electron/main/thread-library/coordinator.test.ts src/ui/chat/use-chat-session.test.ts
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+git diff --check
+```
+
+FULL-AUDIT-R1 stops rather than expanding if a repair needs a file outside the
+17-file inventory; a schema, shared/preload/IPC or public event change; a new
+database, Worker, queue, cache, state owner, dependency or background cleanup
+service; broader multi-window behavior; a persistent event replay; a general
+Renderer hook refactor; a change to Search matching, limits or the selected
+128-Thread envelope; or deletion outside validated `.staging` paths. Reverting
+the eventual product commits must restore prior behavior without data migration
+or cleanup; removed staging bytes are explicitly non-canonical orphans and are
+never restored.
 
 ## multi-thread-library/SEARCH1-P0-scope-lock: Bounded committed-text Search
 
