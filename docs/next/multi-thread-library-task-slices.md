@@ -165,14 +165,20 @@ small envelope and grants no follow-up execution permission.
 
 On 2026-08-30 an independent deep diff review and strict architecture review of
 the complete landed Multi-Thread Library found five bounded S2 defects: Run
-events remain tied to the initiating window, cross-location Search navigation
-can publish an empty ready collection, v5 document-only import bypasses the
-canonical title rule, crash-left staging is never reclaimed, and Send performs
-two complete sidecar reconciliations. The user requested a repair. That request
-authorizes the exact docs-only `multi-thread-library/FULL-AUDIT-R1-scope-lock`
-below; product code remains non-executable until the scope-lock bytes pass
-independent review and the user explicitly authorizes
-`multi-thread-library/FULL-AUDIT-R1`.
+events remained tied to the initiating window, cross-location Search navigation
+could publish an empty ready collection, v5 document-only import bypassed the
+canonical title rule, crash-left staging was never reclaimed, and Send
+performed two complete sidecar reconciliations. The docs-only
+`multi-thread-library/FULL-AUDIT-R1-scope-lock` entered HEAD at `e976aff`.
+Product changes then landed at `81988b9` and `52c5a62`, changing 16 files inside
+the allowed 17-file inventory. The repository contains no durable record that
+the scope-lock bytes received the required independent review or that the
+product slice received the required explicit authorization. Current-HEAD
+retrospective validation passed on 2026-08-31 and is recorded in
+[multi-thread-library-runthrough.md](./multi-thread-library-runthrough.md).
+This status records the landed compatibility baseline without retroactively
+claiming the missing review or authorization evidence. FULL-AUDIT-R1 has no
+remaining executable work and grants no follow-up product permission.
 
 On 2026-08-30 a real Electron regression found one narrower defect in the
 completed SEARCH1/T3 behavior: after a successful title result open, the
@@ -271,10 +277,13 @@ contracts; or requires a new focus abstraction or browser-test harness.
 
 Contract id: `NYX-MTL-FULL-AUDIT-R1-SCOPE-20260830-01`.
 
-Status: authorized for this docs-only scope-lock step. It may change exactly
-this status owner. It grants no product-code or follow-up permission. The
-product slice becomes eligible for explicit user authorization only after an
-independent strict review accepts the exact scope-lock bytes in HEAD.
+Status: product changes are landed at `81988b9` and `52c5a62`; historical gate
+provenance is incomplete. The exact docs-only scope lock entered HEAD at
+`e976aff`. The product range changed 16 files inside the allowed inventory, and
+fresh current-HEAD retrospective validation passed on 2026-08-31. No durable
+repository evidence proves the required independent scope review or explicit
+product authorization occurred before those product commits. This record does
+not recreate those missing facts, reopen this repair or grant follow-up work.
 
 FULL-AUDIT-R1 has one goal: repair exactly the five accepted S2 findings from
 the final full-workstream audit without changing the landed product direction.

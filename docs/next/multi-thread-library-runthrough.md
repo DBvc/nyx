@@ -535,6 +535,33 @@ owner, shared state owner, Runtime or OCaml Thread model. SEARCH1 is complete
 only for the authorized small envelope, and this evidence grants no follow-up
 execution permission.
 
+## FULL-AUDIT-R1 — Retrospective repository record
+
+Result: product changes landed; historical gate provenance is incomplete.
+
+- The docs-only scope lock entered HEAD at
+  `e976affc605c435d9465993b1a19e76f9ab9cef3`.
+- Product changes landed at
+  `81988b97b8e238f11814f5296df127ae44d611c4` and
+  `52c5a62d06d4d6235f1b0beae334815e6abd5941`.
+- The exact product range changed 16 files, all inside the locked 17-file
+  inventory. `git diff --check e976aff..52c5a62` passed. The binary diff
+  SHA-256 was
+  `cc38f130cddf4348bd3d1b65e89f4e26a95fc9451b29667c3511d0f048133b34`.
+- Repository history and current documentation contain no durable receipt for
+  the independent scope review or explicit product authorization required by
+  the lock. This record does not infer that either step occurred.
+- Fresh retrospective validation at current head
+  `90255351f455d54513de99070a6e87586c6a402e` passed on 2026-08-31: the eight
+  focused FULL-AUDIT test files (`215` tests), all 54 desktop test files (`753`
+  passed, `14` expected skips), both desktop TypeScript checks, lint, format
+  check, production build, runtime chat-state check (`6` tests), documentation
+  check and `git diff --check`.
+
+These results prove the current landed compatibility baseline passes the named
+checks. They do not prove the missing historical review or authorization, do
+not reopen FULL-AUDIT-R1 and grant no follow-up product permission.
+
 ## SEARCH1/T3-FOCUS-R1 — Real Electron heading-focus repair
 
 Result: complete at product head
