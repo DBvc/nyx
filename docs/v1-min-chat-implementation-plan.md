@@ -1,15 +1,18 @@
 # Nyx V1 Min Chat Implementation Plan
 
-状态：Implemented / Active scope
+状态：Implemented ordinary baseline
 创建日期：2026-04-07
-最近更新：2026-07-07
+最近更新：2026-08-31
 分支：`main`
 
 ## 1. Source of Truth
 
-这份文档是当前 `v1 min chat` 产品范围的 source of truth。旧的
-`README.md`、`PRD.md`、`DESIGN.md` 和 `v0` 背景文档如果与本文件冲突，
-以本文件为准。
+这份文档是普通工作的 `v1 min chat` 基础范围。旧的 `README.md`、
+`PRD.md`、`DESIGN.md` 和 `v0` 背景文档如果与本文件冲突，以本文件为准。
+已经落地的命名工作流只在各自明确范围内补充或覆盖这份基础范围；其当前
+状态和执行权限以
+[agent-workbench-task-slices.md](./next/agent-workbench-task-slices.md) 路由的
+对应合同为准。
 
 相关文档：
 
@@ -22,11 +25,12 @@
 - macOS release 边界：[macos-release.md](./architecture/macos-release.md)
 
 最初的 min-chat 需求来自本地未提交设计输入；仓库文档不得写入本地绝对路径。
-从现在开始，当前范围以本文件和相邻架构文档为准。
+普通工作以本文件和相邻架构文档为准；命名工作流按上面的路由处理。
 
-## 2. Current Product Scope
+## 2. Ordinary Baseline Scope
 
-Nyx 当前不是通用 AI workbench，而是一条最小但真实可用的桌面聊天闭环。
+Nyx 的普通基础范围不是通用 AI workbench，而是一条最小但真实可用的桌面
+聊天闭环。下面记录的是基础范围，不是所有已落地命名工作流的功能清单。
 
 In scope:
 
@@ -70,9 +74,9 @@ Out of scope:
 - Electron main 默认使用 runtime-backed chat state；`NYX_RUNTIME_CHAT_STATE=0`
   只作为诊断 disable
 
-## 4. Current Repository Reality
+## 4. Baseline Repository Reality
 
-当前仓库已经实现并验证了 `v1 min chat`：
+仓库已经实现并验证了下面的 `v1 min chat` 基础能力：
 
 - shared chat/provider contracts
 - Electron preload `window.nyx` bridge
@@ -86,12 +90,15 @@ Out of scope:
 - Electron-main-only runtime-backed chat state path，默认开启
 - macOS arm64 dev/prod packaging source、packaged runtime staging、release workflow source
 
-当前仍未完成或未进入本产品范围：
+这份基础计划仍未完成的事项：
 
 - credentialed production release operations：真实 Apple Developer ID、notarization
   credentials、production update feed 和 tagged GitHub Release 环境仍需单独执行
 - 非 macOS arm64 release targets
-- 任何持久化、settings、model picker、Markdown、tools、agents、plugins、artifacts
+
+Connections、目标选择、持久化、Responses、本地图片/文档输入和 Thread
+Library 等已经落地的命名工作流不在这里重复维护。它们不会自动授权相关
+方向继续扩张。
 
 ## 5. Ownership Boundary
 
@@ -260,24 +267,23 @@ or broader runtime/provider integration.
 
 ## 9. Next Work Guidance
 
-Do next only with an explicit task:
+普通工作只在明确任务下继续：
 
 - credentialed production release operations
 - targeted documentation cleanup
 - named runtime-state correctness hardening
 - named packaging/release verification hardening
 
-Do not use “next work” as a reason to expand the product into:
+不要借“下一步工作”扩张为：
 
-- persistent history
-- settings UI
-- model picker UI
+- 超出已落地 Thread Library 的历史、Projects、Folders 或 Tags
+- 超出 Connections 和 Composer 目标选择的设置或路由 UI
+- 超出已落地本地图片和文本/PDF 文档的媒体、远程文件或通用 Asset 服务
 - Markdown rendering
 - tools / agents / plugins / artifacts
 - cloud sync
-- multimodal features
 
-## 10. Ship Checklist
+## 10. Original Baseline Ship Checklist
 
 - [x] 单页、单会话、纯文本范围
 - [x] renderer 不接触 provider secrets

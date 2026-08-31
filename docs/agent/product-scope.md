@@ -4,42 +4,36 @@
 
 Nyx is currently a minimal desktop AI chat client for personal use.
 
-This phase is intentionally narrow. It is not trying to be a multi-agent product, a plugin platform, a knowledge system, or a full AI workspace.
+The default product remains intentionally narrow. It is not a multi-agent
+product, plugin platform, knowledge system, or general AI workspace.
 
 ## Source of Truth
 
-- Primary source: [docs/v1-min-chat-implementation-plan.md](../v1-min-chat-implementation-plan.md)
-- Background only: [README.md](../../README.md), [PRD.md](../../PRD.md), [docs/v0-technical-baseline.md](../v0-technical-baseline.md)
+- Ordinary baseline: [v1-min-chat-implementation-plan.md](../v1-min-chat-implementation-plan.md)
+- Stable architecture: [architecture](../architecture)
+- Named workstreams and current execution contracts:
+  [agent-workbench-task-slices.md](../next/agent-workbench-task-slices.md)
+- Human overview: [README.md](../../README.md)
+- Background only: [PRD.md](../../PRD.md), [DESIGN.md](../../DESIGN.md), and
+  [v0-technical-baseline.md](../v0-technical-baseline.md)
 
-If those documents disagree, follow the min-chat implementation plan.
+For ordinary work, follow the baseline and architecture notes. For an already
+landed or explicitly named workstream, follow its routed current-status owner.
 
-## In Scope Right Now
+## Stable Boundaries
 
-- Single-page desktop chat UI with a lightweight sidebar shell
-- Plain-text messages only
-- Real model traffic through an OpenAI-compatible relay
-- Real streaming output
-- Temporary multi-turn conversation during the current app session
-- `Stop`
-- `Retry`
-- `New chat` / clear current thread
-- Environment-based provider configuration
-- Secret handling only in Electron `main`
-- Electron-main-only runtime-backed chat state
-
-## Explicitly Out of Scope
-
-- Settings UI
-- Model picker
-- Conversation history
-- Local persistence or restart recovery
-- Markdown rendering or code highlighting
-- Skills, agents, artifacts, tools, memory
-- Team workflows, sync, cloud features
-- Windows, Linux, MAS, x64, or universal packaging targets
+- Electron Main owns provider calls, credentials, persistence, file IO, and OS
+  side effects.
+- Renderer state is a rebuildable projection, not durable truth.
+- Preload exposes narrow typed APIs; shared contracts define cross-process data.
+- Existing Connections, target selection, Responses, attachment, and Thread
+  behavior must be preserved inside their routed boundaries.
+- No ordinary task may add tools, agents, MCP, plugins, artifacts, cloud sync,
+  Projects, Folders, Tags, or an OCaml Thread domain.
 
 ## Scope Discipline
 
-- If a change does not directly improve the current chat loop, default to deferring it.
+- Do not copy dynamic workstream status into this file.
+- Reading a workstream contract to protect landed behavior does not authorize
+  new work from it.
 - Do not expand scope just because the architecture could support it.
-- If you touch a broader document, do not silently re-expand the product definition.

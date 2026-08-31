@@ -678,7 +678,9 @@ if (router.includes(splitMarker)) {
 const docs = [
   resolve(repoRoot, 'AGENTS.md'),
   resolve(repoRoot, 'README.md'),
+  resolve(repoRoot, 'docs/v1-min-chat-implementation-plan.md'),
   resolve(repoRoot, 'apps/desktop/AGENTS.md'),
+  ...markdownFiles(resolve(repoRoot, 'docs/agent')),
   ...docsNext,
 ]
 checkMarkdownLinks(docs, errors)

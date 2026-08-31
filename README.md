@@ -48,11 +48,10 @@ cancellation handles stay in Electron main. The OCaml runtime owns only the
 main-side chat state reducer semantics for this path; it does not call
 providers, read provider env, own credentials, or talk to the renderer.
 
-Electron main also owns one versioned local current-thread record. Renderer
-state remains an in-memory projection loaded through a safe typed snapshot, and
-the OCaml runtime remains a rebuildable semantic projection that is replayed
-only when the next real turn starts. This is durability for the current thread,
-not a thread history collection.
+Electron main owns durable desktop chat and Thread Library state. Renderer state
+remains a rebuildable projection loaded through narrow typed bridges. The OCaml
+runtime remains a rebuildable semantic projection for the main-side chat-state
+path; it does not own the Thread domain.
 
 ## Current Product Scope
 
@@ -72,27 +71,22 @@ In scope:
 - plain text messages
 - real model traffic through the Electron main process
 - real streaming output
-- one durable current multi-turn conversation
-- complete app restart recovery for that current thread
-- `Stop`
-- `Retry`
-- `New thread`
-- explicit provider/model target selection in the Composer
-- environment-based provider configuration
+- durable local Threads with switching, Search, reversible Archive/Trash, and
+  restart recovery
+- `Stop`, `Retry`, and `New thread`
+- Connections profiles and explicit Composer target selection
+- bounded local image and text/PDF document input
+- the landed OpenAI Responses compatibility path
 - provider secrets kept in Electron main only
 
 Out of scope for this phase:
 
-- Recent, thread switching, and persistent multi-thread history
-- settings UI
-- model routing or picker UI beyond the bounded Composer target selector
+- settings or routing UI beyond landed Connections and target selection
 - Markdown or code highlighting
-- tools
-- agents
-- plugins
-- artifacts
-- cloud sync
-- multimodal features
+- tools, agents, MCP, plugins, artifacts, terminal, or browser automation
+- Projects, Folders, Tags, team workflows, or cloud sync
+- new media/document types, remote file upload, or a general Asset service
+- an OCaml Thread domain or provider integration inside the runtime
 
 ## Implemented Gated Workstreams
 
@@ -102,81 +96,11 @@ Each linked workstream contract owns its current status. The contracts applied
 only when the user requested their named slices. Ordinary work still follows
 the `v1 min chat` source of truth above.
 
-The first agent-workbench workstream added only the foundation needed for a
-thread-first shell and local provider setup:
-
-- Connections settings for OpenAI-compatible provider profiles
-- encrypted local API key storage owned by Electron main
-- default provider/model target resolution
-- `.env` provider configuration as a development fallback
-- redacted connection status
-- real provider test and model refresh
-- thread-first UI copy and renderer-local thread item adapter
-
-Settings may handle non-secret provider profile metadata through typed
-Connections APIs. Provider tokens and stored secrets remain main-owned, and the
-main chat surface stays redacted.
-
-It still does not implement tools, MCP, terminal execution, browser automation,
-permission approval cards, artifacts, persistent thread history, projects/file
-context, thread IPC, or OCaml thread runtime wiring.
-
-The implemented second gated workstream behavior adds only current-thread
-durability:
-
-- Electron main owns one plaintext local current-thread record with owner-only
-  file permissions
-- completed, cancelled, and failed terminal state can be restored after a full
-  app restart
-- an abandoned pending turn restores as a safe retryable interrupted failure
-- New thread clears the runtime projections and durable record before renderer
-  state is cleared
-- malformed storage fails closed and remains untouched until explicit New
-  thread/Start fresh
-
-It does not add Recent, thread switching, a hidden history collection,
-conversation encryption, or an OCaml Thread domain.
-
-The completed third gated workstream adds only a main-owned provider
-compatibility core:
-
-- explicit provider identity and protocol in the resolved chat target
-- the existing generic OpenAI-compatible request mapping as a pure function
-- normalized text, reasoning-activity, finish, and stream-error events
-- deterministic reasoning-only, empty-final, and output-length failures
-- preservation of a partial failed draft for the existing Retry path
-- redacted generic, Ark-compatible, and GLM-style stream fixtures
-
-It handles output exhaustion safely but does not prevent it. It does not add
-provider-specific request parameters, an adapter registry, capability profiles,
-Connections schema changes, new UI or IPC, raw reasoning exposure, tools, or
-native protocol adapters.
-
-The implemented D1-D4 slices of the fourth gated workstream add only bounded
-Composer target selection:
-
-- a redacted catalog of selectable saved targets and the configured `.env`
-  fallback
-- one renderer-local unsent target draft and one explicit target selection on
-  each Send or Retry
-- Electron-main validation, resolution, and durable target binding with no
-  silent fallback
-- a version-2 current-thread record with committed selection and safe
-  per-response attribution
-- compact target selection and assistant attribution UI
-- deterministic target hydration, refresh, Retry, New thread, unavailable, and
-  active-generation behavior
-
-The required automated acceptance passes. The interactive two-target provider,
-streaming switch, failure/recovery, and restart matrix remains pending and is
-tracked without overclaiming in
-[composer-target-selection-runthrough.md](./docs/next/composer-target-selection-runthrough.md).
-This workstream does not add automatic routing, capability profiles,
-provider-specific parameters, attempt history, persistent multi-thread history,
-new runtime protocol fields, or a second durable selection owner.
-
-The product direction for these gated workstreams is recorded in
-[agent-workbench-direction.md](./docs/next/agent-workbench-direction.md).
+The landed compatibility baseline includes Connections, current-thread
+durability, provider compatibility, Composer target selection, Responses,
+bounded local image/document input, and the Multi-Thread Library. This is a
+human overview, not a second status ledger. Follow the routed contract for the
+exact current boundary, evidence, and execution permission.
 
 ## Boundaries
 
@@ -188,7 +112,7 @@ The product direction for these gated workstreams is recorded in
 - environment variables and provider credentials
 - OS-facing side effects
 - current `v1 min chat` behavior
-- the one durable current-thread record and its recovery/reset lifecycle
+- durable desktop chat and Thread Library state
 
 `runtime/ocaml` owns:
 
