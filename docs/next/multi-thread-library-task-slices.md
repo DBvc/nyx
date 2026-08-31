@@ -180,6 +180,15 @@ This status records the landed compatibility baseline without retroactively
 claiming the missing review or authorization evidence. FULL-AUDIT-R1 has no
 remaining executable work and grants no follow-up product permission.
 
+On 2026-08-31 the user requested the simplified first Renderer structural
+repair from the reviewed architecture maintenance plan. The exact docs-only
+`multi-thread-library/RENDERER-STRUCTURE-R1-scope-lock` below is the only
+currently executable step. It may change this status owner only. Product code
+remains blocked until these exact scope-lock bytes are in HEAD, receive an
+independent strict review, and the user then explicitly authorizes
+`multi-thread-library/RENDERER-STRUCTURE-R1`. This direction grants no broader
+Thread Library, UI or OCaml work.
+
 On 2026-08-30 a real Electron regression found one narrower defect in the
 completed SEARCH1/T3 behavior: after a successful title result open, the
 one-shot Thread-heading focus falls back to `document.body`. The same review
@@ -379,6 +388,99 @@ Renderer hook refactor; a change to Search matching, limits or the selected
 the eventual product commits must restore prior behavior without data migration
 or cleanup; removed staging bytes are explicitly non-canonical orphans and are
 never restored.
+
+## multi-thread-library/RENDERER-STRUCTURE-R1-scope-lock: Session responsibility split
+
+Contract id: `NYX-MTL-RENDERER-STRUCTURE-R1-SCOPE-20260831-01`.
+
+Status: authorized for this docs-only step. It may change exactly this status
+owner and is complete when these exact scope-lock bytes enter HEAD. Completion
+does not authorize product code. The product slice becomes eligible only after
+independent strict review of the committed bytes and a later explicit user
+authorization of `multi-thread-library/RENDERER-STRUCTURE-R1`.
+
+RENDERER-STRUCTURE-R1 has one goal: make the landed Renderer session code easier
+to change by moving one coherent Thread Library session responsibility out of
+`use-chat-session.ts`, without changing product behavior. OCaml, Electron Main,
+preload, shared contracts, IPC, storage and UI presentation stay unchanged.
+
+Before editing product code, record a read-only dependency inventory for the
+existing subscription and hydration effect. It must distinguish state genuinely
+owned by the Thread Library lifecycle from the few semantic collaborations that
+must remain owned by the parent Chat session. The slice stops without product
+changes if that inventory cannot prove a narrow boundary. In particular, the
+new module must not receive the whole Chat state, a generic dispatch function,
+or a catch-all object of refs, setters and callbacks merely to relocate the same
+coupling.
+
+The eventual product diff may change exactly these four files:
+
+- `apps/desktop/src/ui/chat/use-chat-session.ts`;
+- `apps/desktop/src/ui/chat/use-chat-session.test.ts`;
+- `apps/desktop/src/ui/chat/use-thread-library-session.ts`; and
+- `apps/desktop/src/ui/chat/use-thread-library-session.test.ts`.
+
+The new feature-local hook must own one complete Thread Library synchronization
+lifecycle: collection and Search state, clocks and cursors, hydration and
+paging, navigation and collection actions, and the single mixed Chat/Thread
+event subscription, buffer and recovery flow. Chat events remain in that mixed
+flow where their order affects the selected Thread projection, Run capacity or
+attachment cleanup. The parent may expose only explicit operations for those
+existing effects; it remains the owner of editable Chat state, Draft resources,
+Connections refresh and the public `useChatSession` result.
+
+The following behavior is fixed:
+
+- Electron Main remains the only durable owner and the Renderer remains a
+  rebuildable projection;
+- Chat and Thread events keep one ordering, epoch/cursor check, pre-hydration
+  buffer, gap recovery and cleanup owner;
+- `useChatSession` keeps the same public API and `ChatWorkspace` requires no
+  change;
+- selected-Thread projection, Draft save-before-navigation, Search
+  invalidation, background Run capacity, attachment release, Connections
+  refresh, cancellation and unsubscription behave exactly as before; and
+- no state or side effect is duplicated temporarily across both hooks after
+  the refactor lands.
+
+This slice does not add a store, context, event bus, cache, controller layer,
+adapter framework, dependency or another persistent owner. It does not split
+attachment workers or Draft queues, change Search limits or matching, change
+Thread lifecycle or presentation, chase a line-count target, or require the
+existing large test file to be mechanically divided.
+
+Focused tests must cover the boundaries most likely to regress:
+
+- mixed Chat/Thread events buffered before hydration retain their original
+  order;
+- an epoch or cursor gap starts one existing recovery path rather than a second
+  hydration owner;
+- an accepted Chat event releases its attachment resources exactly once;
+- cross-location Search navigation still hydrates before publishing success;
+- navigation still waits for the existing Draft save barrier; and
+- unmount unsubscribes both event sources and cancels pending local work.
+
+Before RENDERER-STRUCTURE-R1 completion, run:
+
+```text
+pnpm --dir apps/desktop exec vitest run src/ui/chat/use-chat-session.test.ts src/ui/chat/use-thread-library-session.test.ts
+mise run desktop:test
+mise run desktop:typecheck
+mise run desktop:typecheck:compat
+mise run desktop:lint
+mise run desktop:format-check
+mise run desktop:build
+mise run runtime:chat-state:check
+mise run docs:check
+git diff --check
+```
+
+Also verify in real Electron that initial hydration, Thread switching,
+cross-location Search navigation, Draft save-before-navigation and a background
+Run still work. The slice stops instead of expanding if it needs a fifth file,
+changes a public or persisted contract, creates a second event/hydration owner,
+or needs the broad Chat-state/ref/callback bag excluded above. Reverting its one
+product commit must restore the prior structure with no data migration.
 
 ## multi-thread-library/SEARCH1-P0-scope-lock: Bounded committed-text Search
 
