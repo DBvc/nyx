@@ -1,0 +1,64 @@
+name: desktop
+
+on:
+  push:
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'mise.toml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'mise.toml'
+
+permissions: read-all
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test desktop
+        run: pnpm --dir apps/desktop test
+
+      - name: Typecheck desktop
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop typecheck
+          pnpm --dir apps/desktop typecheck:compat
+
+      - name: Check desktop source
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop lint
+          pnpm --dir apps/desktop format:check
+
+      - name: Build desktop
+        run: pnpm --dir apps/desktop build

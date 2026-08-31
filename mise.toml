@@ -186,6 +186,7 @@ mise run runtime:format-check
 description = "Run all workspace checks"
 run = """
 mise run docs:check
+mise run desktop:test
 mise run desktop:typecheck
 mise run desktop:typecheck:compat
 mise run desktop:lint
